@@ -2519,7 +2519,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
       assert.deepEqual(
         messages.flatMap((message) => message.notification?.summary ?? []),
-        ["#8: stopped watching, could not read it"],
+        ["!8: stopped watching, could not read it"],
       );
     }),
   );
@@ -2639,7 +2639,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         yield* reactor.sweep;
         assert.equal(reads, 21);
         for (const threadId of threadIds) {
-          assert.deepEqual(yield* summaries(threadId), ["#9: checks passed"]);
+          assert.deepEqual(yield* summaries(threadId), ["!9: checks passed"]);
         }
 
         // Nothing in flight and nothing moved, so the next pass spends no request.
@@ -2651,9 +2651,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         yield* watchFrom(late);
         yield* reactor.sweep;
         assert.equal(reads, 22);
-        assert.deepEqual(yield* summaries(late), ["#9: checks passed"]);
+        assert.deepEqual(yield* summaries(late), ["!9: checks passed"]);
         for (const threadId of threadIds) {
-          assert.deepEqual(yield* summaries(threadId), ["#9: checks passed"]);
+          assert.deepEqual(yield* summaries(threadId), ["!9: checks passed"]);
         }
         threadIds.push(late);
 
@@ -2665,8 +2665,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         for (const threadId of threadIds) {
           assert.isFalse(yield* watching(threadId));
           assert.deepEqual(yield* summaries(threadId), [
-            "#9: checks passed",
-            "#9: closed, stopped watching",
+            "!9: checks passed",
+            "!9: closed, stopped watching",
           ]);
         }
       }),
@@ -2893,7 +2893,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       checks = { lint: "failure", test: "pending" };
       yield* reactor.sweep;
       assert.deepEqual(reads(), { detail: 2, activity: 1 });
-      assert.deepEqual(yield* summaries, ["#11: checks failed"]);
+      assert.deepEqual(yield* summaries, ["!11: checks failed"]);
 
       // When the fingerprint moves, a cached answer from before the move is not trusted.
       yield* TestClock.adjust("1 millis");
@@ -2924,7 +2924,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       fingerprint = { status: "OPEN settled", remarks: "1" };
       yield* reactor.sweep;
       assert.deepEqual(reads(), { detail: 4, activity: 2 });
-      assert.deepEqual(yield* summaries, ["#11: checks failed", "#11: new comments"]);
+      assert.deepEqual(yield* summaries, ["!11: checks failed", "!11: new comments"]);
 
       // While the host is rate limited, a pass reads nothing and the watch stays on.
       fingerprint = "rate-limited";
@@ -2938,7 +2938,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       yield* TestClock.adjust("30 minutes");
       yield* reactor.sweep;
       assert.deepEqual(reads(), { detail: 5, activity: 3 });
-      assert.deepEqual(yield* summaries, ["#11: checks failed", "#11: new comments"]);
+      assert.deepEqual(yield* summaries, ["!11: checks failed", "!11: new comments"]);
     }),
   );
 
@@ -3097,7 +3097,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
         assert.deepEqual(
           messages.map((message) => message.notification?.summary),
-          ["#7: checks failed"],
+          ["!7: checks failed"],
         );
         // Keep the two notifications ordered independently of their random message IDs.
         yield* TestClock.adjust("1 millis");
@@ -3115,8 +3115,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           message.notification === undefined ? [] : [message.notification.summary],
         ),
         incomplete
-          ? ["#7: checks failed", "#7: new comments"]
-          : ["#7: checks failed, new comments"],
+          ? ["!7: checks failed", "!7: new comments"]
+          : ["!7: checks failed, new comments"],
       );
       if (mode !== "single page") {
         const wake = messages.at(-1);

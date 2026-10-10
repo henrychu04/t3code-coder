@@ -526,6 +526,6 @@ describe("listThreadPullRequests", () => {
 it("keeps failure diagnostics as the cause rather than exposing them in the tool message", () => {
   const cause = new Error("database internals");
   const failure = new PullRequestLinkFailedError({ cause });
-  expect(failure.message).toBe("Could not link the pull request.");
+  expect(failure.message).toBe("Could not link the merge request.");
   expect(failure.cause).toBe(cause);
 });

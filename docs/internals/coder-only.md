@@ -898,7 +898,12 @@ listed here is drift to remove rather than fork behavior to keep.
   - User-facing text says "merge request", "MR", and `!123` wherever upstream says "pull
     request", "PR", or `#123`: the panels, composer, settings, toasts, keybinding labels, and
     the strings the web shows from `client-runtime` (work-log tool labels and MR actions) and
-    `shared` (T3 tool presentation, watch descriptions, and copy-link toasts). Identifiers, wire
+    `shared` (T3 tool presentation, watch descriptions, and copy-link toasts). The agent-facing
+    text the server writes says "merge request", `!123`, and "T3 Coder" too: the merge-request
+    watch wakes and their notification summaries (`pullRequestWatch.ts`,
+    `PullRequestWatchReactor.ts`), the merge-request T3 tool descriptions and errors
+    (`mcp/toolkits/pullRequests/tools.ts`, with GitLab example URLs), and `GitManager`'s
+    merge-request ref fetch error. `runtimeInstructions.ts` stays upstream's. Identifiers, wire
     names, and search haystacks keep upstream's spelling, and the composer trigger stays `#`.
     Web `sourceControlPresentation.ts` treats a missing provider as GitLab rather than
     upstream's GitHub default. Text for paths GitLab never reaches (native stacks, stack merges,
