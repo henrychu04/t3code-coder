@@ -398,3 +398,46 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     await NodeFS.rm(directory, { force: true, recursive: true });
   }
 }, 5000);
+
+it("stops a native subagent with the Agent SDK's stop_task control request", async () => {
+  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-stop-task-"));
+  const executable = NodePath.join(directory, "fake-claude");
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type !== "control_request") return;
+  const ok = value.request.subtype === "initialize" ||
+    (value.request.subtype === "stop_task" && value.request.task_id === "task-7");
+  process.stdout.write(JSON.stringify({
+    type: "control_response",
+    response: ok
+      ? { subtype: "success", request_id: value.request_id, response: {} }
+      : { subtype: "error", request_id: value.request_id, error: JSON.stringify(value.request) },
+  }) + "\\n");
+});
+`,
+    { mode: 0o700 },
+  );
+  let finishPrompt!: () => void;
+  const promptFinished = new Promise<void>((resolve) => {
+    finishPrompt = resolve;
+  });
+  const runtime = query({
+    prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+      await promptFinished;
+    })(),
+    options: { pathToClaudeCodeExecutable: executable, env: process.env },
+  });
+  try {
+    await runtime.initializationResult();
+    await runtime.stopTask("task-7");
+    await rejects(runtime.stopTask("task-8"));
+  } finally {
+    finishPrompt();
+    runtime.close();
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);
