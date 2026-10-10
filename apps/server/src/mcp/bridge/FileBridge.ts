@@ -19,8 +19,8 @@ import * as Data from "effect/Data";
 
 import { clientSource } from "./clientSource.ts";
 
-export const MAX_BRIDGE_REQUEST_BYTES = 256 * 1024;
-export const MAX_BRIDGE_RESPONSE_BYTES = 256 * 1024;
+const MAX_BRIDGE_REQUEST_BYTES = 256 * 1024;
+const MAX_BRIDGE_RESPONSE_BYTES = 256 * 1024;
 /** Tool calls run concurrently; more waiting calls queue in their directories. */
 const MAX_CONCURRENT_CALLS = 8;
 const CALL_ID_PATTERN = /^[a-f0-9-]{36}$/u;
