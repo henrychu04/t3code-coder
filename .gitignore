@@ -20,6 +20,9 @@ __screenshots__/
 .gstack/
 .plans/
 .github/pr-assets/
+# Local real-Coder live harness; see docs/internals/coder-only.md (Build tooling).
+/scripts/coder-live-test.mjs
+/scripts/coder-live-template/
 node_modules/
 *.log
 .env*
