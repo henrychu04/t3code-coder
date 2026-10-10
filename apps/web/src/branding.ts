@@ -1,3 +1,4 @@
+// Coder: fixed "T3 Coder" branding; there is no desktop bridge or hosted channel.
 export const HOSTED_APP_CHANNEL = null;
 export const HOSTED_APP_CHANNEL_LABEL = null;
 export const APP_BASE_NAME = "T3 Coder";

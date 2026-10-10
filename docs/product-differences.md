@@ -11,7 +11,7 @@ against these decisions and record new intentional differences here.
 ## Kept from upstream
 
 - The browser-based project, thread, conversation, terminal, review, and settings experience.
-- Codex and Claude Code conversations, including streaming responses, approvals, asynchronous
+- Codex, Claude Code, and Pi conversations, including streaming responses, approvals, asynchronous
   questions, interruption, resumption, context information, native context compaction, and
   provider-reported sub-agent activity.
 - Provider-aware model selection. Models, reasoning choices, service tiers, skills, commands, and
@@ -29,18 +29,17 @@ but provider sessions, repositories, terminals, and durable T3 state belong to t
 
 ### Providers are workspace capabilities
 
-T3 Coder supports Codex and Claude Code when their CLIs are available in the workspace. The app
-does not install a missing provider or move its credentials to the local computer. On explicit
+T3 Coder supports Codex, Claude Code, and Pi when their CLIs are available in the workspace. The
+app does not install a missing provider or move its credentials to the local computer. On explicit
 request, it can update an existing workspace installation using its identified installer. A
-workspace can connect with either provider present.
+workspace can connect with any one of these providers present.
 
 The model picker offers models only from providers that are enabled, available, and ready. If
-Codex is missing or unauthenticated, Claude remains usable when it is ready, and the reverse is
-also true. T3 Coder may choose a ready provider for a new draft, but it never silently changes the
+one provider is missing or unauthenticated, the others remain usable when they are ready. T3 Coder may choose a ready provider for a new draft, but it never silently changes the
 provider for an existing thread or a turn already in progress.
 
-Codex and Claude share one provider-settings experience, and a workspace can expose additional
-instances of either provider. The workspace remains the source of the installations, identities,
+Codex, Claude, and Pi share one provider-settings experience, and a workspace can expose
+additional instances of any of them. The workspace remains the source of the installations, identities,
 configuration, and login state behind every instance.
 
 The model picker's current and older groupings follow upstream's model lifecycle list. T3 Coder
@@ -70,9 +69,10 @@ hosted source-control provider is registered.
 
 The Files surface lists, reads, searches, and edits text files inside the active project. It does
 not provide general upload, download, export, synchronization, or access to arbitrary local or
-workspace paths. Composer image attachments (paste, drop, or picker) and on-demand image previews are narrow,
-validated exceptions. Image previews follow main’s current-file behavior, including files outside
-the project on the workspace machine, through the existing helper connection.
+workspace paths. Composer attachments (images and files, by paste, drop, or picker) and on-demand
+media previews are narrow, validated exceptions. Media previews follow main’s current-file
+behavior, including image files outside the project on the workspace machine, through the existing
+helper connection.
 
 ## Improved for this product
 
@@ -94,12 +94,13 @@ the project on the workspace machine, through the existing helper connection.
 - Electron and other native desktop packaging, iOS and Android clients, and a hosted web client.
 - Relay, Tailscale, Cloudflare, OAuth, Clerk, generic SSH environments, and public or non-loopback
   application listeners.
-- Providers other than workspace-installed Codex and Claude Code.
+- Providers other than workspace-installed Codex, Claude Code, and Pi.
 - Upstream's cost dashboard, remote pricing aggregation, and user-configured CLI-proxy usage
   sources, and subscription-quota dashboards. This fork supports API-backed provider usage only;
   per-thread context usage and provider-reported runtime limit errors remain available.
-- MCP servers, Codex app integrations, the Claude browser integration, and the packaged Anthropic
-  Agent SDK.
+- T3's own MCP server (T3 tools reach agents over a workspace file bridge instead), the Claude
+  browser integration, and the packaged Anthropic Agent SDK. Workspace MCP servers, Codex app
+  integrations, and MCP Apps work as upstream, inside the workspace.
 - General-purpose uploads, downloads, exports, drag-and-drop transfer, clipboard text transfer,
   and background file synchronization.
 - GitHub, Bitbucket, Azure DevOps, and hosted source-control integrations other than workspace

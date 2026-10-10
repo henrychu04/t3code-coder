@@ -4930,7 +4930,10 @@ export const V2ConfigWriteResponse__WriteStatus = Schema.Literals(["ok", "okOver
 });
 
 export type V2ConsumeAccountRateLimitResetCreditResponse__ConsumeAccountRateLimitResetCreditOutcome =
-  "reset" | "nothingToReset" | "noCredit" | "alreadyRedeemed";
+  | "reset"
+  | "nothingToReset"
+  | "noCredit"
+  | "alreadyRedeemed";
 export const V2ConsumeAccountRateLimitResetCreditResponse__ConsumeAccountRateLimitResetCreditOutcome =
   Schema.Union(
     [
@@ -5070,16 +5073,16 @@ export const V2ExternalAgentConfigDetectResponse__ExternalAgentConfigMigrationIt
   });
 
 export type V2ExternalAgentConfigImportCompletedNotification__ExternalAgentConfigMigrationItemType =
-    | "AGENTS_MD"
-    | "CONFIG"
-    | "SKILLS"
-    | "PLUGINS"
-    | "MCP_SERVER_CONFIG"
-    | "SUBAGENTS"
-    | "HOOKS"
-    | "COMMANDS"
-    | "MEMORY"
-    | "SESSIONS";
+  | "AGENTS_MD"
+  | "CONFIG"
+  | "SKILLS"
+  | "PLUGINS"
+  | "MCP_SERVER_CONFIG"
+  | "SUBAGENTS"
+  | "HOOKS"
+  | "COMMANDS"
+  | "MEMORY"
+  | "SESSIONS";
 export const V2ExternalAgentConfigImportCompletedNotification__ExternalAgentConfigMigrationItemType =
   Schema.Literals([
     "AGENTS_MD",
@@ -5106,16 +5109,16 @@ export const V2ExternalAgentConfigImportHistoriesReadResponse__ExternalAgentImpo
   });
 
 export type V2ExternalAgentConfigImportHistoriesReadResponse__ExternalAgentConfigMigrationItemType =
-    | "AGENTS_MD"
-    | "CONFIG"
-    | "SKILLS"
-    | "PLUGINS"
-    | "MCP_SERVER_CONFIG"
-    | "SUBAGENTS"
-    | "HOOKS"
-    | "COMMANDS"
-    | "MEMORY"
-    | "SESSIONS";
+  | "AGENTS_MD"
+  | "CONFIG"
+  | "SKILLS"
+  | "PLUGINS"
+  | "MCP_SERVER_CONFIG"
+  | "SUBAGENTS"
+  | "HOOKS"
+  | "COMMANDS"
+  | "MEMORY"
+  | "SESSIONS";
 export const V2ExternalAgentConfigImportHistoriesReadResponse__ExternalAgentConfigMigrationItemType =
   Schema.Literals([
     "AGENTS_MD",

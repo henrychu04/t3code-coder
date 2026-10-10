@@ -16,12 +16,12 @@ Development and testing happen on macOS; Windows 11 is the supported daily-use h
 
 Inside each Linux Coder workspace you plan to use:
 
-- Codex or Claude Code, installed and configured for API access in the workspace
+- Codex, Claude Code, or Pi, installed and configured for API access in the workspace
 - Git
 - Nix with a configured `nixpkgs` and access to its substituters
 
-T3 Coder drives the workspace Codex and Claude Code CLIs; it does not ship or re-authenticate
-either provider. Sign in to the provider in the workspace the way you normally would.
+T3 Coder drives the workspace Codex, Claude Code, and Pi CLIs; it does not ship or
+re-authenticate any provider. Sign in to the provider in the workspace the way you normally would.
 
 The workspace's default Node.js version can stay whatever it is. On first connection, T3 Coder
 provisions a pinned Node.js 24 runtime through Nix into a dedicated profile and uses it only for
@@ -56,7 +56,7 @@ The first connection to each workspace runs a preflight that verifies the worksp
 anything starts:
 
 - Linux x86-64 architecture
-- Git and at least one of Codex or Claude Code present
+- Git and at least one of Codex, Claude Code, or Pi present
 - the pinned Node.js 24 runtime available through Nix (downloaded once if missing)
 
 After preflight, T3 Coder installs a version-matched helper, including its native terminal runtime,

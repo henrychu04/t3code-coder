@@ -38,6 +38,7 @@ export class ReviewService extends Context.Service<
     readonly getDiffPreview: (
       input: ReviewDiffPreviewInput,
     ) => Effect.Effect<ReviewDiffPreviewResult, ReviewDiffPreviewError>;
+    // Coder: chunked review file snapshots replace upstream's one-shot getDiffFileContents.
     readonly openDiffFileContents: (
       input: ReviewDiffFileContentsInput,
     ) => Effect.Effect<ReviewDiffFileSnapshotResult, ReviewDiffFileSnapshotError>;
@@ -55,6 +56,7 @@ export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const settings = yield* ServerSettings.ServerSettingsService;
+  // Coder: review file snapshots live in helper memory (64 MiB, 256 entries, two-minute idle TTL).
   const snapshotCache = new Map<string, { readonly data: Buffer; readonly expiresAt: number }>();
   let snapshotCacheBytes = 0;
   const snapshotCacheByteLimit = 64 * 1024 * 1024;

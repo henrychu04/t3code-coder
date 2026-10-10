@@ -1,3 +1,4 @@
+// Coder: no `network-changed` wakeup (a mobile signal); the gateway is always on loopback.
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
 import type * as Stream from "effect/Stream";

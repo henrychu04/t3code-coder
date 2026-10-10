@@ -25,5 +25,11 @@
       }
     ]
   },
-  "include": ["../../scripts/build-info.ts", "src", "vite", "vite.config.ts", "test"]
+  "include": [
+    "../../scripts/build-info.ts",
+    "../../scripts/lib/third-party-licenses.ts",
+    "src",
+    "vite.config.ts",
+    "test"
+  ]
 }

@@ -31,27 +31,20 @@ export function ThreadNotificationCoordinator() {
     (settings) => settings.inAppNotificationsEnabled,
   );
   const pending = useRef(
-    new Map<string, { environmentId: EnvironmentId; notification?: Notification }>(),
+    new Map<string, { environmentId: EnvironmentId; notification: Notification }>(),
   );
-  const onNotification = useCallback(
-    (environmentId: EnvironmentId, notification: Notification | string) => {
-      const tag = typeof notification === "string" ? notification : notification.tag;
-      pending.current.get(tag)?.notification?.close();
-      pending.current.set(tag, {
-        environmentId,
-        ...(typeof notification === "string" ? {} : { notification }),
-      });
-      setNotificationBadge(pending.current.size);
-    },
-    [],
-  );
+  const onNotification = useCallback((environmentId: EnvironmentId, notification: Notification) => {
+    pending.current.get(notification.tag)?.notification.close();
+    pending.current.set(notification.tag, { environmentId, notification });
+    setNotificationBadge(pending.current.size);
+  }, []);
 
   useEffect(() => {
     const activeIds = new Set(environmentIds);
     const count = pending.current.size;
     for (const [tag, { environmentId, notification }] of pending.current) {
       if (activeIds.has(environmentId)) continue;
-      notification?.close();
+      notification.close();
       pending.current.delete(tag);
     }
     if (count !== pending.current.size) setNotificationBadge(pending.current.size);
@@ -59,18 +52,19 @@ export function ThreadNotificationCoordinator() {
 
   useEffect(() => {
     const clear = () => {
-      for (const { notification } of pending.current.values()) notification?.close();
+      for (const { notification } of pending.current.values()) notification.close();
       pending.current.clear();
       setNotificationBadge(0);
     };
     clear();
-    if (!hasDesktopNotifications(mode) && !inAppNotificationsEnabled) return;
+    if (!hasDesktopNotifications(mode)) return;
+    // Coder: no desktop bridge, so only window focus clears the badge.
     window.addEventListener("focus", clear);
     return () => {
       window.removeEventListener("focus", clear);
       clear();
     };
-  }, [mode, inAppNotificationsEnabled]);
+  }, [mode]);
 
   useEffect(() => {
     if (!hasNotificationSound(mode)) return;
@@ -104,7 +98,7 @@ function EnvironmentNotifications({
   onNotification,
 }: {
   environmentId: EnvironmentId;
-  onNotification: (environmentId: EnvironmentId, notification: Notification | string) => void;
+  onNotification: (environmentId: EnvironmentId, notification: Notification) => void;
 }) {
   const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
   // The shell reducer keeps the thread list and unchanged thread objects
@@ -209,12 +203,6 @@ function EnvironmentNotifications({
           },
         });
         continue;
-      }
-      if (
-        inAppNotificationsEnabled &&
-        (document.visibilityState !== "visible" || !document.hasFocus())
-      ) {
-        onNotification(environmentId, `${environmentId}:${thread.id}`);
       }
       if (
         !hasDesktopNotifications(mode) ||

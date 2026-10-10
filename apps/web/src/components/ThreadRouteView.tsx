@@ -187,6 +187,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     );
   }
 
+  // Coder: a thread whose workspace is not connected shows that workspace's connection status.
   if (view === null && target.kind === "server")
     return <WorkspaceConnectionStatus environmentId={target.threadRef.environmentId} />;
 

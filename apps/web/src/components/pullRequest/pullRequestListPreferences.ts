@@ -64,7 +64,7 @@ function resolvePreferenceStorage(
   return storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
 }
 
-/** Remember presentation controls only, never repository identities or user-entered content. */
+/** Coder: browser storage keeps UI preferences only. Remember presentation controls only, never repository identities or user-entered content. */
 export function pullRequestListPreferences(
   search: PullRequestListPreferences | Schema.Schema.Type<typeof PullRequestListPreferencesSchema>,
 ): PullRequestListPreferences {

@@ -1,3 +1,5 @@
+// Coder: the browser-only local API. Upstream's desktop IPC contract (`contracts/ipc.ts`) is not
+// carried, so its context-menu and confirm-dialog types live here.
 import type { ClientSettings } from "@t3tools/contracts/settings";
 
 export interface ContextMenuItem<T extends string = string> {

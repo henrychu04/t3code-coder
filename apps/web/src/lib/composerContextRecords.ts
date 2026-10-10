@@ -1,3 +1,5 @@
+// Coder: no preview annotations (browser preview is not carried); merge requests use `!` and
+// GitLab wording.
 import {
   COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS,
   COMPOSER_CONTEXT_REVIEW_TEXT_MAX_CHARS,

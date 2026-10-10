@@ -19,7 +19,8 @@ import {
 } from "./_internal/shared.ts";
 import { makeChildStdio, makeTerminationError } from "./_internal/stdio.ts";
 
-// Managed workspace wrappers can emit a scanner banner before Codex starts its JSONL protocol.
+// Coder: managed workspace wrappers can emit a scanner banner before Codex starts its JSONL
+// protocol, so a spawned child may print up to this many bytes of non-JSON lines first.
 const CHILD_PROCESS_STARTUP_PREAMBLE_MAX_BYTES = 16 * 1024;
 
 export interface CodexAppServerClientOptions {

@@ -17,10 +17,10 @@ The Coder workspace needs:
 
 - Linux x86-64
 - Git, Nix, and the standard Linux `script` utility
-- Codex or Claude Code on `PATH`
+- Codex, Claude Code, or Pi on `PATH`
 
 The workspace template is expected to provide the agent CLI. T3 Coder does not install or
-authenticate Codex or Claude Code.
+authenticate Codex, Claude Code, or Pi.
 
 ## Start the local app
 

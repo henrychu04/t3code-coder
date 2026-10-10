@@ -271,7 +271,7 @@ export function detectSourceControlProviderFromRemoteUrl(
   };
 }
 
-/** Route project paths through provider lookup and full URLs directly to workspace Git. */
+/** Coder: GitLab-only clone sources. Route project paths through provider lookup and full URLs directly to workspace Git. */
 export function parseGitLabCloneSource(
   value: string,
 ): { readonly repository: string } | { readonly remoteUrl: string } | null {

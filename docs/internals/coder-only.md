@@ -115,7 +115,8 @@ Migration 049 stores manual active-thread order in the workspace. Initial thread
 512 KiB and older pages target 1 MiB by reducing the requested turn window;
 the newest requested turn is always retained, even when that one turn exceeds the target. Older
 pages use a unary RPC on the existing workspace connection. Review file snapshots remain bounded
-and immutable, use adaptive per-chunk gzip when it reduces bytes, and are fetched only when the diff
+and immutable (held in helper memory: at most 64 MiB and 256 entries, each expiring two minutes
+after its last read), use adaptive per-chunk gzip when it reduces bytes, and are fetched only when the diff
 renderer asks to expand omitted context; completed contents stay in a bounded browser cache.
 Opening a file above the expansion limit returns a typed `tooLarge` outcome, not an RPC failure, so
 the browser can keep the diff usable and render the limit notice without error-level diagnostics.
@@ -213,14 +214,15 @@ state remains in the workspace. Legacy screenshot artifacts also remain in the w
 the local gateway does not open or mirror its SQLite file or artifact directory.
 
 The helper starts workspace-installed provider executables directly with argument-array spawning.
-Codex uses its app-server protocol over stdin/stdout; Claude uses streaming JSON over stdin/stdout.
+Codex uses its app-server protocol over stdin/stdout; Claude uses streaming JSON over stdin/stdout;
+Pi uses its RPC mode (`pi --mode rpc`) over stdin/stdout.
 No provider executable or Anthropic Agent SDK runtime is bundled. The Agent SDK is a type-only
 development dependency; pnpm's `ignoredOptionalDependencies` keeps its bundled Claude Code
 binaries from ever installing. T3 does not inject its removed
 preview MCP server or a local-host transport into Codex. Codex authentication and other
 configuration remain workspace-owned and subject to workspace policy, including the MCP servers
-and app integrations each provider loads from workspace configuration, as upstream. Both provider
-connections remain owned by their workspace executables.
+and app integrations each provider loads from workspace configuration, as upstream. Each provider
+connection remains owned by its workspace executable.
 Native context compaction and asynchronous Codex questions use the same provider stdio sessions
 and orchestration event stream; they do not introduce another listener or transport. The upstream
 usage/cost dashboard is not included: remote pricing aggregation and user-configured CLI-proxy
@@ -282,7 +284,8 @@ The T3 gateway does not make external HTTP requests. The installed Coder CLI is 
 allowed to make a non-loopback workspace connection. Structured port-forward rules use foreground
 `coder port-forward` processes and bind only to IPv4 loopback; reverse forwarding, arbitrary bind
 addresses, and raw tunnel arguments are not exposed. The gateway may invoke OpenSSH `scp` for helper
-bootstrap and validated composer-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
+bootstrap and validated composer-attachment (image and file) uploads only, with `coder ssh --stdio`
+as its ProxyCommand.
 SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
 no network listener; Codex, Claude, and user-initiated terminal commands remain subject to workspace policy.
 
@@ -637,15 +640,22 @@ listed here is drift to remove rather than fork behavior to keep.
     Auto-accept edits), skill chips, and T3 tools. The extension speaks MCP over HTTP upstream;
     here `buildPiRpcLaunch` hands it the file bridge instead (`T3_TOOL_COMMAND` and
     `T3_TOOL_CATALOG`), and it registers the bridge catalog's tools under upstream's names,
-    running each call through the bridge command with its arguments on stdin. Upstream's other provider packages (Cursor, OpenCode, Muse, ACP, ACP
-    Registry, Grok, Antigravity) are not carried.
+    running each call through the bridge command with its arguments on stdin. The generated
+    extension source (`mcpExtensionSource.ts`) keeps upstream's HTTP MCP client beside the bridge
+    path, to stay close to upstream. It is dormant: every Coder MCP session carries a bridge
+    `toolCommand`, so `buildPiRpcLaunch` never sets `T3_MCP_URL` and the extension opens no HTTP
+    connection. Upstream's other provider packages
+    (Cursor, OpenCode, Muse, ACP, ACP Registry, Grok, Antigravity) are not carried. Their replay
+    fixtures (`orchestration-v2/testkit/fixtures/{grok_*,muse_*,opencode*,acp_elicitation}`) and
+    `testkit/DormantProviderCapabilities.ts` are kept on purpose: orchestrator tests replay them
+    to exercise those capability combinations, and no driver for them is registered.
   - Thread-title and branch-name generation use only Codex, Claude, or Pi models (Pi through
     upstream's ephemeral `pi --mode rpc --no-session` process). Text generation is
     upstream's except that Codex reads branch-name and title images through
     `PastedImageAttachments.ts`, skipping an unreadable image as upstream does.
-  - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
-    session stores through the helper. `server.ts` provides the scanner beside the helper RPC
-    layer, as upstream does beside its WebSocket layer.
+  - The helper serves upstream's agent-session scan and import RPCs, scanning only the workspace's
+    own Codex and Claude session stores. `server.ts` provides the scanner beside the helper RPC
+    layer, as upstream does beside its WebSocket layer. The browser does not offer the import yet.
   - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
     unavailable; providers authenticate through the workspace's API configuration.
     `CodexManagedRuntime` keeps only upstream's resolution contract.
@@ -843,7 +853,8 @@ listed here is drift to remove rather than fork behavior to keep.
     names, and search haystacks keep upstream's spelling, and the composer trigger stays `#`.
     Web `sourceControlPresentation.ts` treats a missing provider as GitLab rather than
     upstream's GitHub default. Text for paths GitLab never reaches (native stacks, stack merges,
-    `PullRequestsUnavailableState`'s GitHub link, GitHub-only setting rows) is upstream's.
+    `PullRequestsUnavailableState`'s GitHub link, GitHub-only setting rows) is upstream's. These
+    pure wording substitutions are not marked line by line; every other difference is.
 - **Source control and merge-request services.** `sourceControl/`, `pullRequest/`, and upstream's
   `@t3tools/source-control-core`, `-gitlab`, and `-testing` packages are upstream's, GitLab-only.
   Upstream's GitHub, Azure DevOps, Bitbucket, and Forgejo packages are not carried. Coder deltas,
@@ -858,7 +869,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - GitLab implements upstream's optional hover-preview, summary (batched through aliased GraphQL
     reads), and diff-file-contents reads, which upstream implements only for GitHub. Diff output
     is capped at 6 MiB to fit the gateway's 8 MiB message ceiling.
-  - GitLab fixes for bugs still in upstream (checked against upstream `main` 42c6623d49):
+  - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
+    b6aa268b12):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
@@ -939,6 +951,38 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Diff renderer patch.** `patches/@pierre%2Fdiffs@1.5.2.patch` is upstream's patch plus a guard
   that ignores loaded file contents unless the current diff is still the partial diff that asked
   for them.
+- **Browser shell and connections.** Each marked `Coder:`:
+  - `connection/platform.ts` registers only the configured Coder workspaces, reached through the
+    loopback gateway; removing a workspace from the Coder config clears its drafts and caches.
+    client-runtime's `connection/driver.ts`, `connection/index.ts`, `connection/wakeups.ts`, and
+    `platform/persistence.ts` drop upstream's multi-route checks, credential and profile stores,
+    saved targets, onboarding, GitHub routing, host updates, and the mobile `network-changed`
+    wakeup. `state/shell.ts` treats every workspace as remote (no primary local target).
+  - `lib/runtime.ts` has no primary-environment HTTP client, relay, DPoP, or tracer, and
+    `branding.ts` fixes the "T3 Coder" name without a desktop bridge or hosted channel.
+  - Upstream's desktop IPC contract (`contracts/ipc.ts`) is not carried; `localApiTypes.ts` keeps
+    its context-menu and confirm-dialog types, and `localApi.ts` opens only HTTP(S) links.
+  - client-runtime `errors/diagnostics.ts` is the `[t3-error]` DevTools reporting described in
+    [Authentication](#authentication).
+  - The server's `config.ts` is paths under the workspace state directory only.
+  - A thread whose workspace is not connected shows `WorkspaceConnectionStatus`; the
+    `/projects/$projectKey` redirect has no auth gate.
+  - Merge-request list preferences remember presentation controls only, never repository
+    identities or search text. Dropped folders are not uploaded (only files become composer
+    attachments). Custom themes have no Export (download) action. Project icons come from saved
+    metadata or monograms, without favicon reads. The worktree setup card says "Use project
+    checkout", because the checkout is in the workspace.
+- **Codex app-server package.** `packages/effect-codex-app-server` is upstream's, including
+  `scripts/generate.ts`, which regenerates `_generated/*` byte-for-byte. Coder deltas (marked
+  `Coder:`): a spawned Codex child may print up to 16 KiB of non-JSON lines before its first
+  protocol message, because managed workspace wrappers can emit a banner first; and the `probe`
+  script and its example are not carried, because they launch a local Codex.
+- **Build tooling.** `scripts/lib/third-party-licenses.ts` never fetches during a build: SPDX
+  texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
+  ones. `knip.jsonc` lists the upstream files whose exports are used only by surfaces the fork
+  does not carry, so `pnpm knip:check` still catches fork-introduced dead exports elsewhere.
+  `scripts/coder-live-test.mjs` and `scripts/coder-live-template/` run the real-Coder live
+  harness on macOS with Colima.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,

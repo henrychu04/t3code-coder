@@ -49,7 +49,7 @@ export function PullRequestLinkPreview({
   const [open, setOpen] = useState(false);
   const previewActionsRef = useRef<PreviewCardPrimitive.Root.Actions | null>(null);
   const [resolvingClick, setResolvingClick] = useState(false);
-  // GitLab previews come from the merge request read alone, without the detail view's merge
+  // Coder: GitLab previews come from the merge request read alone, without the detail view's merge
   // settings and write probe.
   const detailQuery = useEnvironmentQuery(
     open

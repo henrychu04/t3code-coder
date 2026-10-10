@@ -10,6 +10,7 @@ let cachedApi: LocalApi | undefined;
 function createBrowserLocalApi(): LocalApi {
   return {
     shell: {
+      // Coder: only HTTP(S) links open, in a new tab without opener or referrer.
       openExternal: async (url) => {
         let parsed: URL;
         try {

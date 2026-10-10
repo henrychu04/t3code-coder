@@ -1,3 +1,5 @@
+// Coder: project icons come from saved metadata or upstream's monograms; workspace favicon
+// image reads are not carried.
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ProjectIconOverride } from "@t3tools/contracts";
 import { FolderCodeIcon } from "lucide-react";

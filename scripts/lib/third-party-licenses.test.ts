@@ -10,7 +10,7 @@ import {
   generateThirdPartyLicenseManifest,
   THIRD_PARTY_LICENSES_FILE_NAME,
   thirdPartyLicensesPlugin,
-} from "../../apps/web/vite/third-party-licenses.ts";
+} from "./third-party-licenses.ts";
 
 const tempDirectories: string[] = [];
 
@@ -338,13 +338,10 @@ describe("third-party license generation", () => {
     const fixture = await createFixture();
     await NodeFSP.rm(NodePath.join(fixture.dependencyRoot, "LICENSE"));
     for (const licenseId of ["Apache-2.0", "BSD-3-Clause"]) {
-      await writeJson(
-        NodePath.join(
-          fixture.root,
-          `licenses/spdx/v3.28.0/${licenseId}.json`,
-        ),
-        { licenseId, licenseText: `${licenseId} terms` },
-      );
+      await writeJson(NodePath.join(fixture.root, `licenses/spdx/v3.28.0/${licenseId}.json`), {
+        licenseId,
+        licenseText: `${licenseId} terms`,
+      });
     }
     await writeJson(fixture.configFile, {
       packageOverrides: [

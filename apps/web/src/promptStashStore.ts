@@ -181,7 +181,7 @@ function persistEntries(entries: ReadonlyArray<PromptStashEntry>): {
 }
 
 /**
- * Coder keeps image bytes in browser memory only. The in-session entry keeps its images; the
+ * Coder: image bytes stay in browser memory only. The in-session entry keeps its images; the
  * saved copy lists them as dropped, so an entry restored after a reload says what is missing.
  */
 function withoutPersistedImageBytes(entry: PromptStashEntry): PromptStashEntry {

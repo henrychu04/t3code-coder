@@ -2,11 +2,11 @@ import { BookmarkIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
-import { Button } from "../ui/button";
+import { ComposerBanner } from "./ComposerBanner";
 
 /**
- * Bookmark control that shows the stash count and opens the stash menu. It
- * lives in the composer's bottom toolbar, next to the other controls.
+ * Bookmark tab that shows the stash count beside the composer's other attachments
+ * and opens the stash menu.
  *
  * On save the badge gives one quiet acknowledgement: it lifts to full
  * opacity and the count ticks over. `pulseKey` changes per stash, remounting
@@ -20,32 +20,47 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   onToggleMenu: () => void;
 }) {
   if (props.count === 0) return null;
-  return (
-    <Button
-      size="micro"
-      variant="ghost-muted"
-      data-prompt-stash-badge="true"
-      aria-label={`Stashed prompts: ${props.count}. Open stash.`}
-      aria-expanded={props.menuOpen}
+  const count = (
+    <ComposerBanner.Count
+      key={props.pulseKey}
       className={cn(
-        "shrink-0 gap-1 px-1.5",
-        (props.menuOpen || props.pulsing) && "[--control-icon-color:currentColor] text-foreground",
+        props.pulsing
+          ? "text-primary transition-[opacity,translate] duration-180 ease-out starting:translate-y-0.5 starting:opacity-0 motion-reduce:transition-none"
+          : "text-muted-foreground",
       )}
-      onPointerDown={(event) => event.preventDefault()}
-      onClick={props.onToggleMenu}
     >
-      <BookmarkIcon className="size-3 shrink-0" aria-hidden="true" />
-      <span
-        key={props.pulseKey}
+      {props.count}
+    </ComposerBanner.Count>
+  );
+
+  return (
+    <ComposerBanner.Root
+      density="comfortable"
+      width="content"
+      data-composer-shoulder-tab
+      className="ml-auto"
+    >
+      <ComposerBanner.Row
+        render={<button type="button" />}
+        data-prompt-stash-badge="true"
+        aria-label={`Stashed prompts: ${props.count}. Open stash.`}
+        aria-expanded={props.menuOpen}
         className={cn(
-          "text-[10px] font-medium leading-none tabular-nums",
-          props.pulsing
-            ? "animate-[prompt-stash-count-enter_180ms_ease-out_both] text-primary motion-reduce:animate-none"
-            : "text-muted-foreground",
+          "transition-colors duration-200",
+          props.menuOpen && "pointer-events-none",
+          props.menuOpen || props.pulsing
+            ? "text-foreground"
+            : "text-muted-foreground hover:text-foreground",
         )}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={props.onToggleMenu}
       >
-        {props.count}
-      </span>
-    </Button>
+        <ComposerBanner.Icon>
+          <BookmarkIcon />
+        </ComposerBanner.Icon>
+        <ComposerBanner.Content>Stash</ComposerBanner.Content>
+        <ComposerBanner.Actions>{count}</ComposerBanner.Actions>
+      </ComposerBanner.Row>
+    </ComposerBanner.Root>
   );
 });

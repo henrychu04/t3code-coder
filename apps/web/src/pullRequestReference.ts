@@ -1,3 +1,4 @@
+// Coder: GitLab is the only hosted provider; self-hosted GitLab hosts are accepted.
 const GITLAB_MERGE_REQUEST_URL_PATTERN =
   /^https?:\/\/[^/\s]+\/.+\/-\/merge_requests\/(\d+)(?:[/?#].*)?$/i;
 const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;

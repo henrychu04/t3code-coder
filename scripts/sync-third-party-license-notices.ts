@@ -2,7 +2,7 @@
 
 import * as NodePath from "node:path";
 
-import { syncThirdPartyLicenseNotices } from "../apps/web/vite/third-party-licenses.ts";
+import { syncThirdPartyLicenseNotices } from "./lib/third-party-licenses.ts";
 
 const configFile = NodePath.resolve("third-party-licenses.config.json");
 

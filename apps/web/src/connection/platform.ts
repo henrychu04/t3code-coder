@@ -1,3 +1,6 @@
+// Coder: connections come only from configured Coder workspaces through the loopback gateway.
+// Upstream's primary/bearer/relay/desktop/SSH registrations, descriptor fetches, and pairing are
+// absent; removing a workspace from the Coder config clears its drafts and cached data.
 import { PlatformConnectionSource, Persistence } from "@t3tools/client-runtime/platform";
 import {
   ConnectionRegistration,

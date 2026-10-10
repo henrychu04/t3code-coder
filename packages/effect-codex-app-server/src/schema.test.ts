@@ -22,7 +22,6 @@ it("keeps async questions in live notifications and thread history", () => {
       { title: "What should it be named?" },
     ],
   } as const;
-
   for (const schema of [
     CodexSchema.ServerNotification__ThreadItem,
     CodexSchema.V2ItemStartedNotification__ThreadItem,

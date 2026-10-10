@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// Preserve existing checkout links inside the shared settings layout.
+// Coder: no auth gate (Coder owns authentication). Preserve existing checkout links inside the
+// shared settings layout.
 export const Route = createFileRoute("/projects/$projectKey")({
   beforeLoad: ({ params }) => {
     throw redirect({

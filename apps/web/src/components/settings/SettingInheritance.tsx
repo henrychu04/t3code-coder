@@ -2,14 +2,16 @@ import {
   DEFAULT_SERVER_SETTINGS,
   PROJECT_FILE_BACKED_SETTINGS,
   type ProjectFileBackedSettingKey,
+  resolveEnvironmentMachineKind,
   type ServerSettings,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
-import { CheckIcon, LayersIcon, ServerIcon } from "lucide-react";
+import { CheckIcon, LayersIcon } from "lucide-react";
 import * as Equal from "effect/Equal";
 
 import { cn } from "../../lib/utils";
 import type { EnvironmentPresentation } from "../../state/environments";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { resolveEnvModeLabel, WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { Button, InlineButton } from "../ui/button";
@@ -190,6 +192,7 @@ export function SettingInheritance({
       {
         target,
         environment: { ...environment, serverConfig: environment.serverConfig },
+        machine: resolveEnvironmentMachineKind(environment.serverConfig),
         layers: settingInheritanceLayers(target, environment.serverConfig.settings, key),
       },
     ];
@@ -222,13 +225,13 @@ export function SettingInheritance({
       </Tooltip>
       <PopoverPopup align="start" width="md" padding="none">
         <div className="divide-y divide-border/60">
-          {chains.map(({ target, environment, layers }) => (
+          {chains.map(({ target, environment, machine, layers }) => (
             <section
               key={`${target.environmentId}:${target.projectId ?? ""}`}
               className="px-3 py-2.5"
             >
               <h4 className="flex items-center gap-1.5 pb-1.5 text-xs font-medium text-muted-foreground">
-                <ServerIcon aria-hidden className="size-3.5 shrink-0" />
+                <EnvironmentMachineIcon aria-hidden kind={machine} className="size-3.5 shrink-0" />
                 <span className="min-w-0 truncate">{target.label}</span>
               </h4>
               <ol role="list" className="text-sm">

@@ -47,7 +47,7 @@ export function PromptFontPreview() {
         skills={EMPTY_SKILLS}
         disabled={false}
         placeholder={DISCONNECTED_COMPOSER_PLACEHOLDER}
-        className="max-h-40 min-h-12"
+        className="max-h-42 min-h-14"
         onChange={onChange}
         onPaste={noop}
       />
@@ -81,12 +81,7 @@ function loadDiffPreviewHtml(theme: DiffThemeName): Promise<readonly string[]> {
     promise = preloadPatchFile({
       patch: DIFF_PREVIEW_PATCH,
       options: { diffStyle: "unified", theme, preferredHighlighter: PREFERRED_HIGHLIGHTER },
-    })
-      .then((results) => results.map((result) => result.prerenderedHTML))
-      .catch((error: unknown) => {
-        diffPreviewHtmlByTheme.delete(theme);
-        throw error;
-      });
+    }).then((results) => results.map((result) => result.prerenderedHTML));
     diffPreviewHtmlByTheme.set(theme, promise);
   }
   return promise;
@@ -131,27 +126,15 @@ export function CodeFontPreview() {
   const { resolvedTheme } = useTheme();
   const themeName = resolveDiffThemeName(resolvedTheme);
   const [htmlByFile, setHtmlByFile] = useState<readonly string[] | null>(null);
-  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    setFailed(false);
-    void loadDiffPreviewHtml(themeName)
-      .then((html) => {
-        if (!cancelled) setHtmlByFile(html);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
+    void loadDiffPreviewHtml(themeName).then((html) => {
+      if (!cancelled) setHtmlByFile(html);
+    });
     return () => {
       cancelled = true;
     };
   }, [themeName]);
-  if (failed)
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        Code preview unavailable. Reopen this preview to try again.
-      </p>
-    );
   if (htmlByFile === null) return null;
   return (
     <div className="mt-1 mb-2 space-y-2">
@@ -197,7 +180,6 @@ function previewTerminalFont(family: string, size: number): { family?: string; s
  * terminal drawer uses.
  */
 export function TerminalFontPreview({ family, size }: { family: string; size: number }) {
-  const [failed, setFailed] = useState(false);
   const mountRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<GhosttyTerminalSurface | null>(null);
   const fontRef = useRef({ family, size });
@@ -207,9 +189,7 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     const current = fontRef.current;
     if (current.family === family && current.size === size) return;
     fontRef.current = { family, size };
-    void surfaceRef.current
-      ?.setFont(previewTerminalFont(family, size))
-      .catch(() => setFailed(true));
+    void surfaceRef.current?.setFont(previewTerminalFont(family, size));
   }, [family, size]);
 
   // Re-read the terminal tokens on any theme change — switching between two
@@ -263,27 +243,18 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
       // Tab keeps walking the settings page instead of feeding the echo loop.
       beforeKey: (event) => event.key !== "Tab",
       onLinkActivate: noop,
-    })
-      .then(async (surface) => {
-        if (cancelled) {
-          surface.dispose();
-          return;
-        }
-        surfaceRef.current = surface;
-        // The theme and font may both have changed while the WASM surface loaded.
-        surface.setTheme(terminalThemeFromApp(mount));
-        const font = fontRef.current;
-        await surface.setFont(previewTerminalFont(font.family, font.size));
-        if (cancelled) return;
-        surface.write(TERMINAL_PREVIEW_TRANSCRIPT);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          surfaceRef.current?.dispose();
-          surfaceRef.current = null;
-          setFailed(true);
-        }
-      });
+    }).then((surface) => {
+      if (cancelled) {
+        surface.dispose();
+        return;
+      }
+      surfaceRef.current = surface;
+      // The theme and font may both have changed while the WASM surface loaded.
+      surface.setTheme(terminalThemeFromApp(mount));
+      const font = fontRef.current;
+      void surface.setFont(previewTerminalFont(font.family, font.size));
+      surface.write(TERMINAL_PREVIEW_TRANSCRIPT);
+    });
 
     return () => {
       cancelled = true;
@@ -297,12 +268,6 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
       ref={mountRef}
       className="relative mt-1 mb-2 h-52 overflow-hidden rounded-lg border border-border"
       aria-label="Terminal font preview"
-    >
-      {failed ? (
-        <p role="status" className="p-3 text-sm text-muted-foreground">
-          Terminal preview unavailable. Reopen this preview to try again.
-        </p>
-      ) : null}
-    </div>
+    />
   );
 }
