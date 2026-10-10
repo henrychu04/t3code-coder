@@ -64,6 +64,7 @@ import {
 } from "../ProviderUpdateLaunchNotification.logic";
 import { ProviderUpdatesAction } from "../ProviderUpdatesAction";
 import { Button } from "../ui/button";
+import { ImportAgentSessionsDialog } from "./ImportAgentSessionsDialog";
 import {
   Empty,
   EmptyContent,
@@ -463,6 +464,7 @@ export function EnvironmentProviderSettings({
   readonly readOnly?: boolean;
 }) {
   const settings = useEnvironmentSettings(environmentId);
+  const [isImportSessionsOpen, setIsImportSessionsOpen] = useState(false);
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const canRefreshProviders = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
   // Provider instances hold per-machine binaries, so this page always edits
@@ -993,6 +995,29 @@ export function EnvironmentProviderSettings({
           </div>
         </SettingsGroup>
       </SettingsSection>
+
+      {/* Coder: upstream offers this import only in its welcome wizard, which is not carried. */}
+      <SettingsSection title="History">
+        <SettingsRow
+          title="Import Claude Code and Codex history"
+          description="Add projects and conversations from Claude Code and Codex sessions in this workspace."
+          control={
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={readOnly}
+              onClick={() => setIsImportSessionsOpen(true)}
+            >
+              Import
+            </Button>
+          }
+        />
+      </SettingsSection>
+      <ImportAgentSessionsDialog
+        environmentId={environmentId}
+        open={isImportSessionsOpen}
+        onOpenChange={setIsImportSessionsOpen}
+      />
 
       {/* Coder: no usage-limit sources. */}
       <SettingsSection title="Advanced">

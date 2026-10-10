@@ -784,6 +784,7 @@ function BackgroundActivityAdvancedDialog({
 export function AppearanceSettingsPanel() {
   const {
     appearanceMode,
+    refreshTheme,
     resolvedTheme,
     setAppearanceMode,
     setTheme,
@@ -792,6 +793,7 @@ export function AppearanceSettingsPanel() {
     themeHalves,
   } = useTheme();
   const customThemes = useCustomThemes();
+  const [isImportThemeOpen, setIsImportThemeOpen] = useState(false);
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const environmentStageLabel = useEnvironmentStageLabel();
@@ -826,11 +828,14 @@ export function AppearanceSettingsPanel() {
             appearanceMode={appearanceMode}
             customThemes={customThemes}
             initialAppearance={resolvedTheme}
+            refreshTheme={refreshTheme}
+            isImportOpen={isImportThemeOpen}
             setAppearanceMode={setAppearanceMode}
             setTheme={setTheme}
             setThemeHalf={setThemeHalf}
             theme={theme}
             themeHalves={themeHalves}
+            onImportOpenChange={setIsImportThemeOpen}
           />
         </div>
       </SettingsSection>

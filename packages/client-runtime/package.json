@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./file-preview": {
+      "types": "./src/filePreview.ts",
+      "default": "./src/filePreview.ts"
+    },
     "./work-log/presentation": {
       "types": "./src/work-log/presentation.ts",
       "default": "./src/work-log/presentation.ts"

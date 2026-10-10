@@ -161,6 +161,10 @@ claim: shared provider protocols may still report subscription metadata.
     into the gateway's sandboxed shell page. The frame gets no camera,
     microphone, geolocation, or clipboard permission, and there is no `ui/download-file` or save
     action; links the app opens follow the Markdown link rule below.
+  - **Theme files.** Settings → Appearance may read T3 Code or VS Code theme JSON files that the
+    user picks, drops, or pastes (at most 256 KiB each) inside the browser and keep the parsed
+    themes as UI preferences in browser storage. The files never reach the gateway or workspace,
+    and themes have no export or download.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
 - Git and hosted source-control operations run only in the Linux workspace through the existing
   helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and
