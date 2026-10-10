@@ -564,8 +564,10 @@ listed here is drift to remove rather than fork behavior to keep.
   - No HTTP/WebSocket listener, auth/session scopes, pairing, relay, client-origin attribution,
     analytics, RPC metrics, or trace export. The helper's RPC server uses upstream's
     `WS_RPC_SERVER_OPTIONS`, so a handler defect fails only its own request rather than every
-    request on the stdio connection, and `observability/DefectReporter.ts` logs those defects to
-    the helper's stderr. `CoderRuntimeStartup` completes before the RPC
+    request on the stdio connection. `observability/DefectReporter.ts` logs those defects as
+    upstream does, and the helper sends Effect logs to stderr so they never reach the NDJSON
+    stdout. The launch discards that stderr (`2>/dev/null`, because Coder's remote PTY merges it
+    into stdout), so handler defects are not observable; T3 keeps no log file. `CoderRuntimeStartup` completes before the RPC
     layer is built, replacing upstream's startup command queue. Lifecycle welcome/ready events
     are synthesized from workspace projections rather than a startup publisher.
   - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
