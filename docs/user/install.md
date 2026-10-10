@@ -15,7 +15,7 @@ The local computer needs:
 The Coder workspace needs:
 
 - Linux x86-64
-- Git, Nix, `tar`, and the standard Linux `script` utility
+- Git, Nix, `tar`, `sha256sum`, `head`, and the standard Linux `script` utility
 - Codex, Claude Code, or Pi on `PATH`
 
 The workspace template is expected to provide the agent CLI. T3 Coder does not install or

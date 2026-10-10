@@ -52,6 +52,10 @@ export const REMOTE_WORKSPACE_PREFLIGHT_COMMAND = [
   `[ -x ${REMOTE_NODE_COMMAND} ] || fail "T3 Coder's Nix-provisioned Node.js runtime is not executable."`,
   `${REMOTE_NODE_VERSION_CHECK} || fail "T3 Coder requires Node.js 24 or newer from its Nix runtime."`,
   'command -v git >/dev/null 2>&1 || fail "T3 Coder requires Git."',
+  // The helper install streams a tar archive over `coder ssh` stdin and verifies it remotely.
+  'command -v tar >/dev/null 2>&1 || fail "T3 Coder requires tar to install its workspace helper."',
+  'command -v sha256sum >/dev/null 2>&1 || fail "T3 Coder requires sha256sum to verify its workspace helper."',
+  'command -v head >/dev/null 2>&1 || fail "T3 Coder requires head to receive transfers."',
   'command -v claude >/dev/null 2>&1 || command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1 || fail "T3 Coder requires Claude Code, Codex, or Pi in the workspace PATH."',
 ].join("; ");
 export function quotePosixShellArgument(value: string): string {

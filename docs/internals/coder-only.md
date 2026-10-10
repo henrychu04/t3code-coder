@@ -221,8 +221,8 @@ client is needed. The initial
 workspace target is Linux x86-64. The helper launch is one foreground `coder ssh` session that
 first runs the workspace preflight: it checks the remote OS and architecture, realizes a Node.js
 24 package from the workspace's configured `nixpkgs` only when that runtime is not already
-available, and checks Git, at least one of Claude Code, Codex, or Pi, and the workspace state
-directory. A failed check prints a `T3_CODER_PREFLIGHT_FAILED:` line, which the gateway reports.
+available, and checks Git, the transfer tools (`tar`, `sha256sum`, `head`), at least one of
+Claude Code, Codex, or Pi, and the workspace state directory. A failed check prints a `T3_CODER_PREFLIGHT_FAILED:` line, which the gateway reports.
 The preflight has its own five-minute budget; helper negotiation starts its 60-second budget only
 after the launch prints the ready sentinel. As upstream, server settings keep sensitive provider
 environment values out of `settings.json` in a `0700` secrets directory in that state directory;
