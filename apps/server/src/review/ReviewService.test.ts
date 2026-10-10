@@ -178,7 +178,7 @@ describe("ReviewService", () => {
         Effect.gen(function* () {
           const service = yield* ReviewService.ReviewService;
           return yield* service.getDiffPreview({ cwd });
-        }).pipe(Effect.provide(layer({ workspaceRoot, baseDir, projectRoots })));
+        }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, projectRoots })));
 
       assert.strictEqual((yield* review(projectRoot, [projectRoot])).cwd, projectRoot);
       assert.strictEqual((yield* review(projectChild, [projectRoot])).cwd, projectChild);
@@ -229,6 +229,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -292,6 +293,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -344,6 +346,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -417,6 +420,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -487,6 +491,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
