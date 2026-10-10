@@ -616,9 +616,9 @@ listed here is drift to remove rather than fork behavior to keep.
     - Preview, device, and attachment-upload toolkits are not carried.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
-    and WebP. Tool-result image bytes are omitted from persisted raw events
-    (`sanitizeCodexScreenshotImages` on Codex dynamic and MCP tool output, and
-    `omitClaudeToolResultBytes` in `ClaudeAdapterV2.ts`).
+    and WebP. Tool-result image bytes follow upstream: `stripUnservedToolOutputImageBytes` keeps
+    only the images a tool output serves (at most 8, each within the provider image limit) and
+    drops the rest.
   - `AttachmentClaims.ts` claims staged uploads as described in
     [Network and transfer constraints](#network-and-transfer-constraints): it reads each staged
     file once through a no-follow handle at exactly its declared size and type limit, rejects
@@ -684,9 +684,10 @@ listed here is drift to remove rather than fork behavior to keep.
   `frame-src 'self'`, and every other gateway response keeps `frame-ancestors 'none'`. The shell's
   load and the written document's load both count as the app's own; a third load means the app
   navigated away.
-- **Tool output images.** `turnItemOutputImages` lists a fetched item's images as upstream does,
-  but the inspector shows none: the adapters omit tool-result image bytes before persisting
-  (see Provider input), and upstream loads them through its signed asset route.
+- **Tool output images.** `turnItemOutputImages` lists a fetched item's images as upstream does.
+  The inspector reads each image by index from the stored item through `workspace.readTurnItemAsset`
+  into the shared bounded image store, in place of upstream's signed `tool-output-image` asset
+  URL.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported

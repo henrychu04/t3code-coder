@@ -8,6 +8,7 @@ import {
   TrimmedNonEmptyString,
   TurnItemId,
 } from "./baseSchemas.ts";
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./chatAttachment.ts";
 import { ProjectFilesOwnerFields } from "./project.ts";
 
 export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
@@ -139,16 +140,25 @@ export class ProjectImageReadError extends Schema.TaggedError<ProjectImageReadEr
 ) {}
 
 /**
- * Bytes a stored turn item names: its captured MCP App document. Upstream serves it through a
- * signed asset URL; the helper serves it as bounded stdio chunks instead.
+ * Bytes a stored turn item names: its captured MCP App document, or an image its tool returned
+ * inline, by order in the output. Upstream serves both through signed asset URLs; the helper
+ * serves them as bounded stdio chunks instead.
  */
-export const TurnItemAsset = Schema.Union([Schema.TaggedStruct("mcp-app-document", {})]);
+export const TurnItemAsset = Schema.Union([
+  Schema.TaggedStruct("mcp-app-document", {}),
+  Schema.TaggedStruct("tool-output-image", { index: NonNegativeInt }),
+]);
 export type TurnItemAsset = typeof TurnItemAsset.Type;
 
-/** An MCP App document's limit (`MCP_APP_MAX_HTML_BYTES` in shared). */
-export const MAX_TURN_ITEM_ASSET_BYTES = 5 * 1024 * 1024;
+/** The larger of an MCP App document (5 MiB) and a tool output image (a provider turn's image limit). */
+export const MAX_TURN_ITEM_ASSET_BYTES = PROVIDER_SEND_TURN_MAX_IMAGE_BYTES;
 
-export const TurnItemAssetMimeType = Schema.Literals(["text/html"]);
+export const TurnItemAssetMimeType = Schema.Literals([
+  "text/html",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
 export type TurnItemAssetMimeType = typeof TurnItemAssetMimeType.Type;
 
 export const TurnItemAssetReadInput = Schema.Struct({

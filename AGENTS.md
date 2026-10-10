@@ -144,6 +144,8 @@ claim: shared provider protocols may still report subscription metadata.
       Serve bounded chunks over helper stdio, with a file revision checked across chunks. Do not
       create artifact copies, source-path associations, turn capture budgets, or storage quotas.
       File changes are visible on a fresh read; moving or deleting a source may break its preview.
+    - Images a tool returned inline load by index from the stored turn item through the same
+      bounded helper read as MCP App documents.
     - Submitted thumbnails and environment images may load automatically near the viewport. Media
       links may open the gallery. Browser media bytes remain bounded and memory-only. External web
       images and videos load directly from their own host as on main; they never pass through the
