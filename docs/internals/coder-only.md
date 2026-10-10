@@ -392,20 +392,31 @@ listed here is drift to remove rather than fork behavior to keep.
   of `usePrimarySettingsAvailable` does not exist.
 - **Transport and RPC handlers.** `ws.ts`, `server.ts`, and `serverRuntimeStartup.ts` keep
   upstream's paths, and so do client-runtime's `threadSnapshotHttp.ts` and `shellSnapshotHttp.ts`,
-  whose loaders use helper stdio rather than HTTP. `ws.ts` follows upstream's handler and helper
-  order, using `CoderWsRpcGroup.toLayer` over the gateway's stdio bridge. Bootstrap preparation,
+  whose loaders use helper stdio rather than HTTP. `ws.ts` and `server.ts` are upstream's files
+  minus the cut surfaces, with the differences below marked in place; the fork's own handlers and
+  layers live in `coderWs.ts` and `coderServer.ts`. `ws.ts` keeps upstream's `layerWsRpc`,
+  handler order, and helper order, builds the upstream methods it carries over the gateway's
+  stdio bridge, and returns them merged with `coderWs.ts`'s handlers at one hook as
+  `CoderWsRpcGroup`. `server.ts` keeps upstream's declarations for the layers the helper uses and
+  exports them at one hook to `coderServer.ts`, whose `makeCoderRuntimeLayer` composes the helper
+  runtime: the Coder provider and orchestration layers, `CoderRuntimeStartup`, `StorageCleanup`,
+  the T3 tool bridge binding, and the RPC layer. In `server.ts`, settings also provide the secret
+  store, the VCS status broadcaster takes the demand-only background policy, and the terminal
+  shares its PTY adapter and process runner with no port scanner or native telemetry. Bootstrap preparation,
   setup activities, cancellation, archive cleanup, clone identity refresh, MR sync-key resolution,
   and `server:` command IDs follow upstream, including its behavior of preserving a worktree
   after a non-cancel bootstrap failure. Reapply only these differences, each marked `Coder:` in
   code (see [Runtime boundary](#runtime-boundary)):
   - No HTTP/WebSocket listener, auth/session scopes, pairing, relay, client-origin attribution,
-    analytics, RPC metrics, or trace export. The helper's RPC server uses upstream's
+    analytics, RPC metrics, or trace export; with no session scopes, scheduled task lists show
+    every webhook URL. Upstream's span annotations stay; with no tracer they export nothing. The helper's RPC server uses upstream's
     `WS_RPC_SERVER_OPTIONS`, so a handler defect fails only its own request rather than every
     request on the stdio connection. `observability/DefectReporter.ts` logs those defects as
     upstream does, and the helper sends Effect logs to stderr so they never reach the NDJSON
     stdout. The launch discards that stderr (`2>/dev/null`, because Coder's remote PTY merges it
     into stdout), so handler defects are not observable; T3 keeps no log file. `CoderRuntimeStartup` completes before the RPC
-    layer is built, replacing upstream's startup command queue. Lifecycle welcome/ready events
+    layer is built, replacing upstream's startup command queue, so commands, launches, and project
+    mutations run directly. Lifecycle welcome/ready events
     are synthesized from workspace projections rather than a startup publisher.
   - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
     remote open targets, telemetry, model-manifest refreshes, and usage-limit sources. A failed
@@ -422,8 +433,9 @@ listed here is drift to remove rather than fork behavior to keep.
     retain `targetBytes` budgeting and the newest requested turn. Shell and thread snapshots
     that exceed the stdio frame bound fail before transport encoding. Shell snapshot loading
     uses upstream's socket fallback because no HTTP shell loader exists.
-  - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials.
-    Thread MR links must belong to a known GitLab host.
+  - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials
+    (`withPullRequestViewer` is an identity in `ws.ts`). Thread MR links must belong to a known
+    GitLab host (`makeEnsureCoderPullRequestLink` in `coderWs.ts`).
   - Files listings, reads, writes, file creation, content search, and media reads verify the requesting thread's
     project root; Files listings, reads, writes, and media reads from a draft verify its named
     project's root or a worktree one of that project's threads owns (`draftProjectId`). `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
@@ -432,13 +444,15 @@ listed here is drift to remove rather than fork behavior to keep.
     `projects.createFile` serves upstream's proposed-plan "Save to workspace": it creates a new
     text file inside the verified root and never replaces an existing path, where upstream's
     `writeFile` overwrites. `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
-    error mapping.
-  - Coder-only methods remain beside their upstream neighbors: local ref status, managed
+    error mapping. `coderWs.ts` wraps `ws.ts`'s upstream Files list, read, and write handlers in
+    the root verification, so those handlers stay upstream's code.
+  - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
     branch/worktree rename with `moveWorktree`, write-access probing, chunked review files,
     bounded text/content/media, sent-file (`workspace.readAttachmentFile`), and legacy-artifact
     reads, new-file creation (`projects.createFile`), fixed project-config reads, workspace
-    directory listing, and merge-request diffs. The method set stays `CoderWsRpcGroup`;
-    unsupported upstream methods stay omitted.
+    directory listing, merge-request diffs, and upstream's HTTP bounded thread snapshot and
+    history page over stdio. The method set stays `CoderWsRpcGroup`; unsupported upstream methods
+    stay omitted.
 - **Provider and orchestration.** Upstream's orchestrator (`orchestration-v2/`: the orchestrator,
   effect worker, projection store, provider session manager, `ClaudeAdapterV2.ts`,
   `CodexAdapterV2.ts`, thread intake and launch, and attachment claims) runs in the helper with
@@ -476,7 +490,7 @@ listed here is drift to remove rather than fork behavior to keep.
       tools act only for a caller that owns a live run, as over MCP.
     - `mcp/bridge/T3ToolBridge.ts` runs upstream's toolkit handlers by name with the credential's
       `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
-      its inline budget into `bridge-job:` tasks. `server.ts` binds it once the orchestrator runs.
+      its inline budget into `bridge-job:` tasks. `coderServer.ts` binds it once the orchestrator runs.
     - `toolkits/pullRequests/handlers.ts` rejects merge requests outside the workspace's GitLab
       hosts. `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of
       upstream's `ServerEnvironment`.
@@ -522,7 +536,7 @@ listed here is drift to remove rather than fork behavior to keep.
     upstream's except that Codex reads branch-name and title images through
     `PastedImageAttachments.ts`, skipping an unreadable image as upstream does.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
-    session stores through the helper. `server.ts` provides the scanner beside the helper RPC
+    session stores through the helper. `coderServer.ts` provides the scanner beside the helper RPC
     layer, as upstream does beside its WebSocket layer. Upstream offers the import in its welcome
     wizard, which is not carried; `ImportAgentSessionsDialog.tsx` reuses that import step from
     **Settings → Providers → History** for the selected workspace.
@@ -953,6 +967,6 @@ Upstream's **Delete now** action and latest cleanup report travel over the helpe
 `server.runStorageCleanup` and `server.getStorageCleanupReport` RPCs; the report keeps only the
 latest sweep in helper memory. Each of these is marked `Coder:`:
 
-- `server.ts` builds `StorageCleanup.layer` after `CoderRuntimeStartup` completes, where upstream
+- `coderServer.ts` builds `StorageCleanup.layer` after `CoderRuntimeStartup` completes, where upstream
   parks its sweeps until server activation.
 - The report calls artifact rows "saved image artifacts".

@@ -65,11 +65,20 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
 
 ## 4. Conflict magnets
 
-- `apps/server/src/server.ts`: Coder layer wiring (`CoderRuntimeStartup`, the helper RPC layer,
-  the T3 tool bridge). Take upstream's new services and provides; wire them into the Coder layer
-  next to their upstream neighbors; drop HTTP, auth, preview, and telemetry layers.
-- `apps/server/src/ws.ts`: keep upstream's handler order and add upstream's new handlers; keep the
-  fork-only handlers marked `Coder:`. The served group is `CoderWsRpcGroup` (see section 5).
+- `apps/server/src/server.ts`: upstream's file minus the cut surfaces. Upstream's edits to the
+  carried declarations merge; keep their three `Coder:` changes and the export block. Conflicts
+  sit in regions the fork deletes (`layerMakeServer`, `layerRuntimeCoreDependencies*`, HTTP,
+  auth, preview, and telemetry layers): keep the deletion, and port a new service or provide the
+  helper needs into `coderServer.ts`'s matching composition (`CoderRuntimeCoreLive`,
+  `CoderRuntimeDependenciesLive`, `CoderRuntimeStartupLive`, or `makeCoderRuntimeLayer`). Export
+  a carried declaration only when `coderServer.ts` uses it.
+- `apps/server/src/ws.ts`: upstream's file minus the cut surfaces, with in-place `Coder:` changes;
+  the fork-only methods live in `coderWs.ts`, merged in at the `return` hook. Keep upstream's
+  handler and helper order and take upstream's handler edits. Its handler object is typed by
+  `CoderWsRpcGroup` minus `CODER_WS_METHODS`, so typecheck fails until every served upstream
+  method has a handler there (see section 5 for adding RPCs). `coderWs.ts` wraps upstream's Files
+  list, read, and write handlers rather than copying them, so their upstream edits apply as they
+  merge.
 - `apps/web/src/components/ChatView.tsx`: the fork removes preview, device, usage, self-update,
   local editor, feedback, and sidebar-drop code. Take upstream's hunk, then re-delete the hole and
   keep its `Coder:` comment.
@@ -147,8 +156,9 @@ In this order, fixing each failure before the next: `pnpm test:coder`; every typ
 
 ## 8. Land
 
-1. Commit the merge alone: `git commit` with the subject `Merge upstream/main <short sha> into
-   coder-only` and a body naming what upstream brought and how conflicts were resolved.
+1. Commit the merge alone: `git commit` with the subject
+   `Merge upstream/main <short sha> into coder-only` and a body naming what upstream brought and
+   how conflicts were resolved.
 2. Commit each Coder adaptation separately after it.
 3. `git push -u origin <branch>`.
 4. `gh pr create --base coder-only --head <branch>`. Always pass `--base coder-only`; never rely on
