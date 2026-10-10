@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 
-import { exceedsHelperStdioFrame, shouldUseBoundedThreadSnapshot } from "./ws.ts";
+import { exceedsHelperStdioFrame } from "./coderWs.ts";
+import { shouldUseBoundedThreadSnapshot } from "./ws.ts";
 
 it("keeps full thread snapshot fallback unless the client opts into bounded history", () => {
   assert.isFalse(shouldUseBoundedThreadSnapshot({}));
