@@ -18,6 +18,7 @@ import type { Duplex } from "node:stream";
 
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import * as FiberSet from "effect/FiberSet";
 import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
@@ -41,13 +42,13 @@ import {
   buildCoderStartWorkspaceInvocation,
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
-  buildCoderWorkspaceProbeInvocation,
   buildCoderWorkspaceStatsInvocation,
   REMOTE_HELPER_READY_SENTINEL,
   type CoderInvocation,
 } from "@t3tools/coder-cli/command";
 import {
   CoderHelperConnectionError,
+  CoderHelperInstallRequiredError,
   connectCoderHelper,
   type CoderHelperConnection,
   type CoderHelperExit,
@@ -58,6 +59,7 @@ import {
   type CoderPortForwardExit,
 } from "@t3tools/coder-cli/portForward";
 import {
+  hashCoderHelperBundle,
   installCoderHelperWithScp,
   uploadCoderComposerAttachmentWithScp,
 } from "@t3tools/coder-cli/scp";
@@ -82,13 +84,10 @@ export const CODER_GATEWAY_HOST = "127.0.0.1";
 const MAX_CONFIG_BODY_BYTES = 64 * 1024;
 const MAX_RPC_MESSAGE_BYTES = 8 * 1024 * 1024;
 const MAX_CODER_LIST_BYTES = 2 * 1024 * 1024;
-const MAX_CODER_PROBE_BYTES = 32 * 1024;
 const MAX_CODER_AUTH_STATUS_BYTES = 64 * 1024;
 const MAX_CODER_WORKSPACE_ACTION_BYTES = 64 * 1024;
 const MAX_CODER_WORKSPACE_STATS_BYTES = 64 * 1024;
 const MAX_WORKSPACE_DIAGNOSTIC_EVENTS = 24;
-const CODER_PREFLIGHT_SENTINEL = "T3_CODER_PREFLIGHT_OK";
-const DEFAULT_CODER_PROBE_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
 const DEFAULT_PROCESS_TERMINATION_GRACE_MS = 5_000;
 const DEFAULT_CODER_WORKSPACE_STATS_TIMEOUT_MS = 15_000;
@@ -451,49 +450,6 @@ function runCoderWorkspaceList(
   );
 }
 
-function runCoderWorkspaceProbe(
-  invocation: CoderInvocation,
-  timeoutMs = DEFAULT_CODER_PROBE_TIMEOUT_MS,
-): Effect.Effect<void, GatewayProcessError> {
-  return runGatewayProcess(invocation, {
-    label: "Coder workspace preflight",
-    timeoutMs,
-    maxStdoutBytes: MAX_CODER_PROBE_BYTES,
-    maxStderrBytes: MAX_CODER_PROBE_BYTES,
-    stdoutMode: "tail",
-    stderrMode: "tail",
-  }).pipe(
-    Effect.catchTag("GatewayProcessError", (error) =>
-      error.message === "Coder workspace preflight timed out."
-        ? Effect.fail(
-            new GatewayProcessError(
-              "Coder workspace preflight timed out. Check that the workspace is running. On first connection, its configured nixpkgs and Nix substituters must be reachable.",
-              { cause: error },
-            ),
-          )
-        : Effect.fail(error),
-    ),
-    Effect.flatMap((result) => {
-      const stdoutDetail = result.stdout.toString("utf8").trim();
-      const stderrDetail = result.stderr.toString("utf8").trim();
-      if (result.code !== 0) {
-        const detail = [stdoutDetail, stderrDetail].filter((value) => value.length > 0).join("\n");
-        return Effect.fail(
-          new GatewayProcessError(
-            `Coder workspace preflight exited with code ${String(result.code)} (${String(result.signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
-          ),
-        );
-      }
-      const lines = result.stdout.toString("utf8").split(/\r?\n/u);
-      return lines.includes(CODER_PREFLIGHT_SENTINEL)
-        ? Effect.void
-        : Effect.fail(
-            new GatewayProcessError("Coder workspace preflight did not complete successfully."),
-          );
-    }),
-  );
-}
-
 function runCoderWorkspaceAction(
   invocation: CoderInvocation,
   action: WorkspaceAction,
@@ -740,13 +696,14 @@ export interface LocalCoderGatewayEffectOptions {
   readonly portPath?: string;
   readonly connectHelper?: (
     invocation: CoderInvocation,
+    hooks: { readonly onReady: () => void },
   ) => Effect.Effect<CoderHelperConnection, unknown, Scope.Scope>;
   readonly helperBundlePath?: string;
   readonly staticDir?: string;
   readonly listWorkspaces?: (
     invocation: CoderInvocation,
   ) => Effect.Effect<readonly DiscoveredCoderWorkspace[], unknown>;
-  readonly probeWorkspace?: (invocation: CoderInvocation) => Effect.Effect<void, unknown>;
+  /** Time allowed for the workspace preflight that runs before the helper is ready. */
   readonly workspaceProbeTimeoutMs?: number;
   readonly coderAuthStatusTimeoutMs?: number;
   readonly checkAuthentication?: (
@@ -851,13 +808,27 @@ export function makeLocalCoderGateway(
     };
     const openHelper =
       options?.connectHelper ??
-      ((invocation: CoderInvocation) =>
-        connectCoderHelper(invocation, { readySentinel: REMOTE_HELPER_READY_SENTINEL }));
+      ((invocation: CoderInvocation, hooks: { readonly onReady: () => void }) =>
+        connectCoderHelper(invocation, {
+          readySentinel: REMOTE_HELPER_READY_SENTINEL,
+          onReady: hooks.onReady,
+          ...(options?.workspaceProbeTimeoutMs === undefined
+            ? {}
+            : { preflightTimeoutMs: options.workspaceProbeTimeoutMs }),
+        }));
     const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
-    const probeWorkspace =
-      options?.probeWorkspace ??
-      ((invocation: CoderInvocation) =>
-        runCoderWorkspaceProbe(invocation, options?.workspaceProbeTimeoutMs));
+    // The bundle is built before the gateway starts and does not change while it runs.
+    const helperBundlePath = options?.helperBundlePath;
+    const helperBundleHash =
+      helperBundlePath === undefined
+        ? Effect.succeed(undefined)
+        : yield* Effect.cached(
+            Effect.tryPromise({
+              try: () => hashCoderHelperBundle(helperBundlePath),
+              catch: (cause) =>
+                new Error("The local workspace helper bundle could not be read.", { cause }),
+            }),
+          );
     const checkAuthentication =
       options?.checkAuthentication ??
       ((invocation: CoderInvocation) =>
@@ -1033,38 +1004,66 @@ export function makeLocalCoderGateway(
             return yield* Effect.fail(new Error("Unknown Coder workspace."));
           }
           const invocationOptions = coderInvocationOptions(deployment.id);
-          yield* instrumentDiagnosticPhase(
-            workspaceId,
-            attempt,
-            "preflight",
-            probeWorkspace(
-              buildCoderWorkspaceProbeInvocation(deployment, workspace, invocationOptions),
-            ),
-          );
-          yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
-          if (options?.helperBundlePath !== undefined) {
-            yield* instrumentDiagnosticPhase(
-              workspaceId,
-              attempt,
-              "installing_helper",
-              installHelper({
-                deployment,
-                workspace,
-                helperBundlePath: options.helperBundlePath,
-                invocationOptions,
-              }),
-            );
-            yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
-          }
+          const expectedBundleHash = yield* helperBundleHash;
+          const helperInvocation = buildCoderHelperInvocation(deployment, workspace, {
+            ...invocationOptions,
+            ...(expectedBundleHash === undefined ? {} : { expectedBundleHash }),
+          });
           const connectionScope = yield* Scope.fork(gatewayScope, "sequential");
+          // One `coder ssh` runs the preflight, checks the installed bundle, and starts the helper.
+          // The preflight phase ends when the launch prints its ready sentinel.
+          const launchHelper = Effect.suspend(() => {
+            const finishPreflight = beginDiagnosticPhase(workspaceId, attempt, "preflight");
+            let finishNegotiation: ((status: "completed" | "failed") => void) | undefined;
+            const onReady = () => {
+              if (finishNegotiation !== undefined) return;
+              finishPreflight("completed");
+              finishNegotiation = beginDiagnosticPhase(workspaceId, attempt, "negotiating_helper");
+            };
+            return openHelper(helperInvocation, { onReady }).pipe(
+              Scope.provide(connectionScope),
+              Effect.onExit((exit) =>
+                Effect.sync(() => {
+                  if (Exit.isSuccess(exit)) onReady();
+                  if (finishNegotiation !== undefined) {
+                    finishNegotiation(Exit.isSuccess(exit) ? "completed" : "failed");
+                    return;
+                  }
+                  const installRequired = Exit.findErrorOption(exit).pipe(
+                    Option.exists((error) => error instanceof CoderHelperInstallRequiredError),
+                  );
+                  finishPreflight(installRequired ? "completed" : "failed");
+                }),
+              ),
+            );
+          });
           let acquired: CoderHelperConnection | undefined;
           return yield* Effect.gen(function* () {
-            const connection = yield* instrumentDiagnosticPhase(
-              workspaceId,
-              attempt,
-              "negotiating_helper",
-              openHelper(buildCoderHelperInvocation(deployment, workspace, invocationOptions)).pipe(
-                Scope.provide(connectionScope),
+            const connection = yield* launchHelper.pipe(
+              Effect.catchIf(
+                (error) =>
+                  error instanceof CoderHelperInstallRequiredError &&
+                  helperBundlePath !== undefined,
+                () =>
+                  Effect.gen(function* () {
+                    yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
+                    yield* instrumentDiagnosticPhase(
+                      workspaceId,
+                      attempt,
+                      "installing_helper",
+                      installHelper({
+                        deployment,
+                        workspace,
+                        helperBundlePath: helperBundlePath!,
+                        ...(expectedBundleHash === undefined
+                          ? {}
+                          : { bundleHash: expectedBundleHash }),
+                        invocationOptions,
+                      }),
+                    );
+                    yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
+                    return yield* launchHelper;
+                  }),
               ),
             );
             acquired = connection;
@@ -2466,6 +2465,18 @@ export function makeLocalCoderGateway(
                 webSocket.close(1013, "Workspace RPC session is unavailable.");
               }
             });
+            // Stop reading browser frames while the helper's stdin is backed up, so a slow helper
+            // pushes back on the browser instead of growing the gateway's write buffer.
+            let pausedForHelper = false;
+            const pauseWhileHelperDrains = () => {
+              if (pausedForHelper || !helper.needsDrain()) return;
+              pausedForHelper = true;
+              webSocket.pause();
+              void runPromise(helper.drained).finally(() => {
+                pausedForHelper = false;
+                if (webSocket.readyState === WebSocket.OPEN) webSocket.resume();
+              });
+            };
             webSocket.on("message", (data, isBinary) => {
               if (isBinary) {
                 webSocket.close(1003, "Text RPC messages required.");
@@ -2481,6 +2492,7 @@ export function makeLocalCoderGateway(
               }
               void sessionPromise
                 .then((session) => runPromise(session.receive(message)))
+                .then(pauseWhileHelperDrains)
                 .catch((cause) => {
                   if (webSocket.readyState === WebSocket.OPEN) {
                     const helperDisconnected =

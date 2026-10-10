@@ -4,6 +4,7 @@ import {
   type ChildProcessWithoutNullStreams,
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 import { ServerConfig, WS_METHODS, type ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -14,14 +15,24 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 
-import type { CoderInvocation } from "./command.ts";
+import {
+  REMOTE_HELPER_INSTALL_REQUIRED_SENTINEL,
+  REMOTE_PREFLIGHT_FAILED_PREFIX,
+  type CoderInvocation,
+} from "./command.ts";
 import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION, CoderHelperInfo } from "./rpc.ts";
 
 const MAX_HELPER_LINE_BYTES = 8 * 1024 * 1024;
 const MAX_HELPER_ERROR_BYTES = 32 * 1024;
 const MAX_HELPER_PREAMBLE_BYTES = 32 * 1024;
+const PREAMBLE_TAIL_CHARS = 2 * 1024;
 const DEFAULT_NEGOTIATION_TIMEOUT_MS = 60_000;
+// The first connection may provision Node.js through Nix before the helper is ready.
+const DEFAULT_PREFLIGHT_TIMEOUT_MS = 5 * 60_000;
+const PREFLIGHT_TIMEOUT_MESSAGE =
+  "Coder workspace preflight timed out. Check that the workspace is running. On first connection, its configured nixpkgs and Nix substituters must be reachable.";
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
+const NEGOTIATION_TIMEOUT_MESSAGE = "Timed out while negotiating with the Coder workspace helper.";
 
 export class CoderHelperConnectionError extends Error {
   readonly _tag = "CoderHelperConnectionError";
@@ -29,6 +40,16 @@ export class CoderHelperConnectionError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "CoderHelperConnectionError";
+  }
+}
+
+/** The workspace's installed helper is missing or differs from this gateway's bundle. */
+export class CoderHelperInstallRequiredError extends CoderHelperConnectionError {
+  readonly installRequired = true;
+
+  constructor() {
+    super("The workspace helper must be installed before it can start.");
+    this.name = "CoderHelperInstallRequiredError";
   }
 }
 
@@ -43,6 +64,13 @@ export interface CoderHelperConnection {
   readonly info: CoderHelperInfo & { readonly environment: ExecutionEnvironmentDescriptor };
   readonly closed: Effect.Effect<CoderHelperExit>;
   readonly sendRpc: (message: unknown) => Effect.Effect<void, CoderHelperConnectionError>;
+  /** Whether the helper's stdin has more queued than its buffer allows; see `drained`. */
+  readonly needsDrain: () => boolean;
+  /**
+   * Resolves once the helper's stdin has drained, immediately when nothing is queued. Callers that
+   * forward a stream of requests wait on it so a slow helper pushes back instead of buffering.
+   */
+  readonly drained: Effect.Effect<void>;
   readonly onRpcMessage: (listener: (message: unknown) => void) => () => void;
   readonly close: Effect.Effect<void>;
 }
@@ -203,6 +231,10 @@ export function connectCoderHelper(
   options?: {
     readonly environment?: NodeJS.ProcessEnv;
     readonly negotiationTimeoutMs?: number;
+    /** Time allowed before the ready sentinel, which covers the workspace preflight. */
+    readonly preflightTimeoutMs?: number;
+    /** Called once the launch prints the ready sentinel, after the workspace preflight. */
+    readonly onReady?: () => void;
     readonly readySentinel?: string;
     readonly spawnProcess?: SpawnCoderProcess;
     readonly terminationGraceMs?: number;
@@ -218,18 +250,25 @@ export function connectCoderHelper(
     );
     const { child } = process;
     const rpcListeners = new Set<(message: unknown) => void>();
+    const negotiationTimeoutMs = options?.negotiationTimeoutMs ?? DEFAULT_NEGOTIATION_TIMEOUT_MS;
     const runFork = yield* FiberSet.makeRuntime<never, void, never>();
 
     const connection = yield* Effect.callback<CoderHelperConnection, CoderHelperConnectionError>(
       (resume) => {
+        const decoder = new StringDecoder("utf8");
         let stdout = "";
+        let stdoutBytes = 0;
         let settled = false;
         let negotiated = false;
         let ready = options?.readySentinel === undefined;
         let preambleBytes = 0;
+        let preambleTail = "";
         let helperInfo: CoderHelperInfo | undefined;
 
+        let negotiationTimer: ReturnType<typeof setTimeout> | undefined;
         const cleanupNegotiation = () => {
+          if (negotiationTimer !== undefined) clearTimeout(negotiationTimer);
+          negotiationTimer = undefined;
           child.off("error", onError);
           child.off("exit", onEarlyExit);
         };
@@ -260,13 +299,47 @@ export function connectCoderHelper(
           runFork(terminateCoderProcess(process, terminationGraceMs));
         };
         const onError = (cause: Error) => fail(cause);
+        const startTimer = (timeoutMs: number, message: string) => {
+          if (negotiationTimer !== undefined) clearTimeout(negotiationTimer);
+          negotiationTimer = setTimeout(() => {
+            negotiationTimer = undefined;
+            terminateForFailure(message);
+          }, timeoutMs);
+        };
         const onEarlyExit = (code: number | null, signal: NodeJS.Signals | null) => {
-          const detail = process.stderr.trim();
-          fail(
-            new Error(
-              `Coder workspace helper exited before negotiation completed (code ${String(code)}, signal ${String(signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
-            ),
-          );
+          const report = () => {
+            if (!ready) {
+              // Coder's own failures (and login-shell errors) print before the ready sentinel.
+              const detail = [
+                `${preambleTail}${stdout.slice(0, PREAMBLE_TAIL_CHARS)}`.trim(),
+                process.stderr.trim(),
+              ]
+                .filter((value) => value.length > 0)
+                .join("\n");
+              fail(
+                new Error(
+                  `Coder workspace preflight exited with code ${String(code)} (${String(signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
+                ),
+              );
+              return;
+            }
+            const detail = process.stderr.trim();
+            fail(
+              new Error(
+                `Coder workspace helper exited before negotiation completed (code ${String(code)}, signal ${String(signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
+              ),
+            );
+          };
+          // Output written just before exit can still be in the pipe; read it first.
+          if (child.stdout.readableEnded) {
+            report();
+            return;
+          }
+          const timer = setTimeout(report, 200);
+          child.stdout.once("end", () => {
+            clearTimeout(timer);
+            report();
+          });
         };
         const writeInfoRequest = () => {
           child.stdin.write(
@@ -280,27 +353,52 @@ export function connectCoderHelper(
           );
         };
         const onStdout = (chunk: Buffer) => {
-          stdout += chunk.toString("utf8");
-          if (Buffer.byteLength(stdout, "utf8") > MAX_HELPER_LINE_BYTES) {
-            terminateForFailure(
-              negotiated
-                ? "Coder helper emitted an oversized RPC message."
-                : "Coder helper negotiation response is too large.",
-            );
-            return;
-          }
-          let newline = stdout.indexOf("\n");
+          // Only the new text can hold a newline, and the byte count is kept incrementally, so a
+          // large frame arriving in many chunks costs linear time.
+          const scanFrom = stdout.length;
+          stdout += decoder.write(chunk);
+          stdoutBytes += chunk.byteLength;
+          let newline = stdout.indexOf("\n", scanFrom);
           while (newline !== -1) {
             const line = stdout.slice(0, newline);
             stdout = stdout.slice(newline + 1);
+            const lineBytes = Buffer.byteLength(line, "utf8") + 1;
+            stdoutBytes = Math.max(0, stdoutBytes - lineBytes);
+            if (lineBytes > MAX_HELPER_LINE_BYTES) {
+              terminateForFailure(
+                negotiated
+                  ? "Coder helper emitted an oversized RPC message."
+                  : "Coder helper negotiation response is too large.",
+              );
+              return;
+            }
             if (!ready) {
-              preambleBytes += Buffer.byteLength(line, "utf8") + 1;
+              preambleBytes += lineBytes;
               if (preambleBytes > MAX_HELPER_PREAMBLE_BYTES) {
                 terminateForFailure("Coder helper readiness preamble is too large.");
                 return;
               }
+              const preambleLine = line.trim();
+              if (preambleLine.startsWith(REMOTE_PREFLIGHT_FAILED_PREFIX)) {
+                terminateForFailure(
+                  preambleLine.slice(REMOTE_PREFLIGHT_FAILED_PREFIX.length).slice(0, 500),
+                );
+                return;
+              }
+              if (preambleLine === REMOTE_HELPER_INSTALL_REQUIRED_SENTINEL) {
+                terminateForFailure(
+                  "The workspace helper must be installed before it can start.",
+                  new CoderHelperInstallRequiredError(),
+                );
+                return;
+              }
+              if (line.trimEnd() !== options?.readySentinel) {
+                preambleTail = `${preambleTail}${preambleLine}\n`.slice(-PREAMBLE_TAIL_CHARS);
+              }
               if (line.trimEnd() === options?.readySentinel) {
                 ready = true;
+                options?.onReady?.();
+                startTimer(negotiationTimeoutMs, NEGOTIATION_TIMEOUT_MESSAGE);
                 writeInfoRequest();
               }
               newline = stdout.indexOf("\n");
@@ -377,6 +475,34 @@ export function connectCoderHelper(
                             { cause },
                           ),
                       }),
+                    needsDrain: () =>
+                      child.stdin.writableNeedDrain &&
+                      !child.stdin.destroyed &&
+                      !child.stdin.writableEnded,
+                    drained: Effect.callback<void>((resumeWritable) => {
+                      if (
+                        !child.stdin.writableNeedDrain ||
+                        child.stdin.destroyed ||
+                        child.stdin.writableEnded
+                      ) {
+                        resumeWritable(Effect.void);
+                        return;
+                      }
+                      const done = () => {
+                        child.stdin.off("drain", done);
+                        child.stdin.off("close", done);
+                        child.stdin.off("error", done);
+                        resumeWritable(Effect.void);
+                      };
+                      child.stdin.once("drain", done);
+                      child.stdin.once("close", done);
+                      child.stdin.once("error", done);
+                      return Effect.sync(() => {
+                        child.stdin.off("drain", done);
+                        child.stdin.off("close", done);
+                        child.stdin.off("error", done);
+                      });
+                    }),
                     onRpcMessage: (listener) => {
                       rpcListeners.add(listener);
                       return () => rpcListeners.delete(listener);
@@ -402,6 +528,13 @@ export function connectCoderHelper(
             }
             newline = stdout.indexOf("\n");
           }
+          if (stdoutBytes > MAX_HELPER_LINE_BYTES) {
+            terminateForFailure(
+              negotiated
+                ? "Coder helper emitted an oversized RPC message."
+                : "Coder helper negotiation response is too large.",
+            );
+          }
         };
         const onStdinError = (cause: Error) => {
           terminateForFailure("Coder workspace helper stdin failed.", cause);
@@ -411,7 +544,15 @@ export function connectCoderHelper(
         child.once("exit", onEarlyExit);
         child.stdin.on("error", onStdinError);
         child.stdout.on("data", onStdout);
-        if (ready) writeInfoRequest();
+        if (ready) {
+          startTimer(negotiationTimeoutMs, NEGOTIATION_TIMEOUT_MESSAGE);
+          writeInfoRequest();
+        } else {
+          startTimer(
+            options?.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
+            PREFLIGHT_TIMEOUT_MESSAGE,
+          );
+        }
 
         return Effect.sync(() => {
           cleanupNegotiation();
@@ -419,16 +560,6 @@ export function connectCoderHelper(
           child.stdout.off("data", onStdout);
         });
       },
-    ).pipe(
-      Effect.timeoutOrElse({
-        duration: options?.negotiationTimeoutMs ?? DEFAULT_NEGOTIATION_TIMEOUT_MS,
-        orElse: () =>
-          Effect.fail(
-            new CoderHelperConnectionError(
-              "Timed out while negotiating with the Coder workspace helper.",
-            ),
-          ),
-      }),
     );
 
     yield* Effect.addFinalizer(() =>

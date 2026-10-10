@@ -26,9 +26,9 @@ import {
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
   buildCoderWorkspaceStatsInvocation,
-  quotePosixShellArgument,
-  REMOTE_WORKSPACE_PROBE_COMMAND,
 } from "@t3tools/coder-cli/command";
+import { CoderHelperInstallRequiredError } from "@t3tools/coder-cli/helperConnection";
+import { hashCoderHelperBundle } from "@t3tools/coder-cli/scp";
 import {
   CODER_GATEWAY_HOST,
   makeLocalCoderGateway,
@@ -542,7 +542,6 @@ describe("local Coder gateway", () => {
     let failHelperClose = false;
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => ({
         info: helperInfo,
         closed,
@@ -1086,7 +1085,6 @@ setTimeout(() => process.exit(0), 100);
     const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
       closeConnection = resolve;
     });
-    let receivedProbeArgs: readonly string[] = [];
     let receivedHelperArgs: readonly string[] = [];
     const lifecycle: string[] = [];
     const connection: CoderHelperConnection = {
@@ -1098,10 +1096,6 @@ setTimeout(() => process.exit(0), 100);
     };
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async (invocation) => {
-        lifecycle.push("probe");
-        receivedProbeArgs = invocation.args;
-      },
       connectHelper: async (invocation) => {
         lifecycle.push("connect");
         receivedHelperArgs = invocation.args;
@@ -1135,21 +1129,8 @@ setTimeout(() => process.exit(0), 100);
     });
     strictEqual(connected.statusCode, 200);
     strictEqual(JSON.parse(connected.body).info.platform, "linux");
-    deepStrictEqual(lifecycle, ["probe", "connect"]);
-    deepStrictEqual(receivedProbeArgs, [
-      "--global-config",
-      NodePath.join(directory, "coder-profiles", "goldman"),
-      "--no-version-warning",
-      "--url",
-      "https://coder.example.gs.com",
-      "ssh",
-      "henry/project-one",
-      "--",
-      "sh",
-      "-l",
-      "-c",
-      quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
-    ]);
+    // The helper launch runs the preflight itself, so one Coder SSH session connects.
+    deepStrictEqual(lifecycle, ["connect"]);
     deepStrictEqual(
       receivedHelperArgs,
       buildCoderHelperInvocation(
@@ -1169,6 +1150,105 @@ setTimeout(() => process.exit(0), 100);
     );
   });
 
+  it("installs the helper only when the workspace bundle differs, then relaunches", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const helperBundlePath = NodePath.join(directory, "workspace-helper");
+    await NodeFS.mkdir(helperBundlePath);
+    await NodeFS.writeFile(NodePath.join(helperBundlePath, "index.mjs"), "export {};\n");
+    const bundleHash = await hashCoderHelperBundle(helperBundlePath);
+    let installed = false;
+    const launches: string[] = [];
+    const installs: Array<string | undefined> = [];
+    const closers: Array<() => void> = [];
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      helperBundlePath,
+      installHelper: async (input) => {
+        installs.push(input.bundleHash);
+        installed = true;
+      },
+      connectHelper: async (invocation, hooks) => {
+        launches.push(invocation.args.at(-1)!);
+        if (!installed) throw new CoderHelperInstallRequiredError();
+        hooks.onReady();
+        let close: (() => void) | undefined;
+        const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
+          close = () => resolve({ code: 130, signal: null, expected: true });
+        });
+        closers.push(() => close?.());
+        return {
+          info: helperInfo,
+          closed,
+          sendRpc: () => undefined,
+          onRpcMessage: () => () => undefined,
+          close: () => close?.(),
+        };
+      },
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+    const connect = () =>
+      request({
+        url: `${gateway.url}/api/workspaces/project-one/connection`,
+        method: "POST",
+        headers: { Origin: gateway.url },
+      });
+
+    strictEqual((await connect()).statusCode, 200);
+    deepStrictEqual(installs, [bundleHash]);
+    strictEqual(launches.length, 2);
+    strictEqual(launches[0], launches[1]);
+    strictEqual(launches[0]!.includes(bundleHash), true);
+    const diagnostics = JSON.parse(
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/diagnostics`,
+          method: "GET",
+          headers: { Origin: gateway.url },
+        })
+      ).body,
+    ) as { events: Array<{ phase: string; status: string }> };
+    deepStrictEqual(
+      diagnostics.events.map((event) => `${event.phase}:${event.status}`),
+      [
+        "preflight:completed",
+        "installing_helper:completed",
+        "preflight:completed",
+        "negotiating_helper:completed",
+        "connected:completed",
+      ],
+    );
+
+    // A current workspace connects with one launch and no transfer.
+    await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "DELETE",
+      headers: { Origin: gateway.url },
+    });
+    for (const close of closers) close();
+    strictEqual((await connect()).statusCode, 200);
+    deepStrictEqual(installs, [bundleHash]);
+    strictEqual(launches.length, 3);
+  });
+
   it("samples workspace resource usage only while the helper is connected", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);
@@ -1185,7 +1265,6 @@ setTimeout(() => process.exit(0), 100);
     };
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => ({
         info: helperInfo,
         closed,
@@ -1309,7 +1388,7 @@ setTimeout(() => process.exit(0), 100);
     );
   });
 
-  it("allows verbose preflight output while retaining the final success marker", async () => {
+  it("reports a preflight failure marker from a verbose launch", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);
     const configPath = NodePath.join(directory, "config.json");
@@ -1319,26 +1398,13 @@ setTimeout(() => process.exit(0), 100);
       [
         "#!/usr/bin/env node",
         'process.stderr.write("x".repeat(64 * 1024));',
-        'process.stdout.write("T3_CODER_PREFLIGHT_OK\\n");',
+        'process.stdout.write("Welcome to the workspace\\r\\n");',
+        'process.stdout.write("T3_CODER_PREFLIGHT_FAILED: T3 Coder requires Git.\\r\\n");',
+        "setTimeout(() => process.exit(1), 50);",
       ].join("\n"),
       { mode: 0o700 },
     );
-    let closeConnection:
-      | ((exit: { code: number; signal: null; expected: true }) => void)
-      | undefined;
-    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
-      closeConnection = resolve;
-    });
-    const gateway = await startLocalCoderGateway({
-      configPath,
-      connectHelper: async () => ({
-        info: helperInfo,
-        closed,
-        sendRpc: () => undefined,
-        onRpcMessage: () => () => undefined,
-        close: () => closeConnection?.({ code: 130, signal: null, expected: true }),
-      }),
-    });
+    const gateway = await startLocalCoderGateway({ configPath });
     closeGateway = gateway.close;
     await request({
       url: `${gateway.url}/api/config`,
@@ -1370,7 +1436,8 @@ setTimeout(() => process.exit(0), 100);
       method: "POST",
       headers: { Origin: gateway.url },
     });
-    strictEqual(response.statusCode, 200);
+    strictEqual(response.statusCode, 502);
+    strictEqual(response.body, "T3 Coder requires Git.");
   });
 
   it("times out when the remote workspace preflight stops responding", async () => {
@@ -1522,7 +1589,6 @@ setTimeout(() => process.exit(0), 100);
     });
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => ({
         info: helperInfo,
         closed,
@@ -1640,7 +1706,6 @@ setTimeout(() => process.exit(0), 100);
     const uploads: Array<{ readonly extension: string; readonly bytes: Buffer }> = [];
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => ({
         info: helperInfo,
         closed: new Promise(() => undefined),
@@ -1739,7 +1804,6 @@ setTimeout(() => process.exit(0), 100);
       const gateway = await Effect.runPromise(
         makeLocalCoderGateway({
           configPath,
-          probeWorkspace: () => Effect.void,
           connectHelper: () =>
             Effect.succeed({
               info: helperInfo,
@@ -1747,6 +1811,8 @@ setTimeout(() => process.exit(0), 100);
               close: Effect.void,
               sendRpc: () => Effect.void,
               onRpcMessage: () => () => undefined,
+              needsDrain: () => false,
+              drained: Effect.void,
             }),
           uploadComposerAttachment: (input) =>
             Effect.acquireUseRelease(
@@ -1821,7 +1887,6 @@ setTimeout(() => process.exit(0), 100);
     };
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => connection,
     });
     closeGateway = gateway.close;
@@ -1945,12 +2010,8 @@ setTimeout(() => process.exit(0), 100);
       (exit: { code: number; signal: null; expected: boolean }) => void
     > = [];
     let connectCount = 0;
-    let probeCount = 0;
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => {
-        probeCount += 1;
-      },
       connectHelper: async () => {
         connectCount += 1;
         let exitConnection:
@@ -1994,7 +2055,6 @@ setTimeout(() => process.exit(0), 100);
     });
     await once(firstSocket, "open");
     strictEqual(connectCount, 1);
-    strictEqual(probeCount, 1);
 
     const firstSocketClosed = once(firstSocket, "close");
     exitConnections[0]?.({ code: 1, signal: null, expected: false });
@@ -2005,7 +2065,6 @@ setTimeout(() => process.exit(0), 100);
     });
     await once(secondSocket, "open");
     strictEqual(connectCount, 2);
-    strictEqual(probeCount, 2);
     const secondSocketClosed = once(secondSocket, "close");
     secondSocket.close();
     await secondSocketClosed;
@@ -2036,7 +2095,6 @@ setTimeout(() => process.exit(0), 100);
     };
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => {
         markConnectStarted?.();
         await connectGate;
@@ -2114,7 +2172,6 @@ setTimeout(() => process.exit(0), 100);
     };
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => {
         markConnectStarted?.();
         return await new Promise<CoderHelperConnection>((resolve) => {
@@ -2189,7 +2246,6 @@ setTimeout(() => process.exit(0), 100);
     const gateway = await Effect.runPromise(
       makeLocalCoderGateway({
         configPath,
-        probeWorkspace: () => Effect.void,
         connectHelper: () =>
           Effect.acquireRelease(
             Effect.sync(() => {
@@ -2254,7 +2310,6 @@ setTimeout(() => process.exit(0), 100);
     const gateway = await Effect.runPromise(
       makeLocalCoderGateway({
         configPath,
-        probeWorkspace: () => Effect.void,
         connectHelper: () =>
           Effect.acquireRelease(
             Effect.succeed({
@@ -2262,6 +2317,8 @@ setTimeout(() => process.exit(0), 100);
               closed: Effect.never,
               sendRpc: () => Effect.void,
               onRpcMessage: () => () => undefined,
+              needsDrain: () => false,
+              drained: Effect.void,
               close: Effect.void,
             }),
             () =>
@@ -2313,7 +2370,6 @@ setTimeout(() => process.exit(0), 100);
     });
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => ({
         info: helperInfo,
         closed,
@@ -2388,7 +2444,6 @@ setTimeout(() => process.exit(0), 100);
     });
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => ({
         info: helperInfo,
         closed,
@@ -2455,7 +2510,6 @@ setTimeout(() => process.exit(0), 100);
     });
     const gateway = await startLocalCoderGateway({
       configPath,
-      probeWorkspace: async () => undefined,
       connectHelper: async () => ({
         info: helperInfo,
         closed,

@@ -49,6 +49,8 @@ for (const kind of ["forward", "helper"] as const) {
               close,
               sendRpc: () => Effect.void,
               onRpcMessage: () => () => undefined,
+              needsDrain: () => false,
+              drained: Effect.void,
               info: {
                 protocolVersion: 1,
                 platform: "linux",
@@ -74,7 +76,6 @@ for (const kind of ["forward", "helper"] as const) {
         makeLocalCoderGateway({
           configPath,
           listWorkspaces: () => Effect.succeed([]),
-          probeWorkspace: () => Effect.void,
           restartWorkspace: () => Effect.void,
           ...(kind === "forward" ? { connectPortForward: connect } : { connectHelper: connect }),
         }).pipe(Scope.provide(scope)),

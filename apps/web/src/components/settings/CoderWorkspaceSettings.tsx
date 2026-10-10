@@ -41,7 +41,9 @@ export function CoderWorkspaceSettings({
   const operation = useSettingsOperation();
   const poll = useSettingsPolling({
     identity: JSON.stringify(config.workspaces),
-    intervalMs: 5_000,
+    // Read status when the panel opens and after actions. Ongoing updates come from the
+    // bootstrap's shared refresh (once a minute, faster while a workspace is changing).
+    intervalMs: null,
     enabled: config.workspaces.length > 0,
     load: refreshWorkspaceRuntime,
   });

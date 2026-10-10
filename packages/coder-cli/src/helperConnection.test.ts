@@ -20,6 +20,7 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import {
+  CoderHelperInstallRequiredError,
   connectCoderHelper as connectCoderHelperEffect,
   isExpectedCoderHelperExit,
 } from "./helperConnection.ts";
@@ -201,6 +202,114 @@ describe("Coder helper connection", () => {
     strictEqual(connection.info.protocolVersion, CODER_HELPER_PROTOCOL_VERSION);
     connection.close();
     strictEqual((await connection.closed).expected, true);
+  });
+
+  it("reports the workspace preflight failure the launch prints", async () => {
+    const fake = makeFakeHelperProcess();
+    const connectionPromise = connectCoderHelper(
+      { executable: "coder", args: [] },
+      { readySentinel: "T3_CODER_HELPER_READY", spawnProcess: () => fake.child },
+    );
+    fake.stdout.write("motd\r\nT3_CODER_PREFLIGHT_FAILED: T3 Coder requires Git.\r\n");
+    await rejects(connectionPromise, /^CoderHelperConnectionError: T3 Coder requires Git\.$/u);
+    deepStrictEqual(fake.killSignals, ["SIGTERM"]);
+  });
+
+  it("asks for a helper install when the installed bundle differs", async () => {
+    const fake = makeFakeHelperProcess();
+    const connectionPromise = connectCoderHelper(
+      { executable: "coder", args: [] },
+      { readySentinel: "T3_CODER_HELPER_READY", spawnProcess: () => fake.child },
+    );
+    fake.stdout.write("T3_CODER_HELPER_INSTALL_REQUIRED\n");
+    await rejects(connectionPromise, (error) => error instanceof CoderHelperInstallRequiredError);
+  });
+
+  it("times the preflight separately from helper negotiation", async () => {
+    const slowPreflight = makeFakeHelperProcess();
+    await rejects(
+      connectCoderHelper(
+        { executable: "coder", args: [] },
+        {
+          readySentinel: "T3_CODER_HELPER_READY",
+          spawnProcess: () => slowPreflight.child,
+          preflightTimeoutMs: 20,
+          negotiationTimeoutMs: 1_000,
+        },
+      ),
+      /preflight timed out/u,
+    );
+
+    const fake = makeFakeHelperProcess();
+    let readyCalls = 0;
+    const connectionPromise = connectCoderHelper(
+      { executable: "coder", args: [] },
+      {
+        readySentinel: "T3_CODER_HELPER_READY",
+        spawnProcess: () => fake.child,
+        preflightTimeoutMs: 1_000,
+        negotiationTimeoutMs: 1_000,
+        onReady: () => {
+          readyCalls += 1;
+        },
+      },
+    );
+    // A preflight slower than the negotiation timeout is fine while within its own budget.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    fake.stdout.write("T3_CODER_HELPER_READY\n");
+    const connection = await connectionPromise;
+    strictEqual(readyCalls, 1);
+    connection.close();
+    await connection.closed;
+  });
+
+  it("reassembles a large frame split across chunks and multibyte boundaries", async () => {
+    const fake = makeFakeHelperProcess();
+    const connection = await connectCoderHelper(
+      { executable: "coder", args: [] },
+      { spawnProcess: () => fake.child, negotiationTimeoutMs: 1_000 },
+    );
+    const received = new Promise<unknown>((resolve) => connection.onRpcMessage(resolve));
+    const value = `${"é".repeat(2 * 1024 * 1024)}🚀`;
+    const frame = Buffer.from(`${JSON.stringify({ _tag: "Chunk", value })}\n`, "utf8");
+    // 4 KiB chunks start inside a multibyte character every time.
+    for (let offset = 0; offset < frame.byteLength; offset += 4097) {
+      fake.stdout.write(frame.subarray(offset, offset + 4097));
+    }
+    deepStrictEqual(await received, { _tag: "Chunk", value });
+    connection.close();
+    strictEqual((await connection.closed).expected, true);
+  });
+
+  it("reports stdin backpressure until the helper drains its input", async () => {
+    const fake = makeFakeHelperProcess();
+    const scope = await Effect.runPromise(Scope.make("sequential"));
+    const connection = await Effect.runPromise(
+      connectCoderHelperEffect(
+        { executable: "coder", args: [] },
+        { spawnProcess: () => fake.child, negotiationTimeoutMs: 1_000 },
+      ).pipe(Scope.provide(scope)),
+    );
+    try {
+      await Effect.runPromise(connection.drained);
+      strictEqual(connection.needsDrain(), false);
+      fake.stdin.pause();
+      await Effect.runPromise(
+        connection.sendRpc({ _tag: "Ping", padding: "x".repeat(256 * 1024) }),
+      );
+      let drained = false;
+      strictEqual(connection.needsDrain(), true);
+      const writable = Effect.runPromise(connection.drained).then(() => {
+        drained = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      strictEqual(drained, false);
+      fake.stdin.resume();
+      await writable;
+      strictEqual(drained, true);
+    } finally {
+      await Effect.runPromise(Scope.close(scope, Exit.void));
+    }
   });
 
   it("treats Effect's stdin interruption exit as a normal disconnect", () => {

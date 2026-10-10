@@ -95,7 +95,7 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
       : {}),
     ...(options.allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
     ...(options.allowedTools ? { allowedTools: options.allowedTools } : {}),
-    ...(options.canUseTool ? { canUseTool: options.canUseTool as unknown as Cli.CanUseTool } : {}),
+    ...(options.canUseTool ? { canUseTool: options.canUseTool } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
     ...(options.disallowedTools ? { disallowedTools: options.disallowedTools } : {}),
     ...(options.effort ? { effort: options.effort as NonNullable<Cli.Options["effort"]> } : {}),
@@ -110,14 +110,8 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
         }
       : {}),
     ...(options.model ? { model: options.model } : {}),
-    ...(options.onUserDialog
-      ? {
-          onUserDialog: options.onUserDialog as unknown as NonNullable<Cli.Options["onUserDialog"]>,
-        }
-      : {}),
-    ...(options.permissionMode
-      ? { permissionMode: options.permissionMode as Cli.PermissionMode }
-      : {}),
+    ...(options.onUserDialog ? { onUserDialog: options.onUserDialog } : {}),
+    ...(options.permissionMode ? { permissionMode: options.permissionMode } : {}),
     ...(options.persistSession === false ? { persistSession: false } : {}),
     ...(options.resume ? { resume: options.resume } : {}),
     ...(options.resumeSessionAt ? { resumeSessionAt: options.resumeSessionAt } : {}),
@@ -160,10 +154,9 @@ async function* singlePrompt(prompt: string): AsyncGenerator<Cli.SDKUserMessage>
 
 function toSdkQuery(cli: Cli.Query): Sdk.Query {
   async function* messages(): AsyncGenerator<Sdk.SDKMessage, void> {
-    for await (const message of cli) yield message as unknown as Sdk.SDKMessage;
+    for await (const message of cli) yield message;
   }
-  const initialization = () =>
-    cli.initializationResult() as unknown as Promise<Sdk.SDKControlInitializeResponse>;
+  const initialization = () => cli.initializationResult();
   const reject = (feature: string) => () => Promise.reject(unsupported(feature));
   const query: Omit<Sdk.Query, keyof AsyncGenerator<Sdk.SDKMessage, void>> = {
     interrupt: () => cli.interrupt().then(() => undefined),
@@ -175,8 +168,7 @@ function toSdkQuery(cli: Cli.Query): Sdk.Query {
     supportedModels: () => initialization().then((result) => result.models),
     supportedAgents: () => initialization().then((result) => result.agents),
     accountInfo: () => initialization().then((result) => result.account),
-    getContextUsage: () =>
-      cli.getContextUsage() as unknown as ReturnType<Sdk.Query["getContextUsage"]>,
+    getContextUsage: () => cli.getContextUsage(),
     stopTask: (taskId) => cli.stopTask(taskId),
     usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: (options) =>
       cli.getUsage(options) as unknown as ReturnType<
@@ -208,10 +200,7 @@ export function query(input: {
   readonly prompt: string | AsyncIterable<Sdk.SDKUserMessage>;
   readonly options?: Sdk.Options;
 }): Sdk.Query {
-  const prompt =
-    typeof input.prompt === "string"
-      ? singlePrompt(input.prompt)
-      : (input.prompt as unknown as AsyncIterable<Cli.SDKUserMessage>);
+  const prompt = typeof input.prompt === "string" ? singlePrompt(input.prompt) : input.prompt;
   return toSdkQuery(Cli.query({ prompt, options: toClaudeCliOptions(input.options ?? {}) }));
 }
 

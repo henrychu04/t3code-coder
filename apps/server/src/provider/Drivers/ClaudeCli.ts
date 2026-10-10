@@ -2,17 +2,28 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
+import type * as Sdk from "@anthropic-ai/claude-agent-sdk";
 import * as Schema from "effect/Schema";
 
-export type PermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "bypassPermissions"
-  | "plan"
-  | "dontAsk"
-  | "auto";
-
-export type SettingSource = "user" | "project" | "local";
+// Coder: the CLI transport speaks the Agent SDK's wire protocol, so it uses the SDK's own types.
+// The SDK is a type-only dependency; nothing from it is loaded at runtime.
+export type PermissionMode = Sdk.PermissionMode;
+export type SettingSource = Sdk.SettingSource;
+export type SDKRateLimitInfo = Sdk.SDKRateLimitInfo;
+export type PermissionUpdateDestination = Sdk.PermissionUpdateDestination;
+export type PermissionUpdate = Sdk.PermissionUpdate;
+export type PermissionResult = Sdk.PermissionResult;
+export type CanUseTool = Sdk.CanUseTool;
+export type ModelUsage = Sdk.ModelUsage;
+export type SDKUserMessage = Sdk.SDKUserMessage;
+export type SDKResultMessage = Sdk.SDKResultMessage;
+export type SDKMessage = Sdk.SDKMessage;
+export type SlashCommand = Sdk.SlashCommand;
+export type ModelInfo = Sdk.ModelInfo;
+export type SDKControlInitializeResponse = Sdk.SDKControlInitializeResponse;
+export type SDKControlGetContextUsageResponse = Sdk.SDKControlGetContextUsageResponse;
+export type UserDialogRequest = Sdk.UserDialogRequest;
+export type UserDialogResult = Sdk.UserDialogResult;
 
 const ClaudeUsageWindow = Schema.Struct({
   utilization: Schema.NullOr(Schema.Number),
@@ -38,353 +49,6 @@ const ClaudeUsageResponse = Schema.Struct({
   ),
 });
 export type SDKControlGetUsageResponse = typeof ClaudeUsageResponse.Type;
-export interface SDKRateLimitInfo {
-  readonly status?: string;
-  readonly rateLimitType?: string;
-  readonly overageStatus?: string;
-  readonly isUsingOverage?: boolean;
-  readonly overageInUse?: boolean;
-  readonly utilization?: number;
-  readonly resetsAt?: number;
-}
-
-export type PermissionUpdateDestination =
-  | "userSettings"
-  | "projectSettings"
-  | "localSettings"
-  | "session";
-
-export type PermissionUpdate =
-  | {
-      readonly type: "addRules" | "replaceRules" | "removeRules";
-      readonly rules: ReadonlyArray<{ readonly toolName: string; readonly ruleContent?: string }>;
-      readonly behavior: "allow" | "deny" | "ask";
-      readonly destination: PermissionUpdateDestination;
-    }
-  | {
-      readonly type: "setMode";
-      readonly mode: PermissionMode;
-      readonly destination: PermissionUpdateDestination;
-    }
-  | {
-      readonly type: "addDirectories" | "removeDirectories";
-      readonly directories: ReadonlyArray<string>;
-      readonly destination: PermissionUpdateDestination;
-    };
-
-export type PermissionResult =
-  | {
-      readonly behavior: "allow";
-      readonly updatedInput?: Record<string, unknown>;
-      readonly updatedPermissions?: ReadonlyArray<PermissionUpdate>;
-      readonly toolUseID?: string;
-      readonly decisionClassification?: "user_temporary" | "user_permanent" | "user_reject";
-    }
-  | {
-      readonly behavior: "deny";
-      readonly message: string;
-      readonly interrupt?: boolean;
-      readonly toolUseID?: string;
-      readonly decisionClassification?: "user_temporary" | "user_permanent" | "user_reject";
-    };
-
-export type CanUseTool = (
-  toolName: string,
-  input: Record<string, unknown>,
-  options: {
-    readonly signal: AbortSignal;
-    readonly suggestions?: ReadonlyArray<PermissionUpdate>;
-    readonly blockedPath?: string;
-    readonly decisionReason?: string;
-    readonly title?: string;
-    readonly displayName?: string;
-    readonly description?: string;
-    readonly toolUseID: string;
-    readonly agentID?: string;
-  },
-) => Promise<PermissionResult>;
-
-export type ModelUsage = {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly cacheReadInputTokens: number;
-  readonly cacheCreationInputTokens: number;
-  readonly webSearchRequests: number;
-  readonly costUSD: number;
-  readonly contextWindow: number;
-  readonly maxOutputTokens: number;
-};
-
-type MessageContent =
-  | string
-  | ReadonlyArray<{
-      readonly type: string;
-      readonly text?: string;
-      readonly [key: string]: unknown;
-    }>;
-
-export type SDKUserMessage = {
-  readonly type: "user";
-  readonly session_id: string;
-  readonly parent_tool_use_id: string | null;
-  readonly uuid?: string;
-  readonly message: {
-    readonly role: "user";
-    readonly content: MessageContent;
-  };
-  readonly tool_use_result?: unknown;
-};
-
-type SDKAssistantMessage = {
-  readonly error?: string;
-  readonly type: "assistant";
-  readonly session_id: string;
-  readonly parent_tool_use_id: string | null;
-  readonly uuid: string;
-  readonly message: {
-    readonly id?: string;
-    readonly model?: string;
-    readonly content?: ReadonlyArray<Record<string, unknown>>;
-    readonly [key: string]: unknown;
-  };
-};
-
-type StreamEvent =
-  | { readonly type: "message_start"; readonly message?: unknown }
-  | {
-      readonly type: "message_delta";
-      readonly usage: unknown;
-      readonly [key: string]: unknown;
-    }
-  | {
-      readonly type: "content_block_delta";
-      readonly index: number;
-      readonly delta:
-        | { readonly type: "text_delta"; readonly text: string }
-        | { readonly type: "thinking_delta"; readonly thinking: string }
-        | { readonly type: "input_json_delta"; readonly partial_json: string };
-    }
-  | {
-      readonly type: "content_block_start";
-      readonly index: number;
-      readonly content_block: {
-        readonly type: string;
-        readonly id: string;
-        readonly name: string;
-        readonly input?: unknown;
-        readonly text?: string;
-        readonly [key: string]: unknown;
-      };
-    }
-  | {
-      readonly type: "content_block_stop";
-      readonly index: number;
-    };
-
-type SDKPartialAssistantMessage = {
-  readonly type: "stream_event";
-  readonly session_id: string;
-  readonly parent_tool_use_id: string | null;
-  readonly uuid?: string;
-  readonly event: StreamEvent;
-};
-
-export type SDKResultMessage = {
-  readonly user_message_uuids?: ReadonlyArray<string>;
-  readonly user_message_uuid?: string;
-  readonly origin?: { readonly kind: string };
-  readonly type: "result";
-  readonly subtype: "success" | "error_max_turns" | "error_during_execution" | string;
-  readonly session_id: string;
-  readonly uuid?: string;
-  readonly is_error: boolean;
-  readonly result?: string;
-  readonly errors?: ReadonlyArray<string>;
-  readonly terminal_reason?: string;
-  readonly stop_reason?: string | null;
-  readonly usage?: unknown;
-  readonly modelUsage?: Record<string, ModelUsage>;
-  readonly total_cost_usd?: number;
-  readonly duration_ms?: number;
-  readonly duration_api_ms?: number;
-  readonly num_turns?: number;
-  readonly [key: string]: unknown;
-};
-
-type SDKSystemSubtype =
-  | "init"
-  | "status"
-  | "compact_boundary"
-  | "hook_started"
-  | "hook_progress"
-  | "hook_response"
-  | "task_started"
-  | "task_progress"
-  | "task_updated"
-  | "task_notification"
-  | "files_persisted"
-  | "thinking_tokens"
-  | "api_retry"
-  | "session_state_changed"
-  | "notification"
-  | "model_refusal_fallback"
-  | "local_command_output"
-  | "plugin_install"
-  | "commands_changed"
-  | "memory_recall"
-  | "elicitation_complete"
-  | "permission_denied"
-  | "mirror_error";
-
-type SDKSystemMessageCommon = {
-  readonly type: "system";
-  readonly session_id: string;
-  readonly uuid?: string;
-  readonly hook_id: string;
-  readonly hook_name: string;
-  readonly hook_event: string;
-  readonly output: string;
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly exit_code?: number;
-  readonly task_id: string;
-  readonly tool_use_id?: string;
-  readonly description: string;
-  readonly subagent_type?: string;
-  readonly task_type?: string;
-  readonly workflow_name?: string;
-  readonly skip_transcript?: boolean;
-  readonly summary?: string;
-  readonly usage?: unknown;
-  readonly last_tool_name?: string;
-  readonly patch: {
-    readonly status?: "pending" | "running" | "completed" | "failed" | "killed" | "paused";
-    readonly description?: string;
-    readonly error?: string;
-    readonly end_time?: number;
-    readonly is_backgrounded?: boolean;
-  };
-  readonly output_file?: string;
-  readonly files?: ReadonlyArray<{ readonly filename: string; readonly file_id: string }>;
-  readonly failed?: ReadonlyArray<{ readonly filename: string; readonly error: string }>;
-  readonly attempt: number;
-  readonly max_retries: number;
-  readonly state: string;
-  readonly priority?: string;
-  readonly text: string;
-  readonly tool_name: string;
-  readonly decision_reason?: string;
-  readonly agent_id?: string;
-  readonly error: string;
-  readonly [key: string]: unknown;
-};
-
-type SDKSystemMessage = {
-  [Subtype in SDKSystemSubtype]: SDKSystemMessageCommon & {
-    readonly subtype: Subtype;
-  } & (Subtype extends "hook_response"
-      ? { readonly outcome: "success" | "error" | "cancelled" }
-      : Subtype extends "task_notification"
-        ? { readonly status: "completed" | "failed" | "stopped" }
-        : Subtype extends "status"
-          ? { readonly status?: string }
-          : Record<never, never>);
-}[SDKSystemSubtype];
-
-type SDKToolProgressMessage = {
-  readonly type: "tool_progress";
-  readonly session_id: string;
-  readonly tool_use_id: string;
-  readonly tool_name: string;
-  readonly elapsed_time_seconds: number;
-  readonly task_id?: string;
-  readonly parent_tool_use_id: string | null;
-};
-
-type SDKToolUseSummaryMessage = {
-  readonly type: "tool_use_summary";
-  readonly session_id: string;
-  readonly summary: string;
-  readonly preceding_tool_use_ids: ReadonlyArray<string>;
-};
-
-type SDKAuthStatusMessage = {
-  readonly type: "auth_status";
-  readonly session_id: string;
-  readonly isAuthenticating: boolean;
-  readonly output: ReadonlyArray<string>;
-  readonly error?: string;
-};
-
-type SDKRateLimitMessage = {
-  readonly type: "rate_limit_event";
-  readonly rate_limit_info?: SDKRateLimitInfo;
-  readonly session_id: string;
-  readonly [key: string]: unknown;
-};
-
-type SDKPromptSuggestionMessage = {
-  readonly type: "prompt_suggestion";
-  readonly session_id: string;
-  readonly suggestion: string;
-};
-
-export type SDKMessage =
-  | SDKUserMessage
-  | SDKAssistantMessage
-  | SDKPartialAssistantMessage
-  | SDKResultMessage
-  | SDKSystemMessage
-  | SDKToolProgressMessage
-  | SDKToolUseSummaryMessage
-  | SDKAuthStatusMessage
-  | SDKRateLimitMessage
-  | SDKPromptSuggestionMessage;
-
-export type SlashCommand = {
-  readonly name: string;
-  readonly description: string;
-  readonly argumentHint: string;
-};
-
-export type ModelInfo = {
-  readonly value: string;
-  readonly resolvedModel?: string;
-  readonly displayName: string;
-  readonly description: string;
-  readonly supportsEffort?: boolean;
-  readonly supportedEffortLevels?: ReadonlyArray<"low" | "medium" | "high" | "xhigh" | "max">;
-  readonly supportsAdaptiveThinking?: boolean;
-  readonly supportsFastMode?: boolean;
-  readonly supportsAutoMode?: boolean;
-};
-
-export type SDKControlInitializeResponse = {
-  readonly commands: ReadonlyArray<SlashCommand>;
-  readonly agents?: ReadonlyArray<Record<string, unknown>>;
-  readonly models?: ReadonlyArray<ModelInfo>;
-  readonly account?: Record<string, unknown>;
-  readonly [key: string]: unknown;
-};
-
-export type SDKControlGetContextUsageResponse = {
-  readonly totalTokens: number;
-  readonly maxTokens: number;
-  readonly isAutoCompactEnabled: boolean;
-  readonly autoCompactThreshold?: number;
-  readonly [key: string]: unknown;
-};
-
-export type UserDialogRequest = {
-  readonly dialogKind: string;
-  readonly payload: Record<string, unknown>;
-  readonly toolUseID?: string;
-};
-
-export type UserDialogResult =
-  | { readonly behavior: "completed"; readonly result: unknown }
-  | { readonly behavior: "cancelled" };
-
 export type Options = {
   readonly abortController?: AbortController;
   readonly additionalDirectories?: ReadonlyArray<string>;
@@ -399,10 +63,7 @@ export type Options = {
   /** External MCP server configurations, passed as `--mcp-config` as the SDK does. */
   readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   readonly strictMcpConfig?: boolean;
-  readonly onUserDialog?: (
-    request: UserDialogRequest,
-    options: { readonly signal: AbortSignal },
-  ) => Promise<UserDialogResult>;
+  readonly onUserDialog?: NonNullable<Sdk.Options["onUserDialog"]>;
   readonly pathToClaudeCodeExecutable: string;
   readonly permissionMode?: PermissionMode;
   readonly allowDangerouslySkipPermissions?: boolean;
@@ -949,7 +610,7 @@ class ClaudeCliQuery implements Query {
             payload,
             ...(message.request.tool_use_id ? { toolUseID: message.request.tool_use_id } : {}),
           },
-          { signal: callbackController.signal },
+          { signal: callbackController.signal, requestId: message.request_id },
         );
         await this.write({
           type: "control_response",
@@ -973,7 +634,7 @@ class ClaudeCliQuery implements Query {
       const result = await this.options.canUseTool(toolName, input, {
         signal: callbackController.signal,
         ...(message.request.permission_suggestions
-          ? { suggestions: message.request.permission_suggestions }
+          ? { suggestions: [...message.request.permission_suggestions] }
           : {}),
         ...(message.request.blocked_path ? { blockedPath: message.request.blocked_path } : {}),
         ...(message.request.decision_reason
@@ -984,6 +645,7 @@ class ClaudeCliQuery implements Query {
         ...(message.request.description ? { description: message.request.description } : {}),
         toolUseID,
         ...(message.request.agent_id ? { agentID: message.request.agent_id } : {}),
+        requestId: message.request_id,
       });
       await this.write({
         type: "control_response",
