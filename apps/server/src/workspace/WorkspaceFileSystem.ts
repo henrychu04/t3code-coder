@@ -9,12 +9,13 @@ import { createHash, randomUUID } from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type {
-  ProjectCreateFileInput,
-  ProjectReadFileInput,
-  ProjectReadFileResult,
-  ProjectWriteFileInput,
-  ProjectWriteFileResult,
+import {
+  PROJECT_FILE_MAX_BYTES,
+  type ProjectCreateFileInput,
+  type ProjectReadFileInput,
+  type ProjectReadFileResult,
+  type ProjectWriteFileInput,
+  type ProjectWriteFileResult,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -26,7 +27,6 @@ import * as Semaphore from "effect/Semaphore";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 
-const PROJECT_FILE_MAX_BYTES = 1024 * 1024;
 type WorkspaceReadFileInput = Omit<ProjectReadFileInput, "threadId">;
 type WorkspaceWriteFileInput = Omit<ProjectWriteFileInput, "threadId">;
 type WorkspaceCreateFileInput = Omit<ProjectCreateFileInput, "threadId" | "draftProjectId">;

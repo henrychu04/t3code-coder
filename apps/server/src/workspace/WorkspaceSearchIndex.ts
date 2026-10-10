@@ -18,13 +18,17 @@ import {
   type Result,
   type SearchResult,
 } from "@ff-labs/fff-node";
-import type {
-  ProjectEntry,
-  ProjectEntryKind,
-  ProjectListEntriesResult,
-  ProjectSearchEntriesResult,
-  ProjectTextSearchInput,
-  ProjectTextSearchResult,
+import {
+  PROJECT_CONTENT_SEARCH_MAX_MATCHES_PER_FILE,
+  PROJECT_CONTENT_SEARCH_MAX_TOTAL_MATCHES,
+  PROJECT_CONTENT_SEARCH_TIME_BUDGET_MS,
+  PROJECT_SEARCH_INDEX_IDLE_TTL,
+  type ProjectEntry,
+  type ProjectEntryKind,
+  type ProjectListEntriesResult,
+  type ProjectSearchEntriesResult,
+  type ProjectTextSearchInput,
+  type ProjectTextSearchResult,
 } from "@t3tools/contracts";
 import { matchesFileMask, parseFileMask } from "@t3tools/shared/fileMask";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
@@ -38,10 +42,6 @@ const WORKSPACE_INDEX_MAX_ENTRIES = 25_000;
 const WORKSPACE_INDEX_PAGE_SIZE = WORKSPACE_INDEX_MAX_ENTRIES + 2;
 const WORKSPACE_INDEX_SCAN_TIMEOUT = "15 seconds";
 const WORKSPACE_INDEX_SCAN_TIMEOUT_MS = 15_000;
-const WORKSPACE_INDEX_IDLE_TTL = "15 minutes";
-const CONTENT_SEARCH_TIME_BUDGET_MS = 250;
-const CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
-const CONTENT_SEARCH_MAX_TOTAL_MATCHES = 500;
 const CONTENT_SEARCH_MAX_LINE_CHARS = 4096;
 const CONTENT_SEARCH_MAX_PATH_CHARS = 512;
 
@@ -542,9 +542,9 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     "WorkspaceSearchIndex.searchText",
   )(function* (input) {
     const searchGeneration = generation;
-    const limit = Math.min(input.limit, CONTENT_SEARCH_MAX_TOTAL_MATCHES);
+    const limit = Math.min(input.limit, PROJECT_CONTENT_SEARCH_MAX_TOTAL_MATCHES);
     const { searchQuery, regexMode } = buildContentSearchQuery(input);
-    const deadline = performance.now() + CONTENT_SEARCH_TIME_BUDGET_MS;
+    const deadline = performance.now() + PROJECT_CONTENT_SEARCH_TIME_BUDGET_MS;
     const rawPageSize = limit;
     const nativeMaskSupported =
       !input.fileMask?.trim() || toFffFileMaskConstraint(input.fileMask) !== undefined;
@@ -590,7 +590,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
           mode: regexMode ? "regex" : "plain",
           smartCase: !input.caseSensitive && !regexMode,
           maxFileSize: 10 * 1024 * 1024,
-          maxMatchesPerFile: CONTENT_SEARCH_MAX_MATCHES_PER_FILE,
+          maxMatchesPerFile: PROJECT_CONTENT_SEARCH_MAX_MATCHES_PER_FILE,
           pageSize: Math.max(1, limit - matches.length),
           cursor: nextCursor,
           timeBudgetMs: remainingTimeBudgetMs,
@@ -625,7 +625,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         const bounded = boundedMatchLine(match.lineContent, ranges);
         if (bounded.matchRanges.length === 0) continue;
         const fileMatchCount = matchesPerFile.get(relativePath) ?? 0;
-        if (fileMatchCount >= CONTENT_SEARCH_MAX_MATCHES_PER_FILE) {
+        if (fileMatchCount >= PROJECT_CONTENT_SEARCH_MAX_MATCHES_PER_FILE) {
           truncated = true;
           continue;
         }
@@ -697,6 +697,6 @@ export class WorkspaceSearchIndexMap extends LayerMap.Service<WorkspaceSearchInd
   "t3/workspace/WorkspaceSearchIndexMap",
   {
     lookup: layer,
-    idleTimeToLive: WORKSPACE_INDEX_IDLE_TTL,
+    idleTimeToLive: PROJECT_SEARCH_INDEX_IDLE_TTL,
   },
 ) {}

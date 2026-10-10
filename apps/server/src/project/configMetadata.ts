@@ -2,7 +2,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as Schema from "effect/Schema";
-import { T3ProjectFile, type ProjectGetConfigResult } from "@t3tools/contracts";
+import {
+  PROJECT_CONFIG_MAX_BYTES,
+  T3ProjectFile,
+  type ProjectGetConfigResult,
+} from "@t3tools/contracts";
 
 /**
  * Coder: return only fields Coder honors. Project icons never come from repository paths, and
@@ -73,7 +77,7 @@ export function readProjectConfig(workspaceRoot: string): ProjectGetConfigResult
         file: null,
       };
     }
-    const text = readConfigMetadata(filePath, 64 * 1024, root);
+    const text = readConfigMetadata(filePath, PROJECT_CONFIG_MAX_BYTES, root);
     if (text === null) return { status: "invalid", file: null };
     const decoded = Schema.decodeUnknownExit(Schema.fromJsonString(T3ProjectFile))(text);
     return decoded._tag === "Success"

@@ -89,10 +89,11 @@ claim: shared provider protocols may still report subscription metadata.
     reject path and symlink escapes and binary files, detect stale writes, and keep open-file and
     editor state in browser memory only. Its explicit Copy path action may place only that
     project-relative path—not file contents or an absolute path—on the local clipboard. Ordinary
-    user-initiated reads and edits retain the 1 MiB limit and all existing path, UTF-8, binary-file,
+    user-initiated reads and edits retain the `PROJECT_FILE_MAX_BYTES` bound and all existing path, UTF-8, binary-file,
     symlink, and stale-write validation.
-  - **PDF and HTML previews in Files.** The Files surface may preview PDF files (at most 50 MiB,
-    `%PDF-` signature) and HTML files (at most 10 MiB, no NUL bytes) inside the verified project
+  - **PDF and HTML previews in Files.** The Files surface may preview PDF files (bounded by
+    `MAX_PROJECT_PDF_BYTES`, `%PDF-` signature) and HTML files (bounded by `MAX_PROJECT_HTML_BYTES`,
+    no NUL bytes) inside the verified project
     root only, read whole through the bounded helper media chunks when the user opens the file and
     kept as memory-only blobs. A PDF renders in the browser's built-in viewer from its blob URL
     (the page CSP allows `frame-src blob:` for this). An HTML file is written into the gateway's
@@ -104,33 +105,31 @@ claim: shared provider protocols may still report subscription metadata.
       after verifying that the exact project root belongs to the requesting thread and using the
       verified real project root as FFF's `basePath`. It may use FFF's native plain-text and regex
       grep, but must never scan a filesystem root or home directory.
-    - Enforce a hard native search time budget, initially 250 ms per request, cursor-based
-      pagination, at most 100 matches per file and 500 returned matches per request, cancellation
-      and timeout behavior that cannot monopolize the helper's stdio RPC connection, and a
-      15-minute idle TTL followed by deterministic destruction of each content index.
+    - Enforce a hard native search time budget, cursor-based pagination, per-file and per-request
+      match caps, cancellation and timeout behavior that cannot monopolize the helper's stdio RPC
+      connection, and an idle TTL followed by deterministic destruction of each content index
+      (bounded; see the `PROJECT_CONTENT_SEARCH_*` and `PROJECT_SEARCH_INDEX_IDLE_TTL` constants).
     - Treat every FFF result as untrusted: before exposure, reject absolute paths, traversal, NUL
       bytes, malformed relative paths, and realpath or symlink escapes. Return only validated
       project-relative paths, bounded UTF-8 line snippets, and match ranges; reject or suppress
       binary-file matches and never expose arbitrary file bytes or a general content-reading API.
     - Keep query text, matching contents, absolute paths, and secrets out of errors and logs.
-    - The former 2,000-file and 32 MiB aggregate scan limits do not apply once this compliant
-      native, time-budgeted search path replaces the existing scanner. Before implementation is
-      approved, focused Linux x86-64 tests must characterize FFF's handling of symlinks, binary
+    - Focused Linux x86-64 tests must characterize FFF's handling of symlinks, binary
       files, oversized files, regex failures, cancellation, and time budgets.
     - This search exception does not authorize uploads, downloads, synchronization, arbitrary file
       reads, or non-Coder workspace connections.
   - **Media: composer attachments and on-demand environment previews.** Composer image
     attachments accept PNG, JPEG, and WebP and validate their signatures rather than trusting
-    metadata. Composer source images may be up to 50 MiB; use main's compression algorithm to
-    prepare images at or below 10 MiB. The browser upload API, gateway body/signature validation,
-    and provider-input reader must share main's 10 MiB image attachment limit. Composer file
-    attachments, including attachments on question answers, follow main: any non-image file up to
-    main's 50 MiB file limit, passed to the provider as a workspace path rather than inline bytes. Environment previews accept
+    metadata. Composer source images are bounded by main's `MAX_COMPRESSIBLE_SOURCE_BYTES`; use main's
+    compression algorithm to prepare images within `PROVIDER_SEND_TURN_MAX_IMAGE_BYTES`. The browser
+    upload API, gateway body/signature validation, and provider-input reader must share that image
+    attachment limit. Composer file attachments, including attachments on question answers, follow
+    main: any non-image file within `PROVIDER_SEND_TURN_MAX_FILE_BYTES`, passed to the provider as a workspace path rather than inline bytes. Environment previews accept
     main's browser media formats — PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO images; MP4,
     M4V, MOV, WebM, OGV, MKV, and AVI videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and AIFF audio —
-    each signature-checked against its extension. Image previews retain their separate 20 MiB read
-    bound. Video and audio previews are bounded at 256 MiB and read only after the user presses
-    play or opens the file.
+    each signature-checked against its extension. Image previews are bounded by
+    `MAX_SCREENSHOT_ARTIFACT_BYTES`; video and audio previews by `MAX_PROJECT_MEDIA_BYTES`, and are
+    read only after the user presses play or opens the file.
     - Images and files pasted, selected, or dropped into the composer: generate filenames internally
       and copy only into `$HOME/.t3-coder/attachments` through the same gateway upload and
       `coder ssh` stdin transfer; never accept a user-controlled local or remote path. Submitted
@@ -163,7 +162,7 @@ claim: shared provider protocols may still report subscription metadata.
   - **HTML renders.** Agents may publish a self-contained HTML page with upstream's T3
     `html_render` tool over the workspace file bridge; `html_preview` and its headless browser are
     not carried, and nothing is downloaded. The helper inlines only absolute-path images it
-    validates as images, stores the page (at most 10 MiB) as an attachment of the calling thread,
+    validates as images, stores the page (bounded by `MAX_TURN_ITEM_ASSET_BYTES`) as an attachment of the calling thread,
     and serves it through the bounded turn-item read only for the stored item that references it
     in that same thread. The browser writes it into the gateway's sandboxed MCP App shell
     (`allow-scripts allow-forms`, never `allow-same-origin`, no camera, microphone, geolocation, or
@@ -177,7 +176,7 @@ claim: shared provider protocols may still report subscription metadata.
     microphone, geolocation, or clipboard permission, and there is no `ui/download-file` or save
     action; links the app opens follow the Markdown link rule below.
   - **Theme files.** Settings → Appearance may read T3 Code or VS Code theme JSON files that the
-    user picks, drops, or pastes (at most 256 KiB each) inside the browser and keep the parsed
+    user picks, drops, or pastes (bounded by upstream's `MAX_THEME_FILE_BYTES`) inside the browser and keep the parsed
     themes as UI preferences in browser storage. The files never reach the gateway or workspace,
     and themes have no export or download.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the Coder CLI rule above.

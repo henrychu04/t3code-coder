@@ -21,7 +21,18 @@ const PROJECT_TEXT_SEARCH_MAX_LIMIT = 500;
 const PROJECT_SEARCH_INPUT_MAX_LENGTH = 256;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
-const PROJECT_FILE_CONTENT_MAX_LENGTH = 1024 * 1024;
+/** Coder: `t3.json` is read whole for settings, so a stray large file cannot stall the helper. */
+export const PROJECT_CONFIG_MAX_BYTES = 64 * 1024;
+/** Coder: Files reads and edits whole text files in memory on both ends, so they stay small. */
+export const PROJECT_FILE_MAX_BYTES = 1024 * 1024;
+/** Coder: a content search must yield the helper's single stdio connection quickly. */
+export const PROJECT_CONTENT_SEARCH_TIME_BUDGET_MS = 250;
+/** Coder: one noisy file must not crowd every other file out of a results page. */
+export const PROJECT_CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
+/** Coder: one response stays far below the gateway's RPC frame limit. */
+export const PROJECT_CONTENT_SEARCH_MAX_TOTAL_MATCHES = 500;
+/** Coder: an unused content-enabled index is destroyed instead of holding workspace memory. */
+export const PROJECT_SEARCH_INDEX_IDLE_TTL = "15 minutes";
 
 export const ProjectScriptIcon = Schema.Literals([
   "play",
@@ -586,7 +597,7 @@ export const ProjectWriteFileInput = Schema.Struct({
   ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
-  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_CONTENT_MAX_LENGTH)),
+  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_MAX_BYTES)),
   expectedRevision: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
@@ -600,7 +611,7 @@ export const ProjectCreateFileInput = Schema.Struct({
   ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
-  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_CONTENT_MAX_LENGTH)),
+  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_MAX_BYTES)),
 });
 export type ProjectCreateFileInput = typeof ProjectCreateFileInput.Type;
 

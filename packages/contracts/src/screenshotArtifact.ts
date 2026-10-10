@@ -14,6 +14,7 @@ import {
 } from "./chatAttachment.ts";
 import { ProjectFilesOwnerFields } from "./project.ts";
 
+/** Coder: image previews are read whole into the browser's bounded, memory-only image store. */
 export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
 /**
  * Coder: one bounded helper read for images, media, attachments, and turn-item assets. 4 MiB of
