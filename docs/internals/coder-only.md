@@ -3,6 +3,7 @@
 > This is a maintainer and reviewer reference. For the user-facing explanation, start with
 > [Coder workspaces](../user/workspaces.md) and [Product decisions and upstream
 > differences](../product-differences.md).
+> To merge upstream, follow the [upstream sync checklist](sync.md).
 
 T3 Coder runs its browser interface on the developer's computer while repository, Codex, Claude,
 Pi, terminal, checkpoint, and durable orchestration work stays inside Linux Coder workspaces. The

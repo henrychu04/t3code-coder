@@ -112,6 +112,7 @@ tooling without explicit user permission. Do not test against or modify `~/.t3/u
   unfixed unless they break a boundary above.
 - Mark every fork delta in upstream code with a `Coder:` comment and list it in the upstream seams
   of `docs/internals/coder-only.md`; a difference not listed there is drift to remove.
+- Run upstream syncs by the checklist in `docs/internals/sync.md`.
 - Keep byte limits as named constants with a one-line reason; docs refer to the constant.
 - A fresh worktree has no `node_modules`; when the lockfile is unchanged, run
   `pnpm install --frozen-lockfile` there (it links from the pnpm store and does not duplicate
