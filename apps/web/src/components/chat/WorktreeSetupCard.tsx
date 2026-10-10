@@ -421,6 +421,7 @@ export function WorktreeSetupCard({
         {onWorkLocally ? (
           <Button type="button" size="xs" variant="ghost-muted" onClick={onWorkLocally}>
             <LaptopIcon aria-hidden />
+            {/* Coder: the checkout is in the workspace, not on this computer. */}
             Use project checkout
           </Button>
         ) : null}

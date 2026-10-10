@@ -1,3 +1,4 @@
+// Coder: `t3.json` comes from the helper's bounded `projects.getConfig` read, never a raw file read.
 import type { T3ProjectFile } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";

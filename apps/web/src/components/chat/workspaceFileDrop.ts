@@ -48,6 +48,7 @@ export function makeWorkspaceFileDropHandlers(host: WorkspaceFileDropHost) {
       if (!isFileDrag(event)) return;
       event.preventDefault();
       host.setDragActive(false);
+      // Coder: dropped folders are not uploaded; only files become composer attachments.
       host.addFiles(Array.from(event.dataTransfer.files));
     },
   };

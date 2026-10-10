@@ -1,3 +1,4 @@
+// Coder: the browser runtime has no primary-environment HTTP client, relay, DPoP, or tracer.
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Layer from "effect/Layer";
 import * as Socket from "effect/socket/Socket";

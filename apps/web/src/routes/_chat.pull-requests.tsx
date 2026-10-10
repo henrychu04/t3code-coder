@@ -1,3 +1,5 @@
+// Coder: merge-request list snapshots stay in memory (`pullRequestSnapshotStorage`), not
+// browser storage.
 import { pullRequestSnapshotStorage } from "../components/pullRequest/pullRequestSnapshotStorage";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";

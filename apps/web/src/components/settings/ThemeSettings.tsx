@@ -1,3 +1,4 @@
+// Coder: custom themes cannot be exported as downloaded files (no downloads or exports).
 import { useEnvironmentThemeDefinitions } from "../../hooks/useEnvironmentTheme";
 import {
   CheckIcon,

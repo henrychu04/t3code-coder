@@ -1,3 +1,5 @@
+// Coder: the helper's configuration is paths under the workspace state directory only; upstream's
+// listener, desktop, dev-server, telemetry, and OTLP settings do not exist.
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

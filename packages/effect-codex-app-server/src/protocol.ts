@@ -38,6 +38,7 @@ export interface CodexAppServerIncomingRequest {
 export interface CodexAppServerPatchedProtocolOptions {
   readonly stdio: Stdio.Stdio;
   readonly terminationError?: Effect.Effect<CodexError.CodexAppServerError>;
+  /** Coder: non-JSON lines tolerated before the first protocol message (workspace wrappers). */
   readonly startupPreambleMaxBytes?: number;
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
@@ -362,6 +363,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
       return yield* CodexError.CodexAppServerProtocolParseError.fromUnroutableMessage(message);
     });
 
+    // Coder: drop a bounded non-JSON startup banner from workspace wrappers.
     const shouldIgnoreStartupPreamble = (line: string) => {
       const maximumBytes = options.startupPreambleMaxBytes ?? 0;
       if (maximumBytes <= 0 || line.trimStart().startsWith("{")) {

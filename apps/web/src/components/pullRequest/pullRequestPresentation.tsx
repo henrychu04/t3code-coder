@@ -440,7 +440,6 @@ export function PullRequestActorAvatar({
       alt=""
       src={avatarUrl}
       loading="lazy"
-      referrerPolicy="no-referrer"
       className={cn("size-4 shrink-0 rounded-full bg-muted object-cover", className)}
       onError={() => setFailedAvatarUrl(avatarUrl)}
     />

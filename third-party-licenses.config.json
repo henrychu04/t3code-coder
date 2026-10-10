@@ -124,41 +124,6 @@
       }
     },
     {
-      "name": "@electron-internal/extract-zip",
-      "generatedNotice": {
-        "licenseId": "BSD-2-Clause",
-        "copyrights": ["Copyright (c) 2026 Samuel Attard and Electron contributors"]
-      }
-    },
-    {
-      "repositoryUrl": "https://github.com/xa11y/xa11y",
-      "generatedNotice": {
-        "licenseId": "MIT",
-        "copyrights": ["Copyright (c) 2025 Stephen Crowe"]
-      }
-    },
-    {
-      "license": "MIT",
-      "repositoryUrl": "https://github.com/iamEvanYT/electron-webauthn",
-      "generatedNotice": {
-        "licenseId": "MIT",
-        "copyrights": ["Copyright (c) 2026 iamEvan"]
-      }
-    },
-    {
-      "license": "MIT",
-      "name": "@electron-webauthn/types",
-      "sourceUrl": "https://github.com/iamEvanYT/electron-webauthn",
-      "generatedNotice": {
-        "licenseId": "MIT",
-        "copyrights": ["Copyright (c) 2026 iamEvan"]
-      }
-    },
-    {
-      "license": "MIT",
-      "name": "objc-js"
-    },
-    {
       "license": "MIT",
       "name": "map-stream",
       "generatedNotice": {

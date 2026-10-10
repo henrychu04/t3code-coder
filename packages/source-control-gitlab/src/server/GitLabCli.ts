@@ -447,7 +447,7 @@ function normalizeHeadSelector(headSelector: string): string {
 
 // Coder: upstream passes MR URLs straight to `glab`, which older versions read as branch names.
 function mergeRequestReferenceArgs(reference: string): ReadonlyArray<string> {
-  // Older glab versions interpret MR URLs as branch names. Keep the URL's repository
+  // Coder: older glab versions interpret MR URLs as branch names. Keep the URL's repository
   // and host explicit while using the numeric MR selector supported by those versions.
   const url = URL.parse(reference);
   if (

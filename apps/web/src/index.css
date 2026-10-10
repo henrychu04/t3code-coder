@@ -1,4 +1,5 @@
 @import "tailwindcss";
+/* Coder: no Electron window controls, drag regions, or desktop resize insets. */
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));

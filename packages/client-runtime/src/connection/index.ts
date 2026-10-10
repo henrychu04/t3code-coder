@@ -1,3 +1,4 @@
+// Coder: no credential/profile stores, routes, onboarding, GitHub routing, or host updates.
 export * from "./catalog.ts";
 export * as Connectivity from "./connectivity.ts";
 export { type ConnectionDriverProgress, type EnvironmentConnectionLease } from "./driver.ts";

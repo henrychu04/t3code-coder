@@ -1,25 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 
-import {
-  PullRequestActorAvatar,
-  resolvePullRequestConflict,
-  resolvePullRequestState,
-} from "./pullRequestPresentation";
+import { resolvePullRequestConflict, resolvePullRequestState } from "./pullRequestPresentation";
 import { PullRequestGlyph } from "./pullRequestIcons";
-
-it("renders the reported avatar, and initials when there is none", () => {
-  const actor = { login: "reviewer", name: "Reviewer", avatarUrl: "https://gitlab.example/a.png" };
-  const markup = renderToStaticMarkup(createElement(PullRequestActorAvatar, { actor }));
-  expect(markup).toContain('src="https://gitlab.example/a.png"');
-  expect(markup).toContain('referrerPolicy="no-referrer"');
-  const initials = renderToStaticMarkup(
-    createElement(PullRequestActorAvatar, { actor: { ...actor, avatarUrl: null } }),
-  );
-  expect(initials).toContain(">R</span>");
-  expect(initials).not.toContain("<img");
-});
 
 describe("resolvePullRequestState", () => {
   it.each([

@@ -9,17 +9,8 @@ import { runMigrations } from "./Migrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
 
-type RuntimeSqliteLayerConfig = {
-  readonly filename: string;
-  readonly spanAttributes?: Record<string, unknown>;
-};
-
-const makeRuntimeSqliteLayer = Effect.fn("makeRuntimeSqliteLayer")(function* (
-  config: RuntimeSqliteLayerConfig,
-) {
-  const clientModule = yield* Effect.promise(() => import("@t3tools/shared/nodeSqliteClient"));
-  return clientModule.layer(config);
-}, Layer.unwrap);
+// Size the -wal file is cut back to on the first commit after a WAL reset.
+export const WAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
 
 const layerSetup = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -64,5 +55,3 @@ export const layerConfig = Layer.unwrap(
     return layerFromPath(dbPath);
   }),
 );
-
-export const WAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;

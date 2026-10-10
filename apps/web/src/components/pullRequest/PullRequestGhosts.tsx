@@ -174,7 +174,7 @@ export function PullRequestDetailGhost({
                   onClick={() => void readLocalApi()?.shell.openExternal(seed.url)}
                   aria-label={`Open merge request !${seed.number} on host`}
                 >
-                  !{seed.number}
+                  <span className={statePresentation?.toneClassName}>!{seed.number}</span>
                   <ExternalLinkIcon aria-hidden className="size-2.5" />
                 </InlineButton>
               </>

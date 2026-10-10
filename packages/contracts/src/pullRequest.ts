@@ -1,3 +1,5 @@
+// Coder: no cross-environment GitHub routing (`expectedAccountId`, `allowStale`, routing
+// identities), HTTP diff responses, or Forgejo requirements.
 import * as Schema from "effect/Schema";
 
 import {

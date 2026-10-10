@@ -103,7 +103,10 @@ export function SourceControlWritingSettingsSection() {
   const activeSelection = resolveAppModelSelectionState(
     {
       ...settings,
-      textGenerationModelSelection: resolveSourceControlWriterModelSelection(settings),
+      textGenerationModelSelection: resolveSourceControlWriterModelSelection(
+        settings,
+        textGenerationProviders,
+      ),
     },
     textGenerationProviders,
   );
@@ -296,6 +299,7 @@ export function SourceControlWritingSettingsSection() {
                   No text generation providers available.
                 </span>
               ) : null}
+              {/* Coder: model favorites and order are kept per workspace. */}
               {usesDedicatedModel && canEnableDedicatedModel && environmentId ? (
                 <ProviderModelPicker
                   environmentId={environmentId}

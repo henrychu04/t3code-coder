@@ -313,14 +313,7 @@ export const make = Effect.gen(function* () {
         return false;
       }
       yield* Fiber.interrupt(tracked.fiber);
-      // A cancellation can race with the uninterruptible turn handoff.
-      // Do not offer a resend if the agent already accepted this message.
-      const settled = yield* Ref.get(setups);
-      const snapshot = settled.get(threadId)?.snapshot;
-      return (
-        snapshot?.phase !== "done" &&
-        !snapshot?.stages.some((stage) => stage.id === "agent" && stage.status === "done")
-      );
+      return true;
     });
 
   const get: WorktreeSetupTracker["Service"]["get"] = (threadId) =>

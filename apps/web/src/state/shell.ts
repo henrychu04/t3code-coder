@@ -40,6 +40,7 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   return true;
 }).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
 
+// Coder: every configured workspace is a remote environment; there is no primary local target.
 export const allEnvironmentProjectSnapshotsReadyAtom = Atom.make((get) => {
   const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));
   if (Option.isNone(catalog)) return false;

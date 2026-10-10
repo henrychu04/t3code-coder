@@ -1,6 +1,6 @@
 // Coder: builds the static app served by the loopback gateway; no dev proxy, relay, hosted-app,
 // Clerk, or tracing configuration.
-import { thirdPartyLicensesPlugin } from "./vite/third-party-licenses.ts";
+import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { readBuildVersion } from "../../scripts/build-info.ts";
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";

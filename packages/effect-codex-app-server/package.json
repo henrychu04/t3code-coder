@@ -19,23 +19,25 @@
       "types": "./src/protocol.ts",
       "import": "./src/protocol.ts"
     },
-    "./errors": {
-      "types": "./src/errors.ts",
-      "import": "./src/errors.ts"
-    },
     "./replay": {
       "types": "./src/replay.ts",
       "import": "./src/replay.ts"
+    },
+    "./errors": {
+      "types": "./src/errors.ts",
+      "import": "./src/errors.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vp test run"
+    "test": "vp test run --config ../../vite.config.ts --dir .",
+    "generate": "node scripts/generate.ts"
   },
   "dependencies": {
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/openapi-generator": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",

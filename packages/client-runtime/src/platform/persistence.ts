@@ -1,3 +1,5 @@
+// Coder: connections come from the gateway's Coder config, so there are no saved connection
+// targets or registrations in browser storage.
 import {
   type EnvironmentId,
   type OrchestrationV2ShellSnapshot,

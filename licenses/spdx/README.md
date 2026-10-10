@@ -7,4 +7,4 @@ License text is preserved; package-specific copyright notices are applied during
 
 Normal builds read these checked-in files without downloading license data. When adding a license
 to `third-party-licenses.config.json`, run `pnpm licenses:sync` with network access and commit the
-new source file. Version and revision pins live in `apps/web/vite/third-party-licenses.ts`.
+new source file. Version and revision pins live in `scripts/lib/third-party-licenses.ts`.

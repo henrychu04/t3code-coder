@@ -31,6 +31,7 @@ export function SettingsScopeNotice({
           .filter((group) => !search.project || group.projectKey === search.project)
           .flatMap((group) =>
             group.memberProjects.map((member) => ({
+              // Coder: each environment is a Coder workspace.
               label: `${group.displayName} · ${member.environmentLabel ?? "Workspace"} · ${member.workspaceRoot}`,
               search: {
                 project: group.projectKey,
@@ -56,11 +57,12 @@ export function SettingsScopeNotice({
                   (other) =>
                     other.environmentId !== entry.environmentId && other.label === entry.label,
                 )
-                  ? `${entry.label} · ${entry.environmentId}`
+                  ? `${entry.label} · ${entry.displayUrl || entry.environmentId}`
                   : entry.label,
                 search: { machine: entry.environmentId },
               }))
-          : [{ label: "Open all workspaces", search: {} }];
+          : // Coder: each environment is a Coder workspace.
+            [{ label: "Open all workspaces", search: {} }];
   return (
     <SettingsPageContainer>
       <Alert role="status">
@@ -75,17 +77,7 @@ export function SettingsScopeNotice({
                 className="max-w-full break-all text-left"
                 onClick={() => {
                   if (targetId)
-                    void navigate({
-                      to: pathname,
-                      search: () => ({
-                        project: undefined,
-                        machine: undefined,
-                        checkout: undefined,
-                        ...choice.search,
-                      }),
-                      hash: targetId.replace(/^#/, ""),
-                      hashScrollIntoView: false,
-                    });
+                    void navigate({ to: pathname, search: () => choice.search, hash: targetId });
                   else selectScope(choice.search);
                 }}
               >

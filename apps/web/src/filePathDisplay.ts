@@ -1,4 +1,3 @@
-import { splitPathAndPosition } from "./terminal-links";
 import {
   fileBasename,
   stripSlashPrefixedWindowsDrive,
@@ -10,17 +9,8 @@ function normalizePathSeparators(path: string): string {
   return path.replaceAll("\\", "/");
 }
 
-function canonicalizeWindowsDrivePath(path: string): string {
-  return /^\/[A-Za-z]:\//.test(path) ? path.slice(1) : path;
-}
-
 function trimTrailingPathSeparators(path: string): string {
   return path.replace(/[\\/]+$/, "");
-}
-
-function basenameOfPath(path: string): string {
-  const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
 }
 
 function stripRelativePrefixes(path: string): string {
@@ -31,17 +21,16 @@ export function formatWorkspaceRelativePath(
   pathWithPosition: string,
   workspaceRoot: string | undefined,
 ): string {
-  const { path, line, column } = splitPathAndPosition(pathWithPosition);
-  const normalizedPath = canonicalizeWindowsDrivePath(normalizePathSeparators(path));
+  const position = splitFilePathPosition(pathWithPosition);
+  const normalizedPath = stripSlashPrefixedWindowsDrive(normalizePathSeparators(position.path));
 
   let displayPath = normalizedPath;
   if (workspaceRoot) {
-    const normalizedWorkspaceRoot = canonicalizeWindowsDrivePath(
+    const normalizedWorkspaceRoot = stripSlashPrefixedWindowsDrive(
       normalizePathSeparators(trimTrailingPathSeparators(workspaceRoot)),
     );
-    const workspaceLabel = basenameOfPath(normalizedWorkspaceRoot);
-    const caseInsensitive =
-      /^[A-Za-z]:/.test(normalizedWorkspaceRoot) || workspaceRoot.startsWith("\\\\");
+    const workspaceLabel = fileBasename(normalizedWorkspaceRoot);
+    const caseInsensitive = isWindowsAbsolutePath(stripSlashPrefixedWindowsDrive(workspaceRoot));
     const pathForCompare = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
     const workspaceForCompare = caseInsensitive
       ? normalizedWorkspaceRoot.toLowerCase()
@@ -54,7 +43,7 @@ export function formatWorkspaceRelativePath(
     } else if (pathForCompare.startsWith(workspaceWithSeparator)) {
       const relativeSuffix = normalizedPath.slice(normalizedWorkspaceRoot.length + 1);
       displayPath = `${workspaceLabel}/${relativeSuffix}`;
-    } else if (!normalizedPath.startsWith("/") && !/^[A-Za-z]:/.test(normalizedPath)) {
+    } else if (!normalizedPath.startsWith("/")) {
       const relativePath = stripRelativePrefixes(normalizedPath);
       displayPath = pathForCompare.startsWith(workspaceLabelWithSeparator)
         ? normalizedPath
@@ -62,6 +51,5 @@ export function formatWorkspaceRelativePath(
     }
   }
 
-  if (!line) return displayPath;
-  return `${displayPath}:${line}${column ? `:${column}` : ""}`;
+  return formatFilePathPosition({ ...position, path: displayPath });
 }

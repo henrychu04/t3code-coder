@@ -11,6 +11,7 @@ export type PullRequestBodySegment =
       readonly id: string;
       readonly kind: "attachment";
       readonly url: string;
+      /** Coder: names the upload's host (GitLab or a self-hosted install), not always GitHub. */
       readonly hostLabel: string;
       /**
        * What the reader can be told the upload is. The uuid says nothing on its own — the type
@@ -29,6 +30,7 @@ const FENCE_PATTERN = /^\s{0,3}((?:`{3,})|(?:~{3,}))(.*)$/u;
 const VIDEO_TAG_MAX_LINES = 8;
 /** Four spaces open an indented code block, so its contents stay verbatim markdown. */
 const INDENTED_CODE_PATTERN = /^(?: {4}|\t)/u;
+// Coder: GitLab writes uploads as root-relative `/uploads/…` links.
 const BARE_URL_PATTERN = /^<?((?:https?:\/\/|\/uploads\/)\S+?)>?$/u;
 const VIDEO_EXTENSION_PATTERN = /\.(?:mp4|webm|mov|m4v|ogv)(?:$|[?#])/iu;
 /** A dropped video becomes a bare asset link; a dropped image becomes an `<img>` tag. */
@@ -87,10 +89,9 @@ function attachmentFromLine(
  * markdown renderer drops: `<video>` is not in its sanitizer's schema, and a bare attachment
  * link arrives as prose. Two shapes are recognised, both of which GitHub produces itself: a
  * `<video>` (or `<source>`) tag, and a bare link on its own line to a video file or an
- * uploaded attachment. Fenced code is copied through untouched so a snippet that happens to
- * uploaded attachment. GitLab's root-relative `/uploads/…` form is resolved against the merge
- * request host before it is exposed. Fenced code is copied through untouched so a snippet that
- * happens to contain a link is never lifted out of it.
+ * uploaded attachment. Coder: GitLab's root-relative `/uploads/…` form is resolved against the
+ * merge request host before it is exposed. Fenced code is copied through untouched so a snippet
+ * that happens to contain a link is never lifted out of it.
  */
 export function splitPullRequestBody(
   body: string,
@@ -182,6 +183,7 @@ export function splitPullRequestBody(
   return segments;
 }
 
+// Coder: GitLab references merge requests as `!123`; `#123` is an issue.
 const AUTOLINK_CANDIDATE_PATTERN = /![1-9]\d*|#[1-9]\d*|[0-9a-f]{40}/giu;
 const AUTOLINK_WORD_CHARACTER_PATTERN = /[A-Za-z0-9_]/u;
 const AUTOLINK_COMMIT_PREFIX_PATTERN = /[\s([{]/u;

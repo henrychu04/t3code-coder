@@ -1,7 +1,7 @@
 # Codex and Claude Code
 
-T3 Coder uses the Codex and Claude Code installations already available in the connected Coder
-workspace. It does not run a provider on the local computer, install a missing provider in the
+T3 Coder uses the Codex, Claude Code, and Pi installations already available in the connected
+Coder workspace. It does not run a provider on the local computer, install a missing provider in the
 workspace, or copy provider credentials between them.
 
 This fork supports API-backed usage only. Subscription-backed ChatGPT and Claude consumer plans

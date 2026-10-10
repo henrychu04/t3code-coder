@@ -38,10 +38,11 @@ function TaskSegments({
   className,
   steps,
 }: {
-  className?: string;
-  steps: readonly ComposerTaskStep[];
+  readonly className?: string;
+  readonly steps: readonly ComposerTaskStep[];
 }) {
   if (steps.length <= 1 || steps.length > MAX_TASK_SEGMENTS) return null;
+
   return (
     <span aria-hidden className={cn("flex w-10 shrink-0 items-center gap-0.5", className)}>
       {keyedTaskSteps(steps).map(({ key, step }) => (
@@ -66,9 +67,9 @@ function TaskSummary({
   progress,
   steps,
 }: {
-  expanded: boolean;
-  progress: ComposerTasksProgress;
-  steps: readonly ComposerTaskStep[];
+  readonly expanded: boolean;
+  readonly progress: ComposerTasksProgress;
+  readonly steps: readonly ComposerTaskStep[];
 }) {
   return (
     <>
@@ -105,13 +106,14 @@ export const ComposerTasksBadge = memo(function ComposerTasksBadge({
   progress,
   steps,
 }: {
-  expanded: boolean;
-  onToggle: () => void;
-  placement?: "inline" | "tab";
-  progress: ComposerTasksProgress;
-  steps: readonly ComposerTaskStep[];
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
+  readonly placement?: "inline" | "tab";
+  readonly progress: ComposerTasksProgress;
+  readonly steps: readonly ComposerTaskStep[];
 }) {
   if (progress.totalSteps <= 0) return null;
+
   const row = (
     <ComposerBanner.Row
       render={<button type="button" />}
@@ -127,7 +129,9 @@ export const ComposerTasksBadge = memo(function ComposerTasksBadge({
   return placement === "inline" ? (
     row
   ) : (
-    <ComposerBanner.Root data-composer-shoulder-tab>{row}</ComposerBanner.Root>
+    <ComposerBanner.Root density="comfortable" data-composer-shoulder-tab>
+      {row}
+    </ComposerBanner.Root>
   );
 });
 
@@ -137,10 +141,10 @@ export const ComposerTasksContent = memo(function ComposerTasksContent({
   progress,
   steps,
 }: {
-  expanded: boolean;
-  onToggle: () => void;
-  progress: ComposerTasksProgress;
-  steps: readonly ComposerTaskStep[];
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
+  readonly progress: ComposerTasksProgress;
+  readonly steps: readonly ComposerTaskStep[];
 }) {
   return (
     <div
@@ -219,7 +223,7 @@ export const ComposerTasksDrawer = memo(function ComposerTasksDrawer({
   onCollapse,
   ...props
 }: Omit<ComponentProps<typeof ComposerTasksContent>, "expanded" | "onToggle"> & {
-  onCollapse: () => void;
+  readonly onCollapse: () => void;
 }) {
   return (
     <ComposerBanner.Attachment>

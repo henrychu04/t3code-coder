@@ -1,3 +1,4 @@
+// Coder: no preview-annotation context (browser preview is not carried).
 import ChatMarkdown from "./ChatMarkdown";
 import type { ThreadContextRecord } from "@t3tools/contracts";
 import { formatAttachmentSize } from "~/lib/attachmentDisplay";

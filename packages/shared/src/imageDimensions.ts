@@ -1,8 +1,8 @@
 /**
- * Reads pixel dimensions from the header bytes of a PNG, JPEG, or WebP
+ * Reads pixel dimensions from the header bytes of a PNG, JPEG, GIF, or WebP
  * file so a client can reserve the exact box before the bytes arrive. Any
- * unsupported or unreadable header yields null. This is a layout hint, not
- * image validation; callers must validate signatures separately.
+ * other format, a truncated header, or a malformed file yields null; callers
+ * fall back to measuring after decode.
  */
 export interface ImageDimensions {
   readonly width: number;
@@ -10,15 +10,14 @@ export interface ImageDimensions {
 }
 
 /**
- * Bound metadata scanning. A JPEG's frame header can sit behind
+ * Enough for every supported header. A JPEG's frame header can sit behind
  * several 64 KiB metadata segments (EXIF, an ICC profile, XMP), so allow a
  * few of them before giving up.
  */
-const IMAGE_DIMENSIONS_HEADER_BYTES = 256 * 1024;
+export const IMAGE_DIMENSIONS_HEADER_BYTES = 256 * 1024;
 
 export function readImageDimensions(bytes: Uint8Array): ImageDimensions | null {
-  bytes = bytes.subarray(0, IMAGE_DIMENSIONS_HEADER_BYTES);
-  const dimensions = readPng(bytes) ?? readWebp(bytes) ?? readJpeg(bytes);
+  const dimensions = readPng(bytes) ?? readGif(bytes) ?? readWebp(bytes) ?? readJpeg(bytes);
   return dimensions && dimensions.width > 0 && dimensions.height > 0 ? dimensions : null;
 }
 
@@ -40,6 +39,13 @@ function readPng(bytes: Uint8Array): ImageDimensions | null {
   }
   const data = view(bytes);
   return { width: data.getUint32(16), height: data.getUint32(20) };
+}
+
+function readGif(bytes: Uint8Array): ImageDimensions | null {
+  if (bytes.length < 10) return null;
+  if (bytes[0] !== 0x47 || bytes[1] !== 0x49 || bytes[2] !== 0x46 || bytes[3] !== 0x38) return null;
+  const data = view(bytes);
+  return { width: data.getUint16(6, true), height: data.getUint16(8, true) };
 }
 
 function readWebp(bytes: Uint8Array): ImageDimensions | null {

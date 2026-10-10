@@ -10,6 +10,7 @@ export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   baseRef: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
+  // Coder: a branch preview may ask for one top-level source.
   sourceKind: Schema.optionalKey(ReviewDiffPreviewSourceKind),
   file: Schema.optionalKey(
     Schema.Struct({
@@ -60,6 +61,8 @@ export const ReviewDiffFileContentsResult = Schema.Struct({
 });
 export type ReviewDiffFileContentsResult = typeof ReviewDiffFileContentsResult.Type;
 
+// Coder: expanded review files travel as immutable snapshots read in bounded, optionally gzipped
+// chunks so no stdio frame approaches the gateway's 8 MiB limit.
 export const MAX_REVIEW_DIFF_FILE_BYTES = 32 * 1024 * 1024;
 export const MAX_REVIEW_DIFF_FILE_CHUNK_BYTES = 512 * 1024;
 

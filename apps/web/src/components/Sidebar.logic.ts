@@ -67,7 +67,7 @@ export function resolveSidebarRowAccessibility(input: {
 // activities, growing as agents work) for as long as the row stays visible,
 // so this limit is a direct renderer-heap and server-load multiplier — keep
 // it small; cold opens still render instantly from the cached snapshot.
-export const SIDEBAR_THREAD_PREWARM_LIMIT = 3;
+const SIDEBAR_THREAD_PREWARM_LIMIT = 3;
 
 // A small buffer keeps the next few rows warm without leasing every row that
 // content-visibility leaves mounted below the scroll viewport.

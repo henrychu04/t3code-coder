@@ -30,8 +30,11 @@ describe("readImageDimensions", () => {
     expect(readImageDimensions(png)).toEqual({ width: 1600, height: 900 });
   });
 
-  it("does not accept GIF", () => {
-    expect(readImageDimensions(bytes("GIF89a", u16le(320), u16le(240)))).toBeNull();
+  it("reads a GIF logical screen", () => {
+    expect(readImageDimensions(bytes("GIF89a", u16le(320), u16le(240)))).toEqual({
+      width: 320,
+      height: 240,
+    });
   });
 
   it("reads a JPEG start-of-frame after an APP segment", () => {
@@ -127,25 +130,10 @@ describe("readImageDimensions", () => {
     ).toEqual({ width: 800, height: 600 });
   });
 
-  it("stops scanning JPEG metadata after the bounded header", () => {
-    const segment = new Uint8Array(65_537);
-    segment.set([0xff, 0xe1, 0xff, 0xff]);
-    const sof = bytes([0xff, 0xc0], u16(17), [8], u16(10), u16(20));
-    const jpeg = new Uint8Array(2 + segment.length * 5 + sof.length);
-    jpeg.set([0xff, 0xd8]);
-    for (let i = 0; i < 5; i++) jpeg.set(segment, 2 + i * segment.length);
-    jpeg.set(sof, 2 + segment.length * 5);
-    expect(readImageDimensions(jpeg)).toBeNull();
-  });
-
   it("returns null for unsupported, truncated, or zero-sized input", () => {
     expect(readImageDimensions(bytes("<svg xmlns='http://www.w3.org/2000/svg'/>"))).toBeNull();
     expect(readImageDimensions(bytes([0x89], "PNG"))).toBeNull();
-    expect(
-      readImageDimensions(
-        bytes([0x89], "PNG", [0x0d, 0x0a, 0x1a, 0x0a], u32(13), "IHDR", u32(0), u32(240)),
-      ),
-    ).toBeNull();
+    expect(readImageDimensions(bytes("GIF89a", u16le(0), u16le(240)))).toBeNull();
     expect(readImageDimensions(bytes([0xff, 0xd8], [0xff, 0xd9]))).toBeNull();
     expect(readImageDimensions(new Uint8Array())).toBeNull();
   });

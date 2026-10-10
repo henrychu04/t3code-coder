@@ -1,3 +1,5 @@
+// Coder: each environment has one route, the loopback gateway's WebSocket for a Coder workspace,
+// so upstream's multi-route checks, preflight, and descriptor fetches are absent.
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

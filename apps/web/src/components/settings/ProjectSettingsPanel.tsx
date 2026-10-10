@@ -1,3 +1,4 @@
+// Coder: no Integrations category or external favicon picker (desktop bridge only).
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
