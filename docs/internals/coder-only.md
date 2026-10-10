@@ -916,6 +916,11 @@ listed here is drift to remove rather than fork behavior to keep.
   `scripts/coder-live-provider-images.mjs` (`pnpm coder:live:providers`) runs one real turn per
   provider, which needs authenticated workspace or local Codex and Claude Code CLIs and spends
   their quota.
+- **Upstream tests.** `storageCleanup.test.ts` roots its test config at the temp directory's real
+  path, so its path checks pass on macOS, where the temp directory is behind the `/var` symlink.
+  `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
+  reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
+  says when to retry it.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,

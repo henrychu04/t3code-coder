@@ -135,13 +135,12 @@ Finish with `pnpm knip:check`.
 In this order, fixing each failure before the next: `pnpm test:coder`; every typecheck listed in
 `AGENTS.md`; `pnpm knip:check`; `pnpm build`.
 
-Known results, which are not fork failures:
+`pnpm test:coder` exits 0; a failure is real. Known results:
 
-- `apps/server/src/storageCleanup.test.ts` "aggregates expired artifacts and rotated logs while
-  retaining current logs" fails on macOS (`/var` is a symlink to `/private/var`).
-- `apps/server/src/orchestration-v2/ProjectionRecovery.test.ts` "selects unfinished recovery work
-  without reading settled thread histories" fails on pure upstream too (`ProjectionStoreSetupError`,
-  "malformed JSON").
+- `apps/server/src/orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery
+  work without reading settled thread histories": it fails on pure upstream too
+  (`ProjectionStoreSetupError`, "malformed JSON"). Each sync, turn `it.effect.skip` back into
+  `it.effect`; keep the skip, with the new merge-base in its comment, only if it still fails.
 - `apps/server/src/serverSettings.test.ts` "follows a settings link that is repointed to another
   directory" can hit its 2-second watcher timeout under full-suite load. Rerun it alone:
   `pnpm exec vp test run --config vite.coder.config.ts apps/server/src/serverSettings.test.ts`.
