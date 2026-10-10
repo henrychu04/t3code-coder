@@ -111,6 +111,12 @@ describe("searchSettings", () => {
     ).toBe(false);
     expect(searchSettings("hold to quit")).toEqual([]);
     expect(searchSettings("wsl")).toEqual([]);
+    expect(searchSettings("update track")).toEqual([]);
+  });
+
+  // Coder: there is no update track; only the version row is searchable.
+  it("finds the About version row", () => {
+    expect(searchSettings("check for updates").map((item) => item.id)).toContain("app-version");
   });
 
   it("hides macOS-only settings on other platforms", () => {

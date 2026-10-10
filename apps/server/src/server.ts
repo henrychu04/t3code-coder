@@ -35,6 +35,7 @@ import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Sqlite.
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
+import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as ProviderRegistryLayer from "./provider/ProviderRegistry.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
@@ -423,7 +424,11 @@ export const makeCoderRuntimeLayer = () => {
     startedRuntime,
     CoderRuntimeDependenciesLive,
     EnvironmentTheme.layer,
-  ).pipe(Layer.provideMerge(VcsProcess.layer));
+  ).pipe(
+    Layer.provideMerge(VcsProcess.layer),
+    // Every agent and terminal spawn reads this, so it sits below everything.
+    Layer.provideMerge(AgentScopeLive.layer),
+  );
   // Upstream provides the agent-session scanner beside its WS layer; the helper RPC layer
   // takes it here.
   const rpcServices = AgentSessionScanner.layer.pipe(Layer.provideMerge(services));

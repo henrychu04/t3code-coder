@@ -483,8 +483,7 @@ export const make = Effect.gen(function* () {
     const read = yield* Effect.exit(
       Effect.all(
         [
-          // Coder: detail reads take no `allowStale` (no cross-environment routing).
-          pullRequests.detail(reference),
+          pullRequests.detail({ ...reference, allowStale: false }),
           plan.activity
             ? pullRequests.activity(reference).pipe(Effect.map(Option.some))
             : Effect.succeed(Option.none<PullRequestActivity>()),

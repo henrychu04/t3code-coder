@@ -79,4 +79,27 @@ describe("linked pull request snapshots", () => {
       sourceControlProvider: { kind: "gitlab", name: "gitlab", baseUrl: "" },
     });
   });
+  // Coder: GitLab is the only hosted provider; other hosts' links have no snapshot status.
+  it.each([
+    ["https://git.cafe/owner/repo/pulls/42", undefined],
+    ["https://staging.git.cafe/owner/repo/pulls/42", undefined],
+    ["https://codeberg.org/owner/repo/pulls/42", undefined],
+    ["https://gitlab.example.com/acme/web/-/merge_requests/42", "gitlab"],
+    ["https://github.com/owner/repo/pull/42", undefined],
+  ])("classifies %s as %s", (url, kind) => {
+    const result = linkedPullRequestSnapshotStatus({
+      ...link,
+      url,
+      snapshot: {
+        state: "open",
+        title: "Change",
+        headBranch: "feature",
+        baseBranch: "main",
+        isDraft: false,
+        updatedAt: null,
+        syncedAt: "2026-01-03T00:00:00Z",
+      },
+    });
+    expect(result?.sourceControlProvider.kind).toBe(kind);
+  });
 });

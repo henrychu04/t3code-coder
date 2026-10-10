@@ -78,6 +78,12 @@ export function getSourceControlPresentation(
         terminology: getChangeRequestTerminology(provider),
         Icon: GitPullRequestIcon,
       };
+    case "gitcafe":
+      return {
+        providerName: provider?.name || presentation.providerName,
+        terminology: getChangeRequestTerminology(provider),
+        Icon: GitPullRequestIcon,
+      };
     case "change-request":
       return {
         providerName: provider?.name || presentation.providerName,

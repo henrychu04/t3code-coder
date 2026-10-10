@@ -608,7 +608,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
     cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by
-    the empty strict configuration. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
+    the empty strict configuration. `executableArgs` go before the CLI's own arguments, as the
+    SDK passes them, so upstream's agent scope wrapper launches the CLI. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
     allocates the fork's session id and stores the source session and message boundary as the
     provider thread's `claudeFork` native metadata. The fork's first query then runs
     `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather
@@ -677,8 +678,9 @@ listed here is drift to remove rather than fork behavior to keep.
     unavailable; providers authenticate through the workspace's API configuration.
     `CodexManagedRuntime` keeps only upstream's resolution contract.
   - Provider drivers, snapshots, and the registry are upstream's. Coder deltas: `CodexDriver`
-    offers no T3-managed Codex install (`setupMode: "managed"`), and neither driver redeems
-    rate-limit reset credits. `ModelManifest.layerBundled` serves the bundled manifest without
+    offers no T3-managed Codex install (`setupMode: "managed"`), neither driver redeems
+    rate-limit reset credits, and `ClaudeDriver` does not read the Claude organization id that
+    keys upstream's usage accounts. `ModelManifest.layerBundled` serves the bundled manifest without
     upstream's hourly fetch or disk cache. Both providers attach
     per-model `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
@@ -921,8 +923,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `glab auth status` lines carrying a token label or a `glpat-` token are never surfaced. Clones
     accept only GitLab URLs without credentials, query, or fragment, and pass `--` before the URL.
   - `PullRequestService` omits upstream's cross-environment routing (routing identities,
-    verified credentials, `expectedAccountId` and `allowStale` refs) and Forgejo SSH-alias
-    refinement.
+    verified credentials, `expectedAccountId` refs) and Forgejo SSH-alias refinement. It keeps
+    `allowStale: false`, which the merge-request watcher uses to read past the held detail.
 - **Provider drivers.** provider-core's `ProviderDriver.usage` is `never` and its `usage.ts`
   is not carried: there is no usage page, so Claude and Codex register no usage readers and
   `provider/builtInDrivers.ts` has no usage driver list.

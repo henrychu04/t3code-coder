@@ -249,7 +249,11 @@ function AboutVersionTitle() {
 // Coder: the gateway installs the matching helper; there is no desktop or hosted-app update track.
 function AboutVersionSection() {
   return (
-    <SettingsRow title={<AboutVersionTitle />} description="Current version of the application." />
+    <SettingsRow
+      id={searchableSetting("app-version").id}
+      title={<AboutVersionTitle />}
+      description="Current version of the application."
+    />
   );
 }
 
@@ -2925,6 +2929,7 @@ export function GeneralSettingsPanel() {
         ) : (
           <>
             <SettingsRow
+              id={searchableSetting("app-version").id}
               title={<AboutVersionTitle />}
               description="Current version of the application."
             />
