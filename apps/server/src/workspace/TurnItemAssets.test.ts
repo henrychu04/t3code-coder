@@ -21,6 +21,10 @@ const now = DateTime.makeUnsafe("2026-10-09T00:00:00.000Z");
 const threadId = ThreadId.make("thread:apps");
 const itemId = TurnItemId.make("turn-item:apps");
 const attachmentId = "thread-apps-550e8400-e29b-41d4-a716-446655440000-html";
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=",
+  "base64",
+);
 
 function toolItem(output: unknown, toolName = "todos.show"): OrchestrationV2TurnItem {
   return {
@@ -53,6 +57,9 @@ const appOutput = {
     resourceUri: "ui://todos/app.html",
   },
   result: { content: [] },
+};
+const imageOutput = {
+  content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }],
 };
 
 let attachmentsDir: string;
@@ -113,5 +120,16 @@ describe("readTurnItemAssetChunk", () => {
     // A result that imitates the reference counts only for the server and tool it names.
     expect((await read(toolItem(appOutput, "other.show"), document))._tag).toBe("Failure");
     expect((await read(null, document))._tag).toBe("Failure");
+  });
+
+  it("decodes a tool output image by index and refuses one past the end", async () => {
+    const image = await read(toolItem(imageOutput), { _tag: "tool-output-image", index: 0 });
+    expect(image._tag).toBe("Success");
+    if (image._tag !== "Success") return;
+    expect(image.success.mimeType).toBe("image/png");
+    expect(Buffer.from(image.success.dataBase64, "base64")).toEqual(png);
+    expect((await read(toolItem(imageOutput), { _tag: "tool-output-image", index: 1 }))._tag).toBe(
+      "Failure",
+    );
   });
 });
