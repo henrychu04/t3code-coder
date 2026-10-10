@@ -2,11 +2,14 @@ import {
   MAX_PROJECT_MEDIA_BYTES,
   MAX_SCREENSHOT_ARTIFACT_BYTES,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
+  type ProjectFilesOwner,
   type ProjectImageChunk,
   type ProjectImageReadInput,
 } from "@t3tools/contracts";
 import type { ImageResourceBlob } from "../components/chat/imageResources";
-export type ProjectImageTarget = Pick<ProjectImageReadInput, "threadId" | "cwd" | "filePath">;
+// Coder: the owner is a persisted thread or, for a draft, its project.
+export type ProjectImageTarget = ProjectFilesOwner &
+  Pick<ProjectImageReadInput, "cwd" | "filePath">;
 
 export type ProjectMediaKind = "image" | "video" | "audio";
 const MAX_BYTES: Record<ProjectMediaKind, number> = {

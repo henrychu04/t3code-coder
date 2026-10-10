@@ -7,6 +7,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { ProjectFilesOwnerFields } from "./project.ts";
 
 export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
 export const MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES = 512 * 1024;
@@ -111,9 +112,9 @@ export const ProjectMediaMimeType = Schema.Literals([
 ]);
 export type ProjectMediaMimeType = typeof ProjectMediaMimeType.Type;
 
-/** On-demand image paths resolve on the environment machine, relative to the verified thread root. */
+/** On-demand image paths resolve on the environment machine, relative to the verified owner root. */
 export const ProjectImageReadInput = Schema.Struct({
-  threadId: ThreadId,
+  ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
   filePath: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
   offset: NonNegativeInt,

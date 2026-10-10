@@ -438,7 +438,6 @@ import {
 import type { ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
-  canUseOwnedFilesSurface,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
@@ -3670,12 +3669,7 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
-  // Coder: the helper verifies each Files request against a persisted thread's project root.
-  const filesAvailable = canUseOwnedFilesSurface({
-    isServerThread,
-    hasProject: activeProject !== null,
-    hasWorkspaceRoot: activeWorkspaceRoot !== undefined,
-  });
+  const filesAvailable = activeProject !== null;
   useLayoutEffect(() => {
     if (
       threadDetailLoading ||
@@ -9949,7 +9943,6 @@ export default function ChatView(props: ChatViewProps) {
     ) : (renderedRightPanelSurface?.kind === "files" ||
         renderedRightPanelSurface?.kind === "file") &&
       // Coder: file attachments are not previewed; the Files surface reads project files only.
-      filesAvailable &&
       activeProject &&
       activeWorkspaceRoot ? (
       <Suspense fallback={null}>
@@ -9959,6 +9952,7 @@ export default function ChatView(props: ChatViewProps) {
           cwd={activeWorkspaceRoot}
           projectName={activeProject.title}
           threadRef={activeThreadRef}
+          projectId={activeProject.id}
           composerDraftTarget={composerDraftTarget}
           relativePath={
             renderedRightPanelSurface.kind === "file"

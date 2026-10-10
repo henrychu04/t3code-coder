@@ -36,6 +36,7 @@ import {
   type ProjectEntriesFailure,
   type ProjectFileFailure,
   type ProjectFileOperation,
+  type ProjectId,
   type ProjectMutation,
   ProjectListEntriesError,
   ProjectMutationError,
@@ -1200,15 +1201,32 @@ export const layer = CoderWsRpcGroup.toLayer(
 
     // Coder: verify file and media roots belong to the requesting thread.
     const workspaceOwnedByThread = Effect.fn("ws.workspaceOwnedByThread")(function* (input: {
-      readonly threadId: ThreadId;
+      readonly threadId?: ThreadId | undefined;
+      readonly draftProjectId?: ProjectId | undefined;
       readonly cwd: string;
     }) {
+      const cwd = path.resolve(input.cwd);
+      if (input.threadId === undefined) {
+        // Coder: a draft has no persisted thread, so it names its project. Its root may be the
+        // project's workspace root or a worktree one of the project's persisted threads owns.
+        if (input.draftProjectId === undefined) return false;
+        const project = yield* projectService.getShell(input.draftProjectId);
+        if (Option.isNone(project)) return false;
+        if (cwd === path.resolve(project.value.workspaceRoot)) return true;
+        const threads = yield* threadManagement.listProjectThreads({
+          projectId: input.draftProjectId,
+          includeSubagents: true,
+        });
+        return threads.some(
+          (thread) => thread.worktreePath !== null && cwd === path.resolve(thread.worktreePath),
+        );
+      }
       const thread = yield* threadManagement.getThreadShell(input.threadId);
       if (thread === null) return false;
       const project = yield* projectService.getShell(thread.projectId);
       if (Option.isNone(project)) return false;
       const ownedRoot = thread.worktreePath ?? project.value.workspaceRoot;
-      return path.resolve(input.cwd) === path.resolve(ownedRoot);
+      return cwd === path.resolve(ownedRoot);
     });
 
     // Coder: rename the managed workspace branch and worktree together through workspace Git.

@@ -427,15 +427,6 @@ export function startNewThreadForProject(
   return true;
 }
 
-/** Coder: the Files surface reads only a server thread's verified project root. */
-export function canUseOwnedFilesSurface(input: {
-  isServerThread: boolean;
-  hasProject: boolean;
-  hasWorkspaceRoot: boolean;
-}): boolean {
-  return input.isServerThread && input.hasProject && input.hasWorkspaceRoot;
-}
-
 export function resolveThreadMetadataUpdateForNextTurn(input: {
   currentModelSelection: ModelSelection;
   nextModelSelection?: ModelSelection;

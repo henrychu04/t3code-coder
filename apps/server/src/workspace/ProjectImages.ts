@@ -118,7 +118,7 @@ async function detectProjectMediaMimeType(
 
 const unavailable = () =>
   new ProjectImageReadError({ message: "Media is unavailable or has changed. Retry." });
-/** The caller must verify that cwd belongs to threadId before invoking this read. */
+/** The caller must verify that cwd belongs to the request owner before invoking this read. */
 export const readProjectImage = (
   input: ProjectImageReadInput,
 ): Effect.Effect<ProjectImageChunk, ProjectImageReadError> =>

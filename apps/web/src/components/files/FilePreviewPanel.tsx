@@ -1,6 +1,12 @@
 import { Spinner } from "~/components/ui/spinner";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProjectFilesOwner,
+  ProjectId,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
+import { AuthFilesystemWriteScope } from "@t3tools/contracts";
 import {
   isWorkspaceAudioPreviewPath,
   isWorkspaceImagePreviewPath,
@@ -24,7 +30,9 @@ import {
 import type { WorkerPoolManager } from "@pierre/diffs/worker";
 import { EditProvider, File, Virtualizer, useWorkerPool } from "@pierre/diffs/react";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
-import { Code2, Eye, FolderTree, Table2, WrapTextIcon } from "lucide-react";
+import { useFilesystemReadAccess } from "~/state/filesystem";
+import { FolderTree, WrapTextIcon } from "lucide-react";
+import { Code2, Eye, Table2 } from "lucide";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -33,6 +41,7 @@ import { useProjectImages } from "~/components/chat/useProjectImages";
 import { useProjectMedia, type ProjectVideoSource } from "~/components/chat/useProjectVideo";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
+import { MorphIcon } from "~/components/MorphIcon";
 import { Button } from "~/components/ui/button";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
@@ -45,6 +54,7 @@ import { isAbsolutePath } from "@t3tools/shared/path";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { buildFileReviewComment } from "~/reviewCommentContext";
+import { useEnvironmentScope } from "~/state/session";
 
 import { AudioPreview } from "./AudioPreview";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
@@ -74,6 +84,7 @@ import { resolveCenteredFileLineScrollTop } from "./fileLineReveal";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { projectFileCacheKey } from "./fileContentRevision";
 import {
+  filePreviewReadErrorMessage,
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
   setMarkdownTaskChecked,
@@ -96,6 +107,8 @@ interface FilePreviewPanelProps {
   // Coder: no attachment previews, local editors, or open-in keybindings; sent file attachments
   // render as static rows and Files only opens project files.
   threadRef: ScopedThreadRef;
+  // Coder: a draft names its project so the helper can verify the root it reads.
+  projectId: ProjectId;
   composerDraftTarget: ScopedThreadRef | DraftId;
   revealLine: number | null;
   revealRequestId: number;
@@ -118,7 +131,9 @@ type FilePostRender = <LAnnotation>(
 /**
  * Coder: main loads workspace media from signed asset URLs; Coder reads each file through bounded
  * helper stdio chunks into a memory-only blob URL. Opening the file is the explicit request, so
- * the read starts immediately. There is no PDF or HTML browser preview.
+ * the read starts immediately. There is no PDF or HTML browser preview. Unlike main's re-signed
+ * URLs, video and audio do not reread on workspace mutations: each read moves the whole file
+ * through helper stdio, so a retry or reopen shows the current file.
  */
 function WorkspaceImagePreview(props: {
   readonly source: ProjectVideoSource;
@@ -490,8 +505,8 @@ function useEditableAfterHighlight(file: FileContents) {
 
 interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
-  // Coder: writes name the owning thread and the revision the edit is based on.
-  threadId: ThreadId;
+  // Coder: writes name their owner and the revision the edit is based on.
+  owner: ProjectFilesOwner;
   revision: string;
   cwd: string;
   relativePath: string;
@@ -512,7 +527,7 @@ interface FileSelectionOverride {
 
 function EditableFileSurface({
   environmentId,
-  threadId,
+  owner,
   revision,
   cwd,
   relativePath,
@@ -541,7 +556,7 @@ function EditableFileSurface({
   const selectionFrameRef = useRef<number | null>(null);
   const saveCoordinator = useFileSaveCoordinator({
     environmentId,
-    threadId,
+    owner,
     revision,
     cwd,
     relativePath,
@@ -586,8 +601,7 @@ function EditableFileSurface({
       lineAnnotations: nextLineAnnotations,
     }: EditorChangeEvent<"file", FileCommentAnnotationGroup, undefined>) => {
       // Adopting an external change reports it as an edit; it is already on disk.
-      if (file.contents === getProjectFileContents(environmentId, threadId, cwd, relativePath))
-        return;
+      if (file.contents === getProjectFileContents(environmentId, owner, cwd, relativePath)) return;
       setEditedContents(file.contents);
       setProjectFileQueryData(environmentId, cwd, relativePath, file.contents, revisionRef.current);
       saveCoordinator.change(file.contents);
@@ -617,9 +631,9 @@ function EditableFileSurface({
       composerDraftTarget,
       cwd,
       environmentId,
+      owner,
       relativePath,
       saveCoordinator,
-      threadId,
     ],
   );
 
@@ -816,7 +830,7 @@ function EditableFileSurface({
 
 function RenderedMarkdownSurface({
   environmentId,
-  threadId,
+  owner,
   revision,
   cwd,
   relativePath,
@@ -839,7 +853,7 @@ function RenderedMarkdownSurface({
 }) {
   const saveCoordinator = useFileSaveCoordinator({
     environmentId,
-    threadId,
+    owner,
     revision,
     cwd,
     relativePath,
@@ -901,6 +915,7 @@ export default function FilePreviewPanel({
   projectName,
   relativePath: requestedPath,
   threadRef,
+  projectId,
   composerDraftTarget,
   revealLine,
   revealRequestId,
@@ -910,6 +925,14 @@ export default function FilePreviewPanel({
   workspaceMutationId,
 }: FilePreviewPanelProps) {
   const relativePath = resolveFilePreviewPath(requestedPath, cwd);
+  // A draft's composer target is its draft id; a thread the server knows is a ref.
+  const draft = typeof composerDraftTarget === "string";
+  // Coder: every Files request names its owner. The server does not know a draft yet, so a draft
+  // names its project and the helper verifies the root against that project instead.
+  const owner = useMemo<ProjectFilesOwner>(
+    () => (draft ? { draftProjectId: projectId } : { threadId: threadRef.threadId }),
+    [draft, projectId, threadRef.threadId],
+  );
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
   const isVideo = relativePath !== null && isWorkspaceVideoPreviewPath(relativePath);
@@ -918,24 +941,19 @@ export default function FilePreviewPanel({
   const isMedia = isImage || isVideo || isAudio;
   // A file outside the workspace (an absolute path) is shown, never edited.
   const isHostFile = relativePath !== null && isAbsolutePath(relativePath);
+  const fileAccess = useFilesystemReadAccess(environmentId);
+  const { canReadFiles } = fileAccess;
+  const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   // Media and PDFs render from their absolute path, so their contents are never
   // shown. The read still runs: a folder named `assets.png` is only knowable as a
   // folder from the read failure, and the server stats before reading, so a folder
   // costs an open and a stat and returns no body.
-  const file = useProjectFileQuery(
-    environmentId,
-    threadRef.threadId,
-    cwd,
-    relativePath,
-    relativePath !== null,
-  );
-  // Coder: media reads go through the helper by thread, root, and project-relative path.
+  const file = useProjectFileQuery(environmentId, owner, cwd, relativePath, relativePath !== null);
+  const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
+  // Coder: media reads go through the helper by owner, root, and project-relative path.
   const mediaSource: ProjectVideoSource | null =
     relativePath !== null && isMedia
-      ? {
-          environmentId,
-          target: { threadId: threadRef.threadId, cwd, filePath: relativePath },
-        }
+      ? { environmentId, target: { ...owner, cwd, filePath: relativePath } }
       : null;
   // A chat link cannot tell a folder from a file, so a folder arrives here as
   // a file surface and the read fails. Keep the breadcrumbs, drop the preview
@@ -1047,6 +1065,22 @@ export default function FilePreviewPanel({
     setReloadCount((current) => current + 1);
   }, [cwd, environmentId, file, onPendingChange, relativePath]);
 
+  if (!canReadFiles) {
+    if (fileAccess.isPending) {
+      return (
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="size-4" />
+          Checking file access...
+        </div>
+      );
+    }
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        {fileAccess.error ?? "This connection cannot read host files."}
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       {relativePath ? (
@@ -1063,7 +1097,7 @@ export default function FilePreviewPanel({
               <FileBreadcrumbs
                 cwd={cwd}
                 environmentId={environmentId}
-                threadId={threadRef.threadId}
+                owner={owner}
                 onOpenFile={onOpenFile}
                 projectName={projectName}
                 relativePath={relativePath}
@@ -1085,13 +1119,10 @@ export default function FilePreviewPanel({
                 );
               }}
             >
-              {rendered ? (
-                <Code2 className="size-3.5" />
-              ) : renderedMode === "table" ? (
-                <Table2 className="size-3.5" />
-              ) : (
-                <Eye className="size-3.5" />
-              )}
+              <MorphIcon
+                className="size-3.5"
+                icon={rendered ? Code2 : renderedMode === "table" ? Table2 : Eye}
+              />
             </FileSurfaceAction>
           ) : null}
           {showsRawText ? (
@@ -1112,6 +1143,11 @@ export default function FilePreviewPanel({
               <FolderTree className="size-3.5" />
             </FileSurfaceAction>
           ) : null}
+        </div>
+      ) : null}
+      {relativePath && !isHostFile && !canWriteFiles && !fileAccess.isPending ? (
+        <div className="shrink-0 border-b px-3 py-1.5 text-2xs text-muted-foreground">
+          Read-only connection. Unsaved edits are kept until write access returns.
         </div>
       ) : null}
       {previewPath && saveFailedPath === previewPath ? (
@@ -1153,8 +1189,32 @@ export default function FilePreviewPanel({
               alt={relativePath ?? "image"}
             />
           ) : relativePath && file.error && file.data === null ? (
-            <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
-              {file.error}
+            <div
+              role="alert"
+              className="scrollbar-gutter-both flex min-h-0 flex-1 flex-col overflow-auto"
+            >
+              <div className="my-auto flex shrink-0 flex-col gap-3 px-6 py-6 text-center text-xs leading-relaxed">
+                <p className="text-destructive">
+                  {file.readError ? filePreviewReadErrorMessage(file.readError) : file.error}
+                </p>
+                {attemptedPath ? (
+                  <p className="text-muted-foreground">
+                    Attempted path
+                    <code className="block break-all font-mono text-foreground select-all">
+                      {attemptedPath}
+                    </code>
+                  </p>
+                ) : null}
+                {!isHostFile ? (
+                  <p className="text-muted-foreground">
+                    Workspace folder:{" "}
+                    <code className="break-all font-mono select-all">
+                      {file.readError?.cwd ?? cwd}
+                    </code>
+                    . Check the link's path or locate the file in Files.
+                  </p>
+                ) : null}
+              </div>
             </div>
           ) : relativePath && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
@@ -1168,13 +1228,13 @@ export default function FilePreviewPanel({
               <RenderedMarkdownSurface
                 key={`${relativePath}:${reloadCount}`}
                 environmentId={environmentId}
-                threadId={threadRef.threadId}
+                owner={owner}
                 revision={file.data.revision}
                 cwd={cwd}
                 relativePath={relativePath}
                 threadRef={threadRef}
                 contents={file.data.contents}
-                readOnly={isHostFile}
+                readOnly={isHostFile || !canWriteFiles}
                 onPendingChange={handlePendingChange}
                 onSaveFailed={setSaveFailedPath}
               />
@@ -1185,7 +1245,7 @@ export default function FilePreviewPanel({
                 text={file.data.contents}
                 delimiter={tableDelimiter}
               />
-            ) : file.data.truncated || isHostFile ? (
+            ) : file.data.truncated || isHostFile || !canWriteFiles ? (
               <SourceFilePreview
                 name={relativePath}
                 text={file.data.contents}
@@ -1197,7 +1257,7 @@ export default function FilePreviewPanel({
                 <EditableFileSurface
                   key={`${relativePath}:${resolvedTheme}:${reloadCount}`}
                   environmentId={environmentId}
-                  threadId={threadRef.threadId}
+                  owner={owner}
                   revision={file.data.revision}
                   cwd={cwd}
                   relativePath={relativePath}
@@ -1226,7 +1286,7 @@ export default function FilePreviewPanel({
             <FileBrowserPanel
               key={`${environmentId}:${cwd}`}
               environmentId={environmentId}
-              threadId={threadRef.threadId}
+              owner={owner}
               cwd={cwd}
               projectName={projectName}
               selectedPath={relativePath}

@@ -110,6 +110,7 @@ const harness = (
     readonly dispatch?: Orchestrator.OrchestratorV2["Service"]["dispatch"];
     readonly threadManagement?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
     readonly lifecycle?: Partial<ServerLifecycleEvents.ServerLifecycleEvents["Service"]>;
+    readonly workspaceEntries?: Partial<WorkspaceEntries.WorkspaceEntries["Service"]>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -166,7 +167,7 @@ const harness = (
       stub(ProviderInstanceRegistry.ProviderInstanceRegistry),
       ServerSettings.layerTest(),
       stub(Keybindings.Keybindings),
-      stub(WorkspaceEntries.WorkspaceEntries),
+      stub(WorkspaceEntries.WorkspaceEntries, options.workspaceEntries),
       stub(WorkspaceFileSystem.WorkspaceFileSystem),
       stub(ScreenshotArtifacts.ScreenshotArtifacts),
       stub(LegacyScreenshotArtifacts.LegacyScreenshotArtifacts),
@@ -268,6 +269,66 @@ describe("Coder RPC seams", () => {
       assert.equal("failure" in list && list.failure, "workspace_not_owned_by_thread");
       assert.equal("failure" in read && read.failure, "workspace_not_owned_by_thread");
       assert.equal("failure" in write && write.failure, "workspace_not_owned_by_thread");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("lets a draft list its project root or a worktree a project thread owns", () =>
+    Effect.gen(function* () {
+      const listed: string[] = [];
+      const h = yield* harness({
+        threadManagement: {
+          listProjectThreads: (input) =>
+            Effect.succeed(
+              input.projectId === testProjectId
+                ? [{ ...threadShell, worktreePath: "/workspace/worktrees/feature" }]
+                : [],
+            ),
+        },
+        workspaceEntries: {
+          list: (input) =>
+            Effect.sync(() => {
+              listed.push(input.cwd);
+              return { entries: [], truncated: false };
+            }),
+        },
+      });
+      for (const cwd of ["/workspace/project", "/workspace/worktrees/feature"]) {
+        yield* h.client[WS_METHODS.projectsListEntries]({ draftProjectId: testProjectId, cwd });
+      }
+      assert.deepEqual(listed, ["/workspace/project", "/workspace/worktrees/feature"]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects draft requests outside the named project", () =>
+    Effect.gen(function* () {
+      const h = yield* harness({
+        threadManagement: { listProjectThreads: () => Effect.succeed([threadShell]) },
+      });
+      const requests = [
+        { draftProjectId: testProjectId, cwd: "/unowned" },
+        { draftProjectId: ProjectId.make("project-unknown"), cwd: "/workspace/project" },
+        { cwd: "/workspace/project" },
+      ];
+      for (const request of requests) {
+        const read = yield* h.client[WS_METHODS.projectsReadFile]({
+          ...request,
+          relativePath: "file.txt",
+        }).pipe(Effect.flip);
+        assert.equal("failure" in read && read.failure, "workspace_not_owned_by_thread");
+      }
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("checks a request naming a thread against that thread, not the draft project", () =>
+    Effect.gen(function* () {
+      const h = yield* harness();
+      const read = yield* h.client[WS_METHODS.projectsReadFile]({
+        threadId: ThreadId.make("thread-unknown"),
+        draftProjectId: testProjectId,
+        cwd: "/workspace/project",
+        relativePath: "file.txt",
+      }).pipe(Effect.flip);
+      assert.equal("failure" in read && read.failure, "workspace_not_owned_by_thread");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

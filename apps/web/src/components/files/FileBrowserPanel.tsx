@@ -3,14 +3,15 @@ import type {
   ContextMenuItem as TreeContextMenuItem,
   ContextMenuOpenContext as TreeContextMenuOpenContext,
 } from "@pierre/trees";
-import type { EnvironmentId, ProjectEntry, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectEntry, ProjectFilesOwner } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown } from "lucide";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
+import { MorphIcon } from "~/components/MorphIcon";
 import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
@@ -28,8 +29,8 @@ import { useProjectPathSearch } from "~/state/queries";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
-  // Coder: listings name the thread whose project root the helper verifies.
-  threadId: ThreadId;
+  // Coder: listings name the owner whose project root the helper verifies.
+  owner: ProjectFilesOwner;
   cwd: string;
   projectName: string;
   /** Entry currently open in the surface; revealed and selected in the tree. A directory is expanded. */
@@ -96,7 +97,7 @@ function FileSearchField(props: {
 
 export default function FileBrowserPanel({
   environmentId,
-  threadId,
+  owner,
   cwd,
   projectName,
   selectedPath,
@@ -115,7 +116,8 @@ export default function FileBrowserPanel({
     ready,
     error,
     isPending,
-  } = useDirectoryEntries(environmentId, threadId, cwd);
+    loadingDirectories,
+  } = useDirectoryEntries(environmentId, owner, cwd);
   const [query, setQuery] = useState("");
   const [expandAll, setExpandAll] = useState(false);
   const pathSearch = useProjectPathSearch({ environmentId, cwd, query: query.slice(0, 256) }, 200);
@@ -226,6 +228,9 @@ export default function FileBrowserPanel({
     showEntryContextMenuRef.current = showEntryContextMenu;
   });
 
+  // The tree reads decorations at render time; a folder still loading its
+  // children shows a spinner in its row instead of a banner that shifts the tree.
+  const loadingDirectoriesRef = useRef(loadingDirectories);
   const { model } = useFileTree({
     composition: {
       contextMenu: {
@@ -252,10 +257,22 @@ export default function FileBrowserPanel({
       }
     },
     paths: [],
+    renderRowDecoration: ({ item, row }) =>
+      row.kind === "directory" &&
+      row.isExpanded &&
+      loadingDirectoriesRef.current.has(item.path.replace(/\/$/, ""))
+        ? { icon: "t3-tree-icon-loading", title: "Loading…" }
+        : null,
     search: false,
     onSearchChange: (value) => setQuery(value ?? ""),
     unsafeCSS: PIERRE_TREE_UNSAFE_CSS,
   });
+  useEffect(() => {
+    if (loadingDirectoriesRef.current === loadingDirectories) return;
+    loadingDirectoriesRef.current = loadingDirectories;
+    // Re-render the rows with the current options so decorations update.
+    model.setComposition(model.getComposition());
+  }, [loadingDirectories, model]);
   const search = useFileTreeSearch(model);
   const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
     areAllDirectoriesExpanded(currentModel, directoryPaths),
@@ -426,13 +443,6 @@ export default function FileBrowserPanel({
     });
   }, [entryKinds, model, selectedPath, selectedPathRevealId]);
 
-  // Tag tree drags with the composer mention payload. The row is read from
-  // the composed event path (the tree's shadow root is open), so this does
-  // not depend on running after the tree's own dragstart handler; the drag
-  // data store is writable for every dragstart listener in the dispatch.
-  // The capture phase runs before the tree's own dragstart handler selects
-  // the dragged row, so the drag flag is up before that selection emits.
-
   return (
     <div
       className="flex min-h-0 flex-1 flex-col bg-background"
@@ -467,11 +477,10 @@ export default function FileBrowserPanel({
                 />
               }
             >
-              {allDirectoriesExpanded ? (
-                <ChevronsDownUpIcon className="size-3.5" />
-              ) : (
-                <ChevronsUpDownIcon className="size-3.5" />
-              )}
+              <MorphIcon
+                className="size-3.5"
+                icon={allDirectoriesExpanded ? ChevronsDownUp : ChevronsUpDown}
+              />
             </TooltipTrigger>
             <TooltipPopup>
               {expandAll || allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
@@ -493,7 +502,7 @@ export default function FileBrowserPanel({
           More matches available. Refine your search.
         </div>
       ) : null}
-      {(isPending || pathSearch.isPending) && (
+      {(!ready || pathSearch.isPending) && (
         <div role="status" className="px-3 py-1 text-xs text-muted-foreground">
           Loading files…
         </div>

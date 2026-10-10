@@ -1,18 +1,27 @@
-import type { EnvironmentId, ProjectWriteFileResult, ThreadId } from "@t3tools/contracts";
+import {
+  AuthFilesystemWriteScope,
+  type EnvironmentId,
+  type ProjectFilesOwner,
+  type ProjectWriteFileResult,
+} from "@t3tools/contracts";
 import { createRef, useEffect, useMemo, useRef } from "react";
 
 import { projectEnvironment } from "~/state/projects";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
-import { confirmProjectFileQueryData } from "./projectFilesQueryState";
+import {
+  confirmProjectFileQueryData,
+  getUnsavedProjectFileQueryData,
+} from "./projectFilesQueryState";
 
 const FILE_SAVE_DEBOUNCE_MS = 500;
 
 interface FileSaveOptions {
   environmentId: EnvironmentId;
-  // Coder: writes name the owning thread and the revision the edit is based on.
-  threadId: ThreadId;
+  // Coder: writes name their owner and the revision the edit is based on.
+  owner: ProjectFilesOwner;
   revision: string;
   cwd: string;
   relativePath: string;
@@ -22,24 +31,25 @@ interface FileSaveOptions {
 
 export function useFileSaveCoordinator({
   environmentId,
-  threadId,
+  owner,
   revision,
   cwd,
   relativePath,
   onPendingChange,
   onSaveFailed,
 }: FileSaveOptions): Pick<FileSaveCoordinator, "change"> {
+  const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
   // Coder: the base revision of the open file. It is tagged with the file identity so a write
   // confirmed for a retired file cannot leak its revision into the next file's writes.
-  const fileKey = JSON.stringify([environmentId, threadId, cwd, relativePath]);
+  const fileKey = JSON.stringify([environmentId, owner, cwd, relativePath]);
   const revisionRef = useRef({ fileKey, revision });
   useEffect(() => {
     revisionRef.current = { fileKey, revision };
   }, [fileKey, revision]);
   const session = useMemo(() => {
     const coordinatorRef = createRef<FileSaveCoordinator<ProjectWriteFileResult>>();
-    const sessionFileKey = JSON.stringify([environmentId, threadId, cwd, relativePath]);
+    const sessionFileKey = JSON.stringify([environmentId, owner, cwd, relativePath]);
     // The revision this session last used, so a retired session's retry keeps its own file's.
     const sessionRevision: { current: string | undefined } = { current: undefined };
     const currentRevision = () => {
@@ -56,6 +66,7 @@ export function useFileSaveCoordinator({
         let active = true;
         const coordinator = new FileSaveCoordinator<ProjectWriteFileResult>({
           debounceMs: FILE_SAVE_DEBOUNCE_MS,
+          canPersist: () => readEnvironmentScope(environmentId, AuthFilesystemWriteScope),
           onPendingChange: (pending) => onPendingChange(relativePath, pending),
           onFailed: () => {
             if (active) onSaveFailed(relativePath);
@@ -64,7 +75,7 @@ export function useFileSaveCoordinator({
             writeFile({
               environmentId,
               input: {
-                threadId,
+                ...owner,
                 cwd,
                 relativePath,
                 contents: nextContents,
@@ -76,9 +87,9 @@ export function useFileSaveCoordinator({
             if (revisionRef.current.fileKey === sessionFileKey) {
               revisionRef.current = { fileKey: sessionFileKey, revision: result.revision };
             }
-            confirmProjectFileQueryData(
+            return confirmProjectFileQueryData(
               environmentId,
-              threadId,
+              owner,
               cwd,
               relativePath,
               confirmedContents,
@@ -94,10 +105,23 @@ export function useFileSaveCoordinator({
         };
       },
     };
-  }, [cwd, environmentId, onPendingChange, onSaveFailed, relativePath, threadId, writeFile]);
+  }, [cwd, environmentId, onPendingChange, onSaveFailed, owner, relativePath, writeFile]);
 
   // StrictMode replays effect setup. Retired file sessions stay inert, while the
   // replay gets a fresh coordinator instead of reusing a disposed one.
   useEffect(session.setup, [session]);
+  useEffect(() => {
+    if (!canWriteFiles) return;
+    let cancelled = false;
+    // Replay must retire the first session before recovery queues a draft to flush.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const unsaved = getUnsavedProjectFileQueryData(environmentId, cwd, relativePath);
+      if (unsaved) session.change(unsaved.contents);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canWriteFiles, cwd, environmentId, relativePath, session]);
   return session;
 }

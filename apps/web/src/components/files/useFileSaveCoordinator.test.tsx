@@ -1,16 +1,25 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { act, StrictMode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const { writeFile, confirmFile } = vi.hoisted(() => ({
+const { writeFile, confirmFile, readScope, getUnsavedFile } = vi.hoisted(() => ({
   writeFile: vi.fn(),
   confirmFile: vi.fn(),
+  readScope: vi.fn(),
+  getUnsavedFile: vi.fn(),
 }));
 vi.mock("~/state/projects", () => ({ projectEnvironment: { writeFile: {} } }));
+vi.mock("~/state/session", () => ({
+  readEnvironmentScope: readScope,
+  useEnvironmentScope: readScope,
+}));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => writeFile }));
-vi.mock("./projectFilesQueryState", () => ({ confirmProjectFileQueryData: confirmFile }));
+vi.mock("./projectFilesQueryState", () => ({
+  confirmProjectFileQueryData: confirmFile,
+  getUnsavedProjectFileQueryData: getUnsavedFile,
+}));
 
 import { setMarkdownTaskChecked } from "./filePreviewMode";
 import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
@@ -19,7 +28,7 @@ const environmentId = EnvironmentId.make("save-lifecycle-audit");
 const onPendingChange = vi.fn();
 const defaultProps = {
   environmentId,
-  threadId: ThreadId.make("save-lifecycle-thread"),
+  owner: { threadId: ThreadId.make("save-lifecycle-thread") },
   revision: "r1",
   onSaveFailed: vi.fn(),
   cwd: "/workspace",
@@ -37,7 +46,7 @@ function FileSurface(props: Parameters<typeof useFileSaveCoordinator>[0]) {
   return <ChangeSource onChange={(contents) => coordinator.change(contents)} />;
 }
 
-function mount(props = defaultProps) {
+function mount(props: Parameters<typeof useFileSaveCoordinator>[0] = defaultProps) {
   act(() => {
     renderer = create(
       <StrictMode>
@@ -57,6 +66,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   writeFile.mockReset().mockResolvedValue(AsyncResult.success({ revision: "r2" }));
   confirmFile.mockReset();
+  readScope.mockReset().mockReturnValue(true);
+  getUnsavedFile.mockReset().mockReturnValue(null);
   onPendingChange.mockReset();
 });
 
@@ -75,7 +86,7 @@ describe("file-save React lifecycle", () => {
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: {
-        threadId: defaultProps.threadId,
+        threadId: defaultProps.owner.threadId,
         cwd: "/workspace",
         relativePath: "file.txt",
         contents: "AUDIT7907NATIVE\n",
@@ -84,13 +95,30 @@ describe("file-save React lifecycle", () => {
     });
     expect(confirmFile).toHaveBeenCalledExactlyOnceWith(
       environmentId,
-      defaultProps.threadId,
+      defaultProps.owner,
       "/workspace",
       "file.txt",
       "AUDIT7907NATIVE\n",
       "r2",
     );
     expect(onPendingChange).toHaveBeenLastCalledWith("file.txt", false);
+  });
+
+  it("names a draft's project instead of a thread", async () => {
+    const owner = { draftProjectId: ProjectId.make("draft-project") };
+    mount({ ...defaultProps, owner });
+    changeHandler()("draft edit");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: {
+        draftProjectId: owner.draftProjectId,
+        cwd: "/workspace",
+        relativePath: "file.txt",
+        contents: "draft edit",
+        expectedRevision: "r1",
+      },
+    });
   });
 
   it("persists rendered Markdown task changes after StrictMode setup replay", async () => {
@@ -101,7 +129,7 @@ describe("file-save React lifecycle", () => {
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: {
-        threadId: defaultProps.threadId,
+        threadId: defaultProps.owner.threadId,
         cwd: "/workspace",
         relativePath: "README.md",
         contents: "- [x] task\n",
@@ -141,6 +169,69 @@ describe("file-save React lifecycle", () => {
     expect(writeFile.mock.calls[0]![0].input.contents).toBe("pending edit");
   });
 
+  it.each([false, true])(
+    "keeps edits pending after permission is revoked before a React update (unmount: %s)",
+    async (unmount) => {
+      mount();
+      changeHandler()("pending edit");
+      readScope.mockReturnValue(false);
+      if (unmount) {
+        await act(async () => renderer!.unmount());
+        renderer = null;
+      }
+      await vi.runAllTimersAsync();
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(confirmFile).not.toHaveBeenCalled();
+      expect(onPendingChange).toHaveBeenLastCalledWith("file.txt", true);
+    },
+  );
+
+  it("resumes an unsaved draft when write permission returns after effect replay", async () => {
+    readScope.mockReturnValue(false);
+    getUnsavedFile.mockReturnValue({ contents: "pending draft" });
+    mount();
+    await vi.runAllTimersAsync();
+    expect(writeFile).not.toHaveBeenCalled();
+
+    readScope.mockReturnValue(true);
+    act(() =>
+      renderer!.update(
+        <StrictMode>
+          <FileSurface {...defaultProps} />
+        </StrictMode>,
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: {
+        threadId: defaultProps.owner.threadId,
+        cwd: "/workspace",
+        relativePath: "file.txt",
+        contents: "pending draft",
+        expectedRevision: "r1",
+      },
+    });
+    expect(onPendingChange).toHaveBeenLastCalledWith("file.txt", false);
+  });
+
+  it("recovers an existing draft once after StrictMode setup replay", async () => {
+    getUnsavedFile.mockReturnValue({ contents: "reopened draft" });
+    mount();
+    await vi.runAllTimersAsync();
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: {
+        threadId: defaultProps.owner.threadId,
+        cwd: "/workspace",
+        relativePath: "file.txt",
+        contents: "reopened draft",
+        expectedRevision: "r1",
+      },
+    });
+    expect(onPendingChange).toHaveBeenLastCalledWith("file.txt", false);
+  });
+
   it.each([
     { relativePath: "other.txt" },
     { cwd: "/other-workspace" },
@@ -164,7 +255,7 @@ describe("file-save React lifecycle", () => {
       {
         environmentId,
         input: {
-          threadId: defaultProps.threadId,
+          threadId: defaultProps.owner.threadId,
           cwd: "/workspace",
           relativePath: "file.txt",
           contents: "old file edit",
@@ -174,7 +265,7 @@ describe("file-save React lifecycle", () => {
       {
         environmentId: nextProps.environmentId,
         input: {
-          threadId: defaultProps.threadId,
+          threadId: defaultProps.owner.threadId,
           cwd: nextProps.cwd,
           relativePath: nextProps.relativePath,
           contents: "new file edit",
