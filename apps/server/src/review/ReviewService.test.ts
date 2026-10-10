@@ -6,9 +6,10 @@ import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as NodeZlib from "node:zlib";
 
-import { MAX_REVIEW_DIFF_FILE_BYTES } from "@t3tools/contracts";
+import { MAX_REVIEW_DIFF_FILE_BYTES, ProjectId } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -20,8 +21,30 @@ function makeLayer(input: {
   readonly detectCalls?: Array<{ readonly cwd: string }>;
   readonly worktreesDirectory?: string;
   readonly previousWorktreesDirectories?: ReadonlyArray<string>;
+  readonly projectRoots?: ReadonlyArray<string> | "unavailable";
 }) {
+  const projectRoots = input.projectRoots ?? [];
   return ReviewService.layer.pipe(
+    Layer.provide(
+      Layer.mock(ProjectStore.ProjectStoreV2)({
+        listShells: () =>
+          projectRoots === "unavailable"
+            ? Effect.fail(
+                new ProjectStore.ProjectStoreV2Error({ operation: "list", cause: "offline" }),
+              )
+            : Effect.succeed(
+                projectRoots.map((workspaceRoot, index) => ({
+                  id: ProjectId.make(`project-${index}`),
+                  title: `Project ${index}`,
+                  workspaceRoot,
+                  defaultModelSelection: null,
+                  scripts: [],
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                })),
+              ),
+      }),
+    ),
     Layer.provide(
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
         get: () => Effect.die("unexpected VCS registry get"),
@@ -138,6 +161,38 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("allows registered project roots outside the server cwd", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      // Stands in for a project on another drive than the server's home cwd.
+      const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const projectChild = `${projectRoot}/packages/app`;
+      yield* fs.makeDirectory(projectChild, { recursive: true });
+      const sibling = `${projectRoot}-sibling`;
+      yield* fs.makeDirectory(sibling);
+      yield* Effect.addFinalizer(() => fs.remove(sibling, { recursive: true }).pipe(Effect.ignore));
+
+      const review = (cwd: string, projectRoots: ReadonlyArray<string> | "unavailable") =>
+        Effect.gen(function* () {
+          const service = yield* ReviewService.ReviewService;
+          return yield* service.getDiffPreview({ cwd });
+        }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, projectRoots })));
+
+      assert.strictEqual((yield* review(projectRoot, [projectRoot])).cwd, projectRoot);
+      assert.strictEqual((yield* review(projectChild, [projectRoot])).cwd, projectChild);
+      for (const [cwd, projectRoots] of [
+        [sibling, [projectRoot]],
+        [projectRoot, []],
+        [projectRoot, "unavailable"],
+      ] as const) {
+        const error = yield* review(cwd, projectRoots).pipe(Effect.flip);
+        assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("allows diff preview cwd inside the configured workspace root", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -174,6 +229,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -237,6 +293,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -289,6 +346,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -362,6 +420,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -432,6 +491,7 @@ describe("ReviewService", () => {
           }),
         ),
         Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(Layer.mock(ProjectStore.ProjectStoreV2)({})),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
