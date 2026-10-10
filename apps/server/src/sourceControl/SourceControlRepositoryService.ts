@@ -29,6 +29,7 @@ import {
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
@@ -208,7 +209,7 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      return path.resolve(expandHomePath(trimmed));
+      return path.resolve(expandHomePath(trimmed, yield* HostProcess.HomeDirectory));
     },
   );
 

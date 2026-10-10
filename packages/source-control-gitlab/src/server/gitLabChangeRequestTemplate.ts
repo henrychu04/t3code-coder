@@ -1,8 +1,15 @@
+/**
+ * Coder: upstream's GitHub pull request template convention, extended to GitLab merge request
+ * templates (`.gitlab/merge_request_templates`, preferring `Default.md`). Upstream reads templates
+ * only for GitHub, which this fork does not carry.
+ *
+ * @module source-control-gitlab/server/gitLabChangeRequestTemplate
+ */
 import type { GitCommandError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import type * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 
 const TEMPLATE_MAX_BYTES = 8_000;
 const TREE_LIST_MAX_BYTES = 100_000;
@@ -27,7 +34,7 @@ const TEMPLATE_DIRECTORIES = [
 
 const TREE_PATHS = [...TEMPLATE_PATHS, ...TEMPLATE_DIRECTORIES] as const;
 
-type ExecuteGit = GitVcsDriver.GitVcsDriver["Service"]["execute"];
+type ExecuteGit = SourceControlHost.SourceControlHost["Service"]["git"]["execute"];
 
 interface TemplateTreeEntry {
   readonly objectId: string;
@@ -68,7 +75,7 @@ function readTemplateBlob(input: {
 }): Effect.Effect<Option.Option<string>, GitCommandError> {
   return input
     .executeGit({
-      operation: "PrTemplateDetection.readTemplateBlob",
+      operation: "gitLabChangeRequestTemplate.readTemplateBlob",
       cwd: input.cwd,
       args: ["cat-file", "blob", input.entry.objectId],
       maxOutputBytes: TEMPLATE_MAX_BYTES,
@@ -138,7 +145,7 @@ function readTemplateDirectory(input: {
   });
 }
 
-export const detectPrTemplate = Effect.fn("detectPrTemplate")(function* (
+export const detect = Effect.fn("gitLabChangeRequestTemplate.detect")(function* (
   cwd: string,
   treeish: string,
   executeGit: ExecuteGit,
@@ -147,7 +154,7 @@ export const detectPrTemplate = Effect.fn("detectPrTemplate")(function* (
     // Worktree paths can be replaced between validation and open. Read regular blobs from the
     // committed base tree so repository-controlled symlinks and path races never reach the host filesystem.
     const result = yield* executeGit({
-      operation: "PrTemplateDetection.listTemplates",
+      operation: "gitLabChangeRequestTemplate.listTemplates",
       cwd,
       args: ["ls-tree", "-r", "-z", "--full-tree", treeish, "--", ...TREE_PATHS],
       maxOutputBytes: TREE_LIST_MAX_BYTES,

@@ -11,8 +11,11 @@ import * as ServerConfig from "../config.ts";
 import type * as VcsDriver from "../vcs/VcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as GitLabCli from "./GitLabCli.ts";
+import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
+import * as GitLabPullRequestCli from "@t3tools/source-control-gitlab/server/GitLabPullRequestCli";
+import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
+import * as ServerSourceControlHost from "./ServerSourceControlHost.ts";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
@@ -60,6 +63,8 @@ function makeRegistry(remoteUrl: string) {
             }),
         }),
         Layer.mock(GitLabCli.GitLabCli)({}),
+        Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
+        TestSourceControlHost.layer(),
         ServerConfig.layerTest(process.cwd(), {
           prefix: "t3-source-control-registry-test-",
         }).pipe(Layer.provide(NodeServices.layer)),

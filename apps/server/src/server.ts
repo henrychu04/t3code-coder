@@ -20,15 +20,16 @@ import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
+import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
-import * as GitLabCli from "./sourceControl/GitLabCli.ts";
+import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
-import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as Keybindings from "./keybindings.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Sqlite.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
@@ -118,7 +119,7 @@ const CoderVcsDriverRegistryLive = VcsDriverRegistry.layer.pipe(
 );
 
 const CoderSourceControlLive = SourceControlProviderRegistry.layer.pipe(
-  Layer.provideMerge(GitLabCli.layer),
+  Layer.provideMerge(SourceControlBuiltInDrivers.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderVcsDriverRegistryLive),
 );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { firstSafeAuthLine } from "./SourceControlProviderDiscovery.ts";
+import { firstSafeAuthLine } from "@t3tools/source-control-core/server/discovery";
 
 describe("firstSafeAuthLine", () => {
   it("drops credential labels and GitLab token values anywhere in a line", () => {

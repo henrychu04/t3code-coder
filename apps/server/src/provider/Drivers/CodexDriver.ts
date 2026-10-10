@@ -70,6 +70,7 @@ import {
   materializeCodexShadowHome,
   resolveCodexHomeLayout,
 } from "./CodexHomeLayout.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("codex");
@@ -115,7 +116,7 @@ export type CodexDriverEnv =
   | ProviderEventLoggers.ProviderEventLoggers
   | ServerConfig.ServerConfig;
 
-export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
+export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Path> = {
   driverKind: DRIVER_KIND,
   metadata: {
     displayName: "Codex",
@@ -134,7 +135,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const modelCatalog = yield* ModelCatalog.ModelCatalog;
       const currentCatalog = modelCatalog.current(DRIVER_KIND);
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+      const processEnv = yield* mergeProviderInstanceEnvironment(environment);
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
       const stampIdentity = withInstanceIdentity({
@@ -158,7 +159,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const effectiveConfig = {
         ...config,
         enabled,
-        binaryPath: expandHomePath(config.binaryPath),
+        binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
         homePath: homeLayout.effectiveHomePath ?? "",
       } satisfies CodexSettings;
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(

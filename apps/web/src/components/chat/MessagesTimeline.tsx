@@ -1801,7 +1801,7 @@ function TimelineMinimap({
           />
           <button
             aria-label={`Jump to message: ${activeItem?.userText ?? "User message"}`}
-            className="absolute inset-y-0 left-0 w-full cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            className="absolute inset-y-0 left-0 w-full cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
             onBlur={() => setActiveIndex(null)}
             onClick={(event) => {
               if (timelineMinimapEventTargetsPreview(event.target)) {
@@ -5549,7 +5549,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           {createdThread ? (
             <button
               type="button"
-              className="shrink-0 rounded-sm text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="shrink-0 rounded-sm text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               aria-label={`Open ${createdThread.title ?? "created thread"}`}
               onClick={(event) => {
                 event.stopPropagation();

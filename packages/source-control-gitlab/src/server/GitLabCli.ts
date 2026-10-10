@@ -14,14 +14,14 @@ import {
   type VcsError,
 } from "@t3tools/contracts";
 
-import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 // Coder: GitLab writes run only after the workspace write-access probe allows them.
 import * as GitLabWriteProbe from "./GitLabWriteProbe.ts";
 import {
   decodeGitLabMergeRequestJson,
   decodeGitLabMergeRequestListJson,
 } from "./gitLabMergeRequests.ts";
-import type * as SourceControlProvider from "./SourceControlProvider.ts";
+import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -316,7 +316,7 @@ export class GitLabCli extends Context.Service<
       /** Piped to the child's stdin, for payloads that must never appear in argv. */
       readonly stdin?: string;
       readonly maxOutputBytes?: number;
-    }) => Effect.Effect<VcsProcess.VcsProcessOutput, GitLabCliError>;
+    }) => Effect.Effect<SourceControlHost.SourceControlProcessOutput, GitLabCliError>;
 
     /** Coder: executes only after the state-free workspace write probe succeeds. */
     readonly executeWrite: (input: {
@@ -325,7 +325,7 @@ export class GitLabCli extends Context.Service<
       readonly timeoutMs?: number;
       readonly stdin?: string;
       readonly maxOutputBytes?: number;
-    }) => Effect.Effect<VcsProcess.VcsProcessOutput, GitLabCliError>;
+    }) => Effect.Effect<SourceControlHost.SourceControlProcessOutput, GitLabCliError>;
 
     readonly probeWriteAccess: (input: {
       readonly cwd: string;
@@ -381,7 +381,7 @@ export class GitLabCli extends Context.Service<
       readonly force?: boolean;
     }) => Effect.Effect<void, GitLabCliError>;
   }
->()("t3/sourceControl/GitLabCli") {}
+>()("@t3tools/source-control-gitlab/server/GitLabCli") {}
 
 const RawGitLabRepositoryCloneUrlsSchema = Schema.Struct({
   path_with_namespace: TrimmedNonEmptyString,
@@ -497,13 +497,13 @@ function parseRepositoryPath(repository: string): {
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const process = yield* VcsProcess.VcsProcess;
+  const { process } = yield* SourceControlHost.SourceControlHost;
   const writeProbe = yield* GitLabWriteProbe.GitLabWriteProbe;
 
   const run = (
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
     mapError: (error: VcsError) => GitLabCliError,
-    classifyNonZeroExit?: VcsProcess.VcsProcessInput["classifyNonZeroExit"],
+    classifyNonZeroExit?: SourceControlHost.SourceControlProcessInput["classifyNonZeroExit"],
   ) =>
     process
       .run({
@@ -860,7 +860,11 @@ export const make = Effect.gen(function* () {
 
 // Coder: the write probe is a layer so tests can replace it.
 export function layerWithWriteProbe(
-  writeProbe: Layer.Layer<GitLabWriteProbe.GitLabWriteProbe, never, VcsProcess.VcsProcess>,
+  writeProbe: Layer.Layer<
+    GitLabWriteProbe.GitLabWriteProbe,
+    never,
+    SourceControlHost.SourceControlHost
+  >,
 ) {
   return Layer.effect(GitLabCli, make).pipe(Layer.provideMerge(writeProbe));
 }

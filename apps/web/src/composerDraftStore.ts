@@ -2102,10 +2102,10 @@ export function partializeComposerDraftStoreState(
   state: ComposerDraftStoreState,
 ): PersistedComposerDraftStoreState {
   // Draft sessions worth persisting: mapped (a new-thread flow targets
-  // them), promoting (mid-send), or holding real user content (they back a
-  // sidebar row). Everything else is a zombie — and its composer blob must
-  // be dropped WITH it, or model/mode-only entries would persist forever
-  // keyed to a session that no longer exists.
+  // them), promoting (mid-send), holding real user content (they back a
+  // sidebar row), or holding an open page. Everything else is a zombie — and
+  // its composer blob must be dropped WITH it, or model/mode-only entries
+  // would persist forever keyed to a session that no longer exists.
   const mappedDraftKeys = new Set(
     Object.values(state.logicalProjectDraftThreadKeyByLogicalProjectKey),
   );
@@ -2115,6 +2115,7 @@ export function partializeComposerDraftStoreState(
         ([threadKey, draftThread]) =>
           mappedDraftKeys.has(threadKey) ||
           isDraftThreadPromoting(draftThread) ||
+          // Coder: no browser preview, so no draft holds an open page.
           composerDraftHasUserContent(state.draftsByThreadKey[threadKey]),
       )
       .map(([threadKey]) => threadKey),

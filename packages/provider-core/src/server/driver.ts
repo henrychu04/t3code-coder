@@ -172,7 +172,7 @@ export interface ProviderDriverCreateInput<Config> {
  * scope closes. Two calls to `create` with different `instanceId` /
  * `config` MUST yield instances with no shared mutable state.
  */
-export interface ProviderDriver<Config, R = never> {
+export interface ProviderDriver<Config, R = never, UsageR = never> {
   readonly driverKind: ProviderDriverKind;
   readonly metadata: ProviderDriverMetadata;
   /**
@@ -207,6 +207,8 @@ export interface ProviderDriver<Config, R = never> {
   readonly create: (
     input: ProviderDriverCreateInput<Config>,
   ) => Effect.Effect<ProviderInstance, ProviderDriverError, R | Scope.Scope>;
+  // Coder: no usage page, so drivers carry no usage reader; `UsageR` stays for upstream's types.
+  readonly usage?: never;
 }
 
 /**
@@ -219,4 +221,8 @@ export interface ProviderDriver<Config, R = never> {
 // needs the original `Config` type. Using `unknown` instead would force
 // `create` callers into casts since `unknown` is not assignable to a
 // concrete `Config` from inside the driver body.
-export type AnyProviderDriver<R = never> = ProviderDriver<any, R>;
+export type AnyProviderDriver<R = never, UsageR = unknown> = ProviderDriver<any, R, UsageR>;
+
+/** The services a driver's usage reader needs. */
+export type ProviderUsageReaderEnv<Driver> =
+  Driver extends ProviderDriver<any, any, infer UsageR> ? UsageR : never;

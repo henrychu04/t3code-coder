@@ -146,7 +146,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
-import * as GitLabCli from "./sourceControl/GitLabCli.ts";
+import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import { readProjectConfig } from "./project/configMetadata.ts";
 import { isCoderPullRequestLink } from "./coderPullRequestLink.ts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";

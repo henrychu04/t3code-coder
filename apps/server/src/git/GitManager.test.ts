@@ -37,13 +37,15 @@ import {
   TextGenerationError,
   ThreadId,
 } from "@t3tools/contracts";
-import * as GitLabCli from "../sourceControl/GitLabCli.ts";
+import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as GitLabWriteProbe from "../sourceControl/GitLabWriteProbe.ts";
-import * as GitLabSourceControlProvider from "../sourceControl/GitLabSourceControlProvider.ts";
-import type { SourceControlProvider } from "../sourceControl/SourceControlProvider.ts";
+import * as GitLabWriteProbe from "@t3tools/source-control-gitlab/server/GitLabWriteProbe";
+import * as GitLabSourceControlProvider from "@t3tools/source-control-gitlab/server/GitLabSourceControlProvider";
+import type { SourceControlProvider } from "@t3tools/source-control-core/server/SourceControlProvider";
+import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -711,10 +713,18 @@ function makeManager(input?: {
       );
   const sourceControlRegistryLayer = Layer.effect(
     SourceControlProviderRegistry.SourceControlProviderRegistry,
-    (input?.sourceControlProvider === undefined
-      ? GitLabSourceControlProvider.make
-      : Effect.succeed(input.sourceControlProvider)
-    ).pipe(
+    Effect.gen(function* () {
+      // GitLab reads its merge request template with git; give it the test repository's git.
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      return yield* (
+        input?.sourceControlProvider === undefined
+          ? GitLabSourceControlProvider.make
+          : Effect.succeed(input.sourceControlProvider)
+      ).pipe(
+        Effect.provide(Layer.succeed(GitLabCli.GitLabCli, gitLabCli)),
+        Effect.provide(TestSourceControlHost.layer({ git: { execute: git.execute } })),
+      );
+    }).pipe(
       Effect.map((provider) =>
         SourceControlProviderRegistry.SourceControlProviderRegistry.of({
           resolveLink: (input) => provider.resolveLink?.(input),
@@ -724,7 +734,6 @@ function makeManager(input?: {
           discover: Effect.succeed([]),
         }),
       ),
-      Effect.provide(Layer.succeed(GitLabCli.GitLabCli, gitLabCli)),
     ),
   );
 
@@ -741,7 +750,11 @@ function makeManager(input?: {
     ),
     vcsDriverLayer,
     serverSettingsLayer,
-  ).pipe(Layer.provideMerge(sourceControlRegistryLayer), Layer.provideMerge(NodeServices.layer));
+  ).pipe(
+    Layer.provideMerge(sourceControlRegistryLayer),
+    Layer.provideMerge(vcsDriverLayer),
+    Layer.provideMerge(NodeServices.layer),
+  );
   // Built into the test's scope: the manager reads these stores after this returns.
   const storesLayer = Layer.merge(ProjectionStore.layer, ProjectStore.layer).pipe(
     Layer.provideMerge(SqlitePersistence.layerMemory),
@@ -1874,7 +1887,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           source_project: { path_with_namespace: "Group/Subgroup/Fork" },
         },
       ]);
-      const calls: VcsProcess.VcsProcessInput[] = [];
+      const calls: SourceControlHost.SourceControlProcessInput[] = [];
       const provider = yield* GitLabSourceControlProvider.make.pipe(
         Effect.provide(
           GitLabCli.layer.pipe(
@@ -1883,16 +1896,18 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                 isPolicyBlockedWriteFailure: () => false,
               }),
             ),
-            Layer.provide(
-              Layer.mock(VcsProcess.VcsProcess)({
-                run: (input) =>
-                  Effect.sync(() => {
-                    calls.push(input);
-                    return fakeGlabOutput(output);
-                  }),
-              }),
-            ),
           ),
+        ),
+        Effect.provide(
+          TestSourceControlHost.layer({
+            process: {
+              run: (input) =>
+                Effect.sync(() => {
+                  calls.push(input);
+                  return fakeGlabOutput(output);
+                }),
+            },
+          }),
         ),
       );
       const { manager } = yield* makeManager({ sourceControlProvider: provider });

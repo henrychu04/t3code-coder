@@ -31,7 +31,7 @@ import type {
 // Coder: the SDK is type-only; these run through the workspace `claude` CLI.
 import { getSubagentMessages, query } from "../../provider/Drivers/ClaudeAgentSdk.ts";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
 import {
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
@@ -8200,17 +8200,17 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
   ) {
     const { instanceId, environment, enabled, config } = input;
     const fileSystem = yield* FileSystem.FileSystem;
-    const hostEnvironment = yield* HostProcessEnvironment;
+    const hostEnvironment = yield* HostProcess.Environment;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const queryRunner = yield* ClaudeAgentSdkQueryRunner;
     const serverConfig = yield* ServerConfig.ServerConfig;
     const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
-    const baseEnvironment = mergeProviderInstanceEnvironment(environment, hostEnvironment);
+    const baseEnvironment = yield* mergeProviderInstanceEnvironment(environment, hostEnvironment);
     const claudeEnvironment = yield* makeClaudeEnvironment(config, baseEnvironment);
     const path = yield* Path.Path;
     const crypto = yield* Crypto.Crypto;
     // Coder: the workspace CLI transport runs the configured executable directly.
-    const binaryPath = expandHomePath(config.binaryPath);
+    const binaryPath = expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory);
     return yield* makeClaudeAdapterV2({
       instanceId,
       settings: { ...config, enabled, binaryPath },
@@ -8253,7 +8253,7 @@ const makeDefaultClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2.layer")(function* 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
-  const hostEnvironment = yield* HostProcessEnvironment;
+  const hostEnvironment = yield* HostProcess.Environment;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const queryRunner = yield* ClaudeAgentSdkQueryRunner;
   const serverConfig = yield* ServerConfig.ServerConfig;

@@ -160,9 +160,9 @@
       "types": "./src/chatList.ts",
       "import": "./src/chatList.ts"
     },
-    "./hostProcess": {
-      "types": "./src/hostProcess.ts",
-      "import": "./src/hostProcess.ts"
+    "./HostProcess": {
+      "types": "./src/HostProcess.ts",
+      "import": "./src/HostProcess.ts"
     },
     "./devHome": {
       "types": "./src/devHome.ts",
