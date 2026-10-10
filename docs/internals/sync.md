@@ -30,6 +30,13 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
 - Leave upstream bugs unfixed unless they break an `AGENTS.md` boundary.
 - If adopting upstream would remove fork behavior the seams doc lists, stop and tell the user.
 - To reopen a file resolved wrongly with its conflict markers: `git checkout -m -- <file>`.
+- Resolve test files block by block, as code. Taking the fork's whole test file drops upstream's
+  mechanical edits (renamed types, branded values) from conflicted regions only, which typecheck
+  then reports far from their cause. Where diff3 interleaves two versions of one test, replace that
+  whole test with one side rather than splicing hunks.
+- Upstream test files that merge in without conflict can still exercise a cut surface or an SDK
+  hook the CLI transport lacks (for example the SDK's `spawnClaudeCodeProcess`); review every
+  added or modified `*.test.*` in the range and adapt or cut it with a `Coder:` comment.
 
 ## 3. Deleted directories
 
@@ -38,7 +45,12 @@ them. After `git merge` stops, run `node scripts/sync-resolve-deleted.mjs` (or
 `pnpm sync:resolve-deleted` when no `package.json` or `pnpm-lock.yaml` is conflicted, since pnpm
 checks dependencies before running a script). It `git rm`s each modify/delete conflict under the
 paths listed in the script and prints every other conflict and every upstream-added file under
-those paths, untouched, for you to decide. It never resolves a content conflict. The categories
+those paths, untouched, for you to decide. It never resolves a content conflict. The files it lists are untouched but staged, so removing
+one needs `git rm -f`. A fork-deleted file outside those paths that upstream modified (a cut
+surface's test or settings panel) is listed as "deleted by fork"; keep it deleted unless the seams
+doc says otherwise. An upstream rename out of a deleted directory into a kept one (in this batch,
+mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added file with only stage
+3; carry it only if a carried surface uses it. The categories
 (top-level directories in brackets):
 
 - Auth and pairing (`apps/server/src/auth`, web `components/auth`, client-runtime `authorization`).
@@ -84,9 +96,14 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   keep its `Coder:` comment.
 - `docs/user/*.md`: take upstream's text, then reapply "merge request", "MR", `!N`, "T3 Coder".
 - `knip.jsonc`: keep ours; add or drop `ignoreIssues` entries as `pnpm knip:check` reports.
-- `pnpm-lock.yaml`: keep ours (`git checkout --ours pnpm-lock.yaml`), run
-  `pnpm install --no-frozen-lockfile` to apply the merged `package.json` files, then confirm
-  `pnpm install --frozen-lockfile` passes.
+- `pnpm-lock.yaml`: keep ours, run `pnpm install --no-frozen-lockfile` to apply the merged
+  `package.json` files, then confirm `pnpm install --frozen-lockfile` passes. Do this even when the
+  lockfile merged cleanly: the auto-merge carries importer entries for deleted packages, and any
+  later `pnpm exec`/`vp` run silently rewrites the lockfile when it disagrees with a `package.json`.
+  Start from ours with `git show HEAD:pnpm-lock.yaml > pnpm-lock.yaml` (during a merge,
+  `git checkout --ours` works only on a conflicted path).
+- A package that gains a dependency on deleted host packages (this batch: client-runtime on every
+  `source-control-*` client definition) keeps only `source-control-core` and `-gitlab`.
 
 ## 5. Seams to re-check on every sync
 
@@ -96,6 +113,12 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   `query({` call: `git diff "$MB" "$SHA" -- apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts apps/server/src/provider/ClaudeProvider.ts`.
   New `Query` calls: `git diff "$MB" "$SHA" -- apps/server/src ':!*.test.*' | grep -E '^\+.*(queryRuntime|\bq)\.[a-zA-Z]+\('`.
   SDK bumps: `git diff "$MB" "$SHA" -- '*package.json' | grep claude-agent-sdk`.
+  A rejected `Query` method is loud only if upstream lets the rejection surface: upstream wraps
+  some calls (`setMcpServers` in `layerQueryRunner`) so a failure is logged and the turn continues
+  without the feature. For every new call, read how upstream handles its failure; implement the
+  method in `ClaudeCli.ts` from the SDK's `sdk.mjs` request shape (find
+  `async <method>(` in `node_modules/.pnpm/@anthropic-ai+claude-agent-sdk*/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs`)
+  and add a `ClaudeCli.test.ts` case whose fake CLI answers only the exact shape.
 - **Capabilities.** `coderEnvironment.test.ts` fails when upstream adds an
   `ExecutionEnvironmentCapabilities` key; decide it (advertise, or add to
   `CODER_OMITTED_CAPABILITIES` with a reason).
@@ -112,13 +135,21 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   `readEnvironmentScope` (`apps/web/src/state/session.ts`), `useFilesystemReadAccess`, and
   client-runtime's command permissions still grant everything. New gates:
   `git diff "$MB" "$SHA" -- apps/web/src packages/client-runtime/src | grep -E '^\+.*(EnvironmentScope|EnvironmentsWithScope|FilesystemReadAccess|commandPermissions|RpcPermissionGuard)'`.
-- **Wording.** New user-facing strings follow the merge-request wording seam:
-  `git diff "$MB" "$SHA" -- apps/web/src packages/client-runtime/src packages/shared/src apps/server/src docs/user ':!*.test.*' | grep -E '^\+.*([Pp]ull [Rr]equest|\bPRs?\b|T3 Code\b)'`.
+- **Wording.** New user-facing strings follow the merge-request wording seam. Use `rg` (some
+  shells alias `grep` to tools that reject `\b`), and include the source-control packages and
+  `#${` references, which the `!123` seam replaces:
+  `git diff "$MB" "$SHA" -- apps/web/src packages/client-runtime/src packages/shared/src apps/server/src docs/user packages/source-control-core/src packages/source-control-gitlab/src ':!*.test.*' | rg '^\+.*([Pp]ull [Rr]equest|\bPRs?\b|T3 Code\b|#\$\{)'`.
+- **Source-control host definitions.** client-runtime's `sourceControlClients.ts` and the server's
+  `sourceControl/sourceControlHostSecrets.ts` register only GitLab's definition. When upstream
+  moves host behavior into definitions, delete the fork's per-kind GitLab shims that the GitLab-only
+  registry now expresses, and move a remaining GitLab difference into GitLab's definition when the
+  field exists for it.
 
 ## 6. Mechanical checks after the merge
 
 Before committing the merge, compare each upstream-modified file's `Coder:` marker count with
-`$PREV`; a drop must be inside a block upstream deleted.
+`$PREV`; a drop must be inside a block upstream deleted, or be a seam that upstream's own
+mechanism now expresses (name it in the merge commit body).
 
 ```sh
 git diff --name-only "$MB" "$SHA" | while IFS= read -r f; do [ -f "$f" ] || continue
@@ -144,14 +175,16 @@ Finish with `pnpm knip:check`.
 In this order, fixing each failure before the next: `pnpm test:coder`; every typecheck listed in
 `AGENTS.md`; `pnpm knip:check`; `pnpm build`.
 
-`pnpm test:coder` exits 0; a failure is real. Known results:
+`pnpm test:coder` exits 0; a failure is real. It stops at the first failing package script, so
+fix and rerun until it completes. Known results:
 
 - `apps/server/src/orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery
   work without reading settled thread histories": it fails on pure upstream too
   (`ProjectionStoreSetupError`, "malformed JSON"). Each sync, turn `it.effect.skip` back into
   `it.effect`; keep the skip, with the new merge-base in its comment, only if it still fails.
 - `apps/server/src/serverSettings.test.ts` "follows a settings link that is repointed to another
-  directory" can hit its 2-second watcher timeout under full-suite load. Rerun it alone:
+  directory" and "reloads when a dangling settings link gets its destination" can hit their
+  2-second watcher timeout under full-suite load. Rerun it alone:
   `pnpm exec vp test run --config vite.coder.config.ts apps/server/src/serverSettings.test.ts`.
 
 ## 8. Land

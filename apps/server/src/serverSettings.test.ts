@@ -1417,175 +1417,44 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect(
-    "keeps Bitbucket tokens in the secret store and tells clients only that one is set",
-    () =>
-      Effect.gen(function* () {
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        const secrets = yield* ServerSecretStore.ServerSecretStore;
-        const serverConfig = yield* ServerConfig.ServerConfig;
-        const fileSystem = yield* FileSystem.FileSystem;
-
-        const saved = yield* serverSettings.updateSettings({
-          bitbucket: { email: "me@example.com", accessToken: "bb-access", apiToken: "bb-api" },
-        });
-        assert.deepEqual(saved.bitbucket, {
-          email: "me@example.com",
-          accessToken: "bb-access",
-          apiToken: "bb-api",
-        });
-
-        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-        assert.notInclude(raw, "bb-access");
-        assert.notInclude(raw, "bb-api");
-        assert.include(raw, "me@example.com");
-
-        const forClient = ServerSettingsModule.redactServerSettingsForClient(saved).bitbucket;
-        assert.equal(forClient.email, "me@example.com");
-        assert.notInclude(forClient.accessToken, "bb-access");
-        assert.notInclude(forClient.apiToken, "bb-api");
-        assert.isAbove(forClient.accessToken.length, 0);
-        assert.isAbove(forClient.apiToken.length, 0);
-
-        // A client echoing the redacted values back, or omitting them, keeps the saved tokens.
-        yield* serverSettings.updateSettings({ bitbucket: forClient });
-        yield* serverSettings.updateSettings({ bitbucket: { email: "other@example.com" } });
-        assert.deepEqual((yield* serverSettings.getSettings).bitbucket, {
-          email: "other@example.com",
-          accessToken: "bb-access",
-          apiToken: "bb-api",
-        });
-
-        const cleared = yield* serverSettings.updateSettings({ bitbucket: { accessToken: "" } });
-        assert.equal(cleared.bitbucket.accessToken, "");
-        assert.equal(cleared.bitbucket.apiToken, "bb-api");
-        assert.isTrue(Option.isNone(yield* secrets.get("bitbucket-access-token")));
-        assert.equal(
-          ServerSettingsModule.redactServerSettingsForClient(cleared).bitbucket.accessToken,
-          "",
-        );
-      }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
-  );
-
-  it.effect(
-    "keeps GitHub tokens per host in the secret store and tells clients only that one is set",
-    () =>
-      Effect.gen(function* () {
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        const secrets = yield* ServerSecretStore.ServerSecretStore;
-        const serverConfig = yield* ServerConfig.ServerConfig;
-        const fileSystem = yield* FileSystem.FileSystem;
-
-        const saved = yield* serverSettings.updateSettings({
-          github: { tokens: { "GitHub.com": "ghp_dotcom", "ghe.acme.test": "ghp_ghe" } },
-        });
-        assert.deepEqual(saved.github.tokens, {
-          "github.com": "ghp_dotcom",
-          "ghe.acme.test": "ghp_ghe",
-        });
-        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-        assert.notInclude(raw, "ghp_dotcom");
-        assert.notInclude(raw, "ghp_ghe");
-
-        const forClient = ServerSettingsModule.redactServerSettingsForClient(saved).github;
-        assert.notInclude(forClient.tokens["github.com"]!, "ghp_dotcom");
-        assert.isAbove(forClient.tokens["github.com"]!.length, 0);
-
-        // Echoing the redacted values back keeps them; host and account changes leave tokens alone.
-        yield* serverSettings.updateSettings({ github: { tokens: forClient.tokens } });
-        yield* serverSettings.updateSettings({
-          github: { hosts: { "github.com": { enabled: true, account: "work" } } },
-        });
-        assert.deepEqual((yield* serverSettings.getSettings).github.tokens, {
-          "github.com": "ghp_dotcom",
-          "ghe.acme.test": "ghp_ghe",
-        });
-
-        // An empty token removes that host's token and nothing else.
-        const cleared = yield* serverSettings.updateSettings({
-          github: { tokens: { "github.com": "" } },
-        });
-        assert.equal(cleared.github.tokens["github.com"] ?? "", "");
-        assert.equal(cleared.github.tokens["ghe.acme.test"], "ghp_ghe");
-        const remaining = yield* Effect.forEach(["github.com", "ghe.acme.test"], (host) =>
-          secrets.get(`github-token-${Buffer.from(host, "utf8").toString("base64url")}`),
-        );
-        assert.isTrue(Option.isNone(remaining[0]!));
-        assert.isTrue(Option.isSome(remaining[1]!));
-      }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
-  );
-
-  it.effect("removes a Bitbucket secret once its token is cleared by hand in settings.json", () =>
-    Effect.gen(function* () {
+  // Coder: GitLab's client definition is the only one carried and declares no host settings, so
+  // no source control host secret fields exist; upstream's host secret tests are not carried.
+  it.effect("keeps the retired keys for another load when a token cannot be copied", () => {
+    const cause = new ServerSecretStore.SecretStoreReadError({
+      resource: "bitbucket-access-token",
+      cause: PlatformError.systemError({
+        _tag: "PermissionDenied",
+        module: "FileSystem",
+        method: "readFile",
+        pathOrDescriptor: "bitbucket-access-token",
+        description: "Secret backend unavailable.",
+      }),
+    });
+    const layerSettings = ServerSettingsModule.layer.pipe(
+      Layer.provide(layerFailingSecretStore(cause)),
+      Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
+      Layer.provideMerge(
+        Layer.fresh(
+          ServerConfig.layerTest(process.cwd(), {
+            prefix: "t3code-server-settings-legacy-failure-test-",
+          }),
+        ),
+      ),
+    );
+    return Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
-      const secrets = yield* ServerSecretStore.ServerSecretStore;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      // A token was saved, then the user deleted it from settings.json directly.
-      yield* secrets.set("bitbucket-access-token", new TextEncoder().encode("stale-token"));
-      yield* fileSystem.writeFileString(serverConfig.settingsPath, "{}");
+      const legacy = JSON.stringify({
+        bitbucket: { email: "me@example.com", accessToken: "\u2022\u2022\u2022\u2022\u2022\u2022" },
+      });
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, legacy);
 
-      yield* serverSettings.updateSettings({ cursorKeychainUsageEnabled: true });
+      yield* Effect.exit(serverSettings.getSettings);
 
-      assert.isTrue(Option.isNone(yield* secrets.get("bitbucket-access-token")));
-    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
-  );
-
-  it.effect("moves a hand-edited Bitbucket token into the secret store when settings load", () =>
-    Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const secrets = yield* ServerSecretStore.ServerSecretStore;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fileSystem.writeFileString(
-        serverConfig.settingsPath,
-        '{"bitbucket":{"accessToken":"hand-edited-token"}}',
-      );
-
-      // Loading alone moves it: no settings update is needed.
-      const loaded = yield* serverSettings.getSettings;
-
-      assert.equal(loaded.bitbucket.accessToken, "hand-edited-token");
-      assert.notInclude(
-        yield* fileSystem.readFileString(serverConfig.settingsPath),
-        "hand-edited-token",
-      );
-      const stored = yield* secrets.get("bitbucket-access-token");
-      assert.equal(
-        Option.isSome(stored) ? new TextDecoder().decode(stored.value) : null,
-        "hand-edited-token",
-      );
-    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
-  );
-
-  it.effect(
-    "moves a hand-edited Bitbucket token into the secret store when a client echoes the marker",
-    () =>
-      Effect.gen(function* () {
-        const serverConfig = yield* ServerConfig.ServerConfig;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        yield* fileSystem.writeFileString(
-          serverConfig.settingsPath,
-          '{"bitbucket":{"email":"me@example.com","apiToken":"hand-edited-token"}}',
-        );
-
-        // The form resends the redacted token when only the email changes.
-        const forClient = ServerSettingsModule.redactServerSettingsForClient(
-          yield* serverSettings.getSettings,
-        ).bitbucket;
-        const updated = yield* serverSettings.updateSettings({
-          bitbucket: { email: "new@example.com", apiToken: forClient.apiToken },
-        });
-
-        assert.equal(updated.bitbucket.apiToken, "hand-edited-token");
-        assert.equal((yield* serverSettings.getSettings).bitbucket.apiToken, "hand-edited-token");
-        assert.notInclude(
-          yield* fileSystem.readFileString(serverConfig.settingsPath),
-          "hand-edited-token",
-        );
-      }).pipe(Effect.provide(layerServerSettings())),
-  );
+      assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), legacy);
+    }).pipe(Effect.provide(layerSettings));
+  });
 
   it.effect("materializes provider secrets for terminal environment resolution", () =>
     Effect.gen(function* () {

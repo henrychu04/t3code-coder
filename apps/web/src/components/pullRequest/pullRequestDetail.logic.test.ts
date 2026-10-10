@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
 import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
 import {
@@ -82,19 +83,18 @@ it("groups checks needing attention before running and completed checks without 
 });
 
 describe("pull request checkout commands", () => {
+  // Coder: GitLab is the only shipped host definition; every other kind reads as the generic host,
+  // which builds no checkout command.
   it.each([
-    ["github", "feature", null, "gh pr checkout 42"],
+    ["github", "feature", null, null],
     ["gitlab", "feature", null, "glab mr checkout 42"],
-    ["azure-devops", "feature", null, "az repos pr checkout --id 42"],
-    [
-      "bitbucket",
-      "feature/checkout",
-      "maria/t3code",
-      "git clone --single-branch --branch feature/checkout https://bitbucket.org/maria/t3code.git t3code-pr-42",
-    ],
+    ["azure-devops", "feature", null, null],
+    ["bitbucket", "feature/checkout", "maria/t3code", null],
     ["unknown", "feature", null, null],
   ] as const)("builds the %s command", (provider, branch, repository, expected) => {
-    expect(pullRequestCheckoutCommand(provider, 42, branch, repository)).toBe(expected);
+    expect(
+      pullRequestCheckoutCommand(SourceControlProviderKind.make(provider), 42, branch, repository),
+    ).toBe(expected);
   });
 
   const reference = (host?: string): PullRequestRef => ({
@@ -117,20 +117,20 @@ describe("pull request checkout commands", () => {
   });
 
   it("uses a public host when no repository identity is available", () => {
-    expect(loadingPullRequestCheckoutCommand(reference("github.com"), undefined)).toBe(
-      "gh pr checkout 42",
-    );
+    // Coder: github.com names no shipped host.
+    expect(loadingPullRequestCheckoutCommand(reference("github.com"), undefined)).toBeNull();
     expect(loadingPullRequestCheckoutCommand(reference("gitlab.com"), null)).toBe(
       "glab mr checkout 42",
     );
   });
 
-  it("uses a matching enterprise identity and rejects an explicit host mismatch", () => {
-    const enterprise = identity("github", "github.example.test/acme/web");
-    expect(loadingPullRequestCheckoutCommand(reference("github.example.test"), enterprise)).toBe(
-      "gh pr checkout 42",
+  it("uses a matching self-hosted identity and rejects an explicit host mismatch", () => {
+    // Coder: GitLab stands in for upstream's GitHub Enterprise case.
+    const selfHosted = identity("gitlab", "gitlab.example.test/acme/web");
+    expect(loadingPullRequestCheckoutCommand(reference("gitlab.example.test"), selfHosted)).toBe(
+      "glab mr checkout 42",
     );
-    expect(loadingPullRequestCheckoutCommand(reference("github.com"), enterprise)).toBeNull();
+    expect(loadingPullRequestCheckoutCommand(reference("gitlab.com"), selfHosted)).toBeNull();
   });
 
   it("does not infer a number-only command without a trusted provider", () => {
@@ -1689,7 +1689,7 @@ describe("cached pull request detail", () => {
   const reference = { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 7 };
   const detail = (overrides: Partial<PullRequestDetail> = {}): PullRequestDetail =>
     ({
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       capabilities: {
         diff: true,
         comment: true,
@@ -1757,37 +1757,27 @@ describe("cached pull request detail", () => {
     expect(snapshot?.deletions).toBe(3);
   });
 
-  it("reuses a host-qualified snapshot when reopening a thread link without a host", () => {
+  // Coder: GitLab, the only shipped host, names no checkout host, so a thread link without one
+  // keeps its project-scoped snapshot key rather than upstream's GitHub host-qualified one.
+  it("keeps a thread link without a host on its project-scoped snapshot", () => {
     const storage = makeStorage();
-    writePullRequestDetailSnapshot(
-      storage,
-      "env-1",
-      { ...reference, host: "github.com" },
-      detail(),
-    );
-    const resolved = resolvePullRequestReferenceHost(reference, {
-      canonicalKey: "github.com/acme/web",
+    writePullRequestDetailSnapshot(storage, "env-1", reference, detail());
+    const identity = {
+      canonicalKey: "gitlab.com/acme/web",
       locator: {
-        source: "git-remote",
+        source: "git-remote" as const,
         remoteName: "origin",
-        remoteUrl: "https://github.com/acme/web.git",
+        remoteUrl: "https://gitlab.com/acme/web.git",
       },
-      provider: "github",
-    });
+      provider: SourceControlProviderKind.make("gitlab"),
+    };
+    const resolved = resolvePullRequestReferenceHost(reference, identity);
+    expect(resolved).toBe(reference);
     expect(readPullRequestDetailSnapshot(storage, "env-1", resolved)?.title).toBe(
       "Cache the title",
     );
-    const explicit = { ...reference, host: "github.example.com" };
-    expect(
-      resolvePullRequestReferenceHost(explicit, {
-        canonicalKey: "github.com/acme/web",
-        locator: {
-          source: "git-remote",
-          remoteName: "origin",
-          remoteUrl: "https://github.com/acme/web.git",
-        },
-      }),
-    ).toBe(explicit);
+    const explicit = { ...reference, host: "gitlab.example.com" };
+    expect(resolvePullRequestReferenceHost(explicit, identity)).toBe(explicit);
   });
 
   it("leaves server-resolved Azure SSH references unchanged", () => {
@@ -1799,7 +1789,7 @@ describe("cached pull request detail", () => {
           remoteName: "origin",
           remoteUrl: "git@ssh.dev.azure.com:v3/org/project/web",
         },
-        provider: "azure-devops",
+        provider: SourceControlProviderKind.make("azure-devops"),
       }),
     ).toBe(reference);
     expect(resolvePullRequestReferenceHost(reference, undefined)).toBe(reference);
@@ -1821,7 +1811,8 @@ describe("cached pull request detail", () => {
 
   it.each(["github", "gitlab"] as const)(
     "retains portless %s snapshot identities for custom web ports",
-    (provider) => {
+    (providerName) => {
+      const provider = SourceControlProviderKind.make(providerName);
       const storage = makeStorage();
       const host = `${provider}.example.com`;
       const hosted = { ...reference, host };

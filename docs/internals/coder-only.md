@@ -295,7 +295,9 @@ id through bounded helper chunks for previews, Save, and rewind.
 The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
 `message.context`) without preview annotations, element captures, or SnapShot frames. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
-native app icons.
+native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
+stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
+its type; it returns no contents.
 
 ### Files and search
 
@@ -308,6 +310,12 @@ the project are rejected. Writes apply only to an existing, non-truncated text f
 revision to reject stale edits, and replace the file atomically. `projects.createFile`, used by the
 proposed plan's Save to workspace, creates only a new file inside the verified root. Open files and
 editor state stay in browser memory.
+
+`filesystem.getMetadata`, which file chips use for their icons and size tooltips, is served as
+upstream has it: it takes absolute workspace paths (or `~/` paths) with no thread or project-root
+check, reads only `stat` plus a header sniff of at most 512 bytes for a file without an extension,
+and never returns file contents. Like `filesystem.browse`, it is not subject to the Files
+surface's project containment.
 
 Filename and path search use a lightweight path-only FFF index. Project-content search uses a
 separate, on-demand, content-enabled `@ff-labs/fff-node` index whose `basePath` is the verified real
@@ -466,7 +474,11 @@ listed here is drift to remove rather than fork behavior to keep.
     at the provider's 10 MiB base64 limit, and a longer line fails the session.
     `ClaudeCli.ts`'s `Query` implements `interrupt`, `stopTask`, `setModel`, `setPermissionMode`,
     `setMaxThinkingTokens`, `getContextUsage`, `getSettings` (read directly by `ClaudeProvider.ts`),
-    `getUsage`, `initializationResult`, and `close` as CLI control requests. `ClaudeAgentSdk.ts`
+    `getUsage`, `setMcpServers`, `initializationResult`, and `close` as CLI control requests.
+    `setMcpServers` sends the SDK's `{ subtype: "mcp_set_servers", servers }` with no deadline, as
+    the SDK does; upstream's query runner bounds the wait and sends a session's `mcpServers` that
+    way instead of as `--mcp-config`. T3 Coder's own sessions carry no MCP servers (T3 tools use
+    the bridge), so the runner sends none. `ClaudeAgentSdk.ts`
     maps them onto the SDK `Query` (`getUsage` serves its experimental usage method) and answers
     `supportedCommands`, `supportedModels`, `supportedAgents`, and `accountInfo` from the initialize
     response. Every other SDK `Query` method rejects with "not available through T3 Coder's CLI
@@ -474,8 +486,8 @@ listed here is drift to remove rather than fork behavior to keep.
     typecheck until it is mapped or rejected.
   - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
-    cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by
-    the empty strict configuration. `executableArgs` go before the CLI's own arguments, as the
+    cannot honour fail instead of being dropped; `mcpServers` becomes `--mcp-config`, as the SDK
+    passes it. `executableArgs` go before the CLI's own arguments, as the
     SDK passes them, so upstream's agent scope wrapper launches the CLI. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
     allocates the fork's session id and stores the source session and message boundary as the
     provider thread's `claudeFork` native metadata. The fork's first query then runs
@@ -522,7 +534,9 @@ listed here is drift to remove rather than fork behavior to keep.
     Auto-accept edits), skill chips, and T3 tools. The extension speaks MCP over HTTP upstream;
     here `buildPiRpcLaunch` hands it the file bridge instead (`T3_TOOL_COMMAND` and
     `T3_TOOL_CATALOG`), and it registers the bridge catalog's tools under upstream's names,
-    running each call through the bridge command with its arguments on stdin. The generated
+    running each call through the bridge command with its arguments on stdin. The JSON object a
+    call prints is also its `structuredContent`, as T3's MCP server returns it, so upstream's
+    structured tool results reach bridge calls (the bridge carries no image blocks). The generated
     extension source (`mcpExtensionSource.ts`) keeps upstream's HTTP MCP client beside the bridge
     path, to stay close to upstream. It is dormant: every Coder MCP session carries a bridge
     `toolCommand`, so `buildPiRpcLaunch` never sets `T3_MCP_URL` and the extension opens no HTTP
@@ -619,7 +633,8 @@ listed here is drift to remove rather than fork behavior to keep.
     preview automation, relay, resource telemetry, usage, editor launch, GitHub routing, feedback
     upload, and HTTP content search) and adds the helper-only methods and `CoderWsRpcGroup`, the
     only group the helper serves. That group carries upstream's thread find
-    (`searchThread`, `searchThreadStream`), turn-item reads, passive terminal observation, agent
+    (`searchThread`, `searchThreadStream`), file chip metadata (`filesystem.getMetadata`), turn-item
+    reads, passive terminal observation, agent
     secret answers, storage cleanup runs and reports, and the MCP Apps methods. Upstream's
     `WsRpcGroup` stays dormant, unreferenced, with the RPCs only it uses, and `knip.jsonc`
     ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
@@ -655,9 +670,10 @@ listed here is drift to remove rather than fork behavior to keep.
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies
   keybindings; every workspace is remote; Add project always shows the workspace picker, which
   also lists each domain's unconnected workspaces and connects the chosen one; there is no desktop or WSL folder picker, browser
-  preview, or usage page; GitLab is the only hosted clone source; non-GitLab hosts use a generic
-  icon; review actions say merge request; and new projects publish only to GitLab, when discovery
-  reports authenticated, writable access. Clone URLs are validated by the helper.
+  preview, or usage page; and review actions say merge request. Clone sources, host icons, and
+  publish targets come from the GitLab-only client registry (see Source control below); client-runtime's
+  `getNewProjectPublishTargets` offers a host only while the workspace write probe allows writes.
+  Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
   element captures, SnapShot, upstream's large-paste-to-file folding, and remote icons. Draft file
@@ -677,6 +693,8 @@ listed here is drift to remove rather than fork behavior to keep.
   id (`workspace.readAttachmentFile`, bounded by the composer file limit) into memory, and the
   right panel shows them in `files/SentAttachmentFilePreview.tsx` where upstream's
   `FilePreviewPanel` loads a signed URL. Native app icons fall back to the tool glyph.
+  `WorkspaceEntryIcon.tsx` formats sizes with the web's `lib/attachmentDisplay.ts`, because
+  client-runtime's attachment upload module is not carried.
   Upstream's v1 importer carries only messages, so screenshots that pre-v2 conversations saved
   as `artifacts` on v1 tool activities have no v2 item. The v2 database starts as a copy of the
   v1 one, so `orchestration-v2/legacy/LegacyScreenshotArtifacts.ts` reads them from the kept v1
@@ -713,7 +731,8 @@ listed here is drift to remove rather than fork behavior to keep.
   route workspace's config. The Files surface opens for drafts as on main; a draft's Files
   requests name its project so the helper can verify the root. The checkout branch notice also covers a
   worktree whose branch moved, but only a local checkout can be restored or follow the current
-  branch on send. `chatCanvasLayout.ts` has no preview obstacles, and the right panel keeps
+  branch on send. `chatCanvasLayout.ts` has no preview obstacles (it accepts upstream's `findBar` and ignores it),
+  and `ChatCanvas.test.tsx` covers only the details card inset below Find; the right panel keeps
   Coder's per-thread width storage instead of upstream's preview inline size.
 - **Markdown.** `ChatMarkdown.tsx` is upstream's, with these differences (each marked `Coder:` in
   the file):
@@ -757,10 +776,13 @@ listed here is drift to remove rather than fork behavior to keep.
   never advertised. Video uploads play inline, other uploads link as on main, and `/uploads/`
   links resolve against the repository host. Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
-  upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl` narrows the shared parser to
-  `/-/merge_requests/` URLs, and project matching skips checkouts whose provider is neither GitLab
-  nor unknown. `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL and keeps a
-  self-hosted install's origin and path prefix. A plain click opens the panel or page, and a
+  upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl` accepts only a URL a shipped
+  host definition claims (GitLab's `/-/merge_requests/`), and project matching uses upstream's host
+  resolvers but skips checkouts whose provider is neither GitLab nor unknown (the registry reads
+  other kinds as the generic host, which would still match by host and path). A linked MR's
+  snapshot status needs a GitLab URL, with no fallback host. `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL (and GitLab's
+  definition URL in `LinkPullRequestDialog`) and keeps a self-hosted install's origin and path
+  prefix. A plain click opens the panel or page, and a
   modifier click or an MR no workspace project can read goes to the system browser. In Markdown
   they are upstream's new-tab anchors with hover previews. The merge requests page resolves a link
   against every workspace that reads merge requests, the primary first. Right-clicking a web link shows upstream's menu (system browser, Copy Link, and
@@ -777,8 +799,9 @@ listed here is drift to remove rather than fork behavior to keep.
     (`mcp/toolkits/pullRequests/tools.ts`, with GitLab example URLs), and `GitManager`'s
     merge-request ref fetch error. `runtimeInstructions.ts` stays upstream's. Identifiers, wire
     names, and search haystacks keep upstream's spelling, and the composer trigger stays `#`.
-    Web `sourceControlPresentation.ts` treats a missing provider as GitLab rather than
-    upstream's GitHub default. Text for paths GitLab never reaches (native stacks, stack merges,
+    GitLab's client definition supplies "MR" and "merge request" wherever upstream reads a host's
+    terminology, and a missing provider reads as GitLab because it is the only definition; `!123`
+    is still applied by hand, since definitions carry no reference prefix. Text for paths GitLab never reaches (native stacks, stack merges,
     `PullRequestsUnavailableState`'s GitHub link, GitHub-only setting rows) is upstream's. These
     pure wording substitutions are not marked line by line; every other difference is.
 - **Source control and merge-request services.** `sourceControl/`, `pullRequest/`, and upstream's
@@ -786,8 +809,19 @@ listed here is drift to remove rather than fork behavior to keep.
   Upstream's GitHub, Azure DevOps, Bitbucket, and Forgejo packages are not carried. Coder deltas,
   each marked `Coder:`:
   - `sourceControl/builtInDrivers.ts` lists and provides only the GitLab driver, so both
-    registries iterate GitLab alone. `SourceControlHost` passes the fork's `classifyNonZeroExit`
-    through to `VcsProcess`, which GitLab uses to report a policy-blocked write.
+    registries iterate GitLab alone. Upstream's client host definitions are carried the same way:
+    client-runtime's `sourceControlClients.ts` registers only GitLab's definition, so labels,
+    terminology, icons, clone and publish pickers, reference parsing, and project matching follow
+    GitLab alone, and every other kind reads as the generic host. The server's
+    `sourceControl/sourceControlHostSecrets.ts` reads only GitLab's definition, which declares no
+    host settings, so no host secrets exist; upstream's `SourceControlHostSettings` form is not
+    carried. `SourceControlHost` passes the fork's `classifyNonZeroExit` through to `VcsProcess`,
+    which GitLab uses to report a policy-blocked write.
+  - GitLab's client definition (`source-control-gitlab/src/client/definition.ts`) has three
+    deltas: `isChangeRequestReference` accepts a merge request URL on any HTTP(S) host, because
+    self-hosted hostnames need not contain "gitlab"; `authorProfileUrl` links comment authors
+    under the host root; and `referenceAutolinkRepositoryUrl` gives the web's GitLab autolinks
+    (`pullRequestMarkdown.logic.ts`) the repository URL, where upstream's definition returns null.
   - `GitLabWriteProbe` (in the GitLab package) gates every host write (`GitLabCli.executeWrite`,
     repository and merge-request creation, merge-request mutations); discovery reports its
     `writeAccess`, and while writes are blocked the merge-request detail and viewer permissions
@@ -796,7 +830,7 @@ listed here is drift to remove rather than fork behavior to keep.
     reads), and diff-file-contents reads, which upstream implements only for GitHub. Diff output
     is capped (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    dacd2cb649):
+    0442f5bfcc):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
@@ -933,6 +967,9 @@ listed here is drift to remove rather than fork behavior to keep.
   their quota.
 - **Upstream tests.** `storageCleanup.test.ts` roots its test config at the temp directory's real
   path, so its path checks pass on macOS, where the temp directory is behind the `/var` symlink.
+  `serverSettings.test.ts` omits upstream's source control host secret tests, because no carried
+  host definition declares settings. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
+  tests through a fake `claude` executable, since the CLI transport has no SDK spawn hook.
   `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
   reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
   says when to retry it.

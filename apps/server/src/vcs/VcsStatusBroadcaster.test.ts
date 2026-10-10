@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it, describe } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
@@ -42,7 +43,7 @@ const baseLocalStatus: VcsStatusLocalResult = {
   isRepo: true,
   // Coder: source-control fixtures use the only supported hosted provider.
   sourceControlProvider: {
-    kind: "gitlab",
+    kind: SourceControlProviderKind.make("gitlab"),
     name: "GitLab",
     baseUrl: "https://gitlab.com",
   },

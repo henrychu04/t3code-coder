@@ -5,7 +5,6 @@ import * as Option from "effect/Option";
 import { useEffect, useState, type ReactNode } from "react";
 import type {
   BackgroundActivitySettings,
-  SourceControlProviderKind,
   SourceControlDiscoveryResult,
   SourceControlProviderAuth,
   SourceControlProviderDiscoveryItem,
@@ -46,7 +45,7 @@ import {
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-import { GitHubIcon, GitIcon, GitLabIcon, type Icon } from "../Icons";
+import { GitIcon, type Icon } from "../Icons";
 import { GitLabWorkspaceSettings } from "./GitLabWorkspaceSettings";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
@@ -58,17 +57,14 @@ import {
   SettingsSection,
   useSettingsSearchTargetId,
 } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { searchableSetting, sourceControlHostSettingsSearchId } from "./settingsSearch";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlIcon } from "~/sourceControlPresentation";
 
 const EMPTY_DISCOVERY_RESULT: SourceControlDiscoveryResult = {
   versionControlSystems: [],
   sourceControlProviders: [],
-};
-
-const SOURCE_CONTROL_PROVIDER_ICONS: Partial<Record<SourceControlProviderKind, Icon>> = {
-  github: GitHubIcon,
-  gitlab: GitLabIcon,
 };
 
 const VCS_ICONS: Partial<Record<VcsDriverKind, Icon>> = {
@@ -168,8 +164,9 @@ function SourceControlItemMark({
   readonly item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem;
 }) {
   const dotClassName = itemStatusDot(item);
+  const host = isProviderDiscoveryItem(item) ? sourceControlClients.find(item.kind) : undefined;
   const Icon = isProviderDiscoveryItem(item)
-    ? SOURCE_CONTROL_PROVIDER_ICONS[item.kind]
+    ? host && sourceControlIcon(host)
     : VCS_ICONS[item.kind];
 
   if (!Icon) {
@@ -278,8 +275,7 @@ function DiscoveryItemRow({
   useEffect(() => {
     if (
       (item.kind === "git" && searchTargetId === searchableSetting("git-fetch-interval").id) ||
-      (item.kind === "bitbucket" &&
-        searchTargetId === searchableSetting("bitbucket-credentials").id) ||
+      searchTargetId === sourceControlHostSettingsSearchId(item.kind) ||
       (item.kind === "github" && searchTargetId === searchableSetting("github-accounts").id)
     ) {
       setIsExpanded(true);
@@ -590,7 +586,8 @@ export function SourceControlSettingsPanel() {
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (
-                // Coder: GitLab is the only hosted provider; its CLI owns authentication.
+                // Coder: GitLab is the only hosted provider; its CLI owns authentication, and its
+                // definition declares no host settings, so upstream's host settings form is not carried.
                 <DiscoveryItemRow key={`provider:${item.kind}`} item={item}></DiscoveryItemRow>
               ))}
             </SettingsSection>

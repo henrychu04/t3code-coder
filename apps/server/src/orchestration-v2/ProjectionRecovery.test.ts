@@ -114,7 +114,7 @@ const createRun = Effect.fn(function* (
 });
 
 // Coder: skipped because it fails on pure upstream too (ProjectionStoreSetupError, SQLite
-// "malformed JSON" under Node 24.12), last seen at upstream merge-base dacd2cb649. Re-run it on
+// "malformed JSON" under Node 24.12), last seen at upstream merge-base 0442f5bfcc. Re-run it on
 // every sync and restore `it.effect` once upstream passes.
 it.effect.skip("selects unfinished recovery work without reading settled thread histories", () =>
   Effect.gen(function* () {

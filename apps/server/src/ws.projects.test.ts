@@ -16,6 +16,7 @@ import {
   WS_METHODS,
   type OrchestrationProjectShell,
   type OrchestrationV2ThreadShell,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -86,7 +87,7 @@ const project = {
   title: "Project",
   workspaceRoot: "/workspace/project",
   repositoryIdentity: {
-    provider: "gitlab",
+    provider: SourceControlProviderKind.make("gitlab"),
     canonicalKey: "code.example/team/repo",
     locator: {
       source: "git-remote",
@@ -187,7 +188,7 @@ const harness = (
             publishSteps.push(`publish:${input.cwd}`);
             return {
               repository: {
-                provider: "gitlab" as const,
+                provider: SourceControlProviderKind.make("gitlab"),
                 nameWithOwner: input.repository,
                 url: "https://gitlab.example.test/owner/repository",
                 sshUrl: "git@gitlab.example.test:owner/repository.git",
@@ -236,7 +237,7 @@ describe("Coder RPC seams", () => {
       const h = yield* harness();
       const result = yield* h.client[WS_METHODS.sourceControlPublishRepository]({
         cwd: "/workspace/project",
-        provider: "gitlab",
+        provider: SourceControlProviderKind.make("gitlab"),
         repository: "owner/repository",
         visibility: "private",
       });

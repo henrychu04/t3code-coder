@@ -120,6 +120,12 @@ for await (const line of lines) {
         () => assert.fail("expected an unsupported control request"),
         (error: Error) => assert.match(error.message, /not available/),
       );
+      await runtime
+        .setMcpServers({ local: { type: "sdk", name: "local", instance: {} as never } })
+        .then(
+          () => assert.fail("expected an in-process MCP server to be rejected"),
+          (error: Error) => assert.match(error.message, /in-process MCP server/),
+        );
       runtime.close();
     } finally {
       await NodeFS.rm(temporaryDirectory, { recursive: true, force: true });

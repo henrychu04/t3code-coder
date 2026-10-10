@@ -8,7 +8,11 @@ import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/process";
 
-import { GitCommandError, type SourceControlCloneProtocol } from "@t3tools/contracts";
+import {
+  GitCommandError,
+  type SourceControlCloneProtocol,
+  SourceControlProviderKind,
+} from "@t3tools/contracts";
 import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -70,7 +74,7 @@ for (const [repository, protocol, expectedUrl] of [
       const provider = yield* SourceControlProvider.SourceControlProvider.pipe(
         Effect.provide(
           Layer.mock(SourceControlProvider.SourceControlProvider)({
-            kind: "gitlab",
+            kind: SourceControlProviderKind.make("gitlab"),
             getRepositoryCloneUrls: () =>
               Effect.sync(() => {
                 lookupCount++;
@@ -104,7 +108,7 @@ for (const [repository, protocol, expectedUrl] of [
         ),
       );
       const result = yield* service.cloneRepository({
-        provider: "gitlab",
+        provider: SourceControlProviderKind.make("gitlab"),
         ...source,
         ...(protocol === undefined ? {} : { protocol }),
         destinationPath: path.join(root, "project"),
@@ -134,7 +138,7 @@ for (const remoteUrl of [
       const service = yield* SourceControlRepositoryService.make;
       const error = yield* service
         .cloneRepository({
-          provider: "gitlab",
+          provider: SourceControlProviderKind.make("gitlab"),
           remoteUrl,
           destinationPath: path.join(parent, "project"),
         })

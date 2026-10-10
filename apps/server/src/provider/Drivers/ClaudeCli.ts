@@ -22,6 +22,7 @@ export type SlashCommand = Sdk.SlashCommand;
 export type ModelInfo = Sdk.ModelInfo;
 export type SDKControlInitializeResponse = Sdk.SDKControlInitializeResponse;
 export type SDKControlGetContextUsageResponse = Sdk.SDKControlGetContextUsageResponse;
+export type McpSetServersResult = Sdk.McpSetServersResult;
 export type UserDialogRequest = Sdk.UserDialogRequest;
 export type UserDialogResult = Sdk.UserDialogResult;
 
@@ -294,6 +295,10 @@ export interface Query extends AsyncIterable<SDKMessage> {
   setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void>;
   getContextUsage(): Promise<SDKControlGetContextUsageResponse>;
   getSettings(timeoutMs?: number): Promise<Record<string, unknown>>;
+  /** Replaces the session's dynamic MCP servers over stdin, as the SDK's `setMcpServers` does. */
+  setMcpServers(
+    servers: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+  ): Promise<McpSetServersResult>;
   initializationResult(): Promise<SDKControlInitializeResponse>;
   close(): void;
 }
@@ -495,6 +500,16 @@ class ClaudeCliQuery implements Query {
     );
   }
 
+  setMcpServers(
+    servers: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+  ): Promise<McpSetServersResult> {
+    // The SDK puts no deadline on this request: the CLI answers once each server has connected
+    // or hit its own timeout, and the caller bounds the wait.
+    return this.request({ subtype: "mcp_set_servers", servers }, null).then(
+      (response) => response as McpSetServersResult,
+    );
+  }
+
   getUsage(
     options?: { readonly skipBehaviors?: boolean },
     timeoutMs?: number,
@@ -692,20 +707,23 @@ class ClaudeCliQuery implements Query {
 
   private request(
     request: Record<string, unknown>,
-    timeoutMs = CONTROL_REQUEST_TIMEOUT_MS,
+    /** `null` waits without a deadline. */
+    timeoutMs: number | null = CONTROL_REQUEST_TIMEOUT_MS,
   ): Promise<Record<string, unknown>> {
     this.process.stdout.resume();
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
-      const timeoutSignal = AbortSignal.timeout(timeoutMs);
-      timeoutSignal.addEventListener("abort", () => {
-        const pending = this.pendingResponses.get(requestId);
-        if (!pending) return;
-        this.pendingResponses.delete(requestId);
-        pending.reject(
-          new Error(`Claude Code control request timed out: ${String(request.subtype)}`),
-        );
-      });
+      if (timeoutMs !== null) {
+        const timeoutSignal = AbortSignal.timeout(timeoutMs);
+        timeoutSignal.addEventListener("abort", () => {
+          const pending = this.pendingResponses.get(requestId);
+          if (!pending) return;
+          this.pendingResponses.delete(requestId);
+          pending.reject(
+            new Error(`Claude Code control request timed out: ${String(request.subtype)}`),
+          );
+        });
+      }
       this.pendingResponses.set(requestId, {
         resolve,
         reject,

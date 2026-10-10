@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { PullRequestFilesViewedRepository } from "../persistence/PullRequestFilesViewed.ts";
 import * as PullRequestReadCache from "./PullRequestReadCache.ts";
 import { assert, expect, it, vi } from "@effect/vitest";
@@ -66,7 +67,7 @@ const project: OrchestrationProjectShell = {
       remoteName: "origin",
       remoteUrl: "https://gitlab.example.gs.com/goldman/project.git",
     },
-    provider: "gitlab",
+    provider: SourceControlProviderKind.make("gitlab"),
     displayName: "goldman/project",
   },
   defaultModelSelection: null,
@@ -78,7 +79,7 @@ const project: OrchestrationProjectShell = {
 const runAction = vi.fn(() => Effect.void);
 
 const provider: PullRequestProviderApi = {
-  kind: "gitlab",
+  kind: SourceControlProviderKind.make("gitlab"),
   capabilities: HOST_CAPABILITIES,
   getViewer: () => Effect.succeed("coder-user"),
   getViewerPermissions: () =>

@@ -441,3 +441,63 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     await NodeFS.rm(directory, { force: true, recursive: true });
   }
 }, 5000);
+
+it("registers MCP servers with the Agent SDK's mcp_set_servers control request", async () => {
+  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-mcp-servers-"));
+  const executable = NodePath.join(directory, "fake-claude");
+  const servers = {
+    docs: { type: "http", url: "https://example.test/mcp", headers: { Authorization: "Bearer x" } },
+  };
+  // Answers only the SDK 0.3.276 wire shape: `{ subtype: "mcp_set_servers", servers }`.
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+const expected = ${JSON.stringify(JSON.stringify(servers))};
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type !== "control_request") return;
+  const request = value.request;
+  const keys = Object.keys(request).sort().join(",");
+  const ok = request.subtype === "initialize" ||
+    (request.subtype === "mcp_set_servers" && keys === "servers,subtype" &&
+      JSON.stringify(request.servers) === expected && !process.argv.includes("--mcp-config"));
+  process.stdout.write(JSON.stringify({
+    type: "control_response",
+    response: ok
+      ? {
+          subtype: "success",
+          request_id: value.request_id,
+          response: request.subtype === "initialize"
+            ? {}
+            : { added: ["docs"], removed: [], errors: {} },
+        }
+      : { subtype: "error", request_id: value.request_id, error: JSON.stringify(request) },
+  }) + "\\n");
+});
+`,
+    { mode: 0o700 },
+  );
+  let finishPrompt!: () => void;
+  const promptFinished = new Promise<void>((resolve) => {
+    finishPrompt = resolve;
+  });
+  const runtime = query({
+    prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+      await promptFinished;
+    })(),
+    options: { pathToClaudeCodeExecutable: executable, env: process.env },
+  });
+  try {
+    assert.deepEqual(await runtime.setMcpServers(servers), {
+      added: ["docs"],
+      removed: [],
+      errors: {},
+    });
+    await rejects(runtime.setMcpServers({ other: servers.docs }));
+  } finally {
+    finishPrompt();
+    runtime.close();
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);

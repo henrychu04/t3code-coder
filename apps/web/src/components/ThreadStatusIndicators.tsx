@@ -36,7 +36,7 @@ import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../sta
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { vcsEnvironment } from "../state/vcs";
 import { useUiStateStore } from "../uiStateStore";
-import { resolveChangeRequestPresentation } from "../sourceControlPresentation";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   resolveThreadLastVisitedAt,
   resolveThreadStatusPill,
@@ -129,9 +129,11 @@ export function linkedPullRequestSnapshotStatus(
 ): LinkedThreadPullRequestStatus | null {
   const snapshot = link.snapshot;
   if (snapshot === null) return null;
-  // Coder: GitLab is the only hosted provider; other hosts have no status snapshot.
-  if (parseChangeRequestUrl(link.url) === null) return null;
-  const kind = "gitlab";
+  // A link records no host kind, so read it from the URL's change request path.
+  // Coder: GitLab is the only hosted provider; other hosts' links have no status snapshot.
+  const host = sourceControlClients.findByChangeRequestUrl(link.url);
+  if (host === undefined) return null;
+  const kind = host.kind;
   return {
     pr: {
       number: link.number,
@@ -430,12 +432,12 @@ export function prStatusIndicator(
   provider: VcsStatusResult["sourceControlProvider"] | null | undefined,
 ): PrStatusIndicator | null {
   if (!pr) return null;
-  const presentation = resolveChangeRequestPresentation(provider);
+  const { shortLabel } = sourceControlClients.get(provider?.kind).changeRequest;
   const state = resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true });
 
-  const tooltipLead = `${presentation.shortName} !${pr.number} - ${state.label}`;
+  const tooltipLead = `${shortLabel} !${pr.number} - ${state.label}`;
   return {
-    label: `${presentation.shortName} ${state.label.toLowerCase()}`,
+    label: `${shortLabel} ${state.label.toLowerCase()}`,
     colorClass: state.toneClassName,
     Icon: state.Icon,
     tooltip: `${tooltipLead}: ${pr.title}`,

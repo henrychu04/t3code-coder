@@ -184,7 +184,16 @@ function toSdkQuery(cli: Cli.Query): Sdk.Query {
     mcpServerStatus: reject("MCP server status"),
     reconnectMcpServer: reject("MCP reconnects"),
     toggleMcpServer: reject("MCP toggles"),
-    setMcpServers: reject("MCP servers"),
+    setMcpServers: (servers) => {
+      for (const [name, server] of Object.entries(servers)) {
+        if (server.type === "sdk") {
+          return Promise.reject(unsupported(`in-process MCP server '${name}'`));
+        }
+      }
+      return cli.setMcpServers(
+        servers as Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+      );
+    },
     rewindFiles: reject("file rewinds"),
     seedReadState: reject("read-state seeding"),
     readFile: reject("file reads"),
