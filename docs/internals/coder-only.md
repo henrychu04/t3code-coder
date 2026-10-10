@@ -1023,8 +1023,9 @@ listed here is drift to remove rather than fork behavior to keep.
   texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
   ones. `knip.jsonc` lists the upstream files whose exports are used only by surfaces the fork
   does not carry, so `pnpm knip:check` still catches fork-introduced dead exports elsewhere.
-  `scripts/coder-live-test.mjs` and `scripts/coder-live-template/` run the real-Coder live
-  harness on macOS with Colima.
+  The real-Coder live harness behind `pnpm coder:live:*` (`scripts/coder-live-test.mjs` and
+  `scripts/coder-live-template/`) is kept local and is not committed, because it provisions
+  external tooling.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,
