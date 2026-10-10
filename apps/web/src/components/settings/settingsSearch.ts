@@ -537,13 +537,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
     searchTerms: ["auto pull default branch current checkout fast forward upstream"],
   },
-  {
-    id: "remove-agent-credits-on-merge",
-    title: "Remove agent credits when merging",
-    to: "/settings/source-control",
-    scope: "project-defaults",
-    searchTerms: ["pull request github squash co-authored-by attribution claude codex generated"],
-  },
+  // Coder: no "Remove agent credits when merging"; it applies only to GitHub merges.
   {
     id: "pull-request-merge-method",
     title: "Default merge method",
