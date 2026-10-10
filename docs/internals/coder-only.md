@@ -605,6 +605,9 @@ listed here is drift to remove rather than fork behavior to keep.
   - Claude runs through `Drivers/ClaudeCli.ts`, which implements the Agent SDK's `query()` and
     `Query` surface over the workspace `claude` executable. Rollback and resume use upstream's
     native `resumeSessionAt` from the conversation head, which the CLI accepts directly.
+    Where the SDK's `readline` has no line cap, a stream-json line may use the whole 32 MiB
+    pending-message budget, which fits a tool-result image at the provider's 10 MiB base64 limit;
+    a longer line fails the session.
   - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
     cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by

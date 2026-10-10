@@ -214,6 +214,11 @@ type PendingControlResponse = {
   readonly reject: (cause: Error) => void;
 };
 
+// Coder: upstream's Agent SDK reads lines without a cap. One line may carry a tool_result image
+// up to the provider's 10 MiB base64 limit, so a line may use the whole pending-message budget.
+const MAX_PENDING_MESSAGE_BYTES = 32 * 1024 * 1024;
+const MAX_CLAUDE_CLI_LINE_BYTES = MAX_PENDING_MESSAGE_BYTES;
+
 class AsyncMessageQueue<T> implements AsyncIterable<T> {
   private readonly values: Array<{ value: T; bytes: number }> = [];
   private queuedBytes = 0;
@@ -236,7 +241,7 @@ class AsyncMessageQueue<T> implements AsyncIterable<T> {
     if (waiter) waiter.resolve({ done: false, value });
     else {
       const bytes = Buffer.byteLength(JSON.stringify(value));
-      if (this.queuedBytes + bytes > 32 * 1024 * 1024)
+      if (this.queuedBytes + bytes > MAX_PENDING_MESSAGE_BYTES)
         throw new Error("Claude Code output exceeded the pending message budget.");
       this.values.push({ value, bytes });
       this.queuedBytes += bytes;
@@ -303,7 +308,6 @@ const RESERVED_CLAUDE_CLI_FLAGS: ReadonlySet<string> = new Set([
   "permission-prompt-tool",
 ]);
 const PROCESS_TERMINATION_GRACE_MS = 5_000;
-const MAX_CLAUDE_CLI_LINE_BYTES = 1024 * 1024;
 
 function stringifyError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -537,18 +541,23 @@ class ClaudeCliQuery implements Query {
   }
 
   private readStdout(): void {
-    let buffered = Buffer.alloc(0);
+    // Buffer a partial line as chunks and scan only new bytes, so a large line costs linear time.
+    let partial: Buffer[] = [];
+    let partialBytes = 0;
     this.process.stdout.on("data", (chunk: Buffer) => {
       if (this.closed) return;
-      buffered = Buffer.concat([buffered, chunk]);
-      let newline = buffered.indexOf(0x0a);
+      let start = 0;
+      let newline = chunk.indexOf(0x0a);
       while (newline !== -1) {
-        if (newline > MAX_CLAUDE_CLI_LINE_BYTES) {
+        if (partialBytes + newline - start > MAX_CLAUDE_CLI_LINE_BYTES) {
           this.fail(new Error("Claude Code emitted an oversized stream-json message."));
           return;
         }
-        const line = buffered.subarray(0, newline).toString("utf8").trim();
-        buffered = buffered.subarray(newline + 1);
+        const bytes = Buffer.concat([...partial, chunk.subarray(start, newline)]);
+        partial = [];
+        partialBytes = 0;
+        start = newline + 1;
+        const line = bytes.toString("utf8").trim();
         if (line) {
           try {
             this.handleWireMessage(JSON.parse(line) as unknown);
@@ -562,9 +571,13 @@ class ClaudeCliQuery implements Query {
             }
           }
         }
-        newline = buffered.indexOf(0x0a);
+        newline = chunk.indexOf(0x0a, start);
       }
-      if (buffered.byteLength > MAX_CLAUDE_CLI_LINE_BYTES) {
+      if (start < chunk.byteLength) {
+        partial.push(chunk.subarray(start));
+        partialBytes += chunk.byteLength - start;
+      }
+      if (partialBytes > MAX_CLAUDE_CLI_LINE_BYTES) {
         this.fail(new Error("Claude Code emitted an oversized stream-json message."));
       }
     });
