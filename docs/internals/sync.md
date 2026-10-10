@@ -80,7 +80,7 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   list, read, and write handlers rather than copying them, so their upstream edits apply as they
   merge.
 - `apps/web/src/components/ChatView.tsx`: the fork removes preview, device, usage, self-update,
-  local editor, feedback, and sidebar-drop code. Take upstream's hunk, then re-delete the hole and
+  local editor, and feedback code. Take upstream's hunk, then re-delete the hole and
   keep its `Coder:` comment.
 - `docs/user/*.md`: take upstream's text, then reapply "merge request", "MR", `!N`, "T3 Coder".
 - `knip.jsonc`: keep ours; add or drop `ignoreIssues` entries as `pnpm knip:check` reports.

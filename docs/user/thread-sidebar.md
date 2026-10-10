@@ -53,6 +53,10 @@ viewing. Discarding an unsent draft from the sidebar works the same way: Undo br
 back its text and attachments. `mod+z` triggers the most recent Undo when no text field is focused; see
 [Keybindings](./keybindings.md#commands-with-special-behavior).
 
+You can also drag files from your computer onto any thread row: the thread opens and the files
+are attached in its composer, ready for your next message. The same per-message file limits apply
+as when attaching files directly; see [Images and files](./composer.md#images-and-files).
+
 Pinning or unpinning a thread keeps the sidebar at your current
 scroll position instead of following the thread to its new place in the list.
 
