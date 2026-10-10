@@ -45,6 +45,8 @@ export function resolveChatCanvasLayout({
   minChatWidth?: number;
   composerHeight?: number;
   detailsCard?: ChatCanvasDetailsCardObstacle;
+  /** The open find bar. It only keeps the floating preview clear; chat stays put. */
+  findBar?: ChatCanvasDetailsCardObstacle;
 }) {
   const centeredWidth = Math.max(0, Math.min(maxChatWidth, container.width - padding * 2));
   // A workspace card that does not fit beside the centered chat first moves

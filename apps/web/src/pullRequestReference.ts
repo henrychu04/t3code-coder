@@ -1,23 +1,31 @@
-// Coder: GitLab is the only hosted provider; self-hosted GitLab hosts are accepted.
-const GITLAB_MERGE_REQUEST_URL_PATTERN =
-  /^https?:\/\/[^/\s]+\/.+\/-\/merge_requests\/(\d+)(?:[/?#].*)?$/i;
-const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;
-const GITLAB_CLI_MR_CHECKOUT_PATTERN = /^glab\s+mr\s+checkout\s+(.+)$/i;
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
+const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;
+
+/**
+ * The change request a pasted reference names: a host's change request URL, returned as is, or
+ * a bare number. A host's checkout command, such as `gh pr checkout 42`, is read for its
+ * argument first. Null for anything else, such as a branch name.
+ */
 export function parsePullRequestReference(input: string): string | null {
   const trimmed = input.trim();
   if (trimmed.length === 0) {
     return null;
   }
 
-  const glabCliCheckoutMatch = GITLAB_CLI_MR_CHECKOUT_PATTERN.exec(trimmed);
-  const normalizedInput = glabCliCheckoutMatch?.[1]?.trim() ?? trimmed;
+  const normalizedInput =
+    sourceControlClients.definitions
+      .map((definition) => definition.checkoutCommandArgument(trimmed))
+      .find((argument) => argument !== null) ?? trimmed;
   if (normalizedInput.length === 0) {
     return null;
   }
 
-  const urlMatch = GITLAB_MERGE_REQUEST_URL_PATTERN.exec(normalizedInput);
-  if (urlMatch?.[1]) {
+  if (
+    sourceControlClients.definitions.some((definition) =>
+      definition.isChangeRequestReference(normalizedInput),
+    )
+  ) {
     return normalizedInput;
   }
 

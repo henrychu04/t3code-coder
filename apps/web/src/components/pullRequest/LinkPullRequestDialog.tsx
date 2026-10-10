@@ -1,5 +1,4 @@
 // Coder: GitLab-only merge request URLs (`gitLabMergeRequestBrowserUrl`).
-export { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   pullRequestHostOf,
   type RepositoryIdentity,

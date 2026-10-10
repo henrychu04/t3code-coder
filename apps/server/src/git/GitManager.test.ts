@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -851,7 +852,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         Effect.die(new Error(`unexpected ${operation} on an unregistered provider`));
       const { manager } = yield* makeManager({
         sourceControlProvider: {
-          kind: "unknown",
+          kind: SourceControlProviderKind.make("unknown"),
           probeWriteAccess: () =>
             Effect.succeed({
               status: "indeterminate",
@@ -2629,7 +2630,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         operation: "lookupStatusPr",
         branch: "feature/status-rate-limited",
         errorTag: "SourceControlProviderError",
-        provider: "gitlab",
+        provider: SourceControlProviderKind.make("gitlab"),
         providerOperation: "listChangeRequests",
         providerCommand: "glab",
         errorDetail: "GitLab API rate limit exceeded.",

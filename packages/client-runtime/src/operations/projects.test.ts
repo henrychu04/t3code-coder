@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   EnvironmentId,
@@ -17,6 +18,8 @@ import {
   getCloneDestinationPath,
   getCloneDirectoryName,
   getDefaultCloneUrl,
+  getNewProjectPublishTarget,
+  getNewProjectPublishTargets,
   normalizePastedCloneUrl,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
@@ -68,27 +71,28 @@ describe("add project shared logic", () => {
     expect(normalizePastedCloneUrl("/srv/git/repo.git")).toBe("/srv/git/repo.git");
   });
 
-  it("uses HTTPS for repositories selected through a provider", () => {
+  // Coder: GitLab, the only shipped host, clones over SSH; an unshipped host reads as generic.
+  it("uses each host's default clone transport", () => {
     expect(
       getDefaultCloneUrl({
-        provider: "github",
+        provider: SourceControlProviderKind.make("gitlab"),
+        url: "https://gitlab.com/group/project",
+        sshUrl: "git@gitlab.com:group/project.git",
+      }),
+    ).toBe("git@gitlab.com:group/project.git");
+    expect(
+      getDefaultCloneUrl({
+        provider: SourceControlProviderKind.make("github"),
         url: "https://github.com/imputnet/helium",
         sshUrl: "git@github.com:imputnet/helium.git",
       }),
-    ).toBe("https://github.com/imputnet/helium");
-    expect(
-      getDefaultCloneUrl({
-        provider: "forgejo",
-        url: "https://forgejo.example.test:8443/owner/repo.git",
-        sshUrl: "ssh://git@forgejo.example.test:2222/owner/repo.git",
-      }),
-    ).toBe("https://forgejo.example.test:8443/owner/repo.git");
+    ).toBe("git@github.com:imputnet/helium.git");
   });
 
   it("preserves existing clone transport behavior for other providers", () => {
     expect(
       getDefaultCloneUrl({
-        provider: "gitlab",
+        provider: SourceControlProviderKind.make("gitlab"),
         url: "https://gitlab.com/group/project.git",
         sshUrl: "git@gitlab.com:group/project.git",
       }),
@@ -187,7 +191,7 @@ describe("add project shared logic", () => {
       versionControlSystems: [],
       sourceControlProviders: [
         {
-          kind: "github",
+          kind: SourceControlProviderKind.make("github"),
           label: "GitHub",
           status: "available",
           installHint: "Install gh",
@@ -201,7 +205,7 @@ describe("add project shared logic", () => {
           },
         },
         {
-          kind: "gitlab",
+          kind: SourceControlProviderKind.make("gitlab"),
           label: "GitLab",
           status: "available",
           installHint: "Install glab",
@@ -218,10 +222,14 @@ describe("add project shared logic", () => {
     };
 
     const readiness = buildAddProjectRemoteSourceReadiness(discovery);
-    expect(readiness.url.ready).toBe(true);
-    expect(readiness.github.ready).toBe(true);
-    expect(readiness.gitlab).toEqual({ ready: false, hint: "Run glab auth login" });
-    expect(sortAddProjectProviderSources(readiness)[0]).toBe("github");
+    expect(readiness("url").ready).toBe(true);
+    expect(readiness(SourceControlProviderKind.make("github")).ready).toBe(true);
+    expect(readiness(SourceControlProviderKind.make("gitlab"))).toEqual({
+      ready: false,
+      hint: "Run glab auth login",
+    });
+    // Coder: GitLab is the only clone source offered.
+    expect(sortAddProjectProviderSources(readiness)).toEqual(["gitlab"]);
   });
 
   it("finds existing projects by normalized path in the target environment", () => {
@@ -273,5 +281,48 @@ describe("add project shared logic", () => {
       createWorkspaceRootIfMissing: true,
       defaultModelSelection: null,
     });
+  });
+});
+
+describe("new project publish targets", () => {
+  const readyHost = (kind: string, account: string | null, writable = true) => ({
+    kind: SourceControlProviderKind.make(kind),
+    label: kind,
+    status: "available" as const,
+    installHint: "",
+    version: Option.none(),
+    detail: Option.none(),
+    auth: {
+      status: "authenticated" as const,
+      account: Option.fromNullOr(account),
+      host: Option.none(),
+      detail: Option.none(),
+    },
+    writeAccess: writable
+      ? { status: "writable" as const, writable: true }
+      : { status: "policy-blocked" as const, writable: false },
+  });
+
+  // Coder: GitLab is the only shipped host, offered only while the write probe allows writes.
+  it("offers GitLab when it is ready and writable, and keeps the pick", () => {
+    const targets = getNewProjectPublishTargets({
+      versionControlSystems: [],
+      sourceControlProviders: [
+        readyHost("gitlab", "group"),
+        readyHost("github", null),
+        readyHost("azure-devops", "me"),
+      ],
+    });
+    expect(targets.map((target) => target.definition.kind)).toEqual(["gitlab"]);
+    expect(getNewProjectPublishTarget(targets, null)?.definition.kind).toBe("gitlab");
+    expect(
+      getNewProjectPublishTarget(targets, SourceControlProviderKind.make("gitlab"))?.owner,
+    ).toBe("group");
+    expect(
+      getNewProjectPublishTargets({
+        versionControlSystems: [],
+        sourceControlProviders: [readyHost("gitlab", "group", false)],
+      }),
+    ).toEqual([]);
   });
 });

@@ -2,6 +2,7 @@ import {
   pullRequestHostOf,
   type OrchestrationProjectShell,
   type ThreadPullRequestKey,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 
@@ -28,6 +29,7 @@ export function isCoderPullRequestLink(
   return projects.some(
     ({ repositoryIdentity }) =>
       repositoryIdentity?.provider === "gitlab" &&
-      pullRequestHostOf(repositoryIdentity, "gitlab") === parsed.host,
+      pullRequestHostOf(repositoryIdentity, SourceControlProviderKind.make("gitlab")) ===
+        parsed.host,
   );
 }

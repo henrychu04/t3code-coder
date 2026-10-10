@@ -1,21 +1,19 @@
-import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PullRequestRef,
+  RepositoryIdentity,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent, useCallback, useMemo } from "react";
 
-import {
-  pullRequestHostOf,
-  type RepositoryIdentity,
-  type SourceControlProviderKind,
-} from "@t3tools/contracts";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   parseChangeRequestUrl as parseHostedChangeRequestUrl,
   type ChangeRequestLink,
 } from "@t3tools/shared/changeRequestUrl";
-import {
-  canonicalRepositoryKey,
-  sourceControlRepositorySelector,
-} from "@t3tools/shared/sourceControl";
+import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 
 import { useOpenLink } from "../browser/useOpenLink";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -35,46 +33,19 @@ export {
 } from "@t3tools/shared/changeRequestUrl";
 
 /**
- * Coder: GitLab is the only hosted provider, so only a merge request URL is a change request here.
- * Other hosts' pull request links stay ordinary links.
+ * Coder: only a URL a shipped host definition claims is a change request here, so with GitLab the
+ * only host, other hosts' pull request links stay ordinary links.
  */
 export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | null {
-  const link = parseHostedChangeRequestUrl(targetUrl);
-  if (link === null) return null;
-  return /\/-\/merge_requests\/\d+(?:\/|$)/u.test(new URL(targetUrl).pathname) ? link : null;
-}
-
-function resolvedForgejoRepository(project: EnvironmentProject): URL | null {
-  const identity = project.repositoryIdentity;
-  if (identity?.provider !== "forgejo" || !identity.webUrl) return null;
-  try {
-    const url = new URL(identity.webUrl);
-    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Keep Forgejo servers on different HTTP ports separate when selecting a project. */
-function matchesChangeRequestAuthority(
-  project: EnvironmentProject,
-  link: ChangeRequestLink,
-): boolean {
-  if (link.authority === undefined) return true;
-  try {
-    const remote = new URL(project.repositoryIdentity?.locator.remoteUrl ?? "");
-    if (remote.protocol === "http:" || remote.protocol === "https:") {
-      return remote.host.toLowerCase() === link.authority;
-    }
-  } catch {
-    // SSH remotes do not specify the server's HTTP port; tea resolves the configured login.
-  }
-  return true;
+  return sourceControlClients.findByChangeRequestUrl(targetUrl) === undefined
+    ? null
+    : parseHostedChangeRequestUrl(targetUrl);
 }
 
 /**
  * Coder: merge requests are read through the workspace's GitLab CLI, so only GitLab checkouts
- * (including self-hosted remotes whose provider could not be named) can resolve a link.
+ * (including self-hosted remotes whose provider could not be named) can resolve a link. The
+ * registry reads every other kind as the generic host, which would still match by host and path.
  */
 function isGitLabProject(project: EnvironmentProject): boolean {
   const provider = project.repositoryIdentity?.provider;
@@ -93,29 +64,9 @@ export function findProjectForChangeRequest(
 ): EnvironmentProject | undefined {
   return projects.filter(isGitLabProject).find((project) => {
     const identity = project.repositoryIdentity;
-    if (!identity || !matchesChangeRequestAuthority(project, link)) return false;
-    const kind = identity.provider as SourceControlProviderKind | undefined;
-    if (kind === undefined) return false;
-    const web = resolvedForgejoRepository(project);
-    if (web)
-      return (
-        web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
-        web.pathname.replace(/^\/+|\/+$/g, "").toLowerCase() === link.repository.toLowerCase()
-      );
-    if (kind === "azure-devops") {
-      return (
-        canonicalRepositoryKey(identity.canonicalKey.toLowerCase()) ===
-        canonicalRepositoryKey(`${link.host}/${link.repository}`.toLowerCase())
-      );
-    }
-    const repository =
-      identity.displayName ??
-      (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
     return (
-      repository !== null &&
-      repository.toLowerCase() === link.repository.toLowerCase() &&
-      (pullRequestHostOf(identity, kind) === link.host.toLowerCase() ||
-        pullRequestHostOf(identity, kind) === link.authority)
+      identity?.provider !== undefined &&
+      sourceControlClients.get(identity.provider).isChangeRequestInRepository(identity, link)
     );
   });
 }
@@ -230,37 +181,11 @@ export function findProjectOnChangeRequestHost(
 ): EnvironmentProject | undefined {
   const own = findProjectForChangeRequest(projects, link);
   if (own !== undefined) return own;
-  // Coder: only GitLab checkouts can lend the workspace's glab credentials.
-  const gitLabProjects = projects.filter(isGitLabProject);
-  // Azure CLI reads use the checkout's organization and project, not host-wide credentials.
-  if (
-    canonicalRepositoryKey(`${link.host}/${link.repository}`.toLowerCase()).startsWith(
-      "dev.azure.com/",
-    )
-  )
-    return undefined;
-  return gitLabProjects.find((project) => {
+  return projects.filter(isGitLabProject).find((project) => {
     const identity = project.repositoryIdentity;
-    const kind = identity?.provider as SourceControlProviderKind | undefined;
-    const web = resolvedForgejoRepository(project);
-    if (web) {
-      const mount = web.pathname
-        .replace(/^\/+|\/+$/g, "")
-        .split("/")
-        .slice(0, -2)
-        .join("/");
-      return (
-        web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
-        (!mount || link.repository.toLowerCase().startsWith(`${mount.toLowerCase()}/`))
-      );
-    }
     return (
-      identity != null &&
-      kind !== undefined &&
-      kind !== "azure-devops" &&
-      matchesChangeRequestAuthority(project, link) &&
-      (pullRequestHostOf(identity, kind) === link.host.toLowerCase() ||
-        pullRequestHostOf(identity, kind) === link.authority)
+      identity?.provider !== undefined &&
+      sourceControlClients.get(identity.provider).canReadChangeRequestOnHost(identity, link)
     );
   });
 }

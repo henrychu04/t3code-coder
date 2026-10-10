@@ -72,7 +72,7 @@ import {
   type PullRequestThreadCommentsResult,
   type PullRequestUpdateInput,
   type SourceControlProviderInfo,
-  type SourceControlProviderKind,
+  SourceControlProviderKind,
   type ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -713,7 +713,7 @@ export const make = Effect.gen(function* () {
       )
         continue;
       if (identity.locator.source !== "git-remote") continue;
-      const host = pullRequestHostOf(identity, "unknown");
+      const host = pullRequestHostOf(identity, SourceControlProviderKind.make("unknown"));
       // A legacy identity has no canonical host until its provider is refined, so it must reach
       // the refinement before a host filter can decide whether it belongs in the result.
       if (filter.host !== undefined && host !== "unknown" && host !== filter.host.toLowerCase()) {
@@ -750,7 +750,7 @@ export const make = Effect.gen(function* () {
           ),
         ).pipe(
           Effect.map((kind) => [baseUrl, kind] as const),
-          Effect.orElseSucceed(() => [baseUrl, "unknown"] as const),
+          Effect.orElseSucceed(() => [baseUrl, SourceControlProviderKind.make("unknown")] as const),
         ),
       { concurrency: REPOSITORY_CONCURRENCY },
     ).pipe(Effect.map((resolved) => new Map(resolved)));
@@ -1203,20 +1203,24 @@ export const make = Effect.gen(function* () {
       // One summary per host, which is what the viewer lookup already answers for: two GitHub
       // hosts sign in separately, so collapsing them by kind would report one as the other.
       const providers: ReadonlyArray<PullRequestProviderSummary> = [
-        ...viewerResults.map((result) => ({
-          host: result.host,
-          kind: result.kind,
-          searchesOnHost:
-            projects.find((project) => project.host === result.host)?.api.capabilities.search ??
-            false,
-          projectCount: projectCounts.get(result.host) ?? 1,
-          configured: result.viewer !== null,
-          detail: result.error === null ? null : providerDetail(result.error),
-        })),
+        ...viewerResults.map((result) => {
+          const capabilities = projects.find((project) => project.host === result.host)?.api
+            .capabilities;
+          return {
+            host: result.host,
+            kind: result.kind,
+            searchesOnHost: capabilities?.search ?? false,
+            actions: capabilities?.actions ?? [],
+            projectCount: projectCounts.get(result.host) ?? 1,
+            configured: result.viewer !== null,
+            detail: result.error === null ? null : providerDetail(result.error),
+          };
+        }),
         ...[...unimplemented].map(([host, { kind, projectCount }]) => ({
           host,
           kind,
           searchesOnHost: false,
+          actions: [],
           projectCount,
           configured: false,
           detail: "This host cannot be browsed here yet.",

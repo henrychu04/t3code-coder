@@ -3,29 +3,40 @@
 // project-relative paths inside the real project root, edits apply to existing text files under a
 // per-file lock with the read revision checked for staleness, and files are replaced atomically.
 // `createFile` writes a new text file only, for upstream's "Save to workspace" of a proposed plan.
+// `getMetadata` is upstream's: it stats absolute workspace paths for file chip icons and reads at
+// most 512 header bytes of an extensionless file, returning no contents.
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 // @effect-diagnostics nodeBuiltinImport:off
 import { createHash, randomUUID } from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import {
   PROJECT_FILE_MAX_BYTES,
+  type FilesystemEntryMetadata,
+  type FilesystemGetMetadataInput,
+  type FilesystemGetMetadataResult,
   type ProjectCreateFileInput,
   type ProjectReadFileInput,
   type ProjectReadFileResult,
   type ProjectWriteFileInput,
   type ProjectWriteFileResult,
 } from "@t3tools/contracts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as RcMap from "effect/RcMap";
 import * as Semaphore from "effect/Semaphore";
 
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
 
 type WorkspaceReadFileInput = Omit<ProjectReadFileInput, "threadId">;
 type WorkspaceWriteFileInput = Omit<ProjectWriteFileInput, "threadId">;
@@ -106,6 +117,10 @@ export type WorkspaceFileSystemError = typeof WorkspaceFileSystemError.Type;
 export class WorkspaceFileSystem extends Context.Service<
   WorkspaceFileSystem,
   {
+    readonly getMetadata: (
+      input: FilesystemGetMetadataInput,
+    ) => Effect.Effect<FilesystemGetMetadataResult>;
+
     readonly readFile: (
       input: WorkspaceReadFileInput,
     ) => Effect.Effect<
@@ -139,9 +154,56 @@ export const make = Effect.gen(function* () {
   const writeLocks = yield* RcMap.make({ lookup: (_path: string) => Semaphore.make(1) });
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const refreshWorker = yield* makeKeyedCoalescingWorker<string, boolean, never, never>({
     merge: () => true,
     process: (cwd) => workspaceEntries.refresh(cwd),
+  });
+
+  const metadataForPath = Effect.fnUntraced(function* (requestedPath: string) {
+    const expandedPath = expandHomePath(requestedPath, yield* HostProcess.HomeDirectory);
+    if (!path.isAbsolute(expandedPath)) return null;
+    const stat = yield* fileSystem.stat(expandedPath).pipe(Effect.option);
+    if (stat._tag === "None") return null;
+    if (stat.value.type === "Directory") return { kind: "directory" } as const;
+    if (stat.value.type !== "File") return { kind: "other" } as const;
+    let mimeType: string | undefined;
+    // Named extensions already choose the icon without a content read. For an
+    // extensionless regular file, read at most 512 bytes, never the whole file.
+    if (path.extname(expandedPath) === "" && stat.value.size > 0) {
+      mimeType = yield* Effect.tryPromise({
+        try: async () => {
+          const handle = await NodeFSP.open(
+            expandedPath,
+            NodeFS.constants.O_RDONLY | NodeFS.constants.O_NONBLOCK,
+          );
+          try {
+            if (!(await handle.stat()).isFile()) return undefined;
+            const buffer = Buffer.alloc(512);
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+            return fileHeaderMimeType(buffer.subarray(0, bytesRead));
+          } finally {
+            await handle.close();
+          }
+        },
+        catch: () => undefined,
+      }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+    }
+    return {
+      kind: "file",
+      byteLength: Number(stat.value.size),
+      ...(mimeType === undefined ? {} : { mimeType }),
+    } satisfies FilesystemEntryMetadata;
+  });
+
+  const getMetadata: WorkspaceFileSystem["Service"]["getMetadata"] = Effect.fn(
+    "WorkspaceFileSystem.getMetadata",
+  )(function* (input) {
+    const paths = [...new Set(input.paths)];
+    const entries = yield* Effect.forEach(paths, metadataForPath, { concurrency: 8 });
+    const byPath = new Map(paths.map((value, index) => [value, entries[index] ?? null]));
+    return { entries: input.paths.map((value) => byPath.get(value) ?? null) };
   });
 
   const resolveExisting = Effect.fn("WorkspaceFileSystem.resolveExisting")(function* (input: {
@@ -392,7 +454,7 @@ export const make = Effect.gen(function* () {
     return { relativePath: target.relativePath, revision: revisionOf(bytes) };
   });
 
-  return WorkspaceFileSystem.of({ readFile, writeFile, createFile });
+  return WorkspaceFileSystem.of({ getMetadata, readFile, writeFile, createFile });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);

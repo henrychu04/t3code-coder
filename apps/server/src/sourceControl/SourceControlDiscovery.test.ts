@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -36,7 +37,7 @@ it.effect("combines Git, GitLab discovery, and the workspace write policy", () =
         resolveLink: () => undefined,
         discover: Effect.succeed([
           {
-            kind: "gitlab",
+            kind: SourceControlProviderKind.make("gitlab"),
             label: "GitLab",
             executable: "glab",
             status: "available",

@@ -224,6 +224,7 @@ import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
+import { FileMetadataThreadProvider } from "../hooks/FileMetadataThreadProvider";
 import { usePreviewPanelInlineSize } from "../hooks/usePreviewPanelInlineSize";
 import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
@@ -7090,11 +7091,6 @@ export default function ChatView(props: ChatViewProps) {
   const [isThreadFindActive, setIsThreadFindActive] = useState(false);
   const openThreadFind = useCallback(() => threadFindControlsRef.current?.open(), []);
   const closeThreadFind = useCallback(() => threadFindControlsRef.current?.close(), []);
-  // The details popover hangs off the header over the find bar; opening find dismisses it.
-  useEffect(() => {
-    if (!isThreadFindActive || threadPanelPresentation !== "popover" || !activeThreadRef) return;
-    useRightPanelStore.getState().setThreadPanelOpen(activeThreadRef, "popover", false);
-  }, [activeThreadRef, isThreadFindActive, threadPanelPresentation]);
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
@@ -10150,7 +10146,7 @@ export default function ChatView(props: ChatViewProps) {
     addFiles: (files) => composerRef.current?.addDroppedFiles(files),
   });
 
-  return (
+  const content = (
     <div
       ref={setWorkspaceLayoutElement}
       className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
@@ -10896,5 +10892,14 @@ export default function ChatView(props: ChatViewProps) {
         />
       )}
     </div>
+  );
+  return (
+    <FileMetadataThreadProvider
+      threadRef={activeThreadRef}
+      cwd={activeWorkspaceRoot}
+      checkpoints={serverProjection?.checkpoints}
+    >
+      {content}
+    </FileMetadataThreadProvider>
   );
 }
