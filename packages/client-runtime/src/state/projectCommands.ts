@@ -128,6 +128,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.workspaceReadScreenshotArtifact,
       concurrency: { mode: "parallel" },
     }),
+    // Coder: MCP App documents and tool output images, read in bounded chunks.
+    readTurnItemAsset: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:workspace:read-turn-item-asset",
+      tag: WS_METHODS.workspaceReadTurnItemAsset,
+      concurrency: { mode: "parallel" },
+    }),
     // Coder: v1 screenshots of an imported message; v1 rows never change after import.
     listLegacyScreenshotArtifacts: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:workspace:list-legacy-screenshot-artifacts",

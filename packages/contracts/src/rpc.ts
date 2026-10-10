@@ -328,6 +328,9 @@ import {
   LegacyScreenshotArtifactsResult,
   ScreenshotArtifactReadError,
   ScreenshotArtifactReadInput,
+  TurnItemAssetChunk,
+  TurnItemAssetReadError,
+  TurnItemAssetReadInput,
 } from "./screenshotArtifact.ts";
 // Coder
 import {
@@ -552,6 +555,7 @@ export const WS_METHODS = {
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   workspaceListLegacyScreenshotArtifacts: "workspace.listLegacyScreenshotArtifacts",
+  workspaceReadTurnItemAsset: "workspace.readTurnItemAsset",
   sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
@@ -1802,6 +1806,12 @@ const WsWorkspaceReadScreenshotArtifactRpc = Rpc.make(WS_METHODS.workspaceReadSc
   error: ScreenshotArtifactReadError,
 });
 
+const WsWorkspaceReadTurnItemAssetRpc = Rpc.make(WS_METHODS.workspaceReadTurnItemAsset, {
+  payload: TurnItemAssetReadInput,
+  success: TurnItemAssetChunk,
+  error: TurnItemAssetReadError,
+});
+
 const WsWorkspaceListLegacyScreenshotArtifactsRpc = Rpc.make(
   WS_METHODS.workspaceListLegacyScreenshotArtifacts,
   {
@@ -1893,6 +1903,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsAgentSessionsImportRpc,
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
+  WsWorkspaceReadTurnItemAssetRpc,
   WsWorkspaceListLegacyScreenshotArtifactsRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,

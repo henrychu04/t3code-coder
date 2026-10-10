@@ -152,7 +152,9 @@ claim: shared provider protocols may still report subscription metadata.
       Never delete current workspace source images through this policy.
   - **MCP Apps.** Interactive UIs that the workspace's own MCP servers declare may render inline in
     upstream's sandboxed iframe (`allow-scripts allow-forms`, never `allow-same-origin`). Their
-    resource reads and tool calls go only through the helper's stdio RPC. The frame gets no camera,
+    resource reads and tool calls go only through the helper's stdio RPC. The captured app document
+    loads only through bounded helper chunks for the stored item that references it, and is written
+    into the gateway's sandboxed shell page. The frame gets no camera,
     microphone, geolocation, or clipboard permission, and there is no `ui/download-file` or save
     action; links the app opens follow the Markdown link rule below.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.

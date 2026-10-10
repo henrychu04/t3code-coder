@@ -667,11 +667,22 @@ listed here is drift to remove rather than fork behavior to keep.
   browser storage, the transcript, projections, model context, or logs.
 - **MCP Apps.** Upstream's inline app rows and sandboxed frame, with resource reads and tool calls
   over the helper's MCP Apps RPCs. The frame has no camera, microphone, geolocation, or clipboard
-  permission, no `ui/download-file`, and no save action. Upstream loads the app document through
-  a signed asset URL, which the helper does not serve, so the frame currently reports that the app
-  could not load.
+  permission. The host neither declares nor serves `ui/download-file`, and the frame has no save
+  action. Upstream frames the captured document through a signed asset URL. Here
+  `workspace.readTurnItemAsset` reads it in bounded chunks, but only the document that the named
+  stored tool item references, opened without following symlinks. The frame then loads the
+  gateway's `/mcp-app-frame.html` shell, and the page posts the document to it. The shell checks
+  that the message came from its parent and writes the document over itself.
+  A blob, `srcdoc`, or `data:` frame would inherit the page's Content-Security-Policy and block the
+  app's scripts. The shell's own policy is `sandbox allow-scripts allow-forms; frame-ancestors
+'self'`, so the shell and the app keep an opaque origin even when the shell is opened directly.
+  The app's CSP comes with its stored document, as upstream injects it. The page policy allows
+  `frame-src 'self'`, and every other gateway response keeps `frame-ancestors 'none'`. The shell's
+  load and the written document's load both count as the app's own; a third load means the app
+  navigated away.
 - **Tool output images.** `turnItemOutputImages` lists a fetched item's images as upstream does,
-  but the inspector shows none, because they load through upstream's signed asset route.
+  but the inspector shows none: the adapters omit tool-result image bytes before persisting
+  (see Provider input), and upstream loads them through its signed asset route.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported

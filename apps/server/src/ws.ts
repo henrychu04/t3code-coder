@@ -155,6 +155,7 @@ import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
 import { readProjectImage } from "./workspace/ProjectImages.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
+import { readTurnItemAssetChunk } from "./workspace/TurnItemAssets.ts";
 import * as LegacyScreenshotArtifacts from "./orchestration-v2/legacy/LegacyScreenshotArtifacts.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -1932,6 +1933,12 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       // Coder: read preserved legacy artifacts through bounded stdio chunks.
       [WS_METHODS.workspaceReadScreenshotArtifact]: (input) => screenshotArtifacts.readChunk(input),
+      // Coder: MCP App documents and tool output images, in place of upstream's signed asset URLs.
+      [WS_METHODS.workspaceReadTurnItemAsset]: (input) =>
+        readTurnItemAssetChunk(input, {
+          attachmentsDir: config.attachmentsDir,
+          getTurnItem: orchestrationEngine.getTurnItem,
+        }),
       [WS_METHODS.workspaceListLegacyScreenshotArtifacts]: (input) =>
         legacyScreenshotArtifacts.listAfterMessage(input.messageId),
       [WS_METHODS.subscribeVcsStatus]: (input) =>

@@ -176,6 +176,22 @@ describe("local Coder gateway", () => {
     );
   });
 
+  it("serves the MCP App frame shell sandboxed and frameable only by its own pages", async () => {
+    const gateway = await startLocalCoderGateway();
+    closeGateway = gateway.close;
+    const page = await request({ url: `${gateway.url}/healthz` });
+    strictEqual(page.headers["content-security-policy"]?.includes("frame-src 'self'"), true);
+    strictEqual(page.headers["content-security-policy"]?.includes("frame-ancestors 'none'"), true);
+    const shell = await request({ url: `${gateway.url}/mcp-app-frame.html` });
+    strictEqual(shell.statusCode, 200);
+    strictEqual(
+      shell.headers["content-security-policy"],
+      "sandbox allow-scripts allow-forms; frame-ancestors 'self'",
+    );
+    strictEqual(shell.headers["x-frame-options"], "SAMEORIGIN");
+    strictEqual(shell.body.includes("event.source !== parent"), true);
+  });
+
   it("rejects an unexpected Host header", async () => {
     const gateway = await startLocalCoderGateway();
     closeGateway = gateway.close;
