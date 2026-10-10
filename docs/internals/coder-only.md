@@ -449,6 +449,14 @@ listed here is drift to remove rather than fork behavior to keep.
     Where the SDK's `readline` has no line cap, a stream-json line may be as large as the 32 MiB
     pending-message budget allows, minus whatever is already queued; that fits a tool-result image
     at the provider's 10 MiB base64 limit, and a longer line fails the session.
+    `ClaudeCli.ts`'s `Query` implements `interrupt`, `stopTask`, `setModel`, `setPermissionMode`,
+    `setMaxThinkingTokens`, `getContextUsage`, `getSettings` (read directly by `ClaudeProvider.ts`),
+    `getUsage`, `initializationResult`, and `close` as CLI control requests. `ClaudeAgentSdk.ts`
+    maps them onto the SDK `Query` (`getUsage` serves its experimental usage method) and answers
+    `supportedCommands`, `supportedModels`, `supportedAgents`, and `accountInfo` from the initialize
+    response. Every other SDK `Query` method rejects with "not available through T3 Coder's CLI
+    transport", and the shim is typed as the full SDK `Query`, so a method a new SDK adds fails
+    typecheck until it is mapped or rejected.
   - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
     cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by
@@ -861,6 +869,10 @@ listed here is drift to remove rather than fork behavior to keep.
   instead of failing the diff. Branch previews ask for one top-level `sourceKind`. A file title
   opens the Files surface through ChatView's `onOpenFile` and has no local-editor fallback. The
   context menu offers Copy path (project-relative) in place of upstream's editor actions.
+  Review diffs (`review/ReviewService.ts`) keep upstream's cwd check, which admits the server cwd,
+  managed worktrees, and registered project roots, rather than the Files surface's
+  requesting-thread verification, because every root it admits already belongs to a registered
+  project.
 - **Diff renderer patch.** `patches/@pierre%2Fdiffs@1.5.2.patch` is upstream's patch plus a guard
   that ignores loaded file contents unless the current diff is still the partial diff that asked
   for them.

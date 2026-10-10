@@ -113,6 +113,9 @@ tooling without explicit user permission. Do not test against or modify `~/.t3/u
 - Mark every fork delta in upstream code with a `Coder:` comment and list it in the upstream seams
   of `docs/internals/coder-only.md`; a difference not listed there is drift to remove.
 - Keep byte limits as named constants with a one-line reason; docs refer to the constant.
+- A fresh worktree has no `node_modules`; when the lockfile is unchanged, run
+  `pnpm install --frozen-lockfile` there (it links from the pnpm store and does not duplicate
+  packages). Symlinking another worktree's tree is safe only while the lockfiles are identical.
 - Prefer `rg`/`rg --files`. Preserve unrelated user changes and avoid destructive Git commands.
 - Never kill processes by pattern; stop only a PID captured at spawn.
 - Never commit plans, scratch notes, local state, secrets, credentials, or build output, and do
