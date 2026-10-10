@@ -330,7 +330,6 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
 const CoderRuntimeStartupLive = Layer.effect(
   CoderRuntimeStartup.CoderRuntimeStartup,
   Effect.gen(function* () {
-    const storageCleanup = yield* StorageCleanup.make;
     const keybindings = yield* Keybindings.Keybindings;
     const settings = yield* ServerSettings.ServerSettingsService;
     const legacyV1ThreadImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
@@ -381,7 +380,6 @@ const CoderRuntimeStartupLive = Layer.effect(
       Effect.forkIn(runtimeScope),
     );
     yield* Effect.addFinalizer(() => Fiber.interrupt(effectWorker).pipe(Effect.ignore));
-    yield* storageCleanup.start().pipe(Scope.provide(runtimeScope));
     yield* projectStore.listShells().pipe(
       Effect.flatMap((projects) =>
         settings.getSettings.pipe(
@@ -413,11 +411,16 @@ const CoderRuntimeStartupLive = Layer.effect(
 
 export const makeCoderRuntimeLayer = () => {
   const runtimeStartup = CoderRuntimeStartupLive.pipe(
-    Layer.provide(ProjectionStoreV2.layer),
     Layer.provideMerge(CoderRuntimeDependenciesLive),
   );
+  // Coder: storage cleanup starts once workspace startup completes, where upstream parks it
+  // until server activation.
+  const startedRuntime = StorageCleanup.layer.pipe(
+    Layer.provide(ProjectionStoreV2.layer),
+    Layer.provideMerge(runtimeStartup),
+  );
   const services = Layer.mergeAll(
-    runtimeStartup,
+    startedRuntime,
     CoderRuntimeDependenciesLive,
     EnvironmentTheme.layer,
   ).pipe(Layer.provideMerge(VcsProcess.layer));

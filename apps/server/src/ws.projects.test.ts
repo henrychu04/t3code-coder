@@ -56,6 +56,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
+import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -219,6 +220,7 @@ const harness = (
       stub(GitWorkflowService.GitWorkflowService),
       stub(SecretRequests.SecretRequests),
       stub(McpAppRequests.McpAppRequests),
+      stub(StorageCleanup.StorageCleanup),
       ServerConfig.layer(config),
       WorkspacePaths.layer,
     ).pipe(Layer.provideMerge(NodeServices.layer));

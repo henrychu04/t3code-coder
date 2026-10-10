@@ -34,6 +34,11 @@ cached while you keep reading.
 Use the file-tree toggle in a thread's **Diff** panel or a merge request's **Code** tab to browse
 changed files as folders and jump directly to a file. T3 Coder remembers the toggle setting.
 
+A turn's changed files and diff show only the turn's own work. When a turn pulls, merges, or
+rebases, the files Git brought in are left out. A file stays in the list when the turn edited it,
+committed it, or fixed a conflict in it. Use the branch comparison to review everything that changed
+against your base branch. Restore still returns the complete saved workspace.
+
 You can comment on diff lines. Comments annotate the review and can be sent back to Claude as
 part of your next message, which makes "fix this spot" conversations precise.
 

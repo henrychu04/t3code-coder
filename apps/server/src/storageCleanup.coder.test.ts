@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -79,12 +80,13 @@ const base = Git.layer.pipe(
 
 const runCleanup = (snapshot: Snapshot, settings?: Parameters<typeof Settings.layerTest>[0]) =>
   Effect.gen(function* () {
-    // Built into the test's scope: the sweep queries the database after `make` returns.
+    // Built into the test's scope: the sweep queries the database after the layer is built.
     const context = yield* Layer.build(
-      Layer.merge(fixtures(snapshot), Settings.layerTest(settings)),
+      Cleanup.layer.pipe(
+        Layer.provide(Layer.merge(fixtures(snapshot), Settings.layerTest(settings))),
+      ),
     );
-    const cleanup = yield* Cleanup.make.pipe(Effect.provideContext(context));
-    yield* cleanup.start();
+    const cleanup = Context.get(context, Cleanup.StorageCleanup);
     yield* Effect.yieldNow;
     yield* cleanup.drain;
   });
@@ -198,7 +200,10 @@ it.effect(
         ],
         threads,
       };
-      yield* runCleanup(snapshot, { storageCleanup: { worktreeAfterDays: 3 } });
+      // Upstream's default keep policy deletes ignored files, so protect them explicitly.
+      yield* runCleanup(snapshot, {
+        storageCleanup: { worktreeAfterDays: 3, worktreeKeepWhen: "any-local-files" },
+      });
       expect(yield* fs.exists(NodePath.join(config.worktreesDir, "idle"))).toBe(false);
       for (const name of ["active", "dirty", "shared", "ignored"])
         expect(yield* fs.exists(NodePath.join(config.worktreesDir, name))).toBe(true);

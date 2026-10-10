@@ -302,6 +302,7 @@ import {
   resetComposerScrollGesture,
   suppressActiveComposerScrollGesture,
 } from "./composerScrollGesture";
+import { observeResize } from "~/lib/observeResize";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -819,10 +820,10 @@ function useComposerRestingTransition(
 
   useLayoutEffect(() => {
     const element = elementRef.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
+    if (!element) return;
 
     const body = element.querySelector<HTMLElement>('[data-chat-composer-body="true"]');
-    const observer = new ResizeObserver((entries) => {
+    return observeResize(body ? [element, body] : element, (entries) => {
       if (animationRef.current) {
         if (body && entries.some((entry) => entry.target === body)) {
           transitionToCurrentGeometry(false);
@@ -859,9 +860,6 @@ function useComposerRestingTransition(
             ?.getBoundingClientRect().bottom ?? elementRect.bottom) - elementRect.bottom,
       };
     });
-    observer.observe(element);
-    if (body) observer.observe(body);
-    return () => observer.disconnect();
   }, [restingControlsRef, transitionToCurrentGeometry]);
 
   useEffect(() => {
@@ -938,21 +936,18 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
 
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updatePosition);
-    if (observer) {
-      // The composer is centered and capped at a max width, so opening a side
-      // panel slides it sideways without ever resizing it. Watching the anchor
-      // alone would leave the menu behind; the ancestors are what shrink, and
-      // they resize on every frame of the panel animation.
-      observer.observe(anchor);
-      for (let element = anchor.parentElement; element; element = element.parentElement) {
-        observer.observe(element);
-      }
+    // The composer is centered and capped at a max width, so opening a side
+    // panel slides it sideways without ever resizing it. Watching the anchor
+    // alone would leave the menu behind; the ancestors are what shrink, and
+    // they resize on every frame of the panel animation.
+    const observed: Element[] = [anchor];
+    for (let element = anchor.parentElement; element; element = element.parentElement) {
+      observed.push(element);
     }
+    const stopObserving = observeResize(observed, updatePosition);
 
     return () => {
-      observer?.disconnect();
+      stopObserving();
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
@@ -1097,16 +1092,19 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
   useEffect(() => {
     const currentHost = useControlsAsHost ? controls : host;
     if (!currentHost || !controls) return;
-    const observer = new ResizeObserver(measure);
+    let stopObserving = () => {};
     const observeControls = () => {
-      observer.disconnect();
-      observer.observe(currentHost);
-      observer.observe(controls);
-      controls
-        .querySelectorAll<HTMLElement>(
-          "[data-resting-block], [data-composer-control-label], [data-chat-provider-model-picker-label]",
-        )
-        .forEach((element) => observer.observe(element));
+      stopObserving();
+      stopObserving = observeResize(
+        [
+          currentHost,
+          controls,
+          ...controls.querySelectorAll<HTMLElement>(
+            "[data-resting-block], [data-composer-control-label], [data-chat-provider-model-picker-label]",
+          ),
+        ],
+        measure,
+      );
       measure();
     };
     observeControls();
@@ -1114,7 +1112,7 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
     mutations.observe(controls, { childList: true, subtree: true, characterData: true });
     document.fonts.addEventListener("loadingdone", measure);
     return () => {
-      observer.disconnect();
+      stopObserving();
       mutations.disconnect();
       document.fonts.removeEventListener("loadingdone", measure);
     };
@@ -3344,8 +3342,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const initialCompactness = measureFooterCompactness();
     setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
     setIsComposerFooterCompact(initialCompactness.footerCompact);
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
+    return observeResize(composerForm, () => {
       const nextCompactness = measureFooterCompactness();
       setIsComposerPrimaryActionsCompact((previous) =>
         previous === nextCompactness.primaryActionsCompact
@@ -3356,11 +3353,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         previous === nextCompactness.footerCompact ? previous : nextCompactness.footerCompact,
       );
     });
-
-    observer.observe(composerForm);
-    return () => {
-      observer.disconnect();
-    };
   }, [
     activeThreadId,
     composerFooterActionLayoutKey,
@@ -4961,10 +4953,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (!isComposerResting || !restingActionsElement) return;
     const measure = () => setRestingActionsWidth(restingActionsElement.offsetWidth);
     measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(restingActionsElement);
-    return () => observer.disconnect();
+    return observeResize(restingActionsElement, measure);
   }, [isComposerResting, restingActionsElement]);
   const restingImagePreviewCounts = getRestingComposerImagePreviewCounts(
     standaloneComposerImages.length,
@@ -6785,7 +6774,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
               {!isComposerCollapsedMobile &&
                 !isComposerApprovalState &&
-                pendingUserInputs.length === 0 &&
                 expandedComposerImages.length > 0 && (
                   <div className="mb-3 flex max-w-full flex-wrap gap-2">
                     {expandedComposerImages.map((image) => {
