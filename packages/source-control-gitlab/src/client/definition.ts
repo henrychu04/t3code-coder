@@ -43,12 +43,13 @@ export const definition = defineSourceControlClient({
     "disable-auto-merge",
   ] as const),
   checkoutCommand: ({ number }) => `glab mr checkout ${number}`,
-  // Coder: GitLab profiles live at the host root, and the web autolinks `!123`, `#123`, and
-  // commit SHAs below the repository with GitLab's `/-/` routes (`pullRequestMarkdown.logic.ts`).
+  // Coder: GitLab profiles live at the host root, so comment authors link there.
   authorProfileUrl: (login, repositoryUrl) =>
     login.endsWith("[bot]")
       ? null
       : new URL(`/${encodeURIComponent(login)}`, repositoryUrl).toString(),
+  // Coder: the web autolinks `!123`, `#123`, and commit SHAs below the repository with GitLab's
+  // `/-/` routes (`pullRequestMarkdown.logic.ts`), so it needs the repository URL.
   referenceAutolinkRepositoryUrl: (repositoryUrl) => repositoryUrl,
   reviewSummaryRequired: () => false,
   checkoutCommandArgument: (input) => CHECKOUT_COMMAND.exec(input)?.[1]?.trim() ?? null,
