@@ -69,9 +69,10 @@ hosted source-control provider is registered.
 ### File access is contained
 
 The Files surface lists, reads, searches, and edits text files inside the active project. It does
-not provide general upload, download, export, synchronization, or access to arbitrary local or
-workspace paths. Composer attachments (images and files, by paste, drop, or picker) and on-demand
-media previews are narrow, validated exceptions. Media previews follow main’s current-file
+not provide general upload, synchronization, or access to arbitrary local or workspace paths.
+Composer attachments (images and files, by paste, drop, or picker) are the only upload. Upstream's
+Save, Download, Copy, and Export actions are kept; they save bytes the browser already holds, read
+through the existing workspace connection. Media previews follow main’s current-file
 behavior, including image files outside the project on the workspace machine, through the existing
 helper connection.
 
@@ -86,7 +87,7 @@ helper connection.
 - Bounded caches, resumable terminal traffic, paged thread history, and explicit oversized-diff
   results keep long-running sessions responsive.
 - Image previews use the existing helper connection without introducing a browser-preview
-  service or a general file-download path.
+  service.
 - The smaller distribution is easier to review because unsupported clients, services, providers,
   and external integrations are absent.
 
@@ -102,8 +103,8 @@ helper connection.
 - T3's own MCP server (T3 tools reach agents over a workspace file bridge instead), the Claude
   browser integration, and the packaged Anthropic Agent SDK. Workspace MCP servers, Codex app
   integrations, and MCP Apps work as upstream, inside the workspace.
-- General-purpose uploads, downloads, exports, drag-and-drop transfer, clipboard text transfer,
-  and background file synchronization.
+- General-purpose uploads and background file synchronization; composer attachments are the only
+  upload.
 - GitHub, Bitbucket, Azure DevOps, and hosted source-control integrations other than workspace
   GitLab through `glab`.
 - Browser preview, automatic updates, T3-owned telemetry, and automatic browser launch.

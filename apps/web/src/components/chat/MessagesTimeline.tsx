@@ -131,6 +131,7 @@ import {
   ChevronRightIcon,
   ChevronUpIcon,
   CircleAlertIcon,
+  DownloadIcon,
   EyeIcon,
   GitForkIcon,
   GlobeIcon,
@@ -342,6 +343,7 @@ interface TimelineRowSharedState {
   onToggleTurnFold: (runId: RunId) => void;
   onToggleAttemptFold: (attemptId: RunAttemptId) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
+  onFileDownload: (attachment: ChatFileAttachment) => void;
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   onToggleWorkEntry: (anchorKey: string, collapsed: boolean) => void;
@@ -491,6 +493,7 @@ interface MessagesTimelineProps {
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen?: (attachment: ChatFileAttachment) => void;
+  onFileDownload?: (attachment: ChatFileAttachment) => void;
   activeThreadEnvironmentId: EnvironmentId;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
@@ -595,6 +598,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   isRevertingCheckpoint,
   onImageExpand,
   onFileOpen = NOOP_OPEN_ATTACHMENT,
+  onFileDownload = NOOP_OPEN_ATTACHMENT,
   activeThreadEnvironmentId,
   markdownCwd,
   resolvedTheme,
@@ -1306,6 +1310,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onUseArtifactTemplate,
       onSendAppMessage,
       onAppFullscreenChange,
+      onFileDownload,
       openPullRequest,
       onOpenTurnDiff,
       onOpenThread,
@@ -1343,6 +1348,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onUseArtifactTemplate,
       onSendAppMessage,
       onAppFullscreenChange,
+      onFileDownload,
       openPullRequest,
       onOpenTurnDiff,
       onOpenThread,
@@ -2402,7 +2408,37 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   <span className="min-w-0 flex-1 truncate">{file.name}</span>
                 </>
               );
-              // Coder: no attachment preview or download; the provider reads the workspace copy.
+              if (file.downloadable !== false) {
+                return (
+                  <div key={file.id} className="flex min-w-0 items-center gap-1">
+                    <button
+                      type="button"
+                      aria-label={`Preview ${file.name}`}
+                      onClick={() => ctx.onFileOpen(file)}
+                      className="focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
+                    >
+                      {fileIdentity}
+                      <EyeIcon className="size-4 shrink-0" />
+                    </button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost-muted"
+                            aria-label={`Download ${file.name}`}
+                            onClick={() => ctx.onFileDownload(file)}
+                          />
+                        }
+                      >
+                        <DownloadIcon />
+                      </TooltipTrigger>
+                      <TooltipPopup side="top">Download {file.name}</TooltipPopup>
+                    </Tooltip>
+                  </div>
+                );
+              }
+
               return (
                 <div key={file.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
                   {fileIdentity}
@@ -2870,6 +2906,7 @@ function ProposedPlanTimelineRow({
         environmentId={ctx.activeThreadEnvironmentId}
         threadRef={ctx.threadRef ?? undefined}
         cwd={ctx.markdownCwd}
+        workspaceRoot={ctx.workspaceRoot}
         findActive={ctx.findActive}
       />
     </div>

@@ -26,7 +26,7 @@ export class CoderEnvironment extends Context.Service<
 export const CODER_ENVIRONMENT_CAPABILITIES = {
   repositoryIdentity: true,
   connectionProbe: true,
-  // Composer images and files stage through the gateway's SCP path.
+  // Composer images and files reach the workspace through the gateway's Coder CLI transfer.
   attachmentUploads: true,
   questionAttachments: true,
   fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },

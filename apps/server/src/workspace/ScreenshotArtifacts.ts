@@ -4,7 +4,10 @@ import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import {
+  type AttachmentFileChunk,
+  type AttachmentFileReadInput,
   MAX_SCREENSHOT_ARTIFACT_BYTES,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
   ScreenshotArtifactReadError,
   type ScreenshotArtifactChunk,
@@ -69,6 +72,10 @@ export class ScreenshotArtifacts extends Context.Service<
     readonly readChunk: (
       input: ScreenshotArtifactReadInput,
     ) => Effect.Effect<ScreenshotArtifactChunk, ScreenshotArtifactReadError>;
+    /** Coder: a sent file attachment by id, any type, for its preview and Save. */
+    readonly readAttachmentFileChunk: (
+      input: AttachmentFileReadInput,
+    ) => Effect.Effect<AttachmentFileChunk, ScreenshotArtifactReadError>;
   }
 >()("t3/workspace/ScreenshotArtifacts") {}
 
@@ -170,7 +177,60 @@ export const make = Effect.gen(function* () {
     } satisfies ScreenshotArtifactChunk;
   });
 
-  return ScreenshotArtifacts.of({ readChunk });
+  const readAttachmentFileChunk: ScreenshotArtifacts["Service"]["readAttachmentFileChunk"] =
+    Effect.fn("ScreenshotArtifacts.readAttachmentFileChunk")(function* (input) {
+      const notFound = new ScreenshotArtifactReadError({
+        artifactId: input.attachmentId,
+        message: "Attachment was not found.",
+      });
+      const filePath = ATTACHMENT_ID_PATTERN.test(input.attachmentId)
+        ? resolveAttachmentPathById({
+            attachmentsDir: config.attachmentsDir,
+            attachmentId: input.attachmentId,
+          })
+        : null;
+      if (filePath === null) return yield* notFound;
+      const chunk = yield* Effect.tryPromise({
+        try: async () => {
+          const handle = await NodeFS.open(
+            filePath,
+            FILE_SYSTEM_CONSTANTS.O_RDONLY | FILE_SYSTEM_CONSTANTS.O_NOFOLLOW,
+          );
+          try {
+            const stat = await handle.stat();
+            if (
+              !stat.isFile() ||
+              stat.size === 0 ||
+              stat.size > PROVIDER_SEND_TURN_MAX_FILE_BYTES ||
+              input.offset >= stat.size
+            ) {
+              return undefined;
+            }
+            const bytesToRead = Math.min(
+              input.limit,
+              MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
+              stat.size - input.offset,
+            );
+            const buffer = Buffer.allocUnsafe(bytesToRead);
+            const { bytesRead } = await handle.read(buffer, 0, bytesToRead, input.offset);
+            return { totalBytes: stat.size, bytes: buffer.subarray(0, bytesRead) };
+          } finally {
+            await handle.close();
+          }
+        },
+        catch: (cause) => cause,
+      }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+      if (!chunk || chunk.bytes.byteLength === 0) return yield* notFound;
+      const nextOffset = input.offset + chunk.bytes.byteLength;
+      return {
+        offset: input.offset,
+        totalBytes: chunk.totalBytes,
+        dataBase64: chunk.bytes.toString("base64"),
+        nextOffset: nextOffset < chunk.totalBytes ? nextOffset : null,
+      } satisfies AttachmentFileChunk;
+    });
+
+  return ScreenshotArtifacts.of({ readChunk, readAttachmentFileChunk });
 });
 
 export const layer = Layer.effect(ScreenshotArtifacts, make);

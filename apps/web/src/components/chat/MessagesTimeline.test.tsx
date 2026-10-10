@@ -1065,8 +1065,7 @@ describe("MessagesTimeline", () => {
     expect(onAnchorReady).not.toHaveBeenCalled();
   });
 
-  // Coder: file attachments live only in the workspace, so their rows offer no preview or download.
-  it("renders file attachments without preview or download actions", () => {
+  it("renders a file download button without creating its URL in advance", () => {
     const entry = {
       ...buildUserTimelineEntry("Read the report."),
       message: {
@@ -1087,9 +1086,8 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline {...buildProps()} timelineEntries={[entry]} />,
     );
 
-    expect(markup).toContain("report.pdf");
-    expect(markup).not.toContain('aria-label="Preview report.pdf"');
-    expect(markup).not.toContain('aria-label="Download report.pdf"');
+    expect(markup).toContain('aria-label="Preview report.pdf"');
+    expect(markup).toContain('aria-label="Download report.pdf"');
     expect(markup).not.toContain("<a ");
   });
 

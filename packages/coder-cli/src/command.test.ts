@@ -17,7 +17,6 @@ import {
   buildCoderStartWorkspaceInvocation,
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
-  buildCoderScpConfigInvocation,
   buildCoderWorkspaceShellInvocation,
   buildCoderWorkspaceStatsInvocation,
   REMOTE_HELPER_BUNDLE_HASH_FILE,
@@ -237,6 +236,39 @@ describe("Coder CLI command construction", () => {
     },
   );
 
+  it(
+    "fails preflight with a clear message when a transfer tool is missing",
+    { skip: process.platform === "win32" },
+    () => {
+      const binDirectory = mkdtempSync(join(tmpdir(), "t3-coder-transfer-tools-"));
+      try {
+        for (const [tool, message] of [
+          ["tar", "T3 Coder requires tar to install its workspace helper."],
+          ["sha256sum", "T3 Coder requires sha256sum to verify its workspace helper."],
+          ["head", "T3 Coder requires head to receive transfers."],
+        ] as const) {
+          const check = REMOTE_WORKSPACE_PREFLIGHT_COMMAND.split("; ").find((clause: string) =>
+            clause.startsWith(`command -v ${tool} `),
+          );
+          strictEqual(typeof check, "string", tool);
+          const run = () =>
+            spawnSync("/bin/sh", ["-c", `fail() { printf '%s\\n' "$1"; exit 1; }; ${check}`], {
+              env: { PATH: binDirectory },
+              encoding: "utf8",
+              shell: false,
+            });
+          const missing = run();
+          strictEqual(missing.status, 1, tool);
+          strictEqual(missing.stdout, `${message}\n`);
+          writeFileSync(join(binDirectory, tool), "#!/bin/sh\n", { mode: 0o755 });
+          strictEqual(run().status, 0, tool);
+        }
+      } finally {
+        rmSync(binDirectory, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("builds non-interactive workspace lifecycle invocations", () => {
     const options = {
       globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
@@ -266,30 +298,8 @@ describe("Coder CLI command construction", () => {
     });
   });
 
-  it("builds temporary SCP configuration and remote commands through Coder", () => {
+  it("builds remote shell commands through Coder", () => {
     const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us` };
-    deepStrictEqual(
-      buildCoderScpConfigInvocation(
-        deployment,
-        String.raw`C:\Temp\t3-coder\ssh-config`,
-        "t3-coder-1234-",
-        options,
-      ).args,
-      [
-        "--global-config",
-        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-        "--no-version-warning",
-        "--url",
-        "https://coder.example.gs.com",
-        "config-ssh",
-        "--yes",
-        "--wait=no",
-        "--ssh-config-file",
-        String.raw`C:\Temp\t3-coder\ssh-config`,
-        "--ssh-host-prefix",
-        "t3-coder-1234-",
-      ],
-    );
     deepStrictEqual(
       buildCoderWorkspaceShellInvocation(deployment, workspace, 'printf "%s\\n" "$HOME"', options)
         .args,

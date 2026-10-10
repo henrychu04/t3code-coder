@@ -31,7 +31,7 @@ JSON files. Pick or drop the files, or paste their JSON; several files import to
 light and dark variants of one theme are paired. The browser reads the files itself and keeps the
 imported themes with your other appearance preferences; nothing is sent to the workspace. The
 theme editor's color picker lets you select an area of the app to find the color to change.
-Themes cannot be exported as files.
+Export your theme as JSON to share it.
 
 ## Workspace themes
 

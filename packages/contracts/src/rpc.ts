@@ -172,6 +172,7 @@ import {
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
   ProjectWriteFileError,
+  ProjectCreateFileInput,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
@@ -334,6 +335,8 @@ import {
   LegacyScreenshotArtifactsResult,
   ScreenshotArtifactReadError,
   ScreenshotArtifactReadInput,
+  AttachmentFileChunk,
+  AttachmentFileReadInput,
   TurnItemAssetChunk,
   TurnItemAssetReadError,
   TurnItemAssetReadInput,
@@ -565,6 +568,8 @@ export const WS_METHODS = {
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   workspaceListLegacyScreenshotArtifacts: "workspace.listLegacyScreenshotArtifacts",
   workspaceReadTurnItemAsset: "workspace.readTurnItemAsset",
+  workspaceReadAttachmentFile: "workspace.readAttachmentFile",
+  projectsCreateFile: "projects.createFile",
   sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
@@ -1844,6 +1849,18 @@ const WsWorkspaceReadTurnItemAssetRpc = Rpc.make(WS_METHODS.workspaceReadTurnIte
   error: TurnItemAssetReadError,
 });
 
+const WsWorkspaceReadAttachmentFileRpc = Rpc.make(WS_METHODS.workspaceReadAttachmentFile, {
+  payload: AttachmentFileReadInput,
+  success: AttachmentFileChunk,
+  error: ScreenshotArtifactReadError,
+});
+
+const WsProjectsCreateFileRpc = Rpc.make(WS_METHODS.projectsCreateFile, {
+  payload: ProjectCreateFileInput,
+  success: ProjectWriteFileResult,
+  error: ProjectWriteFileError,
+});
+
 const WsWorkspaceListLegacyScreenshotArtifactsRpc = Rpc.make(
   WS_METHODS.workspaceListLegacyScreenshotArtifacts,
   {
@@ -1938,6 +1955,8 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
   WsWorkspaceReadTurnItemAssetRpc,
+  WsWorkspaceReadAttachmentFileRpc,
+  WsProjectsCreateFileRpc,
   WsWorkspaceListLegacyScreenshotArtifactsRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,

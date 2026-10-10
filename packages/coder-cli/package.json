@@ -31,9 +31,9 @@
       "types": "./src/rpc.ts",
       "import": "./src/rpc.ts"
     },
-    "./scp": {
-      "types": "./src/scp.ts",
-      "import": "./src/scp.ts"
+    "./transfer": {
+      "types": "./src/transfer.ts",
+      "import": "./src/transfer.ts"
     }
   },
   "scripts": {

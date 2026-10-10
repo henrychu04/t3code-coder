@@ -52,6 +52,10 @@ export const REMOTE_WORKSPACE_PREFLIGHT_COMMAND = [
   `[ -x ${REMOTE_NODE_COMMAND} ] || fail "T3 Coder's Nix-provisioned Node.js runtime is not executable."`,
   `${REMOTE_NODE_VERSION_CHECK} || fail "T3 Coder requires Node.js 24 or newer from its Nix runtime."`,
   'command -v git >/dev/null 2>&1 || fail "T3 Coder requires Git."',
+  // The helper install streams a tar archive over `coder ssh` stdin and verifies it remotely.
+  'command -v tar >/dev/null 2>&1 || fail "T3 Coder requires tar to install its workspace helper."',
+  'command -v sha256sum >/dev/null 2>&1 || fail "T3 Coder requires sha256sum to verify its workspace helper."',
+  'command -v head >/dev/null 2>&1 || fail "T3 Coder requires head to receive transfers."',
   'command -v claude >/dev/null 2>&1 || command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1 || fail "T3 Coder requires Claude Code, Codex, or Pi in the workspace PATH."',
 ].join("; ");
 export function quotePosixShellArgument(value: string): string {
@@ -245,37 +249,6 @@ export function buildCoderPortForwardInvocation(
       workspace.workspace,
       `--${portForward.protocol}`,
       `127.0.0.1:${portForward.localPort}:${portForward.remotePort}`,
-    ],
-    options,
-  );
-}
-
-export function buildCoderScpConfigInvocation(
-  deploymentInput: CoderDeploymentProfile,
-  sshConfigPath: string,
-  hostPrefix: string,
-  options?: CoderInvocationOptions,
-): CoderInvocation {
-  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
-  if (sshConfigPath.trim().length === 0 || /\r|\n|\0/.test(sshConfigPath)) {
-    throw new Error("Temporary SSH config path must be a non-empty single line.");
-  }
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*-$/.test(hostPrefix)) {
-    throw new Error("Temporary SSH host prefix contains unsupported characters.");
-  }
-  return invocation(
-    deployment,
-    [
-      ...CODER_GLOBAL_ARGS,
-      "--url",
-      deployment.url,
-      "config-ssh",
-      "--yes",
-      "--wait=no",
-      "--ssh-config-file",
-      sshConfigPath,
-      "--ssh-host-prefix",
-      hostPrefix,
     ],
     options,
   );

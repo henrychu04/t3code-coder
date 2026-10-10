@@ -134,6 +134,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.workspaceReadTurnItemAsset,
       concurrency: { mode: "parallel" },
     }),
+    // Coder: a sent file attachment, read in bounded chunks for its preview and Save.
+    readAttachmentFile: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:workspace:read-attachment-file",
+      tag: WS_METHODS.workspaceReadAttachmentFile,
+      concurrency: { mode: "parallel" },
+    }),
     // Coder: v1 screenshots of an imported message; v1 rows never change after import.
     listLegacyScreenshotArtifacts: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:workspace:list-legacy-screenshot-artifacts",
@@ -196,6 +202,17 @@ export function createProjectEnvironmentAtoms<R, E>(
     writeFile: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:write-file",
       tag: WS_METHODS.projectsWriteFile,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.cwd, input.relativePath]),
+      },
+    }),
+    // Coder: a new file for upstream's "Save to workspace"; existing files go through writeFile.
+    createFile: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:create-file",
+      tag: WS_METHODS.projectsCreateFile,
       scheduler: fileScheduler,
       concurrency: {
         mode: "serial",

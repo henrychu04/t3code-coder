@@ -1,4 +1,3 @@
-// Coder: custom themes import into browser storage but are not exported as downloaded files.
 import {
   CheckIcon,
   CopyIcon,
@@ -8,6 +7,7 @@ import {
   PlusIcon,
   SunIcon,
   Trash2Icon,
+  UploadIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { useEnvironmentThemeDefinitions } from "../../hooks/useEnvironmentTheme";
@@ -18,6 +18,7 @@ import {
   singleAppearanceOf,
   getThemeModes,
   removeCustomThemes,
+  serializeThemeFile,
   type ThemeAppearance,
   type ThemeDefinition,
   type ThemeHalves,
@@ -76,6 +77,17 @@ function collectionVariantLabels(themes: ReadonlyArray<ThemeDefinition>): Readon
   });
 }
 
+function downloadThemeFile(filename: string, contents: string): void {
+  const url = URL.createObjectURL(new Blob([contents], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  // Revoking synchronously can abort the download in some browsers; give the
+  // browser time to open the stream first.
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
 function ThemeVariantTooltip({ label, children }: { label: string; children: ReactElement }) {
   return (
     <Tooltip>
@@ -93,6 +105,7 @@ function ThemeLibraryCard({
   activeModes,
   onEdit,
   onDuplicate,
+  onDownload,
   onRemove,
   variantNavigation,
 }: {
@@ -103,6 +116,7 @@ function ThemeLibraryCard({
   activeModes: ReadonlyArray<ThemeMode>;
   onEdit?: () => void;
   onDuplicate?: () => void;
+  onDownload?: () => void;
   onRemove?: () => void;
   variantNavigation?: {
     collectionLabel: string;
@@ -302,7 +316,7 @@ function ThemeLibraryCard({
                   </button>
                 </div>
               </div>
-              {onEdit || onDuplicate || onRemove ? (
+              {onEdit || onDuplicate || onDownload || onRemove ? (
                 <div className="flex shrink-0 items-center gap-1">
                   {onDuplicate ? (
                     <Tooltip>
@@ -342,6 +356,26 @@ function ThemeLibraryCard({
                         }
                       />
                       <TooltipPopup>Edit theme</TooltipPopup>
+                    </Tooltip>
+                  ) : null}
+                  {onDownload ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            aria-label={`Export ${theme.label}`}
+                            size="icon-xs"
+                            variant="ghost"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDownload();
+                            }}
+                          >
+                            <UploadIcon />
+                          </Button>
+                        }
+                      />
+                      <TooltipPopup>Export theme file</TooltipPopup>
                     </Tooltip>
                   ) : null}
                   {onRemove ? (
@@ -394,6 +428,7 @@ function CustomThemeCollectionCard({
   onUseMode,
   onDuplicate,
   onEdit,
+  onDownload,
   onRemove,
 }: {
   themes: ReadonlyArray<ThemeDefinition>;
@@ -402,6 +437,7 @@ function CustomThemeCollectionCard({
   onUseMode: (theme: ThemeDefinition, mode: ThemeMode) => void;
   onDuplicate: (theme: ThemeDefinition) => void;
   onEdit: (theme: ThemeDefinition) => void;
+  onDownload: (theme: ThemeDefinition) => void;
   onRemove: (theme: ThemeDefinition) => void;
 }) {
   const [variantIndex, setVariantIndex] = useState(() => {
@@ -434,6 +470,7 @@ function CustomThemeCollectionCard({
     <ThemeLibraryCard
       activeModes={activeModesFor(theme.id)}
       isActive={false}
+      onDownload={() => onDownload(theme)}
       onDuplicate={() => onDuplicate(theme)}
       onEdit={() => onEdit(theme)}
       onRemove={() => onRemove(theme)}
@@ -814,6 +851,9 @@ export function ThemeLibrary({
           <CustomThemeCollectionCard
             activeModesFor={pickedModesFor}
             key={collectionId}
+            onDownload={(customTheme) =>
+              downloadThemeFile(`${customTheme.id}.json`, serializeThemeFile(customTheme))
+            }
             onDuplicate={(customTheme) =>
               openThemeEditor({
                 editingThemeId: null,

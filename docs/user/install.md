@@ -7,8 +7,7 @@ workspaces.
 
 The local computer needs:
 
-- Windows 11 with the OpenSSH Client feature for production use, or macOS for development and
-  testing
+- Windows 11 for production use, or macOS for development and testing
 - Node.js 24.10 or newer
 - pnpm 11.10
 - Coder CLI 2.25.3
@@ -16,7 +15,7 @@ The local computer needs:
 The Coder workspace needs:
 
 - Linux x86-64
-- Git, Nix, and the standard Linux `script` utility
+- Git, Nix, `tar`, `sha256sum`, `head`, and the standard Linux `script` utility
 - Codex, Claude Code, or Pi on `PATH`
 
 The workspace template is expected to provide the agent CLI. T3 Coder does not install or

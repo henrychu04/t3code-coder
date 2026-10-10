@@ -261,7 +261,7 @@ interface WorkspaceAttachmentUploadOptions {
   readonly onProgress?: (progress: number) => void;
 }
 
-/** Posts one composer attachment to the gateway's SCP staging route. */
+/** Posts one composer attachment to the gateway's Coder CLI transfer route. */
 function postWorkspaceAttachment<T>(input: {
   readonly url: string;
   readonly file: File;

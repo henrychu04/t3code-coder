@@ -1,11 +1,6 @@
 import { PROVIDER_SEND_TURN_MAX_FILE_BYTES, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
 import { attachmentFileExtension } from "@t3tools/shared/attachmentFileExtension";
 import { detectImageMimeType } from "@t3tools/shared/imageSignature";
-// @effect-diagnostics nodeBuiltinImport:off
-import { randomUUID } from "node:crypto";
-import * as NodeFS from "node:fs/promises";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
 
 export const MAX_CLIPBOARD_IMAGE_BYTES = PROVIDER_SEND_TURN_MAX_IMAGE_BYTES;
 export const MAX_COMPOSER_FILE_BYTES = PROVIDER_SEND_TURN_MAX_FILE_BYTES;
@@ -50,20 +45,4 @@ export function validateComposerFile(name: string, bytes: Buffer): string {
     throw new ComposerAttachmentValidationError("File exceeds the 50 MiB limit.");
   }
   return attachmentFileExtension(name).slice(1);
-}
-
-/** Writes the bytes to a private temporary file for one transfer, then deletes it. */
-export async function withStagedAttachment<T>(
-  bytes: Buffer,
-  extension: string,
-  action: (localPath: string) => Promise<T>,
-): Promise<T> {
-  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-attachment-"));
-  const localPath = NodePath.join(directory, `${randomUUID()}.${extension}`);
-  try {
-    await NodeFS.writeFile(localPath, bytes, { mode: 0o600 });
-    return await action(localPath);
-  } finally {
-    await NodeFS.rm(directory, { recursive: true, force: true });
-  }
 }

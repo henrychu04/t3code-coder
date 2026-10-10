@@ -1,229 +1,84 @@
 # T3 Coder
 
-T3 Coder is a browser interface for Codex, Claude Code, and Pi running inside Linux Coder workspaces. It
-keeps the T3 Code product — projects, threads, review, terminals, files — and specializes it for
-Coder-managed workspaces, removing upstream's desktop, mobile, hosted-web, relay, telemetry, and
-other provider surfaces.
+T3 Coder is a Coder-only browser fork of T3 Code: upstream's projects, threads, review, terminals,
+and files for Codex, Claude Code, and Pi running inside Linux Coder workspaces. The local machine is
+a corporate Windows 11 laptop with endpoint security, so every boundary below is about what runs
+on, listens on, or leaves that machine. Product scope otherwise follows upstream.
 
-Use the global `karpathy-guidelines` skill for coding, review, and refactoring work.
+Use the global `karpathy-guidelines` skill. Read `docs/internals/coder-only.md` before changing the
+runtime boundary or syncing upstream.
 
-T3 Coder is a Coder-only fork of T3 Code. A browser talks to a Node gateway bound to
-`127.0.0.1`; the gateway talks to authenticated Linux Coder workspaces only through foreground
-Coder CLI processes. The workspace helper owns Codex, Claude Code, Pi, repositories, terminals, Git,
-SQLite, projects, threads, sessions, and checkpoints.
+## What runs on the laptop
 
-Read `docs/internals/coder-only.md` before changing the runtime boundary.
+- A Node gateway (`apps/coder-gateway`) listening on one `127.0.0.1` port.
+- The installed Coder CLI, which the gateway spawns as foreground child processes.
+- A browser the user points at the gateway's loopback URL.
+- On disk: the checkout and its build output (the web client and a Linux helper bundle that is
+  never run locally), `config.json` and `gateway-port` in the T3 Coder config directory, and
+  Coder's own per-deployment `--global-config` directories beside them.
+- Nothing else, apart from files the user saves through the browser's own downloads. Attachments
+  stream from gateway memory; nothing is staged on disk.
+- Hosts: Windows 11 in production, macOS for development; use Node platform APIs for local paths.
 
-## Provider usage model
+## Boundaries
 
-This fork supports API-backed Codex, Claude Code, and Pi usage only. Configure API credentials through
-the workspace's provider configuration (Pi's lives in the workspace's `~/.pi/agent`); never add
-provider credential entry or storage to the local UI. The one exception is upstream's agent secret
-request: an agent may ask the user for a secret through a private card, and the value goes only to
-the workspace's one-use secret store. It never enters browser storage, the transcript, projections,
-model context, or logs, and the card never asks for Coder, GitLab, or provider credentials.
-Subscription-backed ChatGPT and Claude consumer plans are outside the supported product scope.
-Do not port subscription-quota dashboards, plan windows, or subscription account-management UI.
-Provider readiness, authentication status, context/token usage, and runtime rate-limit errors
-remain relevant to API usage. This is a product constraint, not an authentication-mode enforcement
-claim: shared provider protocols may still report subscription metadata.
+1. The gateway binds IPv4 loopback only, checks the exact Host and Origin, sends no CORS headers,
+   has no application token, and reuses its saved port when free.
+2. The installed Coder CLI is the only process that leaves the laptop. Spawn it with argument
+   arrays, `shell: false`, and `--no-version-warning` on every invocation; no OpenSSH or other client.
+3. No relay, Tailscale, Cloudflare, OAuth, Electron, mobile, hosted web, auto-update, T3-owned
+   telemetry or trace export, WSL, generic user-facing SSH, reverse forwarding, or arbitrary tunnels.
+   The web client contacts no service of its own; linked content (Markdown images and videos, link
+   favicons, GitLab avatars) loads from its own host as on upstream.
+4. Port forwards are foreground `coder port-forward` processes bound to `127.0.0.1`, built from
+   structured fields only; stop only the exact child process captured at spawn.
+5. Coder owns authentication: never ask for, read, copy, log, or persist Coder tokens. GitLab and
+   provider credentials stay in the workspace. Upstream's agent secret request card stays as is.
+6. The workspace helper runs in the foreground over `coder ssh`, speaks newline-delimited RPC over
+   stdio, and opens no listener of any kind.
+7. Codex, Claude Code, and Pi are the only providers; they exist only in the workspace, and T3
+   never probes for or launches a local provider. Carry no other provider driver or package.
+8. No provider binary is bundled on the laptop; the Anthropic Agent SDK stays type-only.
+9. Durable application state stays in the workspace. Local persistence is limited to non-secret
+   deployment URLs, Coder executable paths, workspace targets, port-forward rules, and the last
+   gateway port. Browser storage keeps UI preferences, draft text, and upstream's IndexedDB caches;
+   never credentials or application bytes.
+10. GitLab is the only hosted source-control provider; Git and `glab` run only in the workspace.
+11. The branch policy below is part of the boundary.
+
+Product cuts kept on purpose, documented in `docs/internals/coder-only.md`: Files reads and edits
+stay inside the verified project root, composer attachments are the only laptop-to-workspace
+upload, and upstream's `html_preview` and its headless browser are not carried.
+
+## Provider scope
+
+Codex, Claude Code, and Pi with API-backed usage only, configured in the workspace (Pi's lives in
+`~/.pi/agent`). Do not add local credential entry, provider sign-in, subscription dashboards, plan
+windows, or account management. Provider readiness, authentication status, context and token usage,
+and rate-limit errors stay.
 
 ## Branch policy
 
-- `origin/main` is a protected, commit-for-commit mirror of `upstream/main`. It must point to the
-  same commit as `upstream/main`; do not add fork commits, merge commits, or pull requests to it.
-- The repository ruleset for `main` rejects every normal update and has no persistent bypass.
-  For an explicitly authorized mirror sync, grant a temporary bypass only long enough to move
-  `origin/main` to the verified `upstream/main` commit, then remove the bypass immediately.
-- `coder-only` is the default and product integration branch. All fork changes and upstream-sync
-  adaptations must reach the repository through pull requests targeting `coder-only`.
-- Before creating or merging a pull request, verify its base branch explicitly. Never infer the
-  target from a repository default or a previous pull request.
-- Updating `origin/main` is a mirror operation, not a development push. Only an explicitly
-  authorized mirror sync may move it directly to the exact `upstream/main` commit. Merge
-  `upstream/main` into a branch based on `coder-only`, resolve Coder adaptations there, and target
-  the resulting pull request at `coder-only`.
-- If an upstream sync would remove fork-specific behavior, stop and tell the user before making
-  that removal.
-
-## Non-negotiable boundary
-
-- Keep the local gateway on IPv4 loopback with exact Host/Origin checks, no CORS, and no
-  application authentication token. It reuses its last port when that port is free, so browser
-  storage keeps one origin across restarts, and otherwise binds an ephemeral port.
-- The installed Coder CLI is the only process allowed to make a non-loopback workspace connection.
-  OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated composer-attachment
-  uploads only when it uses `coder ssh --stdio` as its ProxyCommand. SCP must never connect directly
-  to a workspace. Use argument-array spawning with `shell: false` and include
-  `--no-version-warning` in every underlying Coder invocation. Network telemetry and direct
-  workspace connections follow the configured Coder deployment and CLI defaults.
-- User-configured TCP and UDP forwards may use foreground `coder port-forward` processes. Bind every
-  local endpoint to `127.0.0.1`, accept structured workspace/protocol/port fields rather than raw
-  commands, and stop only the exact child process captured at spawn. Saved forwards may auto-start
-  with the gateway; failed forwards must remain stopped until an explicit restart or configuration
-  change.
-- Coder owns authentication for each configured deployment. Never ask for, read, copy, log, or
-  persist Coder tokens.
-- The helper runs in the foreground through `coder ssh`, uses newline-delimited RPC over stdio, and
-  opens no HTTP, WebSocket, tunnel, forwarded port, or other listener.
-- Codex, Claude Code, and Pi exist only in the Linux workspace. Do not probe for or launch a local
-  provider.
-- Keep durable application state in the workspace. T3-owned local persistence is limited to
-  non-secret deployment URLs, Coder executable paths, workspace targets, structured port-forward
-  rules, the last gateway port, and ephemeral staging of validated composer attachments in an OS
-  temporary directory. Delete staged attachments immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
-  opaque deployment-specific CLI config directories; T3 must never read them.
-- Browser storage may additionally keep UI preferences and, as on main, the text of unsent composer
-  drafts and stashed prompts, including their terminal excerpts, and main's IndexedDB caches of
-  environment shells, thread snapshots, server config, and branch lists. These caches are keyed by
-  environment and cleared when a workspace is removed from the Coder config; the workspace stays
-  the source of truth. Never store image or file bytes, upload IDs, credentials, or other application data
-  there.
-- Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
-  transfer, or background file synchronization. The only exceptions are listed below; each is
-  scoped to its own mechanism and authorizes nothing beyond it.
-  - **Files surface (the only text-file exception).** It may list, read, and edit bounded UTF-8
-    text files inside the active project through the existing helper stdio RPC. Accept only
-    validated project-relative paths, verify the project root belongs to the requesting thread
-    (for a draft the server does not know yet, to the draft's project: its workspace root or a
-    worktree one of its persisted threads owns),
-    reject path and symlink escapes and binary files, detect stale writes, and keep open-file and
-    editor state in browser memory only. Its explicit Copy path action may place only that
-    project-relative path—not file contents or an absolute path—on the local clipboard. Ordinary
-    user-initiated reads and edits retain the 1 MiB limit and all existing path, UTF-8, binary-file,
-    symlink, and stale-write validation.
-  - **PDF and HTML previews in Files.** The Files surface may preview PDF files (at most 50 MiB,
-    `%PDF-` signature) and HTML files (at most 10 MiB, no NUL bytes) inside the verified project
-    root only, read whole through the bounded helper media chunks when the user opens the file and
-    kept as memory-only blobs. A PDF renders in the browser's built-in viewer from its blob URL
-    (the page CSP allows `frame-src blob:` for this). An HTML file is written into the gateway's
-    sandboxed document shell (`sandbox allow-scripts allow-forms allow-popups`, never
-    `allow-same-origin`); its relative assets do not load. There is no Save, download, or export.
-  - **Project-content search (the only additional text-content exception).**
-    - Filename and path search must continue to use a lightweight path-only FFF index.
-    - Content search may use a separate, on-demand, content-enabled `@ff-labs/fff-node` index only
-      after verifying that the exact project root belongs to the requesting thread and using the
-      verified real project root as FFF's `basePath`. It may use FFF's native plain-text and regex
-      grep, but must never scan a filesystem root or home directory.
-    - Enforce a hard native search time budget, initially 250 ms per request, cursor-based
-      pagination, at most 100 matches per file and 500 returned matches per request, cancellation
-      and timeout behavior that cannot monopolize the helper's stdio RPC connection, and a
-      15-minute idle TTL followed by deterministic destruction of each content index.
-    - Treat every FFF result as untrusted: before exposure, reject absolute paths, traversal, NUL
-      bytes, malformed relative paths, and realpath or symlink escapes. Return only validated
-      project-relative paths, bounded UTF-8 line snippets, and match ranges; reject or suppress
-      binary-file matches and never expose arbitrary file bytes or a general content-reading API.
-    - Keep query text, matching contents, absolute paths, and secrets out of errors and logs.
-    - The former 2,000-file and 32 MiB aggregate scan limits do not apply once this compliant
-      native, time-budgeted search path replaces the existing scanner. Before implementation is
-      approved, focused Linux x86-64 tests must characterize FFF's handling of symlinks, binary
-      files, oversized files, regex failures, cancellation, and time budgets.
-    - This search exception does not authorize uploads, downloads, synchronization, arbitrary file
-      reads, or non-Coder workspace connections.
-  - **Media: composer attachments and on-demand environment previews.** Composer image
-    attachments accept PNG, JPEG, and WebP and validate their signatures rather than trusting
-    metadata. Composer source images may be up to 50 MiB; use main's compression algorithm to
-    prepare images at or below 10 MiB. The browser upload API, gateway body/signature validation,
-    and provider-input reader must share main's 10 MiB image attachment limit. Composer file
-    attachments, including attachments on question answers, follow main: any non-image file up to
-    main's 50 MiB file limit, passed to the provider as a workspace path rather than inline bytes. Environment previews accept
-    main's browser media formats — PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO images; MP4,
-    M4V, MOV, WebM, OGV, MKV, and AVI videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and AIFF audio —
-    each signature-checked against its extension. Image previews retain their separate 20 MiB read
-    bound. Video and audio previews are bounded at 256 MiB and read only after the user presses
-    play or opens the file.
-    - Images and files pasted, selected, or dropped into the composer: generate filenames internally
-      and copy only into `$HOME/.t3-coder/attachments` through the same gateway upload and
-      helper-scoped SCP path; never accept a user-controlled local or remote path. Submitted
-      attachment references may read these validated workspace copies by opaque generated ID
-      through bounded helper stdio chunks, including after reconnect. Draft bytes remain memory-only.
-    - Media previews follow main's file-based flow. Markdown image and video references, media
-      links, and expanded image-view activities may read the current file without a preceding
-      capture or provider event. The Files surface may preview these media files with main's image,
-      video, and audio viewers. Main's media menu may copy a previewed file's full or
-      project-relative path or a web media URL to the local clipboard, and its explicit Save and
-      Copy image actions may save the displayed media to the local machine or copy an image to the
-      clipboard; these are the only media download and clipboard exceptions. Verify the root belongs to the requesting thread (or a draft's project, as for the Files surface), resolve relative paths from
-      that root, and allow exact absolute image paths elsewhere on the Linux workspace machine,
-      including symlinks. Verify the actual opened file identity and reject unsupported media and
-      files over their bound. This does not authorize general file reads or outside-project text
-      editing.
-      Serve bounded chunks over helper stdio, with a file revision checked across chunks. Do not
-      create artifact copies, source-path associations, turn capture budgets, or storage quotas.
-      File changes are visible on a fresh read; moving or deleting a source may break its preview.
-    - Images a tool returned inline load by index from the stored turn item through the same
-      bounded helper read as MCP App documents.
-    - Submitted thumbnails and environment images may load automatically near the viewport. Media
-      links may open the gallery. Browser media bytes remain bounded and memory-only. External web
-      images and videos load directly from their own host as on main; they never pass through the
-      helper. Do not expose other download/export actions or a general file-reading API.
-    - Existing artifact IDs remain readable for older conversations through the bounded legacy
-      chunk RPC. Submitted composer attachments remain preserved. Saved legacy image artifacts may be deleted by
-      the upstream-compatible, opt-in artifact retention policy; cleanup is disabled by default.
-      Never delete current workspace source images through this policy.
-  - **HTML renders.** Agents may publish a self-contained HTML page with upstream's T3
-    `html_render` tool over the workspace file bridge; `html_preview` and its headless browser are
-    not carried, and nothing is downloaded. The helper inlines only absolute-path images it
-    validates as images, stores the page (at most 10 MiB) as an attachment of the calling thread,
-    and serves it through the bounded turn-item read only for the stored item that references it
-    in that same thread. The browser writes it into the gateway's sandboxed MCP App shell
-    (`allow-scripts allow-forms`, never `allow-same-origin`, no camera, microphone, geolocation, or
-    clipboard permission). Links the page asks to open follow the Markdown link rule. Pages can be
-    viewed full size with their source, but there is no Save, download, or export.
-  - **MCP Apps.** Interactive UIs that the workspace's own MCP servers declare may render inline in
-    upstream's sandboxed iframe (`allow-scripts allow-forms`, never `allow-same-origin`). Their
-    resource reads and tool calls go only through the helper's stdio RPC. The captured app document
-    loads only through bounded helper chunks for the stored item that references it, and is written
-    into the gateway's sandboxed shell page. The frame gets no camera,
-    microphone, geolocation, or clipboard permission, and there is no `ui/download-file` or save
-    action; links the app opens follow the Markdown link rule below.
-  - **Theme files.** Settings → Appearance may read T3 Code or VS Code theme JSON files that the
-    user picks, drops, or pastes (at most 256 KiB each) inside the browser and keep the parsed
-    themes as UI preferences in browser storage. The files never reach the gateway or workspace,
-    and themes have no export or download.
-  - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
-- Git and hosted source-control operations run only in the Linux workspace through the existing
-  helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and
-  remote-management commands, and may invoke the workspace-installed `glab` CLI to discover
-  authentication, create or publish repositories, and read, create, update, or check out merge
-  requests. Keep the UI and provider registry GitLab-only. GitLab owns authentication; T3 must
-  never ask for, read, persist, or log its tokens. Do not add GitHub, Azure DevOps, Bitbucket, or
-  another hosted provider, and do not move Git or `glab` execution into the local gateway.
-- Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
-  OAuth, T3-owned telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse
-  forwarding, or arbitrary tunnels. Codex, Claude Code, and Pi are the only providers. Do not
-  carry, register, or enable upstream's other provider drivers or packages (Cursor, OpenCode,
-  Muse, ACP, ACP Registry, Grok, Antigravity, or later additions). OpenSSH use is limited to helper bootstrap and validated
-  composer-attachment uploads through a `coder ssh --stdio` ProxyCommand.
-- Markdown HTTP(S) links follow main: they open in a new tab with `noopener noreferrer`, show
-  main's favicon, and preview media links in the gallery. Relative and non-web links stay inert.
-  Known merge requests keep their internal navigation. External images, videos, and GitLab actor
-  avatars load from their host as on main. Terminal URLs must not open automatically.
-
-## Supported platforms
-
-- Local development and testing: macOS.
-- Production local host: Windows 11 with the OpenSSH Client feature (`ssh.exe` and `scp.exe`).
-- Remote workspace: Linux x86-64 with Nix, Git, and Codex, Claude Code, or Pi. T3 provisions its pinned
-  Node.js 24 runtime through Nix and bundles the native terminal runtime without changing the
-  workspace's default Node.js version.
-
-Use Node platform APIs for local paths and processes. Never assume POSIX paths on the local host.
-Remote commands may assume Linux and must quote user-configured values for the shell behavior of
-Coder's arguments after `--`.
+- `origin/main` is a protected, commit-for-commit mirror of `upstream/main` with no fork commits.
+  Only an authorized mirror sync may move it to the verified upstream commit (temporary bypass).
+- `coder-only` is the default and integration branch. Every fork change and upstream sync reaches it
+  through a pull request; merge `upstream/main` into a branch based on `coder-only` and adapt there.
+- Verify a pull request's base branch explicitly before creating or merging it.
+- If an upstream sync would remove fork-specific behavior, stop and tell the user first.
 
 ## Code layout
 
 - `apps/coder-gateway`: loopback HTTP/static server, configuration UI endpoints, and WebSocket to
   helper-stdio bridge.
-- `packages/coder-cli`: validated non-secret profiles, Coder command construction, helper install,
-  helper connection lifecycle, and foreground port-forward lifecycle.
+- `packages/coder-cli`: validated non-secret profiles, Coder command construction, helper install
+  and attachment transfer over `coder ssh` stdin, helper connection lifecycle, and foreground
+  port-forward lifecycle.
 - `apps/coder-helper`: bundled Linux stdio entry point.
 - `apps/server`: workspace-owned orchestration, Codex, Claude, and Pi adapters, persistence, terminal,
   filesystem, and repository-local VCS implementation.
 - `apps/web`: browser client and Coder deployment/workspace manager.
 - `packages/contracts`, `packages/client-runtime`, `packages/shared`: typed wire and shared runtime
-  logic retained by the web/helper pair.
+  logic retained by the web/helper pair, including the named byte limits.
 - `packages/source-control-core`, `packages/source-control-gitlab`, `packages/source-control-testing`:
   upstream's source-control contracts, the GitLab driver, and its test host.
 
@@ -246,20 +101,19 @@ pnpm --filter @t3tools/source-control-core --filter @t3tools/source-control-gitl
 pnpm build
 ```
 
-Backend boundary changes need focused tests. Do not launch browsers or use computer-control tooling
-without explicit user permission. Do not test against or modify `~/.t3/userdata`.
+Backend boundary changes need focused tests; `apps/coder-gateway/src/boundaryGuard.test.ts` checks
+the gateway's URLs, connections, and spawn targets. Do not launch browsers or use computer-control
+tooling without explicit user permission. Do not test against or modify `~/.t3/userdata`.
 
 ## Working practices
 
-- Prefer `rg`/`rg --files` for discovery.
-- Treat upstream as the source of truth for shared product behavior. Prefer adapting existing fork
-  code to match upstream implementations; retain differences required by the explicit Coder-only
-  boundaries.
-- Upstream T3 Code's docs (`docs/user/` in `pingdotgg/t3code`) are the source of truth for shared
-  product behavior. When documenting product behavior, start from upstream's docs rather than
-  re-deriving from code, adapt them to the Coder-only model, and port upstream doc updates when
-  they apply.
-- Preserve unrelated user changes and avoid destructive Git commands.
+- Upstream is the source of truth for shared product behavior and its docs (`docs/user/` in
+  `pingdotgg/t3code`). Port upstream's code rather than re-deriving it, and leave upstream bugs
+  unfixed unless they break a boundary above.
+- Mark every fork delta in upstream code with a `Coder:` comment and list it in the upstream seams
+  of `docs/internals/coder-only.md`; a difference not listed there is drift to remove.
+- Keep byte limits as named constants with a one-line reason; docs refer to the constant.
+- Prefer `rg`/`rg --files`. Preserve unrelated user changes and avoid destructive Git commands.
 - Never kill processes by pattern; stop only a PID captured at spawn.
-- Never commit plans, scratch notes, local state, secrets, credentials, or generated build output.
-- Do not create a pull request unless explicitly requested.
+- Never commit plans, scratch notes, local state, secrets, credentials, or build output, and do
+  not create a pull request unless explicitly requested.

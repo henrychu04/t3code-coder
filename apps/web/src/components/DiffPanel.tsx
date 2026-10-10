@@ -170,14 +170,12 @@ function DiffFileCollapseToggle({
 /** Copy and status controls for one file header; re-renders only when its own file changes. */
 function DiffFileHeaderSuffix({
   filePath,
-  copyPath,
   hasStat,
   error,
   truncated,
   onRetry,
 }: {
   filePath: string;
-  copyPath: string | null;
   hasStat: boolean;
   error: boolean;
   truncated: boolean;
@@ -185,8 +183,7 @@ function DiffFileHeaderSuffix({
 }) {
   return (
     <>
-      {/* Coder: like the context menu's Copy path, the clipboard gets only a project-relative path. */}
-      {copyPath ? <DiffFilePathCopyButton filePath={copyPath} /> : null}
+      <DiffFilePathCopyButton filePath={filePath} />
       {hasStat ? (
         <DiffFileStatus error={error} truncated={truncated} retry={() => onRetry(filePath)} />
       ) : null}
@@ -1228,11 +1225,6 @@ export default function DiffPanel({
                       return (
                         <DiffFileHeaderSuffix
                           filePath={path}
-                          copyPath={resolveDiffPathForWorkspace({
-                            filePath: path,
-                            workspaceRoot: activeCwd,
-                            repositoryRoot: activeRepositoryRoot,
-                          })}
                           hasStat={fileStats.has(path)}
                           error={state?.error ?? false}
                           truncated={state?.truncated ?? false}

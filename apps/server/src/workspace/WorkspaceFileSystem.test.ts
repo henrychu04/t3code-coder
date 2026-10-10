@@ -211,6 +211,71 @@ it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
       }),
     );
   });
+
+  describe("createFile", () => {
+    it.effect("creates a new file and its folders inside the project", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+
+        const result = yield* files.createFile({
+          cwd,
+          relativePath: "plans/next.md",
+          contents: "# Plan\n",
+        });
+
+        expect(result.relativePath).toBe("plans/next.md");
+        expect(
+          yield* Effect.promise(() => NodeFSP.readFile(path.join(cwd, "plans/next.md"), "utf8")),
+        ).toBe("# Plan\n");
+      }),
+    );
+
+    it.effect("never replaces an existing file or symlink", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outside = yield* makeTempDir;
+        yield* writeTextFile(cwd, "README.md", "keep\n");
+        yield* fileSystem.symlink(path.join(outside, "new.md"), path.join(cwd, "dangling.md"));
+
+        const existing = yield* files
+          .createFile({ cwd, relativePath: "README.md", contents: "replaced\n" })
+          .pipe(Effect.flip);
+        const dangling = yield* files
+          .createFile({ cwd, relativePath: "dangling.md", contents: "escaped\n" })
+          .pipe(Effect.flip);
+
+        expect(existing).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileSystemOperationError);
+        expect(dangling).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileSystemOperationError);
+        expect(
+          yield* Effect.promise(() => NodeFSP.readFile(path.join(cwd, "README.md"), "utf8")),
+        ).toBe("keep\n");
+        expect(yield* fileSystem.exists(path.join(outside, "new.md"))).toBe(false);
+      }),
+    );
+
+    it.effect("rejects a symlinked folder that leads outside the project", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outside = yield* makeTempDir;
+        yield* fileSystem.symlink(outside, path.join(cwd, "linked"));
+
+        const error = yield* files
+          .createFile({ cwd, relativePath: "linked/deep/plan.md", contents: "x\n" })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+        expect(yield* fileSystem.exists(path.join(outside, "deep"))).toBe(false);
+      }),
+    );
+  });
 });
 
 it.layer(TestLayer)("write cancellation", (it) => {

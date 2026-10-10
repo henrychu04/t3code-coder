@@ -11,7 +11,7 @@ export const png = Buffer.from(
   "base64",
 );
 
-// Uses the production gateway, SCP upload, and helper RPC. No provider or authentication mocks.
+// Uses the production gateway, Coder CLI upload, and helper RPC. No provider or authentication mocks.
 // This verifies transport/persistence, not a model's decision to view or return an image.
 export async function testLiveImages(url, workspaceId) {
   const endpoint = `${url}/api/workspaces/${encodeURIComponent(workspaceId)}`;

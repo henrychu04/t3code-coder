@@ -8,7 +8,7 @@
 //   node scripts/coder-live-provider-images.mjs --local
 //     Runs the workspace helper on this machine against a temporary T3 Coder home and project,
 //     using the `codex` and `claude` on PATH with their own sign-in. Uploads are copied into the
-//     helper's attachment directory instead of going through SCP. Turns use real provider quota.
+//     helper's attachment directory instead of going through the gateway upload. Turns use real provider quota.
 //
 //   node scripts/coder-live-provider-images.mjs --gateway <url> --workspace <id> --project-root <path>
 //     Uses a running gateway and a connected workspace. <path> must hold the fixture image as
@@ -337,7 +337,7 @@ async function runLocal(options) {
     checkAuthentication: async () => "authenticated",
     probeWorkspace: async () => undefined,
     connectHelper,
-    // Local mode stands in for SCP: the staged file lands where the helper claims uploads.
+    // Local mode stands in for the gateway upload: the staged file lands where the helper claims uploads.
     uploadComposerAttachment: async ({ localPath, extension }) => {
       const target = NodePath.join(
         attachmentsDir,

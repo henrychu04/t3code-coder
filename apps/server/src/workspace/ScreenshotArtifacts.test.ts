@@ -94,4 +94,53 @@ it.layer(NodeServices.layer)("Legacy images", (it) => {
         }).pipe(Effect.provide(layer.pipe(Layer.provide(ServerConfig.layerTest(root, root)))));
       }),
   );
+
+  it.effect("reads a sent file attachment of any type in bounded chunks", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(() => fs.mkdtemp(path.join(process.cwd(), ".attachment-files-"))),
+        (root) => Effect.promise(() => fs.rm(root, { recursive: true, force: true })),
+      );
+      yield* Effect.gen(function* () {
+        const images = yield* ScreenshotArtifacts;
+        const attachmentsDir = path.join(root, "attachments");
+        const id = ScreenshotArtifactId.make("thread-1-550e8400-e29b-41d4-a716-446655440003-pdf");
+        const bytes = Buffer.from("%PDF-1.7 not an image");
+        yield* Effect.promise(async () => {
+          await fs.mkdir(attachmentsDir, { recursive: true });
+          await fs.writeFile(path.join(attachmentsDir, `${id}.pdf`), bytes);
+        });
+        const first = yield* images.readAttachmentFileChunk({
+          attachmentId: id,
+          offset: 0,
+          limit: 8,
+        });
+        expect(first).toMatchObject({ offset: 0, totalBytes: bytes.length, nextOffset: 8 });
+        const rest = yield* images.readAttachmentFileChunk({
+          attachmentId: id,
+          offset: 8,
+          limit: 512,
+        });
+        expect(rest.nextOffset).toBeNull();
+        expect(
+          Buffer.concat([
+            Buffer.from(first.dataBase64, "base64"),
+            Buffer.from(rest.dataBase64, "base64"),
+          ]),
+        ).toEqual(bytes);
+
+        yield* Effect.promise(async () => {
+          await fs.rm(path.join(attachmentsDir, `${id}.pdf`));
+          await fs.symlink(path.join(root, "outside.pdf"), path.join(attachmentsDir, `${id}.pdf`));
+        });
+        for (const attachmentId of [id, ScreenshotArtifactId.make("../outside")]) {
+          expect(
+            (yield* images
+              .readAttachmentFileChunk({ attachmentId, offset: 0, limit: 512 })
+              .pipe(Effect.result))._tag,
+          ).toBe("Failure");
+        }
+      }).pipe(Effect.provide(layer.pipe(Layer.provide(ServerConfig.layerTest(root, root)))));
+    }),
+  );
 });

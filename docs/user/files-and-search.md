@@ -21,7 +21,7 @@ media to save it or copy its path.
 PDF and HTML files in the project open as documents: PDFs (up to 50 MiB) in the browser's PDF
 viewer, and HTML files (up to 10 MiB) as a page you can switch to its source. A page runs in a
 sandbox away from T3 Coder and your session, and its links open in new tabs; images or styles it
-references by relative path do not load. These previews cannot be saved or downloaded.
+references by relative path do not load.
 
 Path safety is enforced for you: files are always addressed relative to the project root, and
 links that would escape the project — including through symlinks — do not resolve.
@@ -43,7 +43,8 @@ and whether Markdown and tables open rendered are remembered as display preferen
 browser.
 
 Right-click a file in the tree and choose **Copy path** to put its project-relative path on your
-clipboard, or **Add to chat** to mention it in the composer.
+clipboard, **Copy mention** to copy it as a composer mention, or **Add to chat** to mention it in
+the composer. You can also drag files from the tree into the composer.
 
 ## Comments
 
