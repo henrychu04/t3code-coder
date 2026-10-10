@@ -3,6 +3,7 @@
 > This is a maintainer and reviewer reference. For the user-facing explanation, start with
 > [Coder workspaces](../user/workspaces.md) and [Product decisions and upstream
 > differences](../product-differences.md).
+> To merge upstream, follow the [upstream sync checklist](sync.md).
 
 T3 Coder runs its browser interface on the developer's computer while repository, Codex, Claude,
 Pi, terminal, checkpoint, and durable orchestration work stays inside Linux Coder workspaces. The
@@ -679,7 +680,8 @@ listed here is drift to remove rather than fork behavior to keep.
   favicons, browser profiles, audio controls, or device rename. Never-opened preview and device
   surfaces in the store get a plain title and icon. Merge-request rows, tabs, and disabled reasons
   use GitLab wording and `!` references. The branch toolbar is upstream's; workspace options are never primary and use
-  the server's machine kind, and the branch notice also covers a managed worktree whose branch
+  the server's machine kind, there is no "Auto balance" run target (upstream's load balancing is
+  not carried), and the branch notice also covers a managed worktree whose branch
   moved (`resolveCheckoutBranchMismatch`). The branch picker adds "Rename current branch…" for a
   thread's own branch (`vcs.renameThreadBranch`), which can also rename the T3 worktree folder
   through the driver's `moveWorktree`. Proposed-plan cards are upstream's; Save to workspace uses
@@ -915,6 +917,11 @@ listed here is drift to remove rather than fork behavior to keep.
   `scripts/coder-live-provider-images.mjs` (`pnpm coder:live:providers`) runs one real turn per
   provider, which needs authenticated workspace or local Codex and Claude Code CLIs and spends
   their quota.
+- **Upstream tests.** `storageCleanup.test.ts` roots its test config at the temp directory's real
+  path, so its path checks pass on macOS, where the temp directory is behind the `/var` symlink.
+  `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
+  reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
+  says when to retry it.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,

@@ -315,8 +315,17 @@ const cleanupFixture = Effect.gen(function* () {
     },
   };
 });
+// Coder: the config root is the temp directory's real path, so cleanup's real-path checks match
+// on macOS, where the OS temp directory sits behind the /var -> /private/var symlink.
+const cleanupConfigLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "storage-cleanup-" });
+    return ServerConfig.layerTest(process.cwd(), yield* fs.realPath(baseDir));
+  }),
+);
 const cleanupTestLayer = GitVcsDriver.layer.pipe(
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "storage-cleanup-" })),
+  Layer.provideMerge(cleanupConfigLayer),
   Layer.provideMerge(NodeServices.layer),
 );
 const runCleanupTest = <A, E>(
