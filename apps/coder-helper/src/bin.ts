@@ -18,7 +18,7 @@ import {
 import * as ServerConfig from "t3/src/config.ts";
 import * as DefectReporter from "t3/src/observability/DefectReporter.ts";
 import { withTerminalOutputWindow } from "t3/src/terminal/OutputProtocol.ts";
-import { makeCoderRuntimeLayer } from "t3/src/server.ts";
+import { makeCoderRuntimeLayer } from "t3/src/coderServer.ts";
 import { WS_RPC_SERVER_OPTIONS } from "t3/src/ws.ts";
 
 export const coderHelperHandlers = CoderHelperRpcGroup.toLayer({
