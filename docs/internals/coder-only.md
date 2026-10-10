@@ -680,7 +680,8 @@ listed here is drift to remove rather than fork behavior to keep.
   favicons, browser profiles, audio controls, or device rename. Never-opened preview and device
   surfaces in the store get a plain title and icon. Merge-request rows, tabs, and disabled reasons
   use GitLab wording and `!` references. The branch toolbar is upstream's; workspace options are never primary and use
-  the server's machine kind, and the branch notice also covers a managed worktree whose branch
+  the server's machine kind, there is no "Auto balance" run target (upstream's load balancing is
+  not carried), and the branch notice also covers a managed worktree whose branch
   moved (`resolveCheckoutBranchMismatch`). The branch picker adds "Rename current branch…" for a
   thread's own branch (`vcs.renameThreadBranch`), which can also rename the T3 worktree folder
   through the driver's `moveWorktree`. Proposed-plan cards are upstream's; Save to workspace uses

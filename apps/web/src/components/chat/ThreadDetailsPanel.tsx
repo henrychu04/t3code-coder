@@ -42,8 +42,7 @@ export interface ThreadDetailsPanelProps extends Pick<
   isGitRepo: boolean;
   envLocked: boolean;
   availableEnvironments: readonly EnvironmentOption[];
-  autoEnvironmentLabel?: string | undefined;
-  onAutoEnvironment?: (() => void) | undefined;
+  // Coder: no "Auto balance" run target; upstream's load balancing is not carried.
   onEnvironmentChange: (environmentId: EnvironmentId) => void;
   onEnvModeChange: (mode: EnvMode) => void;
   /** The thread's env mode as ChatView resolves it. */
@@ -116,8 +115,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   panelSection="workspace"
                   availableEnvironments={props.availableEnvironments}
                   onEnvironmentChange={props.onEnvironmentChange}
-                  autoEnvironmentLabel={props.autoEnvironmentLabel}
-                  onAutoEnvironment={props.onAutoEnvironment}
                   {...branchToolbarProps}
                 />
               ) : null}

@@ -2610,9 +2610,6 @@ export default function ChatView(props: ChatViewProps) {
     scratchWorkspaceRootFor,
   ]);
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
-  // Auto balance retargets to an existing project; a machine's "No project"
-  // folder may not exist until it is picked.
-  const canAutoBalanceEnvironments = hasMultipleEnvironments && !activeProjectIsScratch;
   const activeEnvironmentOption =
     logicalProjectEnvironments.find(
       (environment) => environment.environmentId === activeThread?.environmentId,
