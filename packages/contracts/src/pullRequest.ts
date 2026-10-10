@@ -1,5 +1,5 @@
-// Coder: no cross-environment GitHub routing (`expectedAccountId`, `allowStale`, routing
-// identities), HTTP diff responses, or Forgejo requirements.
+// Coder: no cross-environment GitHub routing (`expectedAccountId`, routing identities), HTTP diff
+// responses, or Forgejo requirements.
 import * as Schema from "effect/Schema";
 
 import {
@@ -687,6 +687,8 @@ export type PullRequestListResult = typeof PullRequestListResult.Type;
 export const PullRequestRef = Schema.Struct({
   projectId: ProjectId,
   host: Schema.optional(TrimmedNonEmptyString),
+  /** Let another environment answer when this one's cached response has expired. */
+  allowStale: Schema.optional(Schema.Boolean),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,
 });

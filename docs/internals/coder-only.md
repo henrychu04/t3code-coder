@@ -923,8 +923,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `glab auth status` lines carrying a token label or a `glpat-` token are never surfaced. Clones
     accept only GitLab URLs without credentials, query, or fragment, and pass `--` before the URL.
   - `PullRequestService` omits upstream's cross-environment routing (routing identities,
-    verified credentials, `expectedAccountId` and `allowStale` refs) and Forgejo SSH-alias
-    refinement.
+    verified credentials, `expectedAccountId` refs) and Forgejo SSH-alias refinement. It keeps
+    `allowStale: false`, which the merge-request watcher uses to read past the held detail.
 - **Provider drivers.** provider-core's `ProviderDriver.usage` is `never` and its `usage.ts`
   is not carried: there is no usage page, so Claude and Codex register no usage readers and
   `provider/builtInDrivers.ts` has no usage driver list.

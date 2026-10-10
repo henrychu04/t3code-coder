@@ -1,6 +1,6 @@
 // Coder: GitLab is the only hosted provider and every workspace resolves its own links, so
 // upstream's cross-environment routing (routing identities, verified credentials,
-// `expectedAccountId`/`allowStale` refs) and Forgejo SSH-alias refinement are omitted. Change
+// `expectedAccountId` refs) and Forgejo SSH-alias refinement are omitted. Change
 // requests may carry `capabilities` that reflect the workspace write-access probe.
 import {
   canonicalRepositoryKey,
@@ -2755,6 +2755,7 @@ export const make = Effect.gen(function* () {
     const cached = persistedRead(input, "summary", summaryCodec, summaryUncached(input));
     const held = lastGoodSummary.peek(key);
     return held !== undefined &&
+      input.allowStale !== false &&
       (options?.recoverTransientFailure !== false || held.state === "merged")
       ? Effect.succeed(held)
       : cached.pipe(
@@ -3036,7 +3037,9 @@ export const make = Effect.gen(function* () {
         );
       }),
     );
-    return lastGoodDetail.serveHeld(key, read, "revalidate");
+    return input.allowStale === false
+      ? read.pipe(Effect.tap((value) => lastGoodDetail.record(key, value)))
+      : lastGoodDetail.serveHeld(key, read, "revalidate");
   };
 
   const activityCache = yield* Cache.makeWith(
