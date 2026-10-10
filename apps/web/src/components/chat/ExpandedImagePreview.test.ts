@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
+import type { ComposerFileAttachment } from "../../composerDraftStore";
 import {
+  buildExpandedImagePreview,
   expandedImageKey,
   resolveMarkdownMediaPreview,
   wrapExpandedImageIndex,
@@ -82,4 +84,25 @@ it("keeps backward media navigation visible beyond a complete cycle", () => {
   expect(
     Array.from({ length: 7 }, (_, step) => images[wrapExpandedImageIndex(-step, images.length)]),
   ).toEqual(["first", "second", "first", "second", "first", "second", "first"]);
+});
+
+it("builds a video preview for a local video attachment", () => {
+  const file = new File([new Uint8Array([1, 2, 3])], "demo.mp4", { type: "video/mp4" });
+  const attachment: ComposerFileAttachment = {
+    type: "file",
+    id: "video-1",
+    name: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    file,
+  };
+
+  const preview = buildExpandedImagePreview([attachment], attachment.id);
+
+  expect(preview).toMatchObject({
+    images: [{ name: "demo.mp4", type: "video" }],
+    index: 0,
+  });
+  expect(preview?.images[0]?.src).toMatch(/^blob:/);
+  URL.revokeObjectURL(preview?.images[0]?.src ?? "");
 });

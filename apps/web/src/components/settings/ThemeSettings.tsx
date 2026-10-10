@@ -1,21 +1,22 @@
-// Coder: custom themes cannot be exported as downloaded files (no downloads or exports).
-import { useEnvironmentThemeDefinitions } from "../../hooks/useEnvironmentTheme";
+// Coder: custom themes import into browser storage but are not exported as downloaded files.
 import {
   CheckIcon,
   CopyIcon,
   MoonIcon,
   PaintbrushIcon,
   PenLineIcon,
+  PlusIcon,
   SunIcon,
   Trash2Icon,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useEnvironmentThemeDefinitions } from "../../hooks/useEnvironmentTheme";
 import { readThemeHalvesRaw } from "../../hooks/useTheme";
 import { cn } from "../../lib/utils";
 import {
   getThemeDefinition,
-  getThemeModes,
   singleAppearanceOf,
+  getThemeModes,
   removeCustomThemes,
   type ThemeAppearance,
   type ThemeDefinition,
@@ -38,6 +39,8 @@ import {
 import { Button } from "../ui/button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import { ThemeImportDialog } from "./ThemeImportDialog";
+import { searchableSetting } from "./settingsSearch";
 import { useThemeEditorStore } from "./themeEditorStore";
 import {
   STANDARD_THEME_CARDS,
@@ -469,6 +472,9 @@ export function ThemeLibrary({
   setAppearanceMode,
   customThemes,
   initialAppearance,
+  refreshTheme,
+  isImportOpen,
+  onImportOpenChange,
   themeHalves,
   setThemeHalf,
 }: {
@@ -478,6 +484,9 @@ export function ThemeLibrary({
   setAppearanceMode: (mode: ThemeMode) => boolean;
   customThemes: ReadonlyArray<ThemeDefinition>;
   initialAppearance: ThemeAppearance;
+  refreshTheme: () => void;
+  isImportOpen: boolean;
+  onImportOpenChange: (open: boolean) => void;
   themeHalves: ThemeHalves | null;
   setThemeHalf: (appearance: ThemeAppearance, themeId: string | null) => boolean;
 }) {
@@ -544,7 +553,7 @@ export function ThemeLibrary({
     // Captured raw before persistTheme clears the mix: a half naming a
     // published theme whose set has not streamed in yet is pruned from the
     // `themeHalves` prop, and rebuilding from that would drop it.
-    const storedHalves = readThemeHalvesRaw() ?? {};
+    const storedHalves = readThemeHalvesRaw();
     // Keep the themes installed if we cannot move the selection off one of
     // them; the dialog stays open so the user can retry or cancel.
     if (removesBase && !persistTheme(appearanceMode === "system" ? "system" : appearanceMode)) {
@@ -595,7 +604,7 @@ export function ThemeLibrary({
         // Read raw, before persistTheme clears the mix: the other half may
         // name a published theme that has not streamed in yet, and falling
         // back to the base would silently rewrite it.
-        const otherOwner = readThemeHalvesRaw()?.[otherAppearance] ?? baseCardId;
+        const otherOwner = readThemeHalvesRaw()[otherAppearance] ?? baseCardId;
         if (!persistTheme(appearanceMode === "system" ? "system" : appearanceMode)) return;
         if (!setThemeHalf(otherAppearance, otherOwner)) {
           // Best-effort rollback: restore the whole-theme selection rather
@@ -837,12 +846,14 @@ export function ThemeLibrary({
 
   return (
     <div className="space-y-3">
-      <h3 className="px-3 text-sm font-normal tracking-[-0.005em] text-foreground/70 sm:px-4">
-        Color mode
+      <h3 className="px-3 text-sm font-normal text-foreground/70 sm:px-4">
+        {searchableSetting("color-scheme").title}
       </h3>
       {renderModeTiles()}
       <div className="flex min-h-8 flex-wrap items-center justify-between gap-3 px-3 pt-2 sm:px-4">
-        <h3 className="text-sm font-normal tracking-[-0.005em] text-foreground/70">Themes</h3>
+        <h3 className="text-sm font-normal text-foreground/70">
+          {searchableSetting("theme").title}
+        </h3>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             size="xs"
@@ -859,9 +870,58 @@ export function ThemeLibrary({
             <PaintbrushIcon />
             Create theme
           </Button>
+          <Button size="xs" variant="outline" onClick={() => onImportOpenChange(true)}>
+            <PlusIcon />
+            Add theme
+          </Button>
         </div>
       </div>
       {renderPairGrid()}
+      <ThemeImportDialog
+        onImportedMany={(importedThemes, { updated }) => {
+          // Re-apply after collection updates. The update may remove the
+          // selected variant, in which case the theme hook falls back safely.
+          if (updated) refreshTheme();
+          const verb = updated ? "updated" : "added";
+          toastManager.add(
+            stackedThreadToast({
+              type: "success",
+              title:
+                importedThemes.length === 1
+                  ? `${importedThemes[0]!.label} ${verb}`
+                  : `${importedThemes.length} themes ${verb}`,
+              description: importedThemes.map((imported) => imported.label).join(", "),
+            }),
+          );
+        }}
+        onImported={(importedTheme) => {
+          // Same rule as clicking the card: a one-appearance theme takes its
+          // side of the mix instead of becoming the base for both.
+          const modes = getThemeModes(importedTheme);
+          if (modes.length === 1) {
+            assignHalf(modes[0]!, importedTheme.id);
+            toastManager.add(
+              stackedThreadToast({
+                type: "success",
+                title: `${importedTheme.label} added`,
+                description: `It’s now your ${modes[0]!} theme.`,
+              }),
+            );
+            return true;
+          }
+          if (!persistTheme(importedTheme.id)) return false;
+          toastManager.add(
+            stackedThreadToast({
+              type: "success",
+              title: `${importedTheme.label} added`,
+              description: "It’s now active.",
+            }),
+          );
+          return true;
+        }}
+        onOpenChange={onImportOpenChange}
+        open={isImportOpen}
+      />
       <AlertDialog open={isThemeRemovalOpen} onOpenChange={setIsThemeRemovalOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
@@ -872,8 +932,8 @@ export function ThemeLibrary({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {canRemoveCollection
-                ? "Select the variants you want to remove."
-                : "This removes the saved theme from this browser."}
+                ? "Select the variants you want to remove. You can restore them by importing the extension again."
+                : "You can bring it back anytime by importing its JSON file."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {canRemoveCollection ? (

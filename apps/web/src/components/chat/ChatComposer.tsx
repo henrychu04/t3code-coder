@@ -89,6 +89,7 @@ import {
   makeComposerMentionDragHandlers,
 } from "./composerMentionDrag";
 import {
+  composerFloatingLayerProps,
   useComposerMenuProps,
   isInsideCollapsedComposerControls,
   isInsideRestingComposerControlScope,
@@ -227,6 +228,8 @@ import { matchComposerThreadItems } from "@t3tools/client-runtime/composerThread
 import { THREAD_CONTEXT_DROP_EVENT, threadContextDropTargetProps } from "./threadContextDrag";
 import { readThreadShell, useThreadShells } from "~/state/entities";
 import { requestConfirmDialog } from "~/confirmDialog";
+import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
+import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import type { ComposerContextClipboardFragment, ComposerContextRecord } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -999,6 +1002,7 @@ import {
   type SessionPhase,
   type Thread,
   type ThreadShell,
+  isVideoAttachment,
   videoMimeType,
 } from "../../types";
 import {
@@ -1781,6 +1785,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const nonPersistedComposerImageIds = attachmentDraft.nonPersistedImageIds;
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   const openPrLink = useOpenPrLink(routeThreadRef);
+  const [previewFileId, setPreviewFileId] = useState<string | null>(null);
+  const previewFile = composerFiles.find((file) => file.id === previewFileId);
   const composerContextActions = useMemo(
     () => ({
       environmentId,
@@ -1788,15 +1794,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const preview = buildExpandedImagePreview(composerImages, imageId);
         if (preview) onExpandImage(preview);
       },
-      // Coder: draft file and video attachments have no in-browser preview.
-      openFile: () => {},
-      expandVideo: () => {},
+      openFile: setPreviewFileId,
+      // Coder: only drafts whose bytes are still in memory preview; a submitted or reloaded
+      // video has no signed asset URL to play from.
+      expandVideo: (fileId: string) => {
+        const file = composerFiles.find((candidate) => candidate.id === fileId);
+        if (!file || !isVideoAttachment(file)) return;
+        const localPreview = buildExpandedImagePreview([file], file.id);
+        if (localPreview) onExpandImage(localPreview);
+      },
       openMention: (path: string) => useRightPanelStore.getState().openFile(routeThreadRef, path),
       openPullRequest: (event: React.MouseEvent<HTMLElement>, url: string) => {
         openPrLink(event, url);
       },
     }),
-    [composerImages, environmentId, onExpandImage, openPrLink, routeThreadRef],
+    [composerFiles, composerImages, environmentId, onExpandImage, openPrLink, routeThreadRef],
   );
   const composerContextRecords = useMemo(
     () =>
@@ -6900,7 +6912,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             kind="file"
                             theme={resolvedTheme}
                           />
-                          <span className="min-w-0 flex-1 truncate text-left">{file.name}</span>
+                          <button
+                            type="button"
+                            // Coder: a reloaded draft has no bytes left to preview.
+                            disabled={file.file === null}
+                            className="min-w-0 flex-1 truncate text-left enabled:hover:underline focus-visible:outline-2"
+                            onClick={() => setPreviewFileId(file.id)}
+                          >
+                            {file.name}
+                          </button>
                           <span className="shrink-0 text-xs text-secondary-label">
                             {needsReattach
                               ? canReattachFile
@@ -6956,6 +6976,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     : undefined
                 }
               >
+                {previewFile?.file ? (
+                  <Dialog
+                    open
+                    onOpenChange={(open) => {
+                      if (!open) setPreviewFileId(null);
+                    }}
+                  >
+                    <DialogPopup
+                      {...composerFloatingLayerProps}
+                      className="h-[min(85vh,52rem)] max-w-4xl overflow-hidden"
+                      showCloseButton={false}
+                    >
+                      <DialogTitle className="sr-only">{previewFile.name}</DialogTitle>
+                      <AttachmentFilePreview
+                        key={previewFile.id}
+                        name={previewFile.name}
+                        mimeType={previewFile.mimeType}
+                        sizeBytes={previewFile.sizeBytes}
+                        file={previewFile.file}
+                        origin="Draft"
+                        onRemove={() => {
+                          removeComposerFileFromDraft(previewFile.id);
+                          setPreviewFileId(null);
+                        }}
+                        onClose={() => setPreviewFileId(null)}
+                      />
+                    </DialogPopup>
+                  </Dialog>
+                ) : null}
                 <ComposerContextActionsContext value={composerContextActions}>
                   <ComposerPromptEditor
                     ariaLabel="Message"

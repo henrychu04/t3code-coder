@@ -28,8 +28,8 @@ where you started.
 - **Workspace management** — connect to Coder domains, start and stop workspaces, watch health
   and latency, and forward workspace ports to your machine.
 
-Codex and Claude Code are the only agents T3 Coder drives, and they always run inside the
-workspace — never on your computer. A workspace may provide either one or both.
+Codex, Claude Code, and Pi are the only agents T3 Coder drives, and they always run inside the
+workspace — never on your computer. A workspace may provide any of them.
 
 ## Requirements
 
@@ -41,7 +41,7 @@ On the local machine (macOS for development, Windows 11 for daily use):
 
 Inside each Linux Coder workspace:
 
-- Codex or Claude Code, already configured for API access in the workspace
+- Codex, Claude Code, or Pi, already configured for API access in the workspace
 - Git
 - GitLab CLI (`glab`), authenticated when using GitLab merge-request features
 - Nix with a configured `nixpkgs` (used once to provision a pinned Node.js runtime)
@@ -78,14 +78,18 @@ Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 | ---------------------------------------------------------------- | ------------------------------------------------------------ |
 | [Install and first run](./docs/user/getting-started.md)          | Requirements, setup, and the first connection                |
 | [Codex and Claude Code](./docs/user/providers.md)                | Availability, sign-in, models, skills, and provider settings |
+| [Pi](./docs/user/providers-pi.md)                                | Setting up Pi, permission modes, extensions, skills          |
 | [Coder workspaces](./docs/user/workspaces.md)                    | Domains, lifecycle, health, port forwards, troubleshooting   |
 | [Projects and threads](./docs/user/projects-and-threads.md)      | Organizing projects, threads, pins, snooze, archive          |
+| [Working with threads](./docs/user/thread-sidebar.md)            | Starting, ordering, settling, and finding threads            |
 | [Permission modes](./docs/user/permission-modes.md)              | How much the selected agent does on its own                  |
 | [Message composer](./docs/user/composer.md)                      | Images, files, skills, commands, stash, context              |
 | [Files in question answers](./docs/user/question-attachments.md) | Attaching files when an agent asks a question                |
 | [Files and search](./docs/user/files-and-search.md)              | Browsing, editing, and searching project files               |
 | [Images and screenshots](./docs/user/images-and-screenshots.md)  | Pasting images and viewing agent screenshots                 |
 | [Source control](./docs/user/source-control.md)                  | Diffs, branches, worktrees, commits, checkpoints             |
+| [Terminal history](./docs/user/terminal.md)                      | Scrollback limits and navigation                             |
+| [Appearance and themes](./docs/user/appearance.md)               | Themes, theme import, workspace themes, motion               |
 | [Keyboard shortcuts](./docs/user/keybindings.md)                 | Every shortcut and how to remap it                           |
 | [Product decisions](./docs/product-differences.md)               | What matches upstream and what changes for Coder             |
 
@@ -94,7 +98,7 @@ Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 T3 Coder is a Coder-only fork of the open-source [T3 Code](https://github.com/pingdotgg/t3code).
 It keeps the T3 Code interface and developer workflow but specializes it for Coder-managed Linux
 workspaces: no desktop or mobile apps, no hosted web or relay service, no telemetry or auto-update,
-only Codex and Claude Code as providers, and GitLab as the only hosted source-control provider.
+only Codex, Claude Code, and Pi as providers, and GitLab as the only hosted source-control provider.
 Git and `glab` run inside the workspace
 through the existing Coder RPC connection; the local gateway never handles GitLab credentials.
 Where upstream and T3 Coder share behavior, upstream's documentation is the source of truth; T3

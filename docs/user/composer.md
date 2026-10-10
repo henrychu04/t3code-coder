@@ -111,8 +111,10 @@ with at most 80 MiB of images. You can also attach files to a question answer; s
 
 Thumbnails appear above the input with queue and upload percentage indicators. You can keep editing
 and pasting images during uploads; Send waits until all images are ready. Retry or remove failed
-uploads. Click a thumbnail to open the gallery, or remove an image to cancel or omit it. Transfers
-stay with the originating draft when you switch threads.
+uploads. Click a thumbnail to open the gallery, or remove an image to cancel or omit it. Click a
+file's name to preview it in the browser, or a video to play it in the gallery; previews read the
+copy still in browser memory, so a draft restored after a reload offers none. Transfers stay with
+the originating draft when you switch threads.
 
 See [Images and screenshots](./images-and-screenshots.md) for the other direction — viewing
 screenshots Codex or Claude produces during a turn.

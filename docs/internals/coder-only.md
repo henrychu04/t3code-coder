@@ -658,9 +658,11 @@ listed here is drift to remove rather than fork behavior to keep.
     upstream's ephemeral `pi --mode rpc --no-session` process). Text generation is
     upstream's except that Codex reads branch-name and title images through
     `PastedImageAttachments.ts`, skipping an unreadable image as upstream does.
-  - The helper serves upstream's agent-session scan and import RPCs, scanning only the workspace's
-    own Codex and Claude session stores. `server.ts` provides the scanner beside the helper RPC
-    layer, as upstream does beside its WebSocket layer. The browser does not offer the import yet.
+  - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
+    session stores through the helper. `server.ts` provides the scanner beside the helper RPC
+    layer, as upstream does beside its WebSocket layer. Upstream offers the import in its welcome
+    wizard, which is not carried; `ImportAgentSessionsDialog.tsx` reuses that import step from
+    **Settings → Providers → History** for the selected workspace.
   - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
     unavailable; providers authenticate through the workspace's API configuration.
     `CodexManagedRuntime` keeps only upstream's resolution contract.
@@ -755,8 +757,11 @@ listed here is drift to remove rather than fork behavior to keep.
   reports authenticated, writable access. Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
-  element captures, SnapShot, upstream's large-paste-to-file folding, remote icons, and in-browser
-  previews of draft file and video attachments. A context fragment pasted from another workspace
+  element captures, SnapShot, upstream's large-paste-to-file folding, and remote icons. Draft file
+  and video attachments preview from their in-memory bytes as on main: files open in
+  `files/AttachmentFilePreview.tsx` (upstream's viewer without signed-URL loading or its Save
+  action) and videos in the gallery. A draft restored after a reload has no bytes, so it has no
+  preview. A context fragment pasted from another workspace
   brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks. Images
   and files move through the gateway and SCP (see
   [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
@@ -918,7 +923,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
-  pairing, external agent-session imports, or `keybindings.json` editor.
+  pairing, or `keybindings.json` editor. Appearance's **Add theme** is upstream's
+  `ThemeImportDialog` without its remote theme catalog search or desktop file picker: the browser
+  reads picked, dropped, or pasted theme files itself. Custom themes have no Export action.
 - **Scheduled tasks.** Settings → Scheduled tasks and its draft logic are upstream's, including
   interval and fixed-time schedules, run-now, and webhook draft round-tripping. T3 Coder serves no
   inbound webhook route, so the editor has no "On webhook" option, URL field, token rotation, or
@@ -1018,6 +1025,7 @@ source paths. Artifact, worktree, and rotated-log policies are disabled by defau
 Upstream's **Delete now** action and latest cleanup report travel over the helper's
 `server.runStorageCleanup` and `server.getStorageCleanupReport` RPCs; the report keeps only the
 latest sweep in helper memory. Each of these is marked `Coder:`:
+
 - `server.ts` builds `StorageCleanup.layer` after `CoderRuntimeStartup` completes, where upstream
   parks its sweeps until server activation.
 - The report calls artifact rows "saved image artifacts".

@@ -2,6 +2,8 @@
 // carries a helper source that the dialog reads through bounded `projects.readImage` chunks, and
 // legacy screenshot artifacts are resolved by `CapturedImageDialog`.
 import type { ScopedThreadRef, ScreenshotArtifactReference } from "@t3tools/contracts";
+import type { ComposerFileAttachment } from "../../composerDraftStore";
+import { isVideoAttachment } from "../../types";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
 import type { ProjectMediaSource } from "./useProjectVideo";
@@ -111,16 +113,26 @@ export function expandedImageKey(preview: ExpandedImagePreview): string {
   return `${identity}:${preview.index}`;
 }
 
-/** Upstream's preview builder for composer images already in memory; Coder has no video drafts. */
+/** Upstream's preview builder for composer images and draft videos already in memory. */
 export function buildExpandedImagePreview(
-  images: ReadonlyArray<{
-    readonly id: string;
-    readonly type: string;
-    readonly name: string;
-    readonly previewUrl?: string | undefined;
-  }>,
+  images: ReadonlyArray<
+    | {
+        readonly id: string;
+        readonly type: "image";
+        readonly name: string;
+        readonly previewUrl?: string | undefined;
+      }
+    | ComposerFileAttachment
+  >,
   selectedImageId: string,
 ): ExpandedImagePreview | null {
+  const selected = images.find((image) => image.id === selectedImageId);
+  if (selected?.type === "file" && selected.file && isVideoAttachment(selected)) {
+    return {
+      images: [{ src: URL.createObjectURL(selected.file), name: selected.name, type: "video" }],
+      index: 0,
+    };
+  }
   const previewableImages = images.flatMap((image) =>
     image.type === "image" && image.previewUrl
       ? [{ id: image.id, src: image.previewUrl, name: image.name }]
