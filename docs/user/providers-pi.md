@@ -1,13 +1,13 @@
 # Pi
 
-T3 Coderr can use the Pi coding agent installed in your Coder workspace while keeping Pi's models,
+T3 Coder can use the Pi coding agent installed in your Coder workspace while keeping Pi's models,
 API configuration, extensions, skills, context files, and native session history. Pi runs only in
-the workspace; T3 Coderr never installs it or asks for its credentials.
+the workspace; T3 Coder never installs it or asks for its credentials.
 
 ## Set Up Pi
 
 1. Install Pi in the Coder workspace, usually through its template. Pi 1.0 is recommended; 0.80.5
-   is the oldest version T3 Coderr supports.
+   is the oldest version T3 Coder supports.
 2. Run Pi once in a workspace terminal and finish the API-key setup you normally use. Pi keeps it
    in the workspace's `~/.pi/agent`.
 3. Open **Settings → Providers**, enable Pi, and refresh the provider.

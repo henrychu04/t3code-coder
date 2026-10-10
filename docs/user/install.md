@@ -71,8 +71,10 @@ or:
 claude auth login
 ```
 
+For Pi, run `pi` once and finish its API-key setup; see [Pi](./providers-pi.md).
+
 Reconnect to the workspace after authentication so T3 Coder can read the updated provider status.
-A workspace can use only Codex, only Claude Code, or both.
+A workspace can use any combination of Codex, Claude Code, and Pi.
 
 T3 Coder warns when a workspace provider version has known compatibility problems with this
 release. **Settings → Providers** shows the recommended version or range; update the CLI in the
@@ -80,6 +82,7 @@ workspace the same way you installed it. An unlisted version is unverified.
 
 ## Next steps
 
-- [Codex and Claude Code](./providers.md)
+- [Codex, Claude Code, and Pi](./providers.md)
+- [Pi](./providers-pi.md)
 - [Access modes](./permission-modes.md)
 - [Coder workspaces](./workspaces.md)
