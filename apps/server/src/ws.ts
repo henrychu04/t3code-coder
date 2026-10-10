@@ -119,6 +119,7 @@ import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner
 import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -853,6 +854,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
     const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
     const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
+    const storageCleanup = yield* StorageCleanup.StorageCleanup;
     const serverCommandId = (tag: string) =>
       crypto.randomUUIDv4.pipe(
         Effect.orDie,
@@ -1642,6 +1644,8 @@ export const layer = CoderWsRpcGroup.toLayer(
           const keybindingsConfig = yield* keybindings.removeKeybindingRule(rule);
           return { keybindings: keybindingsConfig, issues: [] };
         }),
+      [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
+      [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
       [WS_METHODS.serverGetSettings]: (_input) =>
         serverSettings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
       // Coder: workspace settings have no device hosts to resolve.

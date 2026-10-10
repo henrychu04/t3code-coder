@@ -701,7 +701,7 @@ listed here is drift to remove rather than fork behavior to keep.
     upload, and HTTP content search) and adds the helper-only methods and `CoderWsRpcGroup`, the
     only group the helper serves. That group carries upstream's thread find
     (`searchThread`, `searchThreadStream`), turn-item reads, passive terminal observation, agent
-    secret answers, and the MCP Apps methods. Upstream's `EnvironmentAuthorizationError` stays in
+    secret answers, storage cleanup runs and reports, and the MCP Apps methods. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
   - `ServerConfig` omits auth, editors, remote open targets, and observability.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
@@ -956,3 +956,9 @@ workspace lease as provider startup and terminal open/restart, rechecks sessions
 and preserves branches and thread history. Artifact retention maps upstream's browser-artifact
 store to the legacy `screenshotArtifactsDir`; it never visits `attachmentsDir` or current image
 source paths. Artifact, worktree, and rotated-log policies are disabled by default.
+Upstream's **Delete now** action and latest cleanup report travel over the helper's
+`server.runStorageCleanup` and `server.getStorageCleanupReport` RPCs; the report keeps only the
+latest sweep in helper memory. Each of these is marked `Coder:`:
+- `server.ts` builds `StorageCleanup.layer` after `CoderRuntimeStartup` completes, where upstream
+  parks its sweeps until server activation.
+- The report calls artifact rows "saved image artifacts".

@@ -60,6 +60,7 @@ export const layer = Layer.effect(
           requiredWorktreeBootstrap: true,
           projectCloneTracking: true,
           storageCleanup: true,
+          storageCleanupRun: true,
           projectWorktreeCleanup: true,
           pullRequests: true,
           connectionProbe: true,

@@ -186,7 +186,6 @@ export function buildMenuItems(
     canCreateChangeRequest &&
     !isBusy &&
     hasBranch &&
-    !hasChanges &&
     !hasOpenPr &&
     hasDefaultBranchDelta &&
     !isBehind &&
