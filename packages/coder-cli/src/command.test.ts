@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { deepStrictEqual, match, strictEqual, throws } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -20,13 +20,15 @@ import {
   buildCoderScpConfigInvocation,
   buildCoderWorkspaceShellInvocation,
   buildCoderWorkspaceStatsInvocation,
-  buildCoderWorkspaceProbeInvocation,
+  REMOTE_HELPER_BUNDLE_HASH_FILE,
   REMOTE_HELPER_COMMAND,
+  REMOTE_HELPER_INSTALL_REQUIRED_SENTINEL,
   REMOTE_HELPER_READY_SENTINEL,
   REMOTE_NODE_COMMAND,
-  REMOTE_WORKSPACE_PROBE_COMMAND,
+  REMOTE_WORKSPACE_PREFLIGHT_COMMAND,
   REMOTE_WORKSPACE_STATS_COMMAND,
   quotePosixShellArgument,
+  remoteHelperBundleCheck,
 } from "./command.ts";
 import type { CoderDeploymentProfile, CoderWorkspaceProfile } from "./profile.ts";
 
@@ -83,19 +85,7 @@ describe("Coder CLI command construction", () => {
     throws(() => buildCoderLoginInvocation(deployment, { globalConfig: " " }));
   });
 
-  it("builds Linux probe and foreground helper invocations as argument arrays", () => {
-    deepStrictEqual(buildCoderWorkspaceProbeInvocation(deployment, workspace).args, [
-      "--no-version-warning",
-      "--url",
-      "https://coder.example.gs.com",
-      "ssh",
-      "equities-dev",
-      "--",
-      "sh",
-      "-l",
-      "-c",
-      quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
-    ]);
+  it("builds the preflighted foreground helper invocation as an argument array", () => {
     deepStrictEqual(buildCoderWorkspaceStatsInvocation(deployment, workspace).args, [
       "--no-version-warning",
       "--url",
@@ -123,7 +113,7 @@ describe("Coder CLI command construction", () => {
       "-c",
       quotePosixShellArgument(
         [
-          "set -eu",
+          REMOTE_WORKSPACE_PREFLIGHT_COMMAND,
           "stty raw -echo 2>/dev/null || true",
           `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
           [
@@ -138,28 +128,85 @@ describe("Coder CLI command construction", () => {
       ),
     ]);
     match(
-      REMOTE_WORKSPACE_PROBE_COMMAND,
+      REMOTE_WORKSPACE_PREFLIGHT_COMMAND,
       /if ! \[ -x .*node24\/bin\/node.*nix-env --profile .*node24.*nixpkgs\.nodejs_24.*; fi/u,
     );
-    strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("--attr-path"), false);
-    strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("github:"), false);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /process\.exit\(major >= 24 \? 0 : 1\)/u);
-    strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("24.10"), false);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/node24\/bin\/node/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v codex/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v pi/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /requires Claude Code, Codex, or Pi/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /workspace HOME directory/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/attachments/u);
+    strictEqual(REMOTE_WORKSPACE_PREFLIGHT_COMMAND.includes("--attr-path"), false);
+    strictEqual(REMOTE_WORKSPACE_PREFLIGHT_COMMAND.includes("github:"), false);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /process\.exit\(major >= 24 \? 0 : 1\)/u);
+    strictEqual(REMOTE_WORKSPACE_PREFLIGHT_COMMAND.includes("24.10"), false);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /\.t3-coder\/node24\/bin\/node/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /command -v claude/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /command -v codex/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /command -v pi/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /requires Claude Code, Codex, or Pi/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /workspace HOME directory/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /\.t3-coder\/attachments/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /T3_CODER_PREFLIGHT_FAILED: /u);
     strictEqual(quotePosixShellArgument("a b'c"), "'a b'\\''c'");
   });
+
+  it("checks the installed helper bundle only when a hash is expected", () => {
+    const hash = "a".repeat(64);
+    const command = buildCoderHelperInvocation(deployment, workspace, {
+      expectedBundleHash: hash,
+    }).args.at(-1)!;
+    match(command, new RegExp(`${REMOTE_HELPER_BUNDLE_HASH_FILE}.*= "${hash}"`, "u"));
+    match(command, new RegExp(REMOTE_HELPER_INSTALL_REQUIRED_SENTINEL, "u"));
+    strictEqual(
+      buildCoderHelperInvocation(deployment, workspace)
+        .args.at(-1)!
+        .includes(REMOTE_HELPER_INSTALL_REQUIRED_SENTINEL),
+      false,
+    );
+    throws(
+      () =>
+        buildCoderHelperInvocation(deployment, workspace, { expectedBundleHash: "abc; rm -rf ~" }),
+      /SHA-256/u,
+    );
+  });
+
+  it(
+    "asks for an install unless the installed bundle hash matches",
+    { skip: process.platform === "win32" },
+    () => {
+      const hash = "b".repeat(64);
+      const bundleCheck = remoteHelperBundleCheck(hash);
+      const home = mkdtempSync(join(tmpdir(), "t3-coder-bundle-"));
+      try {
+        const run = () =>
+          spawnSync("/bin/sh", ["-c", `${bundleCheck}; printf 'LAUNCH\\n'`], {
+            env: { HOME: home, PATH: "/usr/bin:/bin" },
+            shell: false,
+            encoding: "utf8",
+          });
+        const missing = run();
+        strictEqual(missing.status, 3);
+        strictEqual(missing.stdout, `${REMOTE_HELPER_INSTALL_REQUIRED_SENTINEL}\n`);
+        mkdirSync(join(home, ".t3-coder", "bin", "workspace-helper"), { recursive: true });
+        writeFileSync(
+          join(home, ".t3-coder", "bin", "workspace-helper", REMOTE_HELPER_BUNDLE_HASH_FILE),
+          `${"c".repeat(64)}\n`,
+        );
+        strictEqual(run().status, 3);
+        writeFileSync(
+          join(home, ".t3-coder", "bin", "workspace-helper", REMOTE_HELPER_BUNDLE_HASH_FILE),
+          `${hash}\n`,
+        );
+        const current = run();
+        strictEqual(current.status, 0);
+        strictEqual(current.stdout, "LAUNCH\n");
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    },
+  );
 
   it(
     "accepts a workspace that provides any one supported provider",
     { skip: process.platform === "win32" },
     () => {
-      const providerCheck = REMOTE_WORKSPACE_PROBE_COMMAND.split("; ").find((clause) =>
+      const providerCheck = REMOTE_WORKSPACE_PREFLIGHT_COMMAND.split("; ").find((clause: string) =>
         clause.startsWith("command -v claude"),
       );
       strictEqual(typeof providerCheck, "string");

@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -12,6 +12,7 @@ import * as Option from "effect/Option";
 import {
   buildCoderScpConfigInvocation,
   buildCoderWorkspaceShellInvocation,
+  REMOTE_HELPER_BUNDLE_HASH_FILE,
   type CoderInvocation,
   type CoderInvocationOptions,
 } from "./command.ts";
@@ -307,15 +308,44 @@ function cleanupRemoteTransfer(
   );
 }
 
+/**
+ * SHA-256 over the helper bundle's relative file paths and contents, in a fixed order. The
+ * helper launch compares it with the installed copy to skip a transfer when nothing changed.
+ */
+export async function hashCoderHelperBundle(bundlePath: string): Promise<string> {
+  const files: string[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await NodeFS.readdir(directory, { withFileTypes: true })) {
+      const entryPath = NodePath.join(directory, entry.name);
+      if (entry.isDirectory()) await walk(entryPath);
+      else if (entry.isFile()) files.push(NodePath.relative(bundlePath, entryPath));
+      else throw new Error("Coder helper bundle contains an unsupported file type.");
+    }
+  };
+  await walk(bundlePath);
+  const hash = createHash("sha256");
+  for (const file of files.map((path) => path.split(NodePath.sep).join("/")).toSorted()) {
+    const contents = await NodeFS.readFile(NodePath.join(bundlePath, ...file.split("/")));
+    hash.update(`${file}\0${String(contents.byteLength)}\0`);
+    hash.update(contents);
+  }
+  return hash.digest("hex");
+}
+
 export function installCoderHelperWithScp(input: {
   readonly deployment: CoderDeploymentProfile;
   readonly workspace: CoderWorkspaceProfile;
   readonly helperBundlePath: string;
+  /** Recorded beside the installed helper so the next launch can skip an unchanged install. */
+  readonly bundleHash?: string;
   readonly invocationOptions?: CoderInvocationOptions;
   readonly platform?: NodeJS.Platform;
   readonly scpExecutable?: string;
 }): Effect.Effect<void, CoderProcessError> {
   return Effect.gen(function* () {
+    if (input.bundleHash !== undefined && !/^[a-f0-9]{64}$/.test(input.bundleHash)) {
+      return yield* Effect.fail(new CoderProcessError("Invalid helper bundle hash."));
+    }
     const remotePath = `.t3-coder/bin/workspace-helper.tmp.${randomUUID()}`;
     const install = Effect.gen(function* () {
       yield* copyWithCoderScp({
@@ -335,6 +365,11 @@ export function installCoderHelperWithScp(input: {
         'backup="$HOME/.t3-coder/bin/workspace-helper.previous"',
         '[ -f "$temporary/index.mjs" ]',
         'chmod 700 "$temporary/index.mjs"',
+        ...(input.bundleHash === undefined
+          ? []
+          : [
+              `printf '%s\\n' '${input.bundleHash}' > "$temporary/${REMOTE_HELPER_BUNDLE_HASH_FILE}"`,
+            ]),
         'rm -rf "$backup"',
         'if [ -e "$final" ]; then mv "$final" "$backup"; fi',
         'if mv "$temporary" "$final"; then rm -rf "$backup"; else if [ -e "$backup" ]; then mv "$backup" "$final"; fi; exit 1; fi',

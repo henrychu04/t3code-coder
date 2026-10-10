@@ -29,6 +29,8 @@ function fakeHelper(): FakeHelper {
       info: {} as never,
       closed: Effect.never,
       sendRpc: (message) => Effect.sync(() => void sent.push(message)),
+      needsDrain: () => false,
+      drained: Effect.void,
       onRpcMessage: (listener) => {
         listeners.add(listener);
         return () => listeners.delete(listener);

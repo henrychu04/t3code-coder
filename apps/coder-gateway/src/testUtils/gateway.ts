@@ -28,6 +28,7 @@ type Options = Omit<
 > & {
   connectHelper?: (
     invocation: Parameters<NonNullable<LocalCoderGatewayEffectOptions["connectHelper"]>>[0],
+    hooks: Parameters<NonNullable<LocalCoderGatewayEffectOptions["connectHelper"]>>[1],
   ) => Promise<PromiseCoderHelperConnection>;
   connectPortForward?: (
     invocation: Parameters<NonNullable<LocalCoderGatewayEffectOptions["connectPortForward"]>>[0],
@@ -108,8 +109,11 @@ export async function startLocalCoderGateway(options: Options = {}) {
   );
   if (connectHelper)
     Object.assign(effectOptions, {
-      connectHelper: (invocation: Parameters<typeof connectHelper>[0]) =>
-        acquireConnection(() => connectHelper(invocation)).pipe(
+      connectHelper: (
+        invocation: Parameters<typeof connectHelper>[0],
+        hooks: Parameters<typeof connectHelper>[1],
+      ) =>
+        acquireConnection(() => connectHelper(invocation, hooks)).pipe(
           Effect.map((connection) => ({
             info: connection.info,
             closed: fromPromise(() => connection.closed).pipe(Effect.orDie),
@@ -123,6 +127,8 @@ export async function startLocalCoderGateway(options: Options = {}) {
                   }),
               }),
             onRpcMessage: connection.onRpcMessage,
+            needsDrain: () => false,
+            drained: Effect.void,
           })),
         ),
     });

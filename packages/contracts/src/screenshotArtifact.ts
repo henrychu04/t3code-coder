@@ -12,7 +12,12 @@ import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./chatAttachment.ts";
 import { ProjectFilesOwnerFields } from "./project.ts";
 
 export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
-export const MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES = 512 * 1024;
+/**
+ * Coder: one bounded helper read for images, media, attachments, and turn-item assets. 4 MiB of
+ * bytes is about 5.3 MiB of base64, which leaves room for the RPC envelope beneath the gateway's
+ * 8 MiB frame limit while keeping a 256 MiB video to 64 reads.
+ */
+export const MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES = 4 * 1024 * 1024;
 /** Workspace video and audio are read whole into browser memory, so they keep a larger explicit bound. */
 export const MAX_PROJECT_MEDIA_BYTES = 256 * 1024 * 1024;
 

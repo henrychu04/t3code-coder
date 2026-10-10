@@ -57,7 +57,8 @@ responses, and interrupts every still-active request when the session detaches. 
 ends only that logical session and is not forwarded to the helper. If interrupted requests do not
 terminate within five seconds, the gateway closes the helper instead of retaining unowned work.
 The gateway translates frame-delimited browser RPC into newline-delimited helper RPC and does not
-persist those application messages.
+persist those application messages. While the helper's stdin is backed up, the gateway stops reading
+browser frames until it drains, so a slow helper pushes back instead of growing gateway memory.
 
 The browser estimates workspace latency by timing `server.probe` RPC round-trips over the
 workspace's existing WebSocket session, so a sample covers the whole path the user's input takes:
@@ -268,10 +269,13 @@ created. Errors caught and discarded outside these boundaries cannot be observed
 Development is supported on macOS. The production local host is Windows 11 with the OpenSSH Client
 feature installed, so local paths and processes must use Node platform APIs and argument-array
 spawning with `shell: false`. The initial
-workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
-remote OS and architecture, realizes a Node.js 24 package from the workspace's configured
-`nixpkgs` only when that runtime is not already available, and checks Git, at least one of Claude
-Code, Codex, or Pi, and the workspace state directory. As upstream, server settings keep sensitive provider
+workspace target is Linux x86-64. The helper launch is one foreground `coder ssh` session that
+first runs the workspace preflight: it checks the remote OS and architecture, realizes a Node.js
+24 package from the workspace's configured `nixpkgs` only when that runtime is not already
+available, and checks Git, at least one of Claude Code, Codex, or Pi, and the workspace state
+directory. A failed check prints a `T3_CODER_PREFLIGHT_FAILED:` line, which the gateway reports.
+The preflight has its own five-minute budget; helper negotiation starts its 60-second budget only
+after the launch prints the ready sentinel. As upstream, server settings keep sensitive provider
 environment values out of `settings.json` in a `0700` secrets directory in that state directory;
 they never leave the workspace. The helper carries its locked Linux x86-64 `node-pty` runtime and
 is launched with the Nix package's absolute Node path without changing `PATH`, so workspace shells
@@ -411,7 +415,8 @@ to an exact file; the helper checks its opened path, device and inode, rejects n
 validates each file's signature against its extension: PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and
 ICO images; MP4, M4V, MOV, WebM, OGV, MKV, and AVI videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and
 AIFF audio. No remote URLs or general file reads are accepted. Each image is limited to 20 MiB, each
-video or audio file to 256 MiB, and each stdio chunk to 512 KiB. A revision based on file identity,
+video or audio file to 256 MiB, and each stdio chunk to 4 MiB (about 5.3 MiB of base64, beneath
+the 8 MiB frame limit). A revision based on file identity,
 size, and modification/change timestamps must remain constant across chunks; a changed file fails
 with a generic retryable error. No file content or path is included in image errors.
 
@@ -994,9 +999,14 @@ listed here is drift to remove rather than fork behavior to keep.
 lockfile, including the locked native runtime packages needed by terminals and workspace search,
 then starts the local gateway without opening a browser. Connecting never installs from npm or
 downloads an application update. The first connection may download the pinned Node.js package
-through Nix if it is not already in the workspace's Nix store. On the first connection to a
-workspace in each local gateway session, the gateway replaces the remote helper directory with
-that locally built bundle through Coder before starting it in the foreground.
+through Nix if it is not already in the workspace's Nix store. The gateway hashes the locally
+built helper bundle (SHA-256 over its relative paths and contents) once per session and passes the
+hash to the helper launch, which compares it with the `.t3-bundle-sha256` file in the installed
+helper directory. When they differ, the launch prints `T3_CODER_HELPER_INSTALL_REQUIRED` and exits
+before starting the helper; the gateway then replaces the remote helper directory with the local
+bundle through helper-scoped SCP, records the hash, and launches again. A workspace whose helper
+is current therefore connects with one `coder ssh` session and no transfer. Connection diagnostics
+show the preflight, any installation, and helper negotiation as separate phases.
 
 ### Workspace retention
 

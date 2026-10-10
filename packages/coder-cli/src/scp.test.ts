@@ -11,6 +11,7 @@ import * as Fiber from "effect/Fiber";
 
 import {
   buildCoderScpInvocation,
+  hashCoderHelperBundle,
   installCoderHelperWithScp,
   runProcess,
   scopeCoderScpConfig,
@@ -68,6 +69,84 @@ describe("Coder SCP", () => {
         }),
       );
       strictEqual(await NodeFS.readFile(marker, "utf8"), "http://127.0.0.1:55559");
+    } finally {
+      await NodeFS.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("hashes a helper bundle by relative path and contents", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-bundle-"));
+    try {
+      await NodeFS.mkdir(NodePath.join(directory, "runtime"));
+      await NodeFS.writeFile(NodePath.join(directory, "index.mjs"), "export {};\n");
+      await NodeFS.writeFile(NodePath.join(directory, "runtime", "pty.node"), "binary");
+      const first = await hashCoderHelperBundle(directory);
+      match(first, /^[a-f0-9]{64}$/u);
+      strictEqual(await hashCoderHelperBundle(directory), first);
+      await NodeFS.writeFile(NodePath.join(directory, "runtime", "pty.node"), "binarx");
+      const changed = await hashCoderHelperBundle(directory);
+      strictEqual(changed === first, false);
+      await NodeFS.rename(
+        NodePath.join(directory, "runtime", "pty.node"),
+        NodePath.join(directory, "runtime", "pty2.node"),
+      );
+      strictEqual((await hashCoderHelperBundle(directory)) === changed, false);
+    } finally {
+      await NodeFS.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("records the bundle hash in the installed helper and validates it first", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-scp-hash-"));
+    const executable = NodePath.join(directory, "coder");
+    const scpExecutable = NodePath.join(directory, "scp");
+    const commands = NodePath.join(directory, "commands");
+    await NodeFS.writeFile(
+      executable,
+      [
+        "#!/usr/bin/env node",
+        'const fs = require("node:fs");',
+        "const args = process.argv;",
+        'const index = args.indexOf("--ssh-config-file");',
+        "if (index >= 0) {",
+        '  const prefix = args[args.indexOf("--ssh-host-prefix") + 1];',
+        "  fs.writeFileSync(args[index + 1], `Host ${prefix}*\\n  ProxyCommand coder ssh --stdio %h\\n`);",
+        "} else {",
+        `  fs.appendFileSync(${JSON.stringify(commands)}, args.at(-1) + "\\n");`,
+        "}",
+      ].join("\n"),
+      { mode: 0o700 },
+    );
+    await NodeFS.writeFile(scpExecutable, "#!/usr/bin/env node\n", { mode: 0o700 });
+    const input = {
+      deployment: {
+        id: "deployment",
+        name: "Deployment",
+        url: "http://127.0.0.1:55559",
+        executable,
+      },
+      workspace: {
+        id: "workspace",
+        name: "Workspace",
+        deploymentId: "deployment",
+        workspace: "workspace",
+      },
+      helperBundlePath: NodePath.join(directory, "workspace-helper"),
+      scpExecutable,
+    };
+    try {
+      const hash = "d".repeat(64);
+      await Effect.runPromise(installCoderHelperWithScp({ ...input, bundleHash: hash }));
+      const finalize = await NodeFS.readFile(commands, "utf8");
+      const hashWrite = finalize.indexOf(`${hash}'\\'' > "$temporary/.t3-bundle-sha256"`);
+      strictEqual(hashWrite > 0, true);
+      strictEqual(hashWrite < finalize.indexOf('if mv "$temporary" "$final"'), true);
+      await NodeFS.rm(commands);
+      await rejects(
+        Effect.runPromise(installCoderHelperWithScp({ ...input, bundleHash: "'; rm -rf ~; '" })),
+        /Invalid helper bundle hash/u,
+      );
+      await rejects(NodeFS.access(commands));
     } finally {
       await NodeFS.rm(directory, { recursive: true, force: true });
     }
