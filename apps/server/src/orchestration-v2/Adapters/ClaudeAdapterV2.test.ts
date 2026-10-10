@@ -1,15 +1,12 @@
-// @effect-diagnostics nodeBuiltinImport:off - the fake Claude CLI hands the SDK Node streams.
-import * as NodeEvents from "node:events";
+// @effect-diagnostics nodeBuiltinImport:off - the fake Claude CLI's log is read on the wall clock.
+import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
-import * as NodeStream from "node:stream";
 
 import type {
   Query as ClaudeQuery,
   SDKMessage,
   SDKResultMessage,
   SDKUserMessage,
-  SpawnedProcess,
-  SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AskUserQuestionInput,
@@ -1850,56 +1847,61 @@ describe("ClaudeAdapterV2 native fork", () => {
   );
 });
 
-// Stands in for the Claude CLI behind the SDK's spawn hook: records how it was
-// started and answers stdin control requests, except mcp_set_servers if asked.
-function makeFakeClaudeCli(answerSetServers = true) {
-  const spawns: Array<SpawnOptions> = [];
-  const controlRequests: Array<object> = [];
-  const stdins: Array<NodeStream.PassThrough> = [];
-  const spawn = (options: SpawnOptions): SpawnedProcess => {
-    spawns.push(options);
-    const stdin = new NodeStream.PassThrough();
-    const stdout = new NodeStream.PassThrough();
-    stdins.push(stdin);
-    const child = Object.assign(new NodeEvents.EventEmitter(), {
-      stdin,
-      stdout,
-      killed: false,
-      exitCode: null as number | null,
-      kill: () => {
-        stdout.end();
-        child.emit("exit", null, "SIGTERM");
-        return true;
-      },
-    });
-    let pending = "";
-    stdin.on("data", (chunk: Buffer) => {
-      pending += chunk.toString("utf8");
-      for (let end = pending.indexOf("\n"); end >= 0; end = pending.indexOf("\n")) {
-        const frame = JSON.parse(pending.slice(0, end));
-        pending = pending.slice(end + 1);
-        if (frame.type !== "control_request") continue;
-        controlRequests.push(frame.request);
-        const setServers = frame.request.subtype === "mcp_set_servers";
-        if (setServers && !answerSetServers) continue;
-        const response = {
-          subtype: "success",
-          request_id: frame.request_id,
-          response: setServers ? { added: [], removed: [], errors: {} } : {},
-        };
-        stdout.write(`${JSON.stringify({ type: "control_response", response })}\n`);
-      }
-    });
-    stdin.on("end", () => {
-      stdout.end();
-      child.emit("exit", 0, null);
-    });
-    return child;
+// Coder: the workspace CLI transport has no SDK spawn hook, so a fake `claude` executable stands
+// in for the CLI. It logs its argv, whether its environment carries the credential, every stdin
+// control request, and its exit, and answers control requests except mcp_set_servers if asked.
+const makeFakeClaudeCli = Effect.fnUntraced(function* (answerSetServers = true) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-mcp-" });
+  const executable = `${directory}/fake-claude.mjs`;
+  const logPath = `${directory}/log.jsonl`;
+  yield* fileSystem.writeFileString(
+    executable,
+    `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const log = (entry) => appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(entry) + "\\n");
+log({ argv: process.argv.slice(2), envHasCredential: JSON.stringify(process.env).includes("dummy-mcp-credential") });
+process.on("SIGTERM", () => { log({ closed: true }); process.exit(0); });
+const lines = createInterface({ input: process.stdin });
+lines.on("close", () => { log({ closed: true }); process.exit(0); });
+lines.on("line", (line) => {
+  const frame = JSON.parse(line);
+  if (frame.type !== "control_request") return;
+  log({ request: frame.request });
+  const setServers = frame.request.subtype === "mcp_set_servers";
+  if (setServers && !${answerSetServers}) return;
+  const response = {
+    subtype: "success",
+    request_id: frame.request_id,
+    response: setServers ? { added: [], removed: [], errors: {} } : {},
   };
-  // The SDK closes the CLI by ending its stdin.
-  const closed = () => stdins.length > 0 && stdins.every((stdin) => stdin.writableEnded);
-  return { spawn, spawns, controlRequests, closed };
-}
+  process.stdout.write(JSON.stringify({ type: "control_response", response }) + "\\n");
+});
+`,
+  );
+  yield* fileSystem.chmod(executable, 0o700);
+  const entries = fileSystem.readFileString(logPath).pipe(
+    Effect.orElseSucceed(() => ""),
+    Effect.map((text) =>
+      text
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line) as Record<string, unknown>),
+    ),
+  );
+  // The transport closes the CLI by ending its stdin, then signalling it; the exit is real, so
+  // poll on the wall clock rather than the test clock.
+  const waitUntilClosed = Effect.promise(async () => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const text = await NodeFS.readFile(logPath, "utf8").catch(() => "");
+      if (text.includes('"closed":true')) return true;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return false;
+  });
+  return { executable, entries, waitUntilClosed };
+});
 
 describe("ClaudeAdapterV2 MCP credential channel", () => {
   const t3McpServer = {
@@ -1907,7 +1909,7 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
     url: "http://127.0.0.1:43123/mcp",
     headers: { Authorization: "Bearer dummy-mcp-credential" },
   };
-  const openWith = (cli: ReturnType<typeof makeFakeClaudeCli>) =>
+  const openWith = (executable: string) =>
     Effect.gen(function* () {
       const runner = yield* ClaudeAdapterV2.ClaudeAgentSdkQueryRunner;
       return yield* runner.open({
@@ -1919,11 +1921,10 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
             nativeThreadId: "native-thread-claude-mcp-channel",
             resume: false,
             cwd: null,
-            environment: { PATH: "/usr/bin" },
+            environment: { PATH: process.env.PATH ?? "/usr/bin" },
             mcpServers: { "t3-code": t3McpServer },
           }),
-          pathToClaudeCodeExecutable: "/opt/claude/cli.js",
-          spawnClaudeCodeProcess: cli.spawn,
+          pathToClaudeCodeExecutable: executable,
         },
       });
     }).pipe(
@@ -1932,35 +1933,51 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
         ProviderEventLoggers.ProviderEventLoggers,
         ProviderEventLoggers.NoOpProviderEventLoggers,
       ),
-      Effect.provide(NodeServices.layer),
     );
 
   it.effect("sends MCP servers over stdin, not argv or the environment", () =>
-    Effect.gen(function* () {
-      const cli = makeFakeClaudeCli();
-      const session = yield* openWith(cli);
-      yield* session.close;
+    Effect.scoped(
+      Effect.gen(function* () {
+        const cli = yield* makeFakeClaudeCli();
+        const session = yield* openWith(cli.executable);
+        yield* session.close;
 
-      assert.deepInclude(cli.controlRequests, {
-        subtype: "mcp_set_servers",
-        servers: { "t3-code": t3McpServer },
-      });
-      const spawned = JSON.stringify(cli.spawns);
-      assert.notInclude(spawned, "--mcp-config");
-      assert.notInclude(spawned, "dummy-mcp-credential");
-    }),
+        const entries = yield* cli.entries;
+        assert.deepInclude(
+          entries.map((entry) => entry.request),
+          { subtype: "mcp_set_servers", servers: { "t3-code": t3McpServer } },
+        );
+        const started = entries.find((entry) => entry.argv !== undefined);
+        assert.isDefined(started);
+        assert.notInclude(JSON.stringify(started?.argv), "--mcp-config");
+        assert.notInclude(JSON.stringify(started?.argv), "dummy-mcp-credential");
+        assert.isFalse(started?.envHasCredential);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("closes the CLI when it never answers the MCP registration", () =>
-    Effect.gen(function* () {
-      const cli = makeFakeClaudeCli(false);
-      const opening = yield* openWith(cli).pipe(Effect.result, Effect.forkChild);
-      yield* TestClock.adjust("90 seconds");
-      const opened = yield* Fiber.join(opening);
+    Effect.scoped(
+      Effect.gen(function* () {
+        const cli = yield* makeFakeClaudeCli(false);
+        const opening = yield* openWith(cli.executable).pipe(Effect.result, Effect.forkChild);
+        // Wait for the registration request before moving the test clock past its deadline.
+        yield* Effect.promise(async () => {
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const entries = await Effect.runPromise(
+              cli.entries.pipe(Effect.provide(NodeServices.layer)),
+            );
+            if (entries.some((entry) => JSON.stringify(entry).includes("mcp_set_servers"))) return;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+        });
+        yield* TestClock.adjust("90 seconds");
+        const opened = yield* Fiber.join(opening);
 
-      assert.equal(opened._tag, "Failure");
-      assert.isTrue(cli.closed());
-    }),
+        assert.equal(opened._tag, "Failure");
+        assert.isTrue(yield* cli.waitUntilClosed);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
   );
 });
 
