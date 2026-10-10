@@ -677,8 +677,9 @@ listed here is drift to remove rather than fork behavior to keep.
     unavailable; providers authenticate through the workspace's API configuration.
     `CodexManagedRuntime` keeps only upstream's resolution contract.
   - Provider drivers, snapshots, and the registry are upstream's. Coder deltas: `CodexDriver`
-    offers no T3-managed Codex install (`setupMode: "managed"`), and neither driver redeems
-    rate-limit reset credits. `ModelManifest.layerBundled` serves the bundled manifest without
+    offers no T3-managed Codex install (`setupMode: "managed"`), neither driver redeems
+    rate-limit reset credits, and `ClaudeDriver` does not read the Claude organization id that
+    keys upstream's usage accounts. `ModelManifest.layerBundled` serves the bundled manifest without
     upstream's hourly fetch or disk cache. Both providers attach
     per-model `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
