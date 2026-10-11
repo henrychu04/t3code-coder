@@ -1,6 +1,5 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
-  type EnvironmentId,
   type ProviderInstanceId,
   type EnvironmentId,
   type ProviderDriverKind,
@@ -33,8 +32,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
    * The instance currently selected in the composer. Drives the trigger
    * icon, label and the default-highlighted combobox row.
    */
-  /** Coder: favorites and model preferences belong to this workspace. */
-  environmentId: EnvironmentId | null;
   activeInstanceId: ProviderInstanceId;
   model: string;
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;

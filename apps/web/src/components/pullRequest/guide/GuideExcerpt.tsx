@@ -140,6 +140,8 @@ export function GuideExcerpt({
     }
     return async (fileDiff) => {
       const loaded = await loadDiffFiles(fileDiff);
+      // Coder: the patched renderer's loader returns null for contents it cannot load.
+      if (loaded === null) return null;
       const oldContents = excerptExpansionOldContents(loaded.newFile.contents, sliceRows);
       if (oldContents === null) return loaded;
       return {

@@ -51,7 +51,6 @@ const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
   "/settings/general": Settings2Icon,
-  "/settings/diagnostics": Settings2Icon,
   "/settings/appearance": PaletteIcon,
   "/settings/projects": PanelsTopLeftIcon,
   "/settings/keybindings": KeyboardIcon,
@@ -67,13 +66,11 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   label: string;
   to: SettingsPath;
   icon: ComponentType<{ className?: string }>;
-}> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
-  .filter((to) => to !== "/settings/diagnostics")
-  .map((to) => ({
-    to,
-    label: SETTINGS_SECTION_LABELS[to],
-    icon: SETTINGS_SECTION_ICONS[to],
-  }));
+}> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[]).map((to) => ({
+  to,
+  label: SETTINGS_SECTION_LABELS[to],
+  icon: SETTINGS_SECTION_ICONS[to],
+}));
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];

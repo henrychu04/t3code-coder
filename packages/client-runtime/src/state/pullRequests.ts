@@ -174,7 +174,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:review-guide",
       tag: WS_METHODS.pullRequestsReviewGuide,
-      execute: (input) => routedRequest(WS_METHODS.pullRequestsReviewGuide, input),
       staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
@@ -459,7 +458,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     generateReviewGuide: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:generate-review-guide",
       tag: WS_METHODS.pullRequestsGenerateReviewGuide,
-      execute: (input) => routedRequest(WS_METHODS.pullRequestsGenerateReviewGuide, input),
       onSuccess: (target, registry) => Effect.sync(() => registry.refresh(reviewGuide(target))),
     }),
     /** Read when the label menu opens, and kept for a minute, like the reviewer candidates. */
