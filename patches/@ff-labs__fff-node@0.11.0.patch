@@ -50,3 +50,23 @@ index 7c1d722..1d0bc27 100644
      }
    } catch {
    }
+@@ -518,8 +528,8 @@ var FFF_GREP_MATCH_STRUCT = {
+   match_ranges_count: DataType.U32,
+   context_before_count: DataType.U32,
+   context_after_count: DataType.U32,
+-  fuzzy_score: DataType.U32,
+-  // actually u16 in C, but ffi-rs doesn't so we read it as u32 with padding
++  // Coder: preserve the native u16 width so the boolean fields after it stay aligned.
++  fuzzy_score: DataType.I16,
+   has_fuzzy_score: DataType.U8,
+   is_binary: DataType.U8,
+   is_definition: DataType.U8
+@@ -660,7 +670,7 @@ function readGrepMatchFromRaw(raw) {
+     matchRanges
+   };
+   if (raw.has_fuzzy_score !== 0) {
+-    match.fuzzyScore = raw.fuzzy_score;
++    match.fuzzyScore = raw.fuzzy_score & 0xffff;
+   }
+   if (raw.context_before_count > 0) {
+     match.contextBefore = readCStringArray(raw.context_before, raw.context_before_count);
