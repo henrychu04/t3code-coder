@@ -45,19 +45,7 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
-  it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(
-    "finds environment telemetry settings for %s",
-    (query) => {
-      expect(searchSettings(query)).toContainEqual(
-        expect.objectContaining({
-          id: "telemetry-export",
-          to: "/settings/diagnostics",
-          targetId: "telemetry-export",
-          scope: "environment",
-        }),
-      );
-    },
-  );
+  // Coder: no OpenTelemetry export settings, so upstream's search test for them is not carried.
   it.each(["send shortcut", "multiline", "new line"])("finds Send shortcut for %s", (query) => {
     expect(searchSettings(query).map((item) => item.id)).toContain("send-shortcut");
   });

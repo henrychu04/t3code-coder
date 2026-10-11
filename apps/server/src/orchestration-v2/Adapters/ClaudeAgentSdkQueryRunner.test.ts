@@ -1,4 +1,4 @@
-import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
+import type * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProviderSessionId, ThreadId } from "@t3tools/contracts";
@@ -8,19 +8,22 @@ import * as Layer from "effect/Layer";
 import { vi } from "vite-plus/test";
 
 import { ProviderEventLoggers } from "@t3tools/provider-core/server/ProviderEventLoggers";
+// Coder: the runner queries Claude through the CLI transport's SDK-typed shim, so the test
+// stubs the shim's query rather than the Agent SDK's.
+import * as ClaudeAgentSdk from "../../provider/Drivers/ClaudeAgentSdk.ts";
 import {
   CLAUDE_AGENT_SDK_QUERY_PROTOCOL,
   ClaudeAgentSdkQueryRunner,
   layerQueryRunner,
 } from "./ClaudeAdapterV2.ts";
 
-vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
+vi.mock("../../provider/Drivers/ClaudeAgentSdk.ts", { spy: true });
 
 it.effect("logs successful task stops for replay and omits failed stops", () =>
   Effect.gen(function* () {
     const writes: unknown[] = [];
     const stopTask = vi.fn(async (_taskId: string) => {});
-    const query = vi.spyOn(ClaudeSdk, "query").mockReturnValue({
+    const query = vi.spyOn(ClaudeAgentSdk, "query").mockReturnValue({
       stopTask,
     } as unknown as ClaudeSdk.Query);
     yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));

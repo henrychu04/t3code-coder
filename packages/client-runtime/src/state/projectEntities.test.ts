@@ -3,7 +3,8 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { describe, expect, it } from "vite-plus/test";
 
-import { PrimaryConnectionTarget } from "../connection/model.ts";
+// Coder: every workspace is reached through one gateway connection target type.
+import { ConnectionTarget } from "../connection/model.ts";
 import { createEnvironmentProjectAtoms } from "./projectEntities.ts";
 import { v2Project, v2ShellSnapshot } from "./orchestrationV2TestFixtures.ts";
 
@@ -34,7 +35,7 @@ function makeHarness(withConfig = true) {
       [environmentId, remoteEnvironmentId].map((id) => [
         id,
         {
-          target: new PrimaryConnectionTarget({
+          target: new ConnectionTarget({
             environmentId: id,
             label: id,
             httpBaseUrl: `https://${id}.example.test`,
@@ -55,25 +56,14 @@ function makeHarness(withConfig = true) {
 }
 
 describe("project scratch identity", () => {
-  it("waits for enabled project configs and ignores a disabled environment with no config", () => {
+  // Coder: every configured workspace is enabled, so readiness waits for each one's config.
+  it("waits for every workspace's project config", () => {
     const { registry, projects, configAtom, catalogValueAtom } = makeHarness();
     try {
       expect(registry.get(projects.projectConfigsReadyAtom)).toBe(false);
       registry.set(configAtom(environmentId), { scratchWorkspaceRoot: v2Project.workspaceRoot });
       expect(registry.get(projects.projectConfigsReadyAtom)).toBe(false);
       const catalog = registry.get(catalogValueAtom);
-      registry.set(catalogValueAtom, {
-        ...catalog,
-        entries: new Map(
-          [...catalog.entries].map(([id, entry]) => [
-            id,
-            { ...entry, enabled: id === environmentId },
-          ]),
-        ),
-      });
-      expect(registry.get(projects.projectConfigsReadyAtom)).toBe(true);
-      registry.set(catalogValueAtom, catalog);
-      expect(registry.get(projects.projectConfigsReadyAtom)).toBe(false);
       registry.set(configAtom(remoteEnvironmentId), {});
       expect(registry.get(projects.projectConfigsReadyAtom)).toBe(true);
       registry.set(catalogValueAtom, { ...catalog, isReady: false });

@@ -18,7 +18,7 @@ vi.mock("~/localApi", () => ({
 
 import {
   __resetClientSettingsPersistenceForTests,
-  applyEnvironmentClientSettingsPatch,
+  legacyModelPreferences,
   __setClientSettingsForTests,
   ensureClientSettingsHydrated,
   getClientSettings,
@@ -438,7 +438,7 @@ describe("mergeEnvironmentSettings", () => {
     expect(settings.favorites).toBe(clientSettings.favorites);
   });
 
-  // Coder: provider preferences are kept per workspace.
+  // Coder: until a workspace migrates, it reads its own legacy browser preferences.
   it("isolates provider preferences by environment and falls back to legacy preferences", () => {
     const workspaceA = EnvironmentId.make("workspace-a");
     const workspaceB = EnvironmentId.make("workspace-b");
@@ -469,29 +469,30 @@ describe("mergeEnvironmentSettings", () => {
     ).toEqual([legacyFavorite]);
   });
 
-  it("migrates legacy provider preferences when an environment first changes them", () => {
-    const environmentId = EnvironmentId.make("workspace-a");
-    const legacyPreferences = {
-      [ProviderInstanceId.make("codex")]: {
-        hiddenModels: ["hidden"],
-        modelOrder: ["first"],
+  it("migrates each workspace's own legacy browser preferences", () => {
+    const workspaceA = EnvironmentId.make("workspace-a");
+    const workspaceB = EnvironmentId.make("workspace-b");
+    const codex = ProviderInstanceId.make("codex");
+    const globalPreferences = { [codex]: { hiddenModels: ["hidden"], modelOrder: ["first"] } };
+    const clientSettings = {
+      ...DEFAULT_CLIENT_SETTINGS,
+      favorites: [{ provider: codex, model: "global-model" }],
+      providerModelPreferences: globalPreferences,
+      providerPreferencesByEnvironment: {
+        [workspaceA]: {
+          favorites: [{ provider: codex, model: "workspace-a-model" }],
+          providerModelPreferences: {},
+        },
       },
     };
-    const next = applyEnvironmentClientSettingsPatch(
-      {
-        ...DEFAULT_CLIENT_SETTINGS,
-        providerModelPreferences: legacyPreferences,
-      },
-      {
-        favorites: [{ provider: ProviderInstanceId.make("codex"), model: "gpt-5.4" }],
-      },
-      environmentId,
-    );
 
-    expect(next.favorites).toEqual([]);
-    expect(next.providerPreferencesByEnvironment[environmentId]).toEqual({
-      favorites: [{ provider: ProviderInstanceId.make("codex"), model: "gpt-5.4" }],
-      providerModelPreferences: legacyPreferences,
+    expect(legacyModelPreferences(clientSettings, workspaceA)).toEqual({
+      favorites: [{ provider: codex, model: "workspace-a-model" }],
+      providerModelPreferences: {},
+    });
+    expect(legacyModelPreferences(clientSettings, workspaceB)).toEqual({
+      favorites: [{ provider: codex, model: "global-model" }],
+      providerModelPreferences: globalPreferences,
     });
   });
 

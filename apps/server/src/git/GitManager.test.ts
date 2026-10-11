@@ -1457,23 +1457,23 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@gitlab.com:pingdotgg/codething-mvp.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@gitlab.com:contributor/codething-mvp.git",
         forkDir,
       );
 
-      const ghScenario = {
+      const glabScenario = {
         prListByHeadSelector: {
           "feature/no-upstream-fork": JSON.stringify([
             {
               number: 40,
               title: "Another fork's PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/40",
+              url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/40",
               baseRefName: "main",
               headRefName: "feature/no-upstream-fork",
               state: "OPEN",
@@ -1484,7 +1484,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             {
               number: 41,
               title: "Our fork's PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/41",
+              url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/41",
               baseRefName: "main",
               headRefName: "feature/no-upstream-fork",
               state: "OPEN",
@@ -1495,7 +1495,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           ]),
         },
       };
-      const { manager } = yield* makeManager({ ghScenario });
+      const { manager } = yield* makeManager({ glabScenario });
 
       const pullRequest = yield* manager.branchPullRequest({
         cwd: repoDir,
@@ -1511,7 +1511,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         "refs/remotes/fork/feature/no-upstream-fork",
       ]);
       expect(localHead.stdout.trim()).not.toBe(pushedHead.stdout.trim());
-      const { manager: aheadManager } = yield* makeManager({ ghScenario });
+      const { manager: aheadManager } = yield* makeManager({ glabScenario });
       expect(
         (yield* aheadManager.branchPullRequest({
           cwd: repoDir,
@@ -1527,7 +1527,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         "refs/heads/feature/no-upstream-fork",
       ]);
       expect(upstream.stdout.trim()).toBe("");
-      const { manager: staleRemoteManager } = yield* makeManager({ ghScenario });
+      const { manager: staleRemoteManager } = yield* makeManager({ glabScenario });
       expect(
         (yield* staleRemoteManager.branchPullRequest({
           cwd: repoDir,
@@ -1545,7 +1545,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         "HEAD:refs/heads/feature/no-upstream-fork",
       ]);
       yield* runGit(repoDir, ["checkout", "feature/no-upstream-fork"]);
-      const { manager: divergedManager } = yield* makeManager({ ghScenario });
+      const { manager: divergedManager } = yield* makeManager({ glabScenario });
       expect(
         yield* divergedManager.branchPullRequest({
           cwd: repoDir,
@@ -1571,29 +1571,29 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@gitlab.com:pingdotgg/codething-mvp.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "first-fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@gitlab.com:contributor/codething-mvp.git",
         firstForkDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "second-fork",
-        "git@github.com:someone-else/codething-mvp.git",
+        "git@gitlab.com:someone-else/codething-mvp.git",
         secondForkDir,
       );
 
-      const ghScenario = {
+      const glabScenario = {
         prListByHeadSelector: {
           "feature/ambiguous-fork": JSON.stringify([
             {
               number: 41,
               title: "One fork's PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/41",
+              url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/41",
               baseRefName: "main",
               headRefName: "feature/ambiguous-fork",
               state: "OPEN",
@@ -1604,7 +1604,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           ]),
         },
       };
-      const { manager: singleRemoteManager } = yield* makeManager({ ghScenario });
+      const { manager: singleRemoteManager } = yield* makeManager({ glabScenario });
       expect(
         (yield* singleRemoteManager.branchPullRequest({
           cwd: repoDir,
@@ -1613,14 +1613,14 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       ).toBe(41);
 
       yield* runGit(repoDir, ["push", "second-fork", "feature/ambiguous-fork"]);
-      const { manager } = yield* makeManager({ ghScenario });
+      const { manager } = yield* makeManager({ glabScenario });
       expect(
         yield* manager.branchPullRequest({ cwd: repoDir, branch: "feature/ambiguous-fork" }),
       ).toBeNull();
 
       yield* runGit(repoDir, ["commit", "--allow-empty", "-m", "Continue feature"]);
       yield* runGit(repoDir, ["push", "first-fork", "feature/ambiguous-fork"]);
-      const { manager: exactManager } = yield* makeManager({ ghScenario });
+      const { manager: exactManager } = yield* makeManager({ glabScenario });
       expect(
         (yield* exactManager.branchPullRequest({
           cwd: repoDir,
@@ -1666,23 +1666,23 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@gitlab.com:pingdotgg/codething-mvp.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@gitlab.com:contributor/codething-mvp.git",
         forkDir,
       );
 
-      const ghScenario = {
+      const glabScenario = {
         prListByHeadSelector: {
           "feature/failed-probe": JSON.stringify([
             {
               number: 43,
               title: "Failed probe PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/43",
+              url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/43",
               baseRefName: "main",
               headRefName: "feature/failed-probe",
               state: "OPEN",
@@ -1693,7 +1693,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           ]),
         },
       };
-      const { manager } = yield* makeManager({ ghScenario });
+      const { manager } = yield* makeManager({ glabScenario });
       // The fork probe matches, but the failed origin probe rejects the
       // whole inference: unknown, invisible rather than wrong.
       expect(
@@ -1716,24 +1716,24 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@gitlab.com:pingdotgg/codething-mvp.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "team/fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@gitlab.com:contributor/codething-mvp.git",
         forkDir,
       );
 
       const { manager } = yield* makeManager({
-        ghScenario: {
+        glabScenario: {
           prListByHeadSelector: {
             "feature/slash-remote": JSON.stringify([
               {
                 number: 42,
                 title: "Slash remote PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+                url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/42",
                 baseRefName: "main",
                 headRefName: "feature/slash-remote",
                 state: "OPEN",
