@@ -1220,7 +1220,7 @@ describe("buildAskAboutGuideStopHandoff", () => {
     const handoff = buildAskAboutGuideStopHandoff({ ...base, stop, question: "Why on write?" });
     expect(handoff.prompt).toBe("Why on write?");
     expect(handoff.reviewComments.map((entry) => entry.filePath)).toEqual([
-      "PR #42",
+      "MR !42",
       "Guide stop 2",
     ]);
     expect(handoff.reviewComments[0]?.text).toContain("Do not change any code");

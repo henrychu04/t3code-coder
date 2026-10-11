@@ -257,15 +257,7 @@ describe("searchSettings", () => {
 });
 
 describe("settings search targets", () => {
-  it("requires an environment for the resolved telemetry export destination", () => {
-    const result = searchSettings("OpenTelemetry export").find(
-      (item) => item.id === "telemetry-export",
-    )!;
-    const target = getSettingsSearchTargetScope(result.targetId ?? result.id)!;
-    expect(isSettingsSearchScopeAvailable(target.scope, "all")).toBe(false);
-    expect(isSettingsSearchScopeAvailable(target.scope, "project")).toBe(false);
-    expect(isSettingsSearchScopeAvailable(target.scope, "environment")).toBe(true);
-  });
+  // Coder: no OpenTelemetry export settings, so there is no telemetry export target to resolve.
   it.each([
     "auto-settle-inactive-threads",
     "auto-settle-merged-threads",
