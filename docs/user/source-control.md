@@ -184,9 +184,10 @@ covers that layer only, and may point out what a lower layer introduced or what 
 Choose **Write guide** to have the review guide model from Settings → Source Control read the
 change in a temporary checkout in the workspace; without one set, the source control writer model
 is used. Nothing in the checkout is changed, and a large merge request takes a few minutes; you can
-go elsewhere in the app, and you are told when the guide is ready. WRITER_MODELS The guide is kept
-in the workspace for everyone using it. To write it again, for example after a push or after
-changing the model or instructions, choose **Rewrite guide** from the merge request's **⋯** menu.
+go elsewhere in the app, and you are told when the guide is ready. Claude Code and Codex can write
+guides; Pi cannot, because it has no read-only mode to read the checkout with. The guide is kept in
+the workspace for everyone using it. To write it again, for example after a push or after changing
+the model or instructions, choose **Rewrite guide** from the merge request's **⋯** menu.
 
 While reading a stop, select lines in an excerpt to add a comment to your review or ask an agent
 about them; comments wait with the ones from the **Code** tab until you send the review. Choose a

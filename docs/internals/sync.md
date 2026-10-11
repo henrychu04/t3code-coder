@@ -24,7 +24,11 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
 
 ## 2. Merge rules
 
-- `git merge --no-ff --no-commit "$SHA"`.
+- `git -c merge.directoryRenames=false merge --no-ff --no-commit "$SHA"`. Without the
+  setting, git infers directory renames from earlier upstream moves and files mobile adds under
+  `apps/mobile/src/lib` land in `packages/shared/src` as stage-3-only "added" files that upstream
+  never had there (six in the 5cbe82a870 sync). Check any such file with
+  `git ls-tree "$SHA" -- <path>`: an empty answer means git invented the path.
 - Take upstream's version of a file and reapply only the seams the seams doc lists, each marked
   `Coder:` in code. A difference not listed there is drift: remove it.
 - Leave upstream bugs unfixed unless they break an `AGENTS.md` boundary.
@@ -46,7 +50,16 @@ them. After `git merge` stops, run `node scripts/sync-resolve-deleted.mjs` (or
 checks dependencies before running a script). It `git rm`s each modify/delete conflict under the
 paths listed in the script and prints every other conflict and every upstream-added file under
 those paths, untouched, for you to decide. It never resolves a content conflict. The files it lists are untouched but staged, so removing
-one needs `git rm -f`. A fork-deleted file outside those paths that upstream modified (a cut
+one needs `git rm -f`. To remove every listed upstream-added file at once:
+```sh
+node scripts/sync-resolve-deleted.mjs | awk '/^Added by upstream/ { on = 1; next } on && /^  / { print $1 }' > /tmp/sync-added.txt
+git rm -q -f --pathspec-from-file=/tmp/sync-added.txt
+```
+The script lists only paths under deleted directories. Upstream also adds files for cut surfaces
+in kept directories (in the 5cbe82a870 sync: `observability/OtlpEndpointCheck.ts`,
+`settings/TelemetryExportSettings.tsx`, `provider/antigravityUsageLimits.ts`, and provider-pi's
+`usage.ts`); review `git diff --name-only --diff-filter=A "$MB" "$SHA" -- apps packages` for
+them. A fork-deleted file outside those paths that upstream modified (a cut
 surface's test or settings panel) is listed as "deleted by fork"; keep it deleted unless the seams
 doc says otherwise. An upstream rename out of a deleted directory into a kept one (in this batch,
 mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added file with only stage
@@ -96,6 +109,10 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   keep its `Coder:` comment.
 - `docs/user/*.md`: take upstream's text, then reapply "merge request", "MR", `!N`, "T3 Coder".
 - `knip.jsonc`: keep ours; add or drop `ignoreIssues` entries as `pnpm knip:check` reports.
+- Patch files under `patches/`: when upstream bumps a patched package, the fork's patch for the
+  old version arrives as modify/delete. Check whether the new version still needs the fork's
+  hunks, and append them to upstream's new patch by hand; `pnpm patch-commit` rewrites the whole
+  file in its own order.
 - `pnpm-lock.yaml`: keep ours, run `pnpm install --no-frozen-lockfile` to apply the merged
   `package.json` files, then confirm `pnpm install --frozen-lockfile` passes. Do this even when the
   lockfile merged cleanly: the auto-merge carries importer entries for deleted packages, and any
@@ -111,7 +128,13 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   `SUPPORTED_QUERY_OPTIONS`, and every `Query` method it calls in the seams doc's mapped list; an
   unsupported option fails every Claude turn at runtime only. Read `makeClaudeQueryOptions` and the
   `query({` call: `git diff "$MB" "$SHA" -- apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts apps/server/src/provider/ClaudeProvider.ts`.
-  New `Query` calls: `git diff "$MB" "$SHA" -- apps/server/src ':!*.test.*' | grep -E '^\+.*(queryRuntime|\bq)\.[a-zA-Z]+\('`.
+  New `Query` calls, by method name, since upstream's receivers vary (`q`, `queryRuntime`,
+  `liveQuery.query`):
+  ```sh
+  sdk=$(ls -d node_modules/.pnpm/@anthropic-ai+claude-agent-sdk@*/node_modules/@anthropic-ai/claude-agent-sdk | head -1)
+  methods=$(awk '/^export declare interface Query /,/^}/' "$sdk/sdk.d.ts" | grep -oE '^    [a-zA-Z]+\(' | tr -d ' (' | sort -u | paste -sd'|' -)
+  git diff "$MB" "$SHA" -- apps/server/src ':!*.test.*' | grep -E "^\+.*\.($methods)\("
+  ```
   SDK bumps: `git diff "$MB" "$SHA" -- '*package.json' | grep claude-agent-sdk`.
   A rejected `Query` method is loud only if upstream lets the rejection surface: upstream wraps
   some calls (`setMcpServers` in `layerQueryRunner`) so a failure is logged and the turn continues
@@ -123,9 +146,9 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   `ExecutionEnvironmentCapabilities` key; decide it (advertise, or add to
   `CODER_OMITTED_CAPABILITIES` with a reason).
 - **RPCs.** List RPCs upstream added to `WsRpcGroup` in the range; serve each in `CoderWsRpcGroup`
-  or record why it is omitted:
+  or record why it is omitted (the pattern needs digits for the `WsOrchestrationV2…Rpc` names):
   ```sh
-  rpcs() { git show "$1:packages/contracts/src/rpc.ts" | sed -n '/^export const WsRpcGroup = /,/^);/p' | grep -oE 'Ws[A-Za-z]+Rpc' | sort -u; }
+  rpcs() { git show "$1:packages/contracts/src/rpc.ts" | sed -n '/^export const WsRpcGroup = /,/^);/p' | grep -oE 'Ws[A-Za-z0-9]+Rpc' | sort -u; }
   comm -13 <(rpcs "$MB") <(rpcs "$SHA")
   ```
 - **Shared contracts.** Never drop a field the fork does not use. For each contract file upstream
@@ -173,7 +196,10 @@ Finish with `pnpm knip:check`.
 ## 7. Verify
 
 In this order, fixing each failure before the next: `pnpm test:coder`; every typecheck listed in
-`AGENTS.md`; `pnpm knip:check`; `pnpm build`.
+`AGENTS.md`; `pnpm knip:check`; `pnpm build`. Typecheck before the full suite finds most merge
+breakage faster. For one file, `pnpm exec vp test run --config vite.coder.config.ts <file>`
+covers `apps/server` only; run web, client-runtime, and package tests from the package
+directory with `pnpm exec vp test run <file>`.
 
 `pnpm test:coder` exits 0; a failure is real. It stops at the first failing package script, so
 fix and rerun until it completes. Known results:
