@@ -1117,7 +1117,7 @@ export function ThreadSearchPullRequestNumber({
             )
           : (status?.colorClass ?? "text-secondary-label")
       }
-      aria-label={status?.tooltip ?? `Pull request #${reference.number}`}
+      aria-label={status?.tooltip ?? `Merge request !${reference.number}`}
     />
   ) : null;
 }

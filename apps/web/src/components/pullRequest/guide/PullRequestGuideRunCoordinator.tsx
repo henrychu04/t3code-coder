@@ -73,7 +73,7 @@ function GuideRunWatcher({ runKey, watch }: { runKey: string; watch: GuideRunWat
     if (looking && store.shownKey === runKey) return;
 
     const title = failure === null ? "Review guide ready" : "Review guide failed";
-    const body = watch.title ?? `${watch.reference.repository} #${watch.reference.number}`;
+    const body = watch.title ?? `${watch.reference.repository} !${watch.reference.number}`;
     const open = () => {
       useGuideRunStore.getState().requestOpen(runKey);
       void navigate({
