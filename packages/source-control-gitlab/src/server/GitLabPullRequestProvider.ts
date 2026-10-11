@@ -161,8 +161,8 @@ export const make = Effect.gen(function* () {
           Effect.map((batch) => ({ ...batch, continues: true })),
         ),
 
-    // Coder: GitLab implementations of upstream's optional preview, summary, and file-contents
-    // reads, which upstream implements only for GitHub.
+    // Coder: GitLab implementations of upstream's optional preview and summary reads, which
+    // upstream implements only for GitHub.
     // A hover card needs only the merge request itself, not merge settings or write access.
     getChangeRequestPreview: (input) =>
       cli.getMergeRequestDetail(input).pipe(

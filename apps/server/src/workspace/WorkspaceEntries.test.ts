@@ -85,6 +85,36 @@ it.layer(TestLayer)("WorkspaceEntries", (it) => {
       }),
     );
 
+    it.effect("includes images and other binary files in non-git workspace indexes", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-coder-entry-binary-",
+        });
+        const imagePaths = ["photo.png", "photo.jpg", "photo.jpeg"];
+        const binaryPaths = [...imagePaths, "document.pdf", "archive.zip", "data.bin"];
+        for (const filePath of binaryPaths) {
+          yield* fileSystem.writeFileString(path.join(root, filePath), "\0binary contents\n");
+        }
+        yield* fileSystem.writeFileString(path.join(root, "notes.txt"), "plain text\n");
+
+        const expectedPaths = [...binaryPaths, "notes.txt"].toSorted();
+        const listed = yield* entries.list({ cwd: root });
+        expect(listed.entries.map((entry) => entry.path).toSorted()).toEqual(expectedPaths);
+        expect(listed.truncated).toBe(false);
+
+        const searched = yield* entries.search({ cwd: root, query: "", limit: 100, kind: "file" });
+        expect(searched.entries.map((entry) => entry.path).toSorted()).toEqual(expectedPaths);
+        expect(searched.truncated).toBe(false);
+
+        const images = yield* entries.search({ cwd: root, query: "", limit: 100, imageOnly: true });
+        expect(images.entries.map((entry) => entry.path).toSorted()).toEqual(imagePaths.toSorted());
+        expect(images.truncated).toBe(false);
+      }),
+    );
+
     it.effect("lists files and their ancestor directories without reading contents", () =>
       Effect.gen(function* () {
         const entries = yield* WorkspaceEntries.WorkspaceEntries;

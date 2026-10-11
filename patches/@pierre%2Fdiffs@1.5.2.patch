@@ -1013,6 +1013,25 @@ index b469f0a2b6cc0aa0cd250a294efb674faee2b2a4..3276a2c7d0fc7995a0e2d33c2f34d829
  type HighlighterTypes = 'shiki-js' | 'shiki-wasm';
  type HighlightedToken = [char: number, fg: string, text: string];
  type DiffsThemeNames = BundledTheme | (string & {});
+diff --git a/dist/utils/createFileHeaderElement.js b/dist/utils/createFileHeaderElement.js
+index 39fe30e..600442e 100644
+--- a/dist/utils/createFileHeaderElement.js
++++ b/dist/utils/createFileHeaderElement.js
+@@ -73,12 +73,12 @@ function createMetadataElement(fileDiff) {
+ 		}
+ 		if (deletions > 0 || additions === 0) children.push(createHastElement({
+ 			tagName: "span",
+-			children: [createTextNodeElement(`-${deletions}`)],
++			children: [createTextNodeElement(`-${deletions.toLocaleString()}`)],
+ 			properties: { "data-deletions-count": "" }
+ 		}));
+ 		if (additions > 0 || deletions === 0) children.push(createHastElement({
+ 			tagName: "span",
+-			children: [createTextNodeElement(`+${additions}`)],
++			children: [createTextNodeElement(`+${additions.toLocaleString()}`)],
+ 			properties: { "data-additions-count": "" }
+ 		}));
+ 	}
 diff --git a/package.json b/package.json
 index d9dc7b5f55ef4ac464e027fff9619212cec143f4..3c37baedae2d975c65fa7273e591338164aff2ae 100644
 --- a/package.json

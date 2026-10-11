@@ -878,6 +878,7 @@ async function customEntries(
           name: notice.name,
           noticeText,
           sourceUrl: notice.sourceUrl ?? null,
+          // Coder: device tools are not carried, so no deviceToolVersions.json pins a notice version.
           version: notice.version ?? null,
         };
       }),

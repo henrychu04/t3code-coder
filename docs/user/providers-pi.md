@@ -20,10 +20,15 @@ configuration. `--provider` must be paired with `--model`. T3 Coder
 rejects launch arguments that change Pi's execution mode or select a session because T3 owns those
 parts of the process lifecycle.
 
+Update installer-managed Pi in the workspace with `pi update`. If another package manager owns the installation,
+update it through that manager instead. For example, a Nix profile installation uses
+`nix profile upgrade pi`.
+
 ## What Carries Over
 
 T3 Coder discovers the models reported by Pi and exposes their supported thinking levels. The
-thinking picker marks Pi's current configured level as the default without overriding it. Threads
+thinking picker marks the discovered active model's configured level as its default without
+overriding it. Other models keep their Pi defaults when no level is selected. Threads
 use Pi's native session files for resume, rollback, and forks within the same Pi instance. Forks
 preserve the native conversation through the selected turn in the destination workspace.
 Switching providers uses portable conversation context. Extension

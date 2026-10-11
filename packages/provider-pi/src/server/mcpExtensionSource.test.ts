@@ -250,7 +250,7 @@ describe("Pi MCP tool exposure", () => {
 type RegisteredTool = Awaited<ReturnType<typeof loadMcpBridge>>["tools"][number];
 
 describe("Pi T3 tools over the file bridge", () => {
-  async function loadFileBridge() {
+  async function loadFileBridge(runtimeMode?: string) {
     const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-pi-bridge-"));
     const catalog = [
       { name: "delegate_task", description: "Delegate work to another agent.", readOnly: false },
@@ -270,6 +270,8 @@ describe("Pi T3 tools over the file bridge", () => {
       ].join("\n"),
     );
     const tools: RegisteredTool[] = [];
+    const handlers = new Map<string, unknown>();
+    const extensionPath = NodePath.join(directory, "pi-t3-extension.ts");
     const source = NodeModule.stripTypeScriptTypes(
       PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
         "export default async function",
@@ -281,26 +283,57 @@ describe("Pi T3 tools over the file bridge", () => {
         env: {
           T3_TOOL_COMMAND: `'${process.execPath}' '${NodePath.join(directory, "t3.mjs")}'`,
           T3_TOOL_CATALOG: NodePath.join(directory, "tools.json"),
+          T3_PI_MCP_EXTENSION_PATH: extensionPath,
+          ...(runtimeMode === undefined ? {} : { T3_PI_RUNTIME_MODE: runtimeMode }),
         },
       },
       AbortSignal,
       Buffer,
       NodeChildProcess,
       NodeFSP,
+      NodePath,
       Type: { Unsafe: (schema: unknown) => schema },
       fetch: () => {
         throw new Error("The file bridge must not use HTTP.");
       },
       pi: {
-        on: () => undefined,
+        on: (event: string, handler: unknown) => handlers.set(event, handler),
         registerTool: (tool: RegisteredTool) => tools.push(tool),
         getActiveTools: () => [],
         setActiveTools: () => undefined,
-        getAllTools: () => [],
+        getAllTools: () => tools.map((tool) => ({ name: tool.name, sourceInfo: { path: extensionPath } })),
       },
     });
-    return { directory, tools };
+    return { directory, tools, handlers };
   }
+
+  // Upstream allows tools its MCP server marks read-only; the bridge catalog's flag says the same.
+  it("allows read-only bridge tools without approval and still gates the rest", async () => {
+    const { directory, handlers } = await loadFileBridge("approval-required");
+    try {
+      const hook = handlers.get("tool_call") as (
+        event: { toolName: string; input: unknown },
+        ctx: { signal?: AbortSignal; ui: { confirm: (title: string) => Promise<boolean> } },
+      ) => Promise<{ block: true; reason: string } | undefined>;
+      const confirmations: string[] = [];
+      const ctx = {
+        ui: {
+          confirm: async (title: string) => {
+            confirmations.push(title);
+            return false;
+          },
+        },
+      };
+      assert.isUndefined(await hook({ toolName: "mcp__t3-code__t3_thread_list", input: {} }, ctx));
+      assert.equal(
+        (await hook({ toolName: "mcp__t3-code__delegate_task", input: {} }, ctx))?.block,
+        true,
+      );
+      assert.deepEqual(confirmations, ["Allow mcp__t3-code__delegate_task?"]);
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
 
   it("registers the bridge catalog and runs each call through the bridge command", async () => {
     const { directory, tools } = await loadFileBridge();
@@ -349,10 +382,65 @@ describe("Pi T3 tools over the file bridge", () => {
 });
 
 describe("Pi tool discovery permissions", () => {
+  it.each(["approval-required", "auto-accept-edits", "auto"])(
+    "allows annotated T3 reads in %s while gating mutations and replacements",
+    async (runtimeMode) => {
+      const bridge = await loadMcpBridge({ modern: true, runtimeMode });
+      const hook = bridge.handlers.get("tool_call") as unknown as (
+        event: { toolName: string; input: unknown },
+        ctx: { ui: { confirm: (title: string) => Promise<boolean> } },
+      ) => Promise<{ block: true; reason: string } | undefined>;
+      const confirmations: string[] = [];
+      const ctx = {
+        ui: {
+          confirm: async (title: string) => {
+            confirmations.push(title);
+            return false;
+          },
+        },
+      };
+      for (const prefix of ["mcp__t3-code__", "mcp__t3_code__"]) {
+        assert.isUndefined(
+          await hook({ toolName: prefix + "orchestrator_capabilities", input: {} }, ctx),
+        );
+        assert.equal(
+          (await hook({ toolName: prefix + "delegate_task", input: {} }, ctx))?.block,
+          true,
+        );
+        // task_status acknowledges result delivery, and is intentionally not read-only.
+        assert.equal(
+          (await hook({ toolName: prefix + "task_status", input: {} }, ctx))?.block,
+          true,
+        );
+      }
+      assert.equal(confirmations.length, 4);
+      bridge.setBridgeSourcePath("/user/extensions/replacement.ts");
+      assert.equal(
+        (await hook({ toolName: "mcp__t3-code__orchestrator_capabilities", input: {} }, ctx))
+          ?.block,
+        true,
+      );
+      assert.equal(
+        (await hook({ toolName: "mcp__other__orchestrator_capabilities", input: {} }, ctx))?.block,
+        true,
+      );
+      assert.equal(confirmations.length, 6);
+    },
+  );
+
   it("allows discovery without confirmation and still gates the discovered tool", async () => {
     type ToolCallHook = (
       event: { toolName: string; input: unknown },
-      ctx: { ui: { confirm: (title: string, detail: string) => Promise<boolean> } },
+      ctx: {
+        signal: AbortSignal;
+        ui: {
+          confirm: (
+            title: string,
+            detail: string,
+            options: { signal: AbortSignal },
+          ) => Promise<boolean>;
+        };
+      },
     ) => Promise<{ block: true; reason: string } | undefined>;
     let toolCall: ToolCallHook | undefined;
     let searchPath = "builtin:tool-search";
@@ -373,9 +461,12 @@ describe("Pi tool discovery permissions", () => {
     });
     assert.isDefined(toolCall);
     const confirmations: string[] = [];
+    const controller = new AbortController();
     const ctx = {
+      signal: controller.signal,
       ui: {
-        confirm: async (title: string) => {
+        confirm: async (title: string, _detail: string, options: { signal: AbortSignal }) => {
+          assert.strictEqual(options.signal, controller.signal);
           confirmations.push(title);
           return false;
         },

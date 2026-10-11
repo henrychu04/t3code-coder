@@ -1,4 +1,4 @@
-const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
+export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
 
 /** The standard T3 Code palette, kept separate from the optional built-in theme library. */
 const MOBILE_DEFAULT_THEME_ID = "t3-code";

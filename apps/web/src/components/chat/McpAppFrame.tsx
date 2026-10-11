@@ -12,6 +12,8 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   clampMcpAppHeight,
+  injectMcpAppCookieBootstrap,
+  injectMcpAppThemeBootstrap,
   MCP_APP_DEFAULT_HEIGHT,
   MCP_APP_FRAME_PATH,
   MCP_APP_MAX_HEIGHT,
@@ -132,6 +134,9 @@ export function McpAppFrame(props: {
       controller.signal,
     )
       .then((blob) => blob.text())
+      // Coder: upstream's asset route adds these bootstraps to the served document; here the
+      // page adds them before the shell writes it.
+      .then((text) => injectMcpAppCookieBootstrap(injectMcpAppThemeBootstrap(text)))
       .then(setHtml, () => {
         if (!controller.signal.aborted) setReadFailed(true);
       });

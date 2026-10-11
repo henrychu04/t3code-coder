@@ -46,6 +46,9 @@ import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegi
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
+import * as PullRequestReviewGuides from "./persistence/PullRequestReviewGuides.ts";
+import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
+import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
 import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -167,12 +170,23 @@ const PullRequestWatchWorkerLive = Layer.effectDiscard(
   Layer.provide(ProjectionStoreV2.layer),
 );
 
+// Review guides read through the same merge-request service as every other surface, and are
+// shared by the RPC handlers and the T3 tools.
+const PullRequestReviewGuideLive = PullRequestReviewGuideService.layer.pipe(
+  Layer.provide(PullRequestReviewGuides.layer),
+  Layer.provide(layerPullRequestService),
+);
+
 const CoderRuntimeCoreLive = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerThreadPullRequestWorker,
   PullRequestSyncWorkerLive,
   PullRequestWatchWorkerLive,
   layerPullRequestService,
+  PullRequestReviewGuideLive,
+  // As upstream: catches project provider overrides left behind by a project deleted before
+  // ProjectService.delete cleared them, or by a cleanup write that failed.
+  Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
   Layer.provideMerge(CoderOrchestrationApplicationLive),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),

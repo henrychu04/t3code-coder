@@ -18,15 +18,17 @@ vi.mock("~/localApi", () => ({
 
 import {
   __resetClientSettingsPersistenceForTests,
-  applyEnvironmentClientSettingsPatch,
+  legacyModelPreferences,
   __setClientSettingsForTests,
   ensureClientSettingsHydrated,
   getClientSettings,
   mergeEnvironmentSettings,
   persistClientSettingsPatch,
   persistClientSettingsUpdate,
+  prepareModelPreferencesPatch,
   resolveEnvironmentIdentificationMode,
 } from "./useSettings";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 beforeEach(() => {
   persistenceMocks.getClientSettings.mockReset().mockResolvedValue(null);
@@ -46,6 +48,44 @@ describe("client settings hydration", () => {
   };
   const onboardingCompletedAt = "2026-09-05T12:00:00.000Z";
   const complete = (current: ClientSettings) => ({ ...current, onboardingCompletedAt });
+
+  it("waits for saved model preferences before applying the first server edit", async () => {
+    const provider = ProviderInstanceId.make("codex_work");
+    let finishRead!: (settings: ClientSettings) => void;
+    persistenceMocks.getClientSettings.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    const patch = prepareModelPreferencesPatch(DEFAULT_SERVER_SETTINGS, {
+      setModelFavorites: [{ provider, model: "new", favorite: true }],
+      setModelsHidden: [{ provider, model: "new", hidden: true }],
+    });
+    expect(getClientSettings()).toBe(DEFAULT_CLIENT_SETTINGS);
+    finishRead({
+      ...savedSettings,
+      providerModelPreferences: {
+        [provider]: { hiddenModels: ["saved-hidden"], modelOrder: ["saved-order"] },
+      },
+    });
+    const edited = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, await patch);
+    expect(edited.favorites).toEqual([...savedSettings.favorites, { provider, model: "new" }]);
+    expect(edited.providerModelPreferences?.[provider]).toEqual({
+      hiddenModels: ["saved-hidden", "new"],
+      modelOrder: ["saved-order"],
+    });
+  });
+
+  it("does not prepare a model preference write after a failed legacy read", async () => {
+    const failure = new Error("storage unavailable");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    persistenceMocks.getClientSettings.mockRejectedValueOnce(failure);
+    await expect(
+      prepareModelPreferencesPatch(DEFAULT_SERVER_SETTINGS, {
+        setProviderModelOrder: { provider: ProviderInstanceId.make("codex_work"), modelOrder: [] },
+      }),
+    ).rejects.toBe(failure);
+  });
 
   it("rejects completion after a failed read and preserves saved preferences on retry", async () => {
     const failure = new Error("storage unavailable");
@@ -398,7 +438,7 @@ describe("mergeEnvironmentSettings", () => {
     expect(settings.favorites).toBe(clientSettings.favorites);
   });
 
-  // Coder: provider preferences are kept per workspace.
+  // Coder: until a workspace migrates, it reads its own legacy browser preferences.
   it("isolates provider preferences by environment and falls back to legacy preferences", () => {
     const workspaceA = EnvironmentId.make("workspace-a");
     const workspaceB = EnvironmentId.make("workspace-b");
@@ -429,29 +469,30 @@ describe("mergeEnvironmentSettings", () => {
     ).toEqual([legacyFavorite]);
   });
 
-  it("migrates legacy provider preferences when an environment first changes them", () => {
-    const environmentId = EnvironmentId.make("workspace-a");
-    const legacyPreferences = {
-      [ProviderInstanceId.make("codex")]: {
-        hiddenModels: ["hidden"],
-        modelOrder: ["first"],
+  it("migrates each workspace's own legacy browser preferences", () => {
+    const workspaceA = EnvironmentId.make("workspace-a");
+    const workspaceB = EnvironmentId.make("workspace-b");
+    const codex = ProviderInstanceId.make("codex");
+    const globalPreferences = { [codex]: { hiddenModels: ["hidden"], modelOrder: ["first"] } };
+    const clientSettings = {
+      ...DEFAULT_CLIENT_SETTINGS,
+      favorites: [{ provider: codex, model: "global-model" }],
+      providerModelPreferences: globalPreferences,
+      providerPreferencesByEnvironment: {
+        [workspaceA]: {
+          favorites: [{ provider: codex, model: "workspace-a-model" }],
+          providerModelPreferences: {},
+        },
       },
     };
-    const next = applyEnvironmentClientSettingsPatch(
-      {
-        ...DEFAULT_CLIENT_SETTINGS,
-        providerModelPreferences: legacyPreferences,
-      },
-      {
-        favorites: [{ provider: ProviderInstanceId.make("codex"), model: "gpt-5.4" }],
-      },
-      environmentId,
-    );
 
-    expect(next.favorites).toEqual([]);
-    expect(next.providerPreferencesByEnvironment[environmentId]).toEqual({
-      favorites: [{ provider: ProviderInstanceId.make("codex"), model: "gpt-5.4" }],
-      providerModelPreferences: legacyPreferences,
+    expect(legacyModelPreferences(clientSettings, workspaceA)).toEqual({
+      favorites: [{ provider: codex, model: "workspace-a-model" }],
+      providerModelPreferences: {},
+    });
+    expect(legacyModelPreferences(clientSettings, workspaceB)).toEqual({
+      favorites: [{ provider: codex, model: "global-model" }],
+      providerModelPreferences: globalPreferences,
     });
   });
 
@@ -509,4 +550,21 @@ describe("onboarding completion persistence", () => {
     expect(getClientSettings()).toEqual(completedSettings);
     expect(persist).toHaveBeenLastCalledWith(completedSettings);
   });
+});
+
+it("uses the environment's model preferences after migration, including empty lists", () => {
+  const client = {
+    ...DEFAULT_CLIENT_SETTINGS,
+    favorites: [{ provider: ProviderInstanceId.make("codex_work"), model: "old" }],
+    providerModelPreferences: { codex_work: { hiddenModels: ["old"], modelOrder: [] } },
+  };
+  expect(mergeEnvironmentSettings(DEFAULT_SERVER_SETTINGS, client).favorites).toEqual(
+    client.favorites,
+  );
+  const merged = mergeEnvironmentSettings(
+    { ...DEFAULT_SERVER_SETTINGS, favorites: [], providerModelPreferences: {} },
+    client,
+  );
+  expect(merged.favorites).toEqual([]);
+  expect(merged.providerModelPreferences).toEqual({});
 });

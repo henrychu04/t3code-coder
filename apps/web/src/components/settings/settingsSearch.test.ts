@@ -45,6 +45,7 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  // Coder: no OpenTelemetry export settings, so upstream's search test for them is not carried.
   it.each(["send shortcut", "multiline", "new line"])("finds Send shortcut for %s", (query) => {
     expect(searchSettings(query).map((item) => item.id)).toContain("send-shortcut");
   });
@@ -145,6 +146,8 @@ describe("searchSettings", () => {
       "provider-health-check-interval",
       "cursor-keychain-usage",
       "source-control-writer-model",
+      "review-guide-model",
+      "review-guide-instructions",
       "source-control-writing-style",
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
@@ -254,6 +257,7 @@ describe("searchSettings", () => {
 });
 
 describe("settings search targets", () => {
+  // Coder: no OpenTelemetry export settings, so there is no telemetry export target to resolve.
   it.each([
     "auto-settle-inactive-threads",
     "auto-settle-merged-threads",

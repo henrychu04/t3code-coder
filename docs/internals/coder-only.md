@@ -363,7 +363,9 @@ fingerprinted validation or not-found response enables writes. A generic proxy 4
 or indeterminate response disables every GitLab mutation while reads, Git, and checkout stay
 available; Settings → Source Control shows the result and can rerun it, and a later mutation that
 matches the configured policy-block response downgrades the cached result. Generated commit and MR
-text comes from the workspace Claude CLI. The gateway never runs Git or `glab`, never connects to
+text comes from the workspace Claude CLI. A review guide checks the merge request's head out into
+a temporary worktree under the workspace worktrees directory, which the writer model reads
+read-only and T3 removes when the run ends. The gateway never runs Git or `glab`, never connects to
 GitLab, and receives no GitLab credentials.
 
 ## Fixed settings metadata
@@ -536,7 +538,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `T3_TOOL_CATALOG`), and it registers the bridge catalog's tools under upstream's names,
     running each call through the bridge command with its arguments on stdin. The JSON object a
     call prints is also its `structuredContent`, as T3's MCP server returns it, so upstream's
-    structured tool results reach bridge calls (the bridge carries no image blocks). The generated
+    structured tool results reach bridge calls (the bridge carries no image blocks). Each catalog
+    entry's `readOnly` flag becomes upstream's `readOnlyHint`, so a supervised Pi runs read-only
+    T3 tools without asking, as upstream does for its MCP tools. The generated
     extension source (`mcpExtensionSource.ts`) keeps upstream's HTTP MCP client beside the bridge
     path, to stay close to upstream. It is dormant: every Coder MCP session carries a bridge
     `toolCommand`, so `buildPiRpcLaunch` never sets `T3_MCP_URL` and the extension opens no HTTP
@@ -594,7 +598,10 @@ listed here is drift to remove rather than fork behavior to keep.
   A blob, `srcdoc`, or `data:` frame would inherit the page's Content-Security-Policy and block the
   app's scripts. The shell's own policy is `sandbox allow-scripts allow-forms; frame-ancestors
 'self'`, so the shell and the app keep an opaque origin even when the shell is opened directly.
-  The app's CSP comes with its stored document, as upstream injects it. The page policy allows
+  The app's CSP comes with its stored document, as upstream injects it. Upstream's asset route
+  adds its theme and cookie bootstraps (`injectMcpAppThemeBootstrap`,
+  `injectMcpAppCookieBootstrap`) to the served document; here `McpAppFrame` adds them before
+  posting the document to the shell. The page policy allows
   `frame-src 'self'`, and every other gateway response keeps `frame-ancestors 'none'`. The shell's
   load and the written document's load both count as the app's own; a third load means the app
   navigated away.
@@ -631,11 +638,13 @@ listed here is drift to remove rather than fork behavior to keep.
   sources, agent sessions, filesystem browse, background policy). Coder deltas:
   - `rpc.ts` omits RPCs whose schemas belong to excluded modules (assets, attachment upload URLs,
     preview automation, relay, resource telemetry, usage, editor launch, GitHub routing, feedback
-    upload, and HTTP content search) and adds the helper-only methods and `CoderWsRpcGroup`, the
+    upload, HTTP content search, and the OTLP endpoint check) and adds the helper-only methods and `CoderWsRpcGroup`, the
     only group the helper serves. That group carries upstream's thread find
     (`searchThread`, `searchThreadStream`), file chip metadata (`filesystem.getMetadata`), turn-item
     reads, passive terminal observation, agent
-    secret answers, storage cleanup runs and reports, and the MCP Apps methods. Upstream's
+    secret answers, storage cleanup runs and reports, review guides
+    (`pullRequests.reviewGuide`, `pullRequests.generateReviewGuide`), the workflow stop, and the
+    MCP Apps methods. Upstream's
     `WsRpcGroup` stays dormant, unreferenced, with the RPCs only it uses, and `knip.jsonc`
     ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
@@ -653,8 +662,9 @@ listed here is drift to remove rather than fork behavior to keep.
     which the CLI transport cannot host.
   - The web provider list and client-runtime `state/server.ts` stay limited to the methods the
     helper serves and to Codex, Claude, and Pi driver instances (`isCoderProviderDriver`).
-  - Client settings add `providerPreferencesByEnvironment`, which keeps favorites and model
-    order per workspace (see [Persistence](#upstream-seams)).
+  - Client settings keep `providerPreferencesByEnvironment`, the per-workspace favorites and model
+    order the browser stored before upstream moved them into server settings, read only as the
+    legacy lists each workspace migrates (see [Persistence](#upstream-seams)).
 - **Terminals.** `terminal/Manager.ts` is upstream's. Coder deltas: it records each terminal's
   attach events in a bounded replay window (`DEFAULT_ATTACH_REPLAY_*` in `Manager.ts`) and answers an
   attach with `afterSequence` by replaying the missed events and a `resumed` event instead of a
@@ -826,11 +836,11 @@ listed here is drift to remove rather than fork behavior to keep.
     repository and merge-request creation, merge-request mutations); discovery reports its
     `writeAccess`, and while writes are blocked the merge-request detail and viewer permissions
     become read-only.
-  - GitLab implements upstream's optional hover-preview, summary (batched through aliased GraphQL
-    reads), and diff-file-contents reads, which upstream implements only for GitHub. Diff output
-    is capped (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
+  - GitLab implements upstream's optional hover-preview and summary (batched through aliased
+    GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
+    (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    0442f5bfcc):
+    5cbe82a870):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
@@ -843,9 +853,20 @@ listed here is drift to remove rather than fork behavior to keep.
   - `PullRequestService` omits upstream's cross-environment routing (routing identities,
     verified credentials, `expectedAccountId` refs) and Forgejo SSH-alias refinement. It keeps
     `allowStale: false`, which the merge-request watcher uses to read past the held detail.
+  - Review guides are upstream's (`pullRequest/PullRequestReviewGuideService.ts`, migration 061,
+    the guide T3 tools, and the web Guide tab). `coderServer.ts` provides the service to the
+    helper RPC handlers and the bridged tools. The temporary checkout, its fetches, and the
+    change it reads are workspace Git; the writer model runs through upstream's Codex or Claude
+    text generation in the workspace, and Pi refuses, as upstream's Pi runner does. The Guide
+    tab reads the diff over `pullRequests.diff`. Coder deltas: a head the host will not serve
+    by commit is fetched from `refs/merge-requests/<n>/head`, where upstream falls back to
+    `refs/pull/<n>/head`; the guide tools resolve only merge requests on a GitLab host the
+    projects use, as the link tools do; and the service's reader-facing errors say merge
+    request.
 - **Provider drivers.** provider-core's `ProviderDriver.usage` is `never` and its `usage.ts`
-  is not carried: there is no usage page, so Claude and Codex register no usage readers and
-  `provider/builtInDrivers.ts` has no usage driver list.
+  is not carried: there is no usage page, so Claude, Codex, and Pi register no usage readers
+  (provider-pi's `usage.ts` is not carried) and `provider/builtInDrivers.ts` has no usage
+  driver list.
 - **Git layer.** `vcs/GitVcsDriver.ts`, `vcs/GitVcsDriverCore.ts`, `vcs/VcsProcess.ts`,
   `vcs/VcsStatusBroadcaster.ts`, `git/GitManager.ts`, `git/GitWorkflowService.ts`, and
   `git/remoteRefs.ts` are upstream's. Each difference is marked `Coder:` in the file:
@@ -901,9 +922,11 @@ listed here is drift to remove rather than fork behavior to keep.
   migration ID.
 - **Persistence.** Merge-request snapshots, right-panel tabs, diff-panel selections, closed-view
   history, the last merge method, and the last project grouping mode stay in memory where
-  upstream uses browser storage. Model favorites and model order are kept per workspace
-  (`providerPreferencesByEnvironment`), falling back to the global lists until a workspace has its
-  own; the pickers and the Providers settings page read and write the workspace's lists. `storage.ts` keeps
+  upstream uses browser storage. Model favorites, visibility, and order are upstream's server
+  settings, so each workspace keeps its own. Upstream migrates a browser's saved lists into an
+  environment whose settings have none; here the legacy lists are the workspace's own
+  `providerPreferencesByEnvironment` entry, falling back to the global lists
+  (`legacyModelPreferences` in `useSettings.ts`). `storage.ts` keeps
   upstream's IndexedDB environment cache without the connection catalog, credentials, GitHub
   routing permissions, or project favicons. The upstream idle thread-snapshot retention lifecycle
   keeps Coder's entry and size cap (`threadRetention.ts`). Composer drafts and the prompt stash keep text in browser
@@ -955,7 +978,10 @@ listed here is drift to remove rather than fork behavior to keep.
   script and its example are not carried, because they launch a local Codex.
 - **Build tooling.** `scripts/lib/third-party-licenses.ts` never fetches during a build: SPDX
   texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
-  ones. `knip.jsonc` lists the upstream files whose exports are used only by surfaces the fork
+  ones. It reads no device tool version pins, because device tools are not carried.
+  `patches/@ff-labs__fff-node@0.11.0.patch` is upstream's plus the native grep struct's
+  `fuzzy_score` read at its real u16 width; 0.11.0 still reads it as a u32, which shifts
+  `has_fuzzy_score`, `is_binary`, and `is_definition` one field late. `knip.jsonc` lists the upstream files whose exports are used only by surfaces the fork
   does not carry, so `pnpm knip:check` still catches fork-introduced dead exports elsewhere.
   The real-Coder live harness behind `pnpm coder:live:*` and `pnpm test:coder:live`
   (`scripts/coder-live-test.mjs` and `scripts/coder-live-template/`) is kept local and is not
@@ -969,7 +995,10 @@ listed here is drift to remove rather than fork behavior to keep.
   path, so its path checks pass on macOS, where the temp directory is behind the `/var` symlink.
   `serverSettings.test.ts` omits upstream's source control host secret tests, because no carried
   host definition declares settings. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
-  tests through a fake `claude` executable, since the CLI transport has no SDK spawn hook.
+  tests through a fake `claude` executable, since the CLI transport has no SDK spawn hook, and
+  `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query` shim rather than the
+  Agent SDK's. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
+  tests use GitLab projects.
   `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
   reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
   says when to retry it.

@@ -80,12 +80,13 @@ const withInstanceIdentity =
     continuation: { groupKey: input.continuationGroupKey },
   });
 
-export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
+export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
   driverKind: DRIVER_KIND,
   metadata: {
     displayName: "Pi",
     supportsMultipleInstances: true,
   },
+  // Coder: no usage page, so Pi registers no usage reader.
   configSchema: PiSettings,
   defaultConfig: (): PiSettings => decodePiSettings({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
