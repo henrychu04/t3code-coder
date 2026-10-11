@@ -343,6 +343,11 @@ const make = Effect.gen(function* () {
     // Each target resolves on its own, so one bad URL in a batch is that entry's failure only.
     return yield* Effect.forEach(targets, (input) =>
       resolveTarget(input, callerProject).pipe(
+        // Coder: as for links, only a merge request on a GitLab host the projects use.
+        Effect.filterOrFail(
+          (target) => isCoderPullRequestLink(target, known),
+          () => new PullRequestUrlInvalidError({}),
+        ),
         Effect.map((target) => ({
           input,
           target,

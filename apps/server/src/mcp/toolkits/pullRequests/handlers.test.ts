@@ -564,13 +564,13 @@ describe("pull request guide tools", () => {
       Effect.gen(function* () {
         const other = {
           ...makeProject({
-            canonicalKey: "github.com/acme/web",
+            canonicalKey: "gitlab.com/acme/web",
             locator: {
               source: "git-remote",
               remoteName: "origin",
-              remoteUrl: "git@github.com:acme/web.git",
+              remoteUrl: "git@gitlab.com:acme/web.git",
             },
-            provider: "github",
+            provider: "gitlab",
             displayName: "acme/web",
             owner: "acme",
             name: "web",
@@ -580,9 +580,9 @@ describe("pull request guide tools", () => {
         const harness = yield* makeHarness({ projects: [makeProject(), other] });
         const result = yield* harness.call("write_pull_request_guides", {
           pullRequests: [
-            { url: "https://github.com/acme/web/pull/7" },
+            { url: "https://gitlab.com/acme/web/-/merge_requests/7" },
             { repository: "t3tools/t3code", number: 12 },
-            { url: "https://github.com/someone/else/pull/1" },
+            { url: "https://gitlab.com/someone/else/-/merge_requests/1" },
           ],
         });
         expect(
@@ -647,9 +647,22 @@ describe("pull request guide tools", () => {
         ],
       });
       expect(result.guides.map((guide) => guide.outcome)).toEqual(["failed", "failed", "started"]);
-      expect(result.guides[0]?.detail).toContain("not a recognised pull request URL");
+      expect(result.guides[0]?.detail).toContain("not a recognised merge request URL");
       expect(result.guides[1]?.detail).toContain("Pass either url");
       expect((yield* Ref.get(harness.guideRequests)).map((ref) => ref.number)).toEqual([5]);
+    }),
+  );
+
+  // Coder: a guide, like a link, names only a merge request on a GitLab host the projects use.
+  it.effect("refuses a guide for a pull request on another host", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const result = yield* harness.call("write_pull_request_guides", {
+        pullRequests: [{ url: "https://github.com/acme/web/pull/7" }],
+      });
+      expect(result.guides.map((guide) => guide.outcome)).toEqual(["failed"]);
+      expect(result.guides[0]?.detail).toContain("not a recognised merge request URL");
+      expect(yield* Ref.get(harness.guideRequests)).toEqual([]);
     }),
   );
 
@@ -670,30 +683,31 @@ describe("pull request guide tools", () => {
     }),
   );
 
-  it.effect("finds an Azure DevOps checkout for a pull request named by its full path", () =>
+  // Coder: upstream checks an Azure DevOps path; a GitLab subgroup is the GitLab full path.
+  it.effect("finds a GitLab subgroup checkout for a merge request named by its full path", () =>
     Effect.gen(function* () {
-      const azure = {
+      const subgroup = {
         ...makeProject({
-          canonicalKey: "dev.azure.com/org/project/_git/web",
+          canonicalKey: "gitlab.com/org/team/web",
           locator: {
             source: "git-remote",
             remoteName: "origin",
-            remoteUrl: "https://dev.azure.com/org/project/_git/web",
+            remoteUrl: "git@gitlab.com:org/team/web.git",
           },
-          provider: "azure-devops",
-          displayName: "org/project/_git/web",
-          owner: "org",
+          provider: "gitlab",
+          displayName: "org/team/web",
+          owner: "org/team",
           name: "web",
         }),
-        id: ProjectId.make("project-azure"),
+        id: ProjectId.make("project-subgroup"),
       };
-      const harness = yield* makeHarness({ projects: [makeProject(), azure] });
+      const harness = yield* makeHarness({ projects: [makeProject(), subgroup] });
       const result = yield* harness.call("write_pull_request_guides", {
-        pullRequests: [{ host: "dev.azure.com", repository: "org/project/_git/web", number: 9 }],
+        pullRequests: [{ host: "gitlab.com", repository: "org/team/web", number: 9 }],
       });
       expect(result.guides.map((guide) => guide.outcome)).toEqual(["started"]);
       expect((yield* Ref.get(harness.guideRequests)).map((ref) => ref.projectId)).toEqual([
-        "project-azure",
+        "project-subgroup",
       ]);
     }),
   );

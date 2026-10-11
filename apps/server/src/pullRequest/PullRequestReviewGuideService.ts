@@ -110,7 +110,7 @@ const make = Effect.gen(function* () {
     if (key === null || project === undefined) {
       return yield* new PullRequestOperationError({
         operation: "reviewGuide",
-        detail: "Could not identify this pull request's host.",
+        detail: "Could not identify this merge request's host.",
       });
     }
     return { key, workspaceRoot: project.workspaceRoot, identity: project.repositoryIdentity };
@@ -138,7 +138,7 @@ const make = Effect.gen(function* () {
         return yield* new PullRequestOperationError({
           operation: "generateReviewGuide",
           detail:
-            "Guides are written from this project's checkout, and this pull request is in another repository. Write it from a project that is a checkout of that repository.",
+            "Guides are written from this project's checkout, and this merge request is in another repository. Write it from a project that is a checkout of that repository.",
         });
       }
     },
@@ -209,7 +209,7 @@ const make = Effect.gen(function* () {
           () =>
             new PullRequestOperationError({
               operation: "generateReviewGuide",
-              detail: "The pull request's base branch name is not one git can fetch.",
+              detail: "The merge request's base branch name is not one git can fetch.",
             }),
         ),
       );
@@ -227,8 +227,10 @@ const make = Effect.gen(function* () {
         .pipe(Effect.ignore({ log: true })),
     );
     const baseTip = yield* git.resolveCommit({ cwd: workspaceRoot, revision: baseRef });
+    // Coder: GitLab is the only host, and it serves a merge request's head as
+    // refs/merge-requests/<n>/head rather than GitHub and Forgejo's refs/pull/<n>/head.
     const fetchHead = (number: number, sha: string) =>
-      fetch([sha]).pipe(Effect.catch(() => fetch([`refs/pull/${number}/head`])));
+      fetch([sha]).pipe(Effect.catch(() => fetch([`refs/merge-requests/${number}/head`])));
     yield* fetchHead(detail.number, headSha);
     // The other layers of a stack are context the model may read across a seam. A layer that
     // cannot be fetched is still named in the prompt, without a head to read.
@@ -413,7 +415,7 @@ const make = Effect.gen(function* () {
     if (currentHeadSha === null) {
       return yield* new PullRequestOperationError({
         operation: "generateReviewGuide",
-        detail: "This host did not report the pull request's head commit.",
+        detail: "This host did not report the merge request's head commit.",
       });
     }
     const running: PullRequestReviewGuideRun = {
@@ -431,7 +433,7 @@ const make = Effect.gen(function* () {
             ? Effect.fail(
                 new PullRequestOperationError({
                   operation: "generateReviewGuide",
-                  detail: "The pull request changed while the guide was starting. Try again.",
+                  detail: "The merge request changed while the guide was starting. Try again.",
                 }),
               )
             : Ref.modify(runs, (current) => {
