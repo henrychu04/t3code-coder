@@ -21,6 +21,14 @@ that setting again. Browser preferences such as appearance ignore the workspace/
 Provider settings show one workspace at a time, using the active workspace until you pick another.
 Appearance and Coder connections hide these scope menus because their controls do not use project scope.
 
+With a project selected, a provider's switch in **Settings → Providers** turns it on or off for
+that project only, in either direction: a provider off in the workspace can be used in one project,
+and one on everywhere can be kept out of another. That project's model pickers follow the switch,
+and no new turn there can start on a provider it turned off, including queued messages and
+follow-ups from delegated tasks. A turn already running when the switch flips finishes. A delegated
+task's result still lands in its parent thread, which sees it on its next turn. Reset returns the project to the
+workspace's setting. Every other provider setting stays per workspace.
+
 Use **Search settings** in the sidebar to find a control by name or keyword. Press `/` outside a
 text field or dialog to focus search, use the arrow keys to choose a result, and press Enter to
 open it. Escape clears the search before leaving Settings. Search results preserve the selected

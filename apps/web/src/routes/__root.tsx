@@ -30,6 +30,7 @@ import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationT
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
+import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { Button } from "../components/ui/button";
@@ -119,6 +120,7 @@ function RootRouteView() {
         <ConfirmDialogHost />
         <CustomSnoozeDialogHost />
         <ProjectCloneToastCoordinator />
+        <PullRequestGuideRunCoordinator />
         <SlowRpcRequestToastCoordinator />
         <LegacyThreadMigrationToast />
         <ProviderUpdateLaunchNotification />

@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
-    "@ff-labs/fff-node": "0.9.4",
+    "@ff-labs/fff-node": "0.11.0",
     "@t3tools/provider-core": "workspace:*",
     "@t3tools/provider-pi": "workspace:*",
     "@t3tools/source-control-core": "workspace:*",

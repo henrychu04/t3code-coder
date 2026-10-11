@@ -9,14 +9,15 @@
  * access is intentionally named as such so environment-sensitive consumers
  * cannot silently read the wrong server's settings.
  */
-import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { useAtomValue } from "@effect/atom-react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, use } from "react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
   DEFAULT_SERVER_SETTINGS,
   AuthSettingsWriteScope,
   requiredScopesForServerSettingsPatch,
   type EnvironmentId,
   type ProviderInstanceMutation,
+  type ProviderInstanceId,
   ServerSettings,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ import {
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
   type EnvironmentIdentificationMode,
+  type ModelPreferences,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
@@ -45,6 +47,10 @@ import {
   subscribeToThemePreview,
   themeAllowsSidebarArtwork,
 } from "~/themePalette";
+import {
+  modelPreferencesMigrationPatch,
+  resolveModelPreferences,
+} from "@t3tools/shared/serverSettings";
 import * as Struct from "effect/Struct";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -315,81 +321,63 @@ export function mergeEnvironmentSettings(
   clientSettings: ClientSettings,
   environmentId: EnvironmentId | null = null,
 ): UnifiedSettings {
-  // Coder: each workspace keeps its own favorites and model preferences, falling back to the
-  // global ones until it has its own.
-  const providerPreferences =
-    environmentId === null
-      ? undefined
-      : clientSettings.providerPreferencesByEnvironment[environmentId];
   // Decode drops retired client keys, but older untyped persistence adapters
   // can still return them. Server-owned values must always win.
   return {
     ...clientSettings,
     ...serverSettings,
-    favorites: providerPreferences?.favorites ?? clientSettings.favorites,
-    providerModelPreferences:
-      providerPreferences?.providerModelPreferences ?? clientSettings.providerModelPreferences,
+    ...resolveModelPreferences(serverSettings, legacyModelPreferences(clientSettings, environmentId)),
   };
 }
 
 /**
- * Coder: applies a client patch, scoping favorites and model preferences to `environmentId` when
- * one is given. Other keys stay global.
+ * Coder: before favorites and model order moved into server settings, the browser kept them per
+ * workspace (`providerPreferencesByEnvironment`), falling back to the global lists. Those are the
+ * legacy values each workspace migrates.
  */
-export function applyEnvironmentClientSettingsPatch(
-  current: ClientSettings,
-  patch: ClientSettingsPatch,
+export function legacyModelPreferences(
+  clientSettings: ClientSettings,
   environmentId: EnvironmentId | null,
-): ClientSettings {
-  if (
-    environmentId === null ||
-    (!("favorites" in patch) && !("providerModelPreferences" in patch))
-  ) {
-    return { ...current, ...patch };
-  }
-
-  const existing = current.providerPreferencesByEnvironment[environmentId];
-  const scoped = {
-    favorites: existing?.favorites ?? current.favorites,
-    providerModelPreferences:
-      existing?.providerModelPreferences ?? current.providerModelPreferences,
-  };
-  const unscopedPatch = { ...patch };
-  delete unscopedPatch.favorites;
-  delete unscopedPatch.providerModelPreferences;
-
+): ModelPreferences {
+  const scoped =
+    environmentId === null
+      ? undefined
+      : clientSettings.providerPreferencesByEnvironment[environmentId];
   return {
-    ...current,
-    ...unscopedPatch,
-    providerPreferencesByEnvironment: {
-      ...current.providerPreferencesByEnvironment,
-      [environmentId]: {
-        favorites: patch.favorites ?? scoped.favorites,
-        providerModelPreferences: patch.providerModelPreferences ?? scoped.providerModelPreferences,
-      },
-    },
+    favorites: scoped?.favorites ?? clientSettings.favorites,
+    providerModelPreferences:
+      scoped?.providerModelPreferences ?? clientSettings.providerModelPreferences,
   };
 }
 
-/** Coder: persists a client patch, scoping provider preferences to `environmentId`. */
-function persistEnvironmentClientSettingsPatch(
-  patch: ClientSettingsPatch,
+const pendingModelPreferencesMigrations = new Set<EnvironmentId>();
+
+/** Seed saved client preferences once without overwriting another client's edits. */
+export function useMigrateModelPreferences(
   environmentId: EnvironmentId | null,
-): Promise<unknown> {
-  if (
-    environmentId === null ||
-    (!("favorites" in patch) && !("providerModelPreferences" in patch))
-  ) {
-    return persistClientSettingsPatch(patch);
-  }
-  return persistClientSettingsUpdate((current) =>
-    applyEnvironmentClientSettingsPatch(current, patch, environmentId),
-  ).catch((error) => {
-    console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} persist failed`, {
-      operation: "persist",
-      ...safeErrorLogAttributes(error),
-    });
-  });
+  settings: ServerSettings | null,
+) {
+  const clientSettings = useClientSettingsValue();
+  const hydrated = useClientSettingsHydrated();
+  const migrate = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
+  useEffect(() => {
+    if (
+      !environmentId ||
+      !settings ||
+      !hydrated ||
+      pendingModelPreferencesMigrations.has(environmentId)
+    )
+      return;
+    const patch = modelPreferencesMigrationPatch(
+      settings,
+      legacyModelPreferences(clientSettings, environmentId),
+    );
+    if (!patch) return;
+    pendingModelPreferencesMigrations.add(environmentId);
+    void migrate({ environmentId, input: { patch } }).finally(() =>
+      pendingModelPreferencesMigrations.delete(environmentId),
+    );
+  }, [clientSettings, environmentId, hydrated, migrate, settings]);
 }
 
 function useMergedSettings<T>(
@@ -450,12 +438,150 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
 
 // Coder: no legacy sidebar, so there is no `useLegacySidebarEnabled`.
 
+/** Hydrate legacy preferences before a mutation can claim either server-owned list. */
+export async function prepareModelPreferencesPatch(
+  settings: ServerSettings,
+  patch: ServerSettingsPatch,
+  // Coder: names the workspace whose legacy browser lists migrate.
+  environmentId: EnvironmentId | null = null,
+): Promise<ServerSettingsPatch> {
+  if (settings.favorites === null || settings.providerModelPreferences === null) {
+    await ensureClientSettingsHydrated();
+  }
+  return {
+    ...modelPreferencesMigrationPatch(
+      settings,
+      legacyModelPreferences(getClientSettings(), environmentId),
+    ),
+    ...patch,
+  };
+}
+
+export function useUpdateEnvironmentModelPreferences(environmentId: EnvironmentId | null) {
+  const settings = useAtomValue(
+    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
+  );
+  const save = useAtomCommand(serverEnvironment.updateSettings, "model preferences update");
+  return useCallback(
+    async (patch: ServerSettingsPatch) => {
+      if (!environmentId || !settings) return;
+      let prepared: ServerSettingsPatch;
+      try {
+        prepared = await prepareModelPreferencesPatch(settings, patch, environmentId);
+      } catch {
+        toastManager.add({
+          type: "error",
+          title: "Model preferences not saved",
+          description: "Could not load saved model preferences. Try again.",
+        });
+        return;
+      }
+      return save({ environmentId, input: { patch: prepared } });
+    },
+    [environmentId, save, settings],
+  );
+}
+
+/** Send the desired state so two clients adding a favorite do not cancel each other. */
+export function useToggleEnvironmentModelFavorite(environmentId: EnvironmentId | null) {
+  const registry = use(RegistryContext);
+  const pendingFavorites = useRef(
+    new Map<string, { favorite: boolean; settings: ServerSettings; pending: boolean }>(),
+  );
+  const save = useUpdateEnvironmentModelPreferences(environmentId);
+  return useCallback(
+    async (provider: ProviderInstanceId, model: string) => {
+      if (!environmentId) return;
+      const settingsAtom = serverEnvironment.settingsValueAtom(environmentId);
+      const settings = registry.get(settingsAtom);
+      if (!settings) return;
+      if (settings.favorites === null) {
+        try {
+          await ensureClientSettingsHydrated();
+        } catch {
+          toastManager.add({
+            type: "error",
+            title: "Favorites not saved",
+            description: "Could not load saved model preferences. Try again.",
+          });
+          return;
+        }
+      }
+      const currentSettings = registry.get(settingsAtom) ?? settings;
+      const favorites = resolveModelPreferences(
+        currentSettings,
+        legacyModelPreferences(getClientSettings(), environmentId),
+      ).favorites;
+      const key = JSON.stringify([environmentId, provider, model]);
+      const previous = pendingFavorites.current.get(key);
+      // Keep the acknowledged choice until the config stream catches up with the RPC reply.
+      const previousFavorite =
+        previous && (previous.pending || previous.settings.favorites === currentSettings.favorites)
+          ? previous.favorite
+          : favorites.some(
+              (favorite) => favorite.provider === provider && favorite.model === model,
+            );
+      const pending = {
+        favorite: !previousFavorite,
+        settings: currentSettings,
+        pending: true,
+      };
+      pendingFavorites.current.set(key, pending);
+      try {
+        const result = await save({
+          setModelFavorites: [{ provider, model, favorite: pending.favorite }],
+        });
+        if (
+          result &&
+          AsyncResult.isSuccess(result) &&
+          registry.get(settingsAtom)?.favorites === currentSettings.favorites
+        ) {
+          pending.pending = false;
+        }
+      } finally {
+        if (pending.pending && pendingFavorites.current.get(key) === pending) {
+          if (
+            previous &&
+            !previous.pending &&
+            registry.get(settingsAtom)?.favorites === previous.settings.favorites
+          ) {
+            pendingFavorites.current.set(key, previous);
+          } else {
+            pendingFavorites.current.delete(key);
+          }
+        }
+      }
+    },
+    [environmentId, registry, save],
+  );
+}
+
+const noEnvironmentSettingsAtom = Atom.make<ServerSettings | null>(null);
+
+/** Model pickers may render before a settings target has been selected. */
+export function useEnvironmentModelPreferences(environmentId: EnvironmentId | null) {
+  const settings = useAtomValue(
+    environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
+  );
+  const clientSettings = useClientSettingsValue();
+  useMigrateModelPreferences(environmentId, settings);
+  return useMemo(
+    () =>
+      resolveModelPreferences(
+        settings ?? DEFAULT_SERVER_SETTINGS,
+        legacyModelPreferences(clientSettings, environmentId),
+      ),
+    [clientSettings, environmentId, settings],
+  );
+}
+
 /** Read current settings for one environment, merged with client-local preferences. */
 export function useEnvironmentSettings<T = UnifiedSettings>(
   environmentId: EnvironmentId,
   selector?: (settings: UnifiedSettings) => T,
 ): T {
   const serverSettings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
+  useMigrateModelPreferences(environmentId, serverSettings);
   return useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, selector, environmentId);
 }
 
@@ -478,12 +604,14 @@ export function usePersistEnvironmentProviderInstanceMutation(environmentId: Env
 export function usePrimarySettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
-  // Coder: the primary environment is the active workspace, whose provider preferences apply.
-  return useMergedSettings(
-    useAtomValue(primaryServerSettingsAtom),
-    selector,
-    usePrimaryEnvironment()?.environmentId ?? null,
+  const environment = usePrimaryEnvironment();
+  const settings = useAtomValue(primaryServerSettingsAtom);
+  useMigrateModelPreferences(
+    environment?.environmentId ?? null,
+    environment?.serverConfig?.settings ?? null,
   );
+  // Coder: the primary environment is the active workspace, whose legacy preferences apply.
+  return useMergedSettings(settings, selector, environment?.environmentId ?? null);
 }
 
 export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
@@ -660,7 +788,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
         }
       }
       if (Object.keys(clientPatch).length > 0) {
-        void persistEnvironmentClientSettingsPatch(clientPatch, environmentId);
+        void persistClientSettingsPatch(clientPatch);
       }
     },
     [environmentId, environments, persist, persistServerSettings, sharedSettingsSyncTargetIds],
@@ -669,7 +797,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
   return updateSettings;
 }
 
-export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {
+export function useUpdateEnvironmentSettings(environmentId: EnvironmentId | null) {
   return useUpdateSettingsTarget(environmentId);
 }
 
@@ -677,12 +805,10 @@ export function useUpdatePrimarySettings() {
   return useUpdateSettingsTarget(usePrimaryEnvironment()?.environmentId ?? null);
 }
 
-/** Coder: with an `environmentId`, favorites and model preferences are saved for that workspace. */
-export function useUpdateClientSettings(environmentId: EnvironmentId | null = null) {
-  return useCallback(
-    (patch: ClientSettingsPatch) => persistEnvironmentClientSettingsPatch(patch, environmentId),
-    [environmentId],
-  );
+export function useUpdateClientSettings() {
+  return useCallback((patch: ClientSettingsPatch) => {
+    return persistClientSettingsPatch(patch);
+  }, []);
 }
 
 export function __resetClientSettingsPersistenceForTests(): void {
