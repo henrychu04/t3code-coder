@@ -33,6 +33,7 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import { v2PullRequestThread } from "../../orchestration-v2/testkit/pullRequestFixtures.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
+import * as PullRequestReviewGuideService from "../../pullRequest/PullRequestReviewGuideService.ts";
 import * as McpSessionRegistry from "../McpSessionRegistry.ts";
 import * as T3ToolBridge from "./T3ToolBridge.ts";
 import * as T3ToolDispatch from "./T3ToolDispatch.ts";
@@ -134,6 +135,7 @@ const harness = (options: {
       Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
       Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+      Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
       Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
       T3ToolDispatch.layer,
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-tool-bridge-" }).pipe(
@@ -275,6 +277,11 @@ it("publishes unique tools with reference-free object-root input schemas", () =>
   ]) {
     assert.include(names, name);
   }
+  // Plan mode may read a merge request's guide but not start writing one.
+  const readOnly = (name: string) =>
+    T3ToolBridge.T3_TOOL_CATALOG.find((entry) => entry.name === name)?.readOnly;
+  assert.strictEqual(readOnly("read_pull_request_guide"), true);
+  assert.strictEqual(readOnly("write_pull_request_guides"), false);
   for (const name of [
     "preview_open",
     "device_list",

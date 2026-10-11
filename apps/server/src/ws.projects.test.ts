@@ -48,6 +48,7 @@ import { ProviderMaintenanceRunner } from "./provider/providerMaintenanceRunner.
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -203,6 +204,7 @@ const harness = (
       stub(GitLabCli.GitLabCli),
       stub(ProjectCloneTracker.ProjectCloneTracker),
       stub(PullRequestService.PullRequestService),
+      stub(PullRequestReviewGuideService.PullRequestReviewGuideService),
       stub(PullRequestSyncReactor.PullRequestSyncReactor),
       stub(RepositoryIdentityResolver.RepositoryIdentityResolver, {
         resolve: (cwd, resolveOptions) =>
