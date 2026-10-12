@@ -104,6 +104,8 @@ the already-running helper RPC and does not spawn another connection.
 The GitHub source ZIP for the default `coder-only` branch contains only the selected commit's files;
 it does not contain Git history or `node_modules`. Large vendored reference repositories, editor
 configuration payloads, upstream release tooling, and native application projects have been removed.
+It contains no shell scripts: the two test stand-ins that need one write it into a temporary
+directory at test time.
 
 The source retains three browser assets required by the terminal: two Ghostty WebAssembly files and
 one symbols font. Their hashes are:

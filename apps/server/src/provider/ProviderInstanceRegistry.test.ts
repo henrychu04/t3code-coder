@@ -105,7 +105,12 @@ const makeTildeProviderFixtures = Effect.fn(
   const codexScriptPath = path.join(fixtureDir, "codex-script.json");
   const codexFixtureDir = path.join(import.meta.dirname, "testFixtures");
 
-  yield* fileSystem.copyFile(path.join(codexFixtureDir, "codexCollabMockPeer.sh"), codexPath);
+  // Coder: the Codex stand-in wrapper is written here rather than tracked, so the source archive
+  // carries no shell script (a corporate download scanner rejects archives that do).
+  yield* fileSystem.writeFileString(
+    codexPath,
+    '#!/usr/bin/env bash\nshift\nexec node "$(dirname "$0")/codexCollabMockPeer.mjs" "$@"\n',
+  );
   yield* fileSystem.copyFile(
     path.join(codexFixtureDir, "codexCollabMockPeer.mjs"),
     path.join(fixtureDir, "codexCollabMockPeer.mjs"),

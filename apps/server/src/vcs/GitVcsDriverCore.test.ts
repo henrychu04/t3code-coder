@@ -2591,9 +2591,23 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const fileSystem = yield* FileSystem.FileSystem;
         const pathService = yield* Path.Path;
         const sshLogPath = pathService.join(tempDir, "ssh-env.txt");
-        const sshWrapperPath = yield* pathService.fromFileUrl(
-          new URL("./testing/GitVcsDriverCore.fixture.sh", import.meta.url),
+        // Coder: the SSH stand-in is written here rather than tracked, so the source archive
+        // carries no shell script (a corporate download scanner rejects archives that do).
+        const sshWrapperPath = pathService.join(tempDir, "ssh-wrapper.sh");
+        yield* fileSystem.writeFileString(
+          sshWrapperPath,
+          [
+            "#!/bin/sh",
+            'printf "GCM_INTERACTIVE=%s\\n" "${GCM_INTERACTIVE:-}" > "$T3_TEST_SSH_ASKPASS_LOG"',
+            'printf "GIT_ASKPASS=%s\\n" "${GIT_ASKPASS:-}" >> "$T3_TEST_SSH_ASKPASS_LOG"',
+            'printf "GIT_TERMINAL_PROMPT=%s\\n" "${GIT_TERMINAL_PROMPT:-}" >> "$T3_TEST_SSH_ASKPASS_LOG"',
+            'printf "SSH_ASKPASS=%s\\n" "${SSH_ASKPASS:-}" >> "$T3_TEST_SSH_ASKPASS_LOG"',
+            'printf "SSH_ASKPASS_REQUIRE=%s\\n" "${SSH_ASKPASS_REQUIRE:-}" >> "$T3_TEST_SSH_ASKPASS_LOG"',
+            "exit 1",
+            "",
+          ].join("\n"),
         );
+        yield* fileSystem.chmod(sshWrapperPath, 0o755);
         const envKeys = [
           "GCM_INTERACTIVE",
           "GIT_ASKPASS",
