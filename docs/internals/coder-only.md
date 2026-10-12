@@ -897,7 +897,9 @@ listed here is drift to remove rather than fork behavior to keep.
   pairing, or `keybindings.json` editor. Appearance's **Add theme** is upstream's
   `ThemeImportDialog` without its remote theme catalog search or desktop file picker: the browser
   reads picked, dropped, or pasted theme files itself. Connections holds the Coder deployments,
-  workspaces, workspace icon, and TCP/UDP port forwards in place of pairing and network access.
+  workspaces, and TCP/UDP port forwards in place of pairing and network access. Each workspace
+  row's menu carries upstream's `EnvironmentIconMenu`; the helper reports no `platform.machine`
+  (no hardware detection), so a workspace shows the generic server icon until one is picked.
   Providers is upstream's panel and add-instance dialog limited to Codex, Claude, and Pi drivers,
   without sign-in, setup or managed install, per-instance environment variables, ACP registry, or
   usage-limit sources. Source Control appends GitLab workspace status and the write-policy probe.

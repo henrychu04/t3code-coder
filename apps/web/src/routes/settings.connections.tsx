@@ -3,7 +3,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCoder } from "../coder/CoderBootstrap";
 import { CoderDeploymentSettings } from "../components/settings/CoderDeploymentSettings";
 import { CoderWorkspaceSettings } from "../components/settings/CoderWorkspaceSettings";
-import { EnvironmentIconPicker } from "../components/settings/EnvironmentIconPicker";
 import { PortForwardSettings } from "../components/settings/PortForwardSettings";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import { useCoderSettingsConfig } from "../components/settings/useCoderSettingsConfig";
@@ -16,7 +15,6 @@ function CoderConnectionsSettings() {
     <SettingsPageContainer>
       <CoderDeploymentSettings config={config} updateConfig={updateConfig} />
       <CoderWorkspaceSettings updateConfig={updateConfig} />
-      <EnvironmentIconPicker />
       <PortForwardSettings
         config={config}
         workspaceRuntime={workspaceRuntime}

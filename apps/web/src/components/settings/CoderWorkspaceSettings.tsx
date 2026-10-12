@@ -1,3 +1,4 @@
+import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { useEnvironments } from "../../state/environments";
 import { coderWorkspaceIdForEnvironment } from "../../coder/environmentStore";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
@@ -13,7 +14,8 @@ import { CoderWorkspaceDiagnostics } from "../CoderWorkspaceDiagnostics";
 import { formatCoderAutostop } from "../CoderWorkspaceLatency";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
+import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
+import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { SettingsSection } from "./settingsLayout";
 import { SettingsResource, SettingsResourceEmpty, SettingsResourceError } from "./SettingsResource";
 import { useSettingsOperation } from "./useSettingsOperation";
@@ -105,6 +107,9 @@ export function CoderWorkspaceSettings({
               (entry) => entry.id === workspace.deploymentId,
             );
             const runtime = workspaceRuntime[workspace.id];
+            const environment = environments.find(
+              (entry) => coderWorkspaceIdForEnvironment(entry.environmentId) === workspace.id,
+            );
             const action = pendingAction?.[0] === workspace.id ? pendingAction[1] : null;
             const checking = runtime === undefined && poll.error === null;
             const starting = runtime?.status === "starting" || action !== null;
@@ -140,13 +145,7 @@ export function CoderWorkspaceSettings({
                   <span className="flex items-center gap-2">
                     <EnvironmentMachineIcon
                       className="size-4"
-                      kind={
-                        environments.find(
-                          (environment) =>
-                            coderWorkspaceIdForEnvironment(environment.environmentId) ===
-                            workspace.id,
-                        )?.serverConfig?.settings.environmentIcon ?? "server"
-                      }
+                      kind={resolveEnvironmentMachineKind(environment?.serverConfig ?? null)}
                     />
                     {workspace.name}
                   </span>
@@ -255,6 +254,15 @@ export function CoderWorkspaceSettings({
                         }
                       />
                       <MenuPopup align="end">
+                        {environment ? (
+                          <>
+                            <EnvironmentIconMenu
+                              environmentId={environment.environmentId}
+                              serverConfig={environment.serverConfig}
+                            />
+                            <MenuSeparator />
+                          </>
+                        ) : null}
                         {runtime?.updateAvailable ? (
                           <MenuItem
                             disabled={

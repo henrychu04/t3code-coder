@@ -692,7 +692,8 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "environment-icon",
     title: "Environment icon",
     to: "/settings/connections",
-    targetId: "connections-environment",
+    // Coder: each workspace row's menu holds its icon, as each environment row does upstream.
+    targetId: "coder-workspaces",
     searchTerms: ["machine glyph sidebar mac mini studio laptop desktop server cloud vm"],
   },
   {
