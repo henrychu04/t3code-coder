@@ -976,6 +976,11 @@ listed here is drift to remove rather than fork behavior to keep.
   (`CHILD_PROCESS_STARTUP_PREAMBLE_MAX_BYTES`) of non-JSON lines before its first
   protocol message, because managed workspace wrappers can emit a banner first; and the `probe`
   script and its example are not carried, because they launch a local Codex.
+- **No tracked shell scripts.** The source archive carries no shell script, because a corporate
+  download scanner rejects archives that contain one. Upstream's `codexCollabMockPeer.sh` and
+  `GitVcsDriverCore.fixture.sh` are not carried; `ProviderInstanceRegistry.test.ts` and
+  `GitVcsDriverCore.test.ts` write the same stand-ins into their temporary directories (marked
+  `Coder:`).
 - **Build tooling.** `scripts/lib/third-party-licenses.ts` never fetches during a build: SPDX
   texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
   ones. It reads no device tool version pins, because device tools are not carried.
