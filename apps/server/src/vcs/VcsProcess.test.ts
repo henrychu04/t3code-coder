@@ -286,24 +286,71 @@ describe("VcsProcess.run", () => {
     }).pipe(provideLive),
   );
 
-  it.effect("classifies a policy response before discarding stderr", () =>
+  it.effect("classifies authentication failures without retaining stderr", () =>
     Effect.gen(function* () {
-      const policyMessage = "write endpoints are disabled by workspace policy";
+      const secretStderr = "authentication failed for token super-secret-token";
       const error = yield* run({
-        operation: "test.policy-block",
+        operation: "test.authentication",
         command: "node",
-        args: ["-e", `process.stderr.write(${JSON.stringify(policyMessage)}); process.exit(1)`],
+        args: ["-e", "process.stderr.write(process.argv[1]); process.exit(1)", secretStderr],
         cwd: process.cwd(),
-        classifyNonZeroExit: (stderr) =>
-          stderr.includes("workspace policy") ? "policy-blocked" : undefined,
+      }).pipe(Effect.flip);
+
+      expect(error).toBeInstanceOf(VcsProcessExitError);
+      expect(error).toMatchObject({
+        operation: "test.authentication",
+        command: "node",
+        exitCode: 1,
+        detail: "Authentication failed.",
+        failureKind: "authentication",
+        stderrLength: secretStderr.length,
+        stderrTruncated: false,
+      });
+      expect(error.message).not.toContain(secretStderr);
+      expect(error.message).not.toContain("super-secret-token");
+    }).pipe(provideLive),
+  );
+
+  it.effect("classifies API rate limits without retaining provider stderr", () =>
+    Effect.gen(function* () {
+      const providerStderr =
+        "GraphQL: API rate limit already exceeded for user ID 51714798 and token secret-value.";
+      const error = yield* run({
+        operation: "test.rate-limit",
+        command: "node",
+        args: ["-e", "process.stderr.write(process.argv[1]); process.exit(1)", providerStderr],
+        cwd: process.cwd(),
+      }).pipe(Effect.flip);
+
+      expect(error).toBeInstanceOf(VcsProcessExitError);
+      expect(error).toMatchObject({
+        command: "node",
+        exitCode: 1,
+        detail: "API rate limit exceeded.",
+        failureKind: "rate-limited",
+        stderrLength: providerStderr.length,
+        stderrTruncated: false,
+      });
+      expect(error.message).not.toContain(providerStderr);
+      expect(error.message).not.toContain("secret-value");
+    }).pipe(provideLive),
+  );
+
+  it.effect("classifies HTTP 429 responses as rate limits", () =>
+    Effect.gen(function* () {
+      const providerStderr = "HTTP 429: Too Many Requests. request-id=secret-value";
+      const error = yield* run({
+        operation: "test.rate-limit",
+        command: "node",
+        args: ["-e", "process.stderr.write(process.argv[1]); process.exit(1)", providerStderr],
+        cwd: process.cwd(),
       }).pipe(Effect.flip);
 
       expect(error).toMatchObject({
-        _tag: "VcsProcessExitError",
-        failureKind: "policy-blocked",
-        detail: "Write operation blocked by workspace policy.",
+        detail: "API rate limit exceeded.",
+        failureKind: "rate-limited",
       });
-      expect(JSON.stringify(error)).not.toContain(policyMessage);
+      expect(error.message).not.toContain(providerStderr);
     }).pipe(provideLive),
   );
 

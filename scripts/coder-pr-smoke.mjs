@@ -240,7 +240,7 @@ console.log(`Smoke repository: ${repository}`);
 console.log(`Mutable glab state: ${statePath}`);
 console.log(`glab command trace: ${commandLogPath}`);
 console.log(
-  'Change writeAccess in the mutable state to "writable", "policy-blocked", or "indeterminate", then use Reprobe in GitLab source control settings.',
+  'Set writeAccess in the mutable state to anything but "writable" to make GitLab writes fail.',
 );
 console.log("The smoke project is already configured; open Merge Requests in the sidebar.");
 

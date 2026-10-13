@@ -213,13 +213,6 @@ These connection settings belong to this computer and do not use workspace or pr
 Settings search includes domains, workspace connections, and port forwarding even when no
 workspace is connected.
 
-## GitLab workspace status
-
-**Settings → Source Control → Workspace GitLab status** shows installation, authentication,
-and write access for the connected workspaces selected in the breadcrumb. Use **Check status**
-to refresh a workspace and **Check write access** to run its write probe. Errors remain beside
-the affected workspace. Project-detail links on this page follow the selected scope as well.
-
 ## Storage cleanup
 
 Open **Settings → Storage** to configure retention for selected Coder workspaces. Cleanup is off

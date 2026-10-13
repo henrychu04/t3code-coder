@@ -232,11 +232,6 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly cwd: string;
     }) => Effect.Effect<string, GitLabPullRequestCliError>;
 
-    /** Coder: the workspace write-access probe. */
-    readonly probeWriteAccess: (input: {
-      readonly cwd: string;
-    }) => Effect.Effect<{ readonly writable: boolean }>;
-
     readonly listMergeRequests: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -574,17 +569,15 @@ class MergeRequestSummaryRead extends Request.Class<
 export const make = Effect.gen(function* () {
   const gitlab = yield* GitLabCli.GitLabCli;
 
-  type ApiInput = {
+  const api = (input: {
     readonly cwd: string;
     readonly path: string;
     readonly method?: string;
     readonly stdin?: string;
     readonly maxOutputBytes?: number;
     readonly timeoutMs?: number;
-  };
-
-  const apiWith = (execute: GitLabCli.GitLabCli["Service"]["execute"], input: ApiInput) =>
-    execute({
+  }) =>
+    gitlab.execute({
       cwd: input.cwd,
       args: [
         "api",
@@ -601,10 +594,6 @@ export const make = Effect.gen(function* () {
       ...(input.maxOutputBytes === undefined ? {} : { maxOutputBytes: input.maxOutputBytes }),
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
     });
-
-  const api = (input: ApiInput) => apiWith(gitlab.execute, input);
-  // Coder: host writes run only after the workspace write-access probe allows them.
-  const writeApi = (input: ApiInput) => apiWith(gitlab.executeWrite, input);
 
   /**
    * `per_page` stops at 100, so a larger page is walked one request at a time. The walk is
@@ -1286,7 +1275,6 @@ export const make = Effect.gen(function* () {
 
   return GitLabPullRequestCli.of({
     getViewerUsername: viewerUsername,
-    probeWriteAccess: gitlab.probeWriteAccess,
 
     listMergeRequests: (input) => {
       const perPage = Math.min(input.limit + 1, MAX_PAGE_SIZE);
@@ -1308,7 +1296,7 @@ export const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const subject = awardSubjectPath(input);
         if (input.reacted) {
-          yield* writeApi({
+          yield* api({
             cwd: input.cwd,
             path: `${subject}?${query([["name", gitLabAwardName(input.content)]])}`,
             method: "POST",
@@ -1333,7 +1321,7 @@ export const make = Effect.gen(function* () {
           });
         }
         if (own.success === null) return;
-        yield* writeApi({
+        yield* api({
           cwd: input.cwd,
           path: `${subject}/${own.success}`,
           method: "DELETE",
@@ -1489,7 +1477,7 @@ export const make = Effect.gen(function* () {
             if (input.requested) ids.add(id);
             else ids.delete(id);
           }
-          return writeApi({
+          return api({
             cwd: input.cwd,
             path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
             method: "PUT",
@@ -1504,7 +1492,7 @@ export const make = Effect.gen(function* () {
       // no flag for is asked of GitLab directly through the same `api` passthrough the rest of
       // this module writes with.
       if (input.action === "disable-auto-merge") {
-        return writeApi({
+        return api({
           cwd: input.cwd,
           path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/cancel_merge_when_pipeline_succeeds`,
           method: "POST",
@@ -1512,7 +1500,7 @@ export const make = Effect.gen(function* () {
       }
       const [subcommand, ...flags] = actionArgs(input.action, input.mergeMethod);
       return gitlab
-        .executeWrite({
+        .execute({
           cwd: input.cwd,
           args: ["mr", subcommand!, String(input.number), "--repo", input.repository, ...flags],
         })
@@ -1520,7 +1508,7 @@ export const make = Effect.gen(function* () {
     },
 
     updateMergeRequest: (input) =>
-      writeApi({
+      api({
         cwd: input.cwd,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
         method: "PUT",
@@ -1534,7 +1522,7 @@ export const make = Effect.gen(function* () {
       }).pipe(Effect.asVoid),
 
     commentOnMergeRequest: (input) =>
-      writeApi({
+      api({
         cwd: input.cwd,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/notes`,
         method: "POST",
@@ -1544,7 +1532,7 @@ export const make = Effect.gen(function* () {
       }).pipe(Effect.asVoid),
 
     updateNote: (input) =>
-      writeApi({
+      api({
         cwd: input.cwd,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/notes/${encodeURIComponent(
           input.noteId,
@@ -1568,7 +1556,7 @@ export const make = Effect.gen(function* () {
           yield* Effect.forEach(
             input.comments,
             (comment) =>
-              writeApi({
+              api({
                 cwd: input.cwd,
                 path: `${mergeRequest}/discussions`,
                 method: "POST",
@@ -1592,7 +1580,7 @@ export const make = Effect.gen(function* () {
           );
         }
         if (input.body.trim().length > 0) {
-          yield* writeApi({
+          yield* api({
             cwd: input.cwd,
             path: `${mergeRequest}/notes`,
             method: "POST",
@@ -1603,12 +1591,12 @@ export const make = Effect.gen(function* () {
           });
         }
         if (input.verdict === "approve") {
-          yield* writeApi({ cwd: input.cwd, path: `${mergeRequest}/approve`, method: "POST" });
+          yield* api({ cwd: input.cwd, path: `${mergeRequest}/approve`, method: "POST" });
         }
       }),
 
     replyToDiscussion: (input) =>
-      writeApi({
+      api({
         cwd: input.cwd,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/discussions/${encodeURIComponent(
           input.discussionId,
@@ -1618,7 +1606,7 @@ export const make = Effect.gen(function* () {
       }).pipe(Effect.asVoid),
 
     setDiscussionResolution: (input) =>
-      writeApi({
+      api({
         cwd: input.cwd,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/discussions/${encodeURIComponent(
           input.discussionId,

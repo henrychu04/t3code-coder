@@ -59,16 +59,6 @@ describe("gitLabViewerPermissions", () => {
       "reopen",
     ]);
   });
-
-  it("offers no writes when the workspace probe fails", () => {
-    expect(gitLabViewerPermissions({ viewerCanMerge: true, writeAvailable: false })).toEqual({
-      actions: [],
-      comment: false,
-      resolve: false,
-      verdicts: [],
-      requestReviewers: false,
-    });
-  });
 });
 
 describe("getChangeRequest base freshness", () => {
@@ -115,7 +105,7 @@ describe("getChangeRequest base freshness", () => {
     }),
   );
 
-  const readWith = (divergence: { readonly divergedCommits?: number }, writable = true) =>
+  const readWith = (divergence: { readonly divergedCommits?: number }) =>
     Effect.gen(function* () {
       const provider = yield* make;
       return yield* provider.getChangeRequest({
@@ -130,11 +120,6 @@ describe("getChangeRequest base freshness", () => {
           getMergeRequestDetail: () => Effect.succeed({ ...detail, ...divergence }),
           getProjectMergeCapabilities: () =>
             Effect.succeed({ merge: true, squash: true, rebase: true }),
-          probeWriteAccess: () =>
-            Effect.succeed({
-              status: writable ? "writable" : "policy-blocked",
-              writable,
-            }),
         }),
       ),
     );
@@ -161,7 +146,7 @@ describe("getChangeRequest base freshness", () => {
       });
     }).pipe(
       Effect.provide(
-        // No merge settings or write probe: only the merge request read is mocked.
+        // No merge settings: only the merge request read is mocked.
         Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({
           getMergeRequestDetail: () => Effect.succeed(detail),
         }),
@@ -198,28 +183,6 @@ describe("getChangeRequest base freshness", () => {
     }),
   );
 
-  it.effect("replaces host write capabilities when the workspace probe fails", () =>
-    Effect.gen(function* () {
-      const changeRequest = yield* readWith({}, false);
-
-      expect(changeRequest.capabilities).toMatchObject({
-        diff: true,
-        comment: false,
-        actions: [],
-        reactions: false,
-        review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
-        reviewers: { request: false, listCandidates: false },
-        edit: { changeRequest: false, comment: false },
-      });
-      expect(changeRequest.viewerPermissions).toEqual({
-        actions: [],
-        comment: false,
-        resolve: false,
-        verdicts: [],
-        requestReviewers: false,
-      });
-    }),
-  );
 });
 
 describe("rewriting what has already been said", () => {

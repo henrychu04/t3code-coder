@@ -1,7 +1,6 @@
 // Coder: GitLab is the only hosted provider and every workspace resolves its own links, so
 // upstream's cross-environment routing (routing identities, verified credentials,
-// `expectedAccountId` refs) and Forgejo SSH-alias refinement are omitted. Change
-// requests may carry `capabilities` that reflect the workspace write-access probe.
+// `expectedAccountId` refs) and Forgejo SSH-alias refinement are omitted.
 import {
   canonicalRepositoryKey,
   sourceControlRepositorySelector,
@@ -1655,7 +1654,7 @@ export const make = Effect.gen(function* () {
         ).pipe(
           Effect.map(([{ value: changeRequest, observedAt }, viewer]): PullRequestDetail => ({
             provider: project.api.kind,
-            capabilities: changeRequest.capabilities ?? project.api.capabilities,
+            capabilities: project.api.capabilities,
             projectId: project.project.id,
             projectTitle: project.project.title,
             workspaceRoot: project.project.workspaceRoot,

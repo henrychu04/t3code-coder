@@ -30,7 +30,6 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
-import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 
 import * as ServerConfig from "./config.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
@@ -68,7 +67,6 @@ import type * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 export const CODER_WS_METHODS = [
   WS_METHODS.orchestrationGetThreadBoundedSnapshot,
   WS_METHODS.orchestrationGetThreadHistoryPage,
-  WS_METHODS.sourceControlProbeWriteAccess,
   WS_METHODS.pullRequestsDiff,
   WS_METHODS.projectsGetConfig,
   WS_METHODS.projectsSearchText,
@@ -168,8 +166,6 @@ export const makeHandlers = (
     // Legacy images are read in bounded chunks over helper stdio.
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const legacyScreenshotArtifacts = yield* LegacyScreenshotArtifacts.LegacyScreenshotArtifacts;
-    // Source-control mutations use the workspace glab login and write-policy probe.
-    const gitLabCli = yield* GitLabCli.GitLabCli;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const path = yield* Path.Path;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -565,9 +561,6 @@ export const makeHandlers = (
       [WS_METHODS.orchestrationGetThreadBoundedSnapshot]: (input) =>
         getThreadBoundedSnapshot(input.threadId),
       [WS_METHODS.orchestrationGetThreadHistoryPage]: (input) => getThreadHistoryPage(input),
-      // Coder: probe GitLab workspace write policy through glab.
-      [WS_METHODS.sourceControlProbeWriteAccess]: (input) =>
-        gitLabCli.reprobeWriteAccess({ cwd: config.cwd }),
       // Coder: serve GitLab diffs over stdio instead of environment HTTP.
       [WS_METHODS.pullRequestsDiff]: (input) => pullRequests.diff(input),
       // Coder: read fixed bounded project metadata in the workspace.

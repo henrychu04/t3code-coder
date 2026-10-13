@@ -228,8 +228,6 @@ export interface ProviderChangeRequestStat {
 }
 
 export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
-  /** Coder: overrides the provider defaults when this workspace cannot currently reach host writes. */
-  readonly capabilities?: PullRequestCapabilities;
   /** The head commit, where the host's detail read reports it. */
   readonly headSha?: string | null;
   readonly body: string;

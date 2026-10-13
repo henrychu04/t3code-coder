@@ -145,28 +145,6 @@ export const SourceControlProviderAuth = Schema.Struct({
 });
 export type SourceControlProviderAuth = typeof SourceControlProviderAuth.Type;
 
-export const SourceControlWriteAccessStatus = Schema.Literals([
-  "unchecked",
-  "writable",
-  "policy-blocked",
-  "unauthenticated",
-  "indeterminate",
-]);
-export type SourceControlWriteAccessStatus = typeof SourceControlWriteAccessStatus.Type;
-
-export const SourceControlWriteAccess = Schema.Struct({
-  status: SourceControlWriteAccessStatus,
-  writable: Schema.Boolean,
-  /** A bounded, synthesized explanation. Probe command output must never be transported here. */
-  detail: Schema.optional(TrimmedNonEmptyString),
-});
-export type SourceControlWriteAccess = typeof SourceControlWriteAccess.Type;
-
-export const SourceControlProbeWriteAccessInput = Schema.Struct({
-  provider: Schema.Literal("gitlab"),
-});
-export type SourceControlProbeWriteAccessInput = typeof SourceControlProbeWriteAccessInput.Type;
-
 const SourceControlDiscoverySharedFields = {
   label: TrimmedNonEmptyString,
   executable: Schema.optional(TrimmedNonEmptyString),
@@ -187,7 +165,6 @@ export const SourceControlProviderDiscoveryItem = Schema.Struct({
   kind: SourceControlProviderKind,
   ...SourceControlDiscoverySharedFields,
   auth: SourceControlProviderAuth,
-  writeAccess: Schema.optional(SourceControlWriteAccess),
 });
 export type SourceControlProviderDiscoveryItem = typeof SourceControlProviderDiscoveryItem.Type;
 

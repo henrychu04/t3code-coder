@@ -77,8 +77,6 @@ export const VcsProcessExitFailureKind = Schema.Literals([
   "authentication",
   "not-found",
   "rate-limited",
-  // Coder: GitLab's write probe reports a write the workspace policy blocks.
-  "policy-blocked",
   "command-failed",
 ]);
 export type VcsProcessExitFailureKind = typeof VcsProcessExitFailureKind.Type;
@@ -138,7 +136,7 @@ export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>
     retryable?: boolean,
   ) {
     // Coder: only glab reaches VcsProcess, so upstream's gh/az "Pull request not found." branch
-    // is not carried, and a policy-blocked write gets its own detail.
+    // is not carried.
     const detail =
       failureKind === "authentication"
         ? "Authentication failed."
@@ -148,9 +146,7 @@ export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>
             ? context.command === "glab"
               ? "Merge request not found."
               : "VCS resource not found."
-            : failureKind === "policy-blocked"
-              ? "Write operation blocked by workspace policy."
-              : "Process exited with a non-zero status.";
+            : "Process exited with a non-zero status.";
     return new VcsProcessExitError({
       ...context,
       exitCode: error.exitCode,

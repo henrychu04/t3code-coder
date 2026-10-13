@@ -328,8 +328,6 @@ import {
 // Coder
 import { PullRequestDiffInput, PullRequestDiffResult } from "./pullRequest.ts";
 // Coder
-import { SourceControlProbeWriteAccessInput, SourceControlWriteAccess } from "./sourceControl.ts";
-// Coder
 import {
   ProjectImageReadInput,
   ProjectImageChunk,
@@ -578,7 +576,6 @@ export const WS_METHODS = {
   workspaceReadTurnItemAsset: "workspace.readTurnItemAsset",
   workspaceReadAttachmentFile: "workspace.readAttachmentFile",
   projectsCreateFile: "projects.createFile",
-  sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
   reviewOpenDiffFileContents: "review.openDiffFileContents",
@@ -1918,11 +1915,6 @@ const WsVcsRenameThreadBranchRpc = Rpc.make(WS_METHODS.vcsRenameThreadBranch, {
   error: VcsRenameThreadBranchError,
 });
 
-const WsSourceControlProbeWriteAccessRpc = Rpc.make(WS_METHODS.sourceControlProbeWriteAccess, {
-  payload: SourceControlProbeWriteAccessInput,
-  success: SourceControlWriteAccess,
-});
-
 const WsPullRequestsDiffRpc = Rpc.make(WS_METHODS.pullRequestsDiff, {
   payload: PullRequestDiffInput,
   success: PullRequestDiffResult,
@@ -1998,7 +1990,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsServerDiscoverSourceControlRpc,
-  WsSourceControlProbeWriteAccessRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,

@@ -62,13 +62,9 @@ that point. Checkpoints are the local, workspace-side safety net; nothing is pus
 ## GitLab access
 
 GitLab authentication remains entirely owned by `glab` in the workspace. T3 Coder never asks for,
-reads, stores, or logs a GitLab token. A workspace-level write probe runs once before the first
-GitLab mutation. If workspace policy blocks writes, authentication is unavailable, or the result is
-indeterminate, GitLab write actions stay disabled while read-only merge-request features continue
-to work. Settings shows a bounded diagnostic category for failed or indeterminate probes, such as
-a missing CLI, timeout, network/TLS failure, HTTP rejection, or unrecognized exit status. Raw
-`glab` output is never sent to the browser. T3 Coder does not register GitHub, Bitbucket, Azure
-DevOps, or another hosted provider.
+reads, stores, or logs a GitLab token. GitLab write actions run directly; if workspace policy or
+GitLab rejects one, that action fails with an error. Raw `glab` output is never sent to the
+browser. T3 Coder does not register GitHub, Bitbucket, Azure DevOps, or another hosted provider.
 
 ## Merge-request list
 

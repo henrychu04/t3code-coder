@@ -25,7 +25,7 @@ Until the project has a thread, new threads work in its folder, even when your d
 worktree.
 If Git cannot make the commit, the project still opens and reports why.
 You may also publish it as a private GitLab repository using the workspace's existing GitLab login.
-The publish option appears only when workspace discovery reports authenticated, writable GitLab access.
+The publish option appears only when workspace discovery reports an authenticated GitLab login.
 
 ## Start without a project
 

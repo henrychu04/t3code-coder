@@ -44,18 +44,6 @@ const HOST_CAPABILITIES: PullRequestCapabilities = {
   edit: { changeRequest: true, comment: true },
 };
 
-const READ_ONLY_CAPABILITIES: PullRequestCapabilities = {
-  ...HOST_CAPABILITIES,
-  comment: false,
-  actions: [],
-  mergeMethods: [],
-  updateMethods: [],
-  reactions: false,
-  review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
-  reviewers: { request: false, listCandidates: false },
-  edit: { changeRequest: false, comment: false },
-};
-
 const project: OrchestrationProjectShell = {
   id: "project-1" as ProjectId,
   title: "GitLab project",
@@ -122,7 +110,6 @@ const provider: PullRequestProviderApi = {
         verdicts: [],
         requestReviewers: false,
       },
-      capabilities: READ_ONLY_CAPABILITIES,
     }),
   getChangeRequestActivity: () =>
     Effect.succeed({
@@ -175,39 +162,6 @@ const service = PullRequestService.make.pipe(
       ServerSettings.layerTest(),
     ),
   ),
-);
-
-it.effect("carries the workspace probe's read-only capabilities through the RPC detail model", () =>
-  Effect.gen(function* () {
-    const pullRequests = yield* service;
-    const detail = yield* pullRequests.detail({
-      projectId: project.id,
-      repository: "goldman/project",
-      number: 42,
-    });
-
-    expect(detail.capabilities).toEqual(READ_ONLY_CAPABILITIES);
-    expect(detail.viewer).toBe("coder-user");
-  }),
-);
-
-it.effect("refuses a mutation when the fresh viewer permissions reflect a blocked workspace", () =>
-  Effect.gen(function* () {
-    runAction.mockClear();
-    const pullRequests = yield* service;
-    const error = yield* pullRequests
-      .runAction({
-        projectId: project.id,
-        repository: "goldman/project",
-        number: 42,
-        action: "merge",
-      })
-      .pipe(Effect.flip);
-
-    assert.strictEqual(error._tag, "PullRequestOperationError");
-    expect(error.message).toContain("write access");
-    expect(runAction).not.toHaveBeenCalled();
-  }),
 );
 
 it.effect("publishes a refresh revision after a provider turn", () =>

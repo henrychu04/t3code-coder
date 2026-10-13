@@ -285,7 +285,7 @@ describe("add project shared logic", () => {
 });
 
 describe("new project publish targets", () => {
-  const readyHost = (kind: string, account: string | null, writable = true) => ({
+  const readyHost = (kind: string, account: string | null) => ({
     kind: SourceControlProviderKind.make(kind),
     label: kind,
     status: "available" as const,
@@ -298,13 +298,10 @@ describe("new project publish targets", () => {
       host: Option.none(),
       detail: Option.none(),
     },
-    writeAccess: writable
-      ? { status: "writable" as const, writable: true }
-      : { status: "policy-blocked" as const, writable: false },
   });
 
-  // Coder: GitLab is the only shipped host, offered only while the write probe allows writes.
-  it("offers GitLab when it is ready and writable, and keeps the pick", () => {
+  // Coder: GitLab is the only shipped host.
+  it("offers GitLab when it is ready, and keeps the pick", () => {
     const targets = getNewProjectPublishTargets({
       versionControlSystems: [],
       sourceControlProviders: [
@@ -318,11 +315,5 @@ describe("new project publish targets", () => {
     expect(
       getNewProjectPublishTarget(targets, SourceControlProviderKind.make("gitlab"))?.owner,
     ).toBe("group");
-    expect(
-      getNewProjectPublishTargets({
-        versionControlSystems: [],
-        sourceControlProviders: [readyHost("gitlab", "group", false)],
-      }),
-    ).toEqual([]);
   });
 });

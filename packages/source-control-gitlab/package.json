@@ -42,10 +42,6 @@
     "./server/GitLabSourceControlProvider": {
       "types": "./src/server/GitLabSourceControlProvider.ts",
       "import": "./src/server/GitLabSourceControlProvider.ts"
-    },
-    "./server/GitLabWriteProbe": {
-      "types": "./src/server/GitLabWriteProbe.ts",
-      "import": "./src/server/GitLabWriteProbe.ts"
     }
   },
   "scripts": {

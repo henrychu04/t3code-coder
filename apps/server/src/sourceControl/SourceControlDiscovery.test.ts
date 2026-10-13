@@ -9,11 +9,10 @@ import { ChildProcessSpawner } from "effect/process";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as SourceControlDiscovery from "./SourceControlDiscovery.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 
-it.effect("combines Git, GitLab discovery, and the workspace write policy", () => {
+it.effect("combines Git and GitLab discovery", () => {
   const layer = SourceControlDiscovery.layer.pipe(
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-discovery-" }).pipe(
@@ -54,11 +53,6 @@ it.effect("combines Git, GitLab discovery, and the workspace write policy", () =
         ]),
       }),
     ),
-    Layer.provide(
-      Layer.mock(GitLabCli.GitLabCli)({
-        probeWriteAccess: () => Effect.succeed({ status: "policy-blocked", writable: false }),
-      }),
-    ),
   );
 
   return Effect.gen(function* () {
@@ -70,9 +64,9 @@ it.effect("combines Git, GitLab discovery, and the workspace write policy", () =
       Option.getOrNull(result.versionControlSystems[0]!.version),
       "git version 2.51.0",
     );
-    assert.deepStrictEqual(result.sourceControlProviders[0]?.writeAccess, {
-      status: "policy-blocked",
-      writable: false,
-    });
+    assert.strictEqual(
+      Option.getOrNull(result.sourceControlProviders[0]!.auth.account),
+      "coder-user",
+    );
   }).pipe(Effect.provide(layer));
 });

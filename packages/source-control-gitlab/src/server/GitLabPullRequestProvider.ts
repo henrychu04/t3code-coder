@@ -45,19 +45,6 @@ const CAPABILITIES: PullRequestCapabilities = {
   edit: { changeRequest: true, comment: true },
 };
 
-// Coder: what the panel offers while the workspace write-access probe forbids host writes.
-const READ_ONLY_CAPABILITIES: PullRequestCapabilities = {
-  ...CAPABILITIES,
-  comment: false,
-  actions: [],
-  mergeMethods: [],
-  updateMethods: [],
-  reactions: false,
-  review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
-  reviewers: { request: false, listCandidates: false },
-  edit: { changeRequest: false, comment: false },
-};
-
 /**
  * The actions `user.can_merge` answers for. Rebasing writes to the source branch rather than to
  * the target, so it is not literally the same permission — but GitLab reports nothing narrower,
@@ -86,18 +73,7 @@ const MERGE_ACTIONS: ReadonlySet<string> = new Set([
  */
 export function gitLabViewerPermissions(input: {
   readonly viewerCanMerge: boolean;
-  /** Coder: false while the workspace write-access probe forbids host writes. */
-  readonly writeAvailable?: boolean;
 }): PullRequestViewerPermissions {
-  if (input.writeAvailable === false) {
-    return {
-      actions: [],
-      comment: false,
-      resolve: false,
-      verdicts: [],
-      requestReviewers: false,
-    };
-  }
   return {
     // Arming the merge and taking the arming back are the merge, deferred, so they answer to
     // the same `can_merge` the merge itself does.
@@ -163,7 +139,7 @@ export const make = Effect.gen(function* () {
 
     // Coder: GitLab implementations of upstream's optional preview and summary reads, which
     // upstream implements only for GitHub.
-    // A hover card needs only the merge request itself, not merge settings or write access.
+    // A hover card needs only the merge request itself, not merge settings.
     getChangeRequestPreview: (input) =>
       cli.getMergeRequestDetail(input).pipe(
         Effect.map((mergeRequest) => ({
@@ -192,33 +168,26 @@ export const make = Effect.gen(function* () {
         [
           cli.getMergeRequestDetail(input),
           cli.getProjectMergeCapabilities({ cwd: input.cwd, repository: input.repository }),
-          cli.probeWriteAccess({ cwd: input.cwd }),
         ],
-        { concurrency: 3 },
+        { concurrency: 2 },
       ).pipe(
         Effect.mapError(fail("getChangeRequest")),
-        Effect.map(
-          ([mergeRequest, mergeCapabilities, writeAccess]): ProviderChangeRequestDetail => ({
-            ...mergeRequest,
-            capabilities: writeAccess.writable ? CAPABILITIES : READ_ONLY_CAPABILITIES,
-            mergeCapabilities,
-            viewerPermissions: gitLabViewerPermissions({
-              ...mergeRequest,
-              writeAvailable: writeAccess.writable,
-            }),
-            // A GitLab too old to count the divergence says nothing here rather than "up to
-            // date": the banner is worth missing, and a wrong all-clear is not worth showing.
-            baseComparison:
-              mergeRequest.divergedCommits === undefined
-                ? "unknown"
-                : mergeRequest.divergedCommits > 0
-                  ? "behind"
-                  : "up-to-date",
-            ...(mergeRequest.divergedCommits === undefined
-              ? {}
-              : { behindBy: mergeRequest.divergedCommits }),
-          }),
-        ),
+        Effect.map(([mergeRequest, mergeCapabilities]): ProviderChangeRequestDetail => ({
+          ...mergeRequest,
+          mergeCapabilities,
+          viewerPermissions: gitLabViewerPermissions(mergeRequest),
+          // A GitLab too old to count the divergence says nothing here rather than "up to
+          // date": the banner is worth missing, and a wrong all-clear is not worth showing.
+          baseComparison:
+            mergeRequest.divergedCommits === undefined
+              ? "unknown"
+              : mergeRequest.divergedCommits > 0
+                ? "behind"
+                : "up-to-date",
+          ...(mergeRequest.divergedCommits === undefined
+            ? {}
+            : { behindBy: mergeRequest.divergedCommits }),
+        })),
       ),
 
     getChangeRequestActivity: (input) =>
@@ -268,17 +237,9 @@ export const make = Effect.gen(function* () {
     // The same read the detail takes it from, on its own: `user.can_merge` lives on the merge
     // request, so there is no cheaper thing to ask GitLab.
     getViewerPermissions: (input) =>
-      Effect.all([cli.getMergeRequestDetail(input), cli.probeWriteAccess({ cwd: input.cwd })], {
-        concurrency: 2,
-      }).pipe(
-        Effect.mapError(fail("getViewerPermissions")),
-        Effect.map(([mergeRequest, writeAccess]) =>
-          gitLabViewerPermissions({
-            ...mergeRequest,
-            writeAvailable: writeAccess.writable,
-          }),
-        ),
-      ),
+      cli
+        .getMergeRequestDetail(input)
+        .pipe(Effect.mapError(fail("getViewerPermissions")), Effect.map(gitLabViewerPermissions)),
 
     getDiff: (input) => cli.getMergeRequestDiff(input).pipe(Effect.mapError(fail("getDiff"))),
 

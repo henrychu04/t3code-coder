@@ -718,23 +718,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["ports tcp udp localhost loopback forward local remote restart"],
   },
   {
-    id: "gitlab-workspace-status",
-    scope: "environment",
-    environmentOnly: true,
-    title: "Workspace GitLab status",
-    to: "/settings/source-control",
-    searchTerms: ["git glab cli authentication account host installation discovery rescan"],
-  },
-  {
-    id: "gitlab-write-probe",
-    scope: "environment",
-    environmentOnly: true,
-    title: "GitLab write access probe",
-    to: "/settings/source-control",
-    searchTerms: ["workspace policy blocked writable authentication reprobe write commands"],
-    targetId: "gitlab-workspace-status",
-  },
-  {
     id: "archive",
     title: "Archived threads",
     to: "/settings/archived",
