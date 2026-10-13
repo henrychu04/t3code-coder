@@ -25,6 +25,14 @@ const v2TableCount = Effect.gen(function* () {
   return rows.length;
 });
 
+// Coder: `reconcileCoderMigrationHistory` refuses these histories before upstream's checks run.
+const refusesUnrecognizedHistory = (options?: { readonly toMigrationInclusive: number }) =>
+  Effect.gen(function* () {
+    const exit = yield* Effect.exit(runMigrations(options));
+    assert.isTrue(Exit.isFailure(exit));
+    assert.include(String(exit), "Unrecognized migration history");
+  });
+
 describe("runMigrations", () => {
   it.effect("migrates a fresh database through the whole manifest", () =>
     Effect.gen(function* () {
@@ -43,11 +51,7 @@ describe("runMigrations", () => {
       `;
       const before = yield* history;
 
-      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 54 }), []);
-      const exit = yield* Effect.exit(runMigrations());
-
-      assert.isTrue(Exit.isFailure(exit));
-      assert.include(String(exit), "55_OrchestrationV2 (recorded: FutureMainMigration)");
+      yield* refusesUnrecognizedHistory();
       assert.deepStrictEqual(yield* history, before);
       assert.strictEqual(yield* v2TableCount, 0);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -63,12 +67,7 @@ describe("runMigrations", () => {
       `;
       const before = yield* history;
 
-      const exit = yield* Effect.exit(runMigrations());
-
-      assert.isTrue(Exit.isFailure(exit));
-      for (const [id, name] of v2Migrations) {
-        assert.include(String(exit), `${id}_${name} (recorded: nothing)`);
-      }
+      yield* refusesUnrecognizedHistory();
       assert.deepStrictEqual(yield* history, before);
       assert.strictEqual(yield* v2TableCount, 0);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -83,7 +82,10 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([30, 54])("still starts with a site-local migration at id %s", (id) =>
+  // Coder: upstream starts past a site-local migration or a newer build's later V2 migration.
+  // `reconcileCoderMigrationHistory` refuses any history that is neither upstream's registry nor
+  // the Coder legacy registry, so these databases do not start.
+  it.effect.each([30, 54])("refuses a site-local migration at id %s", (id) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 54 });
@@ -91,12 +93,12 @@ describe("runMigrations", () => {
         UPDATE effect_sql_migrations SET name = 'SiteLocalMigration' WHERE migration_id = ${id}
       `;
 
-      assert.deepStrictEqual(yield* runMigrations(), v2Migrations);
-      assert.isAbove(yield* v2TableCount, 0);
+      yield* refusesUnrecognizedHistory();
+      assert.strictEqual(yield* v2TableCount, 0);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("only checks V2 migrations within the requested limit", () =>
+  it.effect("refuses a site-local migration inside the V2 range at any limit", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 55 });
@@ -106,19 +108,13 @@ describe("runMigrations", () => {
       `;
       const before = yield* history;
 
-      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 55 }), []);
-      const exit = yield* Effect.exit(runMigrations({ toMigrationInclusive: 56 }));
-      assert.isTrue(Exit.isFailure(exit));
-      assert.include(
-        String(exit),
-        "56_RemoveRedundantProjectionIndexes (recorded: SiteLocalMigration)",
-      );
-      assert.notInclude(String(exit), "57_ScheduledTaskWebhooks");
+      yield* refusesUnrecognizedHistory({ toMigrationInclusive: 55 });
+      yield* refusesUnrecognizedHistory({ toMigrationInclusive: 56 });
       assert.deepStrictEqual(yield* history, before);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("still starts after a newer build recorded a later V2 migration", () =>
+  it.effect("refuses a later V2 migration a newer build recorded", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations();
@@ -127,7 +123,7 @@ describe("runMigrations", () => {
         VALUES (${newerMigrationId}, 'NewerV2Migration')
       `;
 
-      assert.deepStrictEqual(yield* runMigrations(), []);
+      yield* refusesUnrecognizedHistory();
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });

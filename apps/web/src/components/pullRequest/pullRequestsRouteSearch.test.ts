@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+// Coder: the route module loads the diff worker, which needs a browser `self`.
 import {
   createMemoryHistory,
   createRootRoute,
