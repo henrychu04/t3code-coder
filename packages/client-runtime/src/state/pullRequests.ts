@@ -128,6 +128,9 @@ export function pullRequestDetailToVcsStatus(
  * Reopening a PR within a minute reuses detail and activity. Explicit refreshes and
  * turn notifications still revalidate. Mutations run serially per environment: actions on the same
  * pull request are order-sensitive. Confirmed label and reviewer edits update cached state.
+ *
+ * Coder: upstream's offline query persistence (`persistQuery`, mobile's store) is not carried,
+ * so these queries stay in memory.
  */
 export function createPullRequestEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
@@ -458,7 +461,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     generateReviewGuide: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:generate-review-guide",
       tag: WS_METHODS.pullRequestsGenerateReviewGuide,
-      onSuccess: (target, registry) => Effect.sync(() => registry.refresh(reviewGuide(target))),
+      onSuccess: (target, registry, result) =>
+        Effect.sync(() => {
+          // The command returns the accepted run. Publish it before starting ends so readers
+          // never fall back to the empty/failed state while the follow-up query is in flight.
+          updateCached(registry, reviewGuide(target), () => result, true);
+        }),
     }),
     /** Read when the label menu opens, and kept for a minute, like the reviewer candidates. */
     labelCandidates,

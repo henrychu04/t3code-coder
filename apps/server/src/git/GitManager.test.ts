@@ -9,6 +9,9 @@ import { it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -668,6 +671,14 @@ function makeManager(input?: {
   serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   setupScriptRunner?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"];
   gitConfigReads?: string[];
+  /** Records the arguments of every git process the manager starts. */
+  gitCommands?: string[];
+  /** Holds a matching git process's output until `release`, once it has exited. */
+  gitSpawnGate?: {
+    readonly matches: (args: ReadonlyArray<string>) => boolean;
+    readonly reached: Deferred.Deferred<void>;
+    readonly release: Deferred.Deferred<void>;
+  };
   /** Seeds the V2 stores the per-project settings lookup reads. */
   seed?: Effect.Effect<
     void,
@@ -683,7 +694,40 @@ function makeManager(input?: {
 
   const serverSettingsLayer = ServerSettings.ServerSettingsService.layerTest(input?.serverSettings);
 
-  const vcsDriverLayer = input?.gitConfigReads
+  const gitCommands = input?.gitCommands;
+  const gitSpawnGate = input?.gitSpawnGate;
+  const watchesGitSpawns = gitCommands !== undefined || gitSpawnGate !== undefined;
+  const layerGitDriverSpawner = watchesGitSpawns
+    ? Layer.effect(
+        ChildProcessSpawner.ChildProcessSpawner,
+        Effect.gen(function* () {
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          return ChildProcessSpawner.make((command) => {
+            // On Windows the driver starts git by its full path to git.exe.
+            const args =
+              command._tag === "StandardCommand" &&
+              NodePath.parse(command.command).name.toLowerCase() === "git"
+                ? command.args
+                : null;
+            if (args !== null) gitCommands?.push(args.join(" "));
+            if (args === null || gitSpawnGate === undefined || !gitSpawnGate.matches(args)) {
+              return spawner.spawn(command);
+            }
+            return spawner
+              .spawn(command)
+              .pipe(
+                Effect.tap((handle) =>
+                  handle.exitCode.pipe(
+                    Effect.andThen(Deferred.succeed(gitSpawnGate.reached, undefined)),
+                    Effect.andThen(Deferred.await(gitSpawnGate.release)),
+                  ),
+                ),
+              );
+          });
+        }),
+      ).pipe(Layer.provide(NodeServices.layer))
+    : Layer.empty;
+  const gitVcsDriver = input?.gitConfigReads
     ? Layer.effect(
         GitVcsDriver.GitVcsDriver,
         GitVcsDriver.make.pipe(
@@ -697,16 +741,15 @@ function makeManager(input?: {
             }),
           ),
         ),
-      ).pipe(
-        Layer.provideMerge(VcsProcess.layer),
-        Layer.provideMerge(NodeServices.layer),
-        Layer.provideMerge(serverConfigLayer),
       )
-    : GitVcsDriver.layer.pipe(
-        Layer.provideMerge(VcsProcess.layer),
-        Layer.provideMerge(NodeServices.layer),
-        Layer.provideMerge(serverConfigLayer),
-      );
+    : GitVcsDriver.layer;
+  // Fresh so the counting spawner is not swapped for the suite's shared driver.
+  const vcsDriverLayer = (watchesGitSpawns ? Layer.fresh(gitVcsDriver) : gitVcsDriver).pipe(
+    Layer.provide(layerGitDriverSpawner),
+    Layer.provideMerge(VcsProcess.layer),
+    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(serverConfigLayer),
+  );
   const sourceControlRegistryLayer = Layer.effect(
     SourceControlProviderRegistry.SourceControlProviderRegistry,
     Effect.gen(function* () {
@@ -973,6 +1016,162 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           key === "branch.feature/status-identity-cache.remote" || key === "remote.origin.url",
       );
       expect(identityReads).toHaveLength(0);
+    }),
+  );
+
+  it.effect("a warm branch PR lookup starts no git process", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      for (const branch of ["feature/warm-pr", "feature/warm-no-pr"]) {
+        yield* runGit(repoDir, ["checkout", "-b", branch, "main"]);
+        yield* runGit(repoDir, ["push", "-u", "origin", branch]);
+      }
+      const gitCommands: string[] = [];
+      const { manager, glabCalls } = yield* makeManager({
+        gitCommands,
+        glabScenario: {
+          prListByHeadSelector: {
+            "feature/warm-pr": encodeCliJson([
+              {
+                number: 230,
+                title: "Warm PR",
+                url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/230",
+                baseRefName: "main",
+                headRefName: "feature/warm-pr",
+                state: "OPEN",
+                updatedAt: "2026-04-07T15:00:00Z",
+              },
+            ]),
+          },
+        },
+      });
+      const lookupAll = Effect.forEach(["feature/warm-pr", "feature/warm-no-pr"], (branch) =>
+        manager.branchPullRequest({ cwd: repoDir, branch }),
+      );
+
+      const cold = yield* lookupAll;
+      expect(cold.map((pullRequest) => pullRequest?.number ?? null)).toEqual([230, null]);
+      expect(gitCommands.length).toBeGreaterThan(0);
+
+      gitCommands.length = 0;
+      const warm = yield* lookupAll;
+      expect(warm).toEqual(cold);
+      expect(gitCommands).toEqual([]);
+      expect(glabCalls.filter((call) => call.startsWith("mr list "))).toHaveLength(2);
+    }),
+  );
+
+  it.effect(
+    "a branch PR lookup sees an upstream change on request, after a T3 git action, or after the TTL",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        yield* initRepo(repoDir);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+        yield* runGit(repoDir, ["checkout", "-b", "feature/moving-upstream"]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "feature/moving-upstream"]);
+        yield* runGit(repoDir, ["push", "origin", "HEAD:refs/heads/feature/other-head"]);
+        const pullRequest = (number: number, headRefName: string) =>
+          encodeCliJson([
+            {
+              number,
+              title: headRefName,
+              url: `https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/${number}`,
+              baseRefName: "main",
+              headRefName,
+              state: "OPEN",
+              updatedAt: "2026-04-07T15:00:00Z",
+            },
+          ]);
+        const { manager } = yield* makeManager({
+          glabScenario: {
+            prListByHeadSelector: {
+              "feature/moving-upstream": pullRequest(235, "feature/moving-upstream"),
+              "feature/other-head": pullRequest(236, "feature/other-head"),
+            },
+          },
+        });
+        const lookup = manager.branchPullRequest({
+          cwd: repoDir,
+          branch: "feature/moving-upstream",
+        });
+        expect((yield* lookup)?.number).toBe(235);
+
+        // Discovery rereads git before it persists an answer.
+        yield* runGit(repoDir, ["branch", "--set-upstream-to=origin/feature/other-head"]);
+        const reread = yield* manager.branchPullRequest(
+          { cwd: repoDir, branch: "feature/moving-upstream" },
+          { freshGitState: true },
+        );
+        expect(reread?.number).toBe(236);
+
+        // T3's own git actions end in invalidateStatus.
+        yield* runGit(repoDir, ["branch", "--set-upstream-to=origin/feature/moving-upstream"]);
+        yield* manager.invalidateStatus(repoDir);
+        expect((yield* lookup)?.number).toBe(235);
+
+        // A change made outside T3 shows once the remembered state expires.
+        yield* runGit(repoDir, ["branch", "--set-upstream-to=origin/feature/other-head"]);
+        yield* TestClock.adjust("5 minutes");
+        expect((yield* lookup)?.number).toBe(236);
+      }),
+  );
+
+  it.effect("a git read in flight during a T3 git action does not outlive it", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/racing-upstream"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/racing-upstream"]);
+      yield* runGit(repoDir, ["push", "origin", "HEAD:refs/heads/feature/raced-head"]);
+      const pullRequest = (number: number, headRefName: string) =>
+        encodeCliJson([
+          {
+            number,
+            title: headRefName,
+            url: `https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/${number}`,
+            baseRefName: "main",
+            headRefName,
+            state: "OPEN",
+            updatedAt: "2026-04-07T15:00:00Z",
+          },
+        ]);
+      const gate = {
+        matches: (args: ReadonlyArray<string>) =>
+          args[0] === "for-each-ref" && args.at(-1) === "refs/heads/feature/racing-upstream",
+        reached: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
+      const { manager } = yield* makeManager({
+        gitSpawnGate: gate,
+        glabScenario: {
+          prListByHeadSelector: {
+            "feature/racing-upstream": pullRequest(237, "feature/racing-upstream"),
+            "feature/raced-head": pullRequest(238, "feature/raced-head"),
+          },
+        },
+      });
+      const lookup = manager.branchPullRequest({
+        cwd: repoDir,
+        branch: "feature/racing-upstream",
+      });
+
+      // The branch read has exited with the old upstream; a T3 git action
+      // changes it before the lookup gets that output.
+      const inFlight = yield* Effect.forkChild(lookup);
+      yield* Deferred.await(gate.reached);
+      yield* runGit(repoDir, ["branch", "--set-upstream-to=origin/feature/raced-head"]);
+      yield* manager.invalidateStatus(repoDir);
+      yield* Deferred.succeed(gate.release, undefined);
+      yield* Fiber.join(inFlight);
+
+      expect((yield* lookup)?.number).toBe(238);
     }),
   );
 
@@ -3471,6 +3670,47 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect.each([
+    { branch: "fix/name", existingBranches: ["fix"], expected: "fix-2/name" },
+    { branch: "fix/name", existingBranches: ["fix/name/child"], expected: "fix/name-2" },
+  ])("commits on $expected when $branch has ref namespace collisions", (scenario) =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const mainSha = (yield* runGit(repoDir, ["rev-parse", "main"])).stdout.trim();
+      for (const branch of scenario.existingBranches) {
+        yield* runGit(repoDir, ["branch", branch]);
+      }
+      NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nnamespace-collision\n");
+
+      const { manager } = yield* makeManager({
+        textGeneration: {
+          generateCommitMessage: () =>
+            Effect.succeed({
+              subject: "Fix namespace collision",
+              body: "",
+              branch: scenario.branch,
+            }),
+        },
+      });
+      const result = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit",
+        featureBranch: true,
+      });
+
+      expect(result.branch).toEqual({ status: "created", name: scenario.expected });
+      expect(result.commit.status).toBe("created");
+      expect((yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim()).toBe(
+        scenario.expected,
+      );
+      expect((yield* runGit(repoDir, ["status", "--porcelain"])).stdout.trim()).toBe("");
+      for (const branch of ["main", ...scenario.existingBranches]) {
+        expect((yield* runGit(repoDir, ["rev-parse", branch])).stdout.trim()).toBe(mainSha);
+      }
+    }),
+  );
+
   it.effect("featureBranch uses custom commit message and derives branch name", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
@@ -4372,6 +4612,101 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         ),
       ).toBe(true);
       expect(glabCalls.some((call) => call.startsWith("mr view "))).toBe(false);
+    }),
+  );
+
+  it.effect.each(["commit", "short-commit", "tag", "revision"] as const)(
+    "creates a PR against the default branch with a legacy %s base setting",
+    (kind) =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        yield* initRepo(repoDir);
+        yield* runGit(repoDir, ["branch", "-m", "main", "trunk"]);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "trunk"]);
+        yield* runGit(repoDir, ["checkout", "-b", "feature/legacy-base"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "feature.txt"), "feature\n");
+        yield* runGit(repoDir, ["add", "feature.txt"]);
+        yield* runGit(repoDir, ["commit", "-m", "Feature commit"]);
+        const commit = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim();
+        yield* runGit(repoDir, ["tag", "v1"]);
+        const baseRef =
+          kind === "commit"
+            ? commit
+            : kind === "short-commit"
+              ? commit.slice(0, 12)
+              : kind === "tag"
+                ? "v1"
+                : "HEAD~0";
+        yield* runGit(repoDir, ["config", "branch.feature/legacy-base.gh-merge-base", baseRef]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "feature/legacy-base"]);
+        let generatedBase = "";
+        let generatedSummary = "";
+        const { manager, glabCalls } = yield* makeManager({
+          glabScenario: { defaultBranch: "trunk", prListSequence: ["[]", "[]"] },
+          textGeneration: {
+            generatePrContent: (input) => {
+              generatedBase = input.baseBranch;
+              generatedSummary = input.commitSummary;
+              return Effect.succeed({ title: "Feature PR", body: "Feature body" });
+            },
+          },
+        });
+
+        const result = yield* runStackedAction(manager, { cwd: repoDir, action: "create_pr" });
+
+        expect(result.pr.status).toBe("created");
+        expect(generatedBase).toBe("trunk");
+        expect(generatedSummary).toContain("Feature commit");
+        expect(
+          glabCalls.some((call) =>
+            call.includes("mr create --target-branch trunk --source-branch feature/legacy-base"),
+          ),
+        ).toBe(true);
+      }),
+  );
+
+  it.effect.each([
+    "release/v2",
+    "refs/heads/release/v2",
+    "origin/release/v2",
+    "deadbeef",
+    "remote-only",
+  ])("preserves the configured PR target branch %s", (baseRef) =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const baseBranch = baseRef === "deadbeef" ? baseRef : "release/v2";
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["checkout", "-b", baseBranch]);
+      yield* runGit(repoDir, ["push", "-u", "origin", baseBranch]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/configured-base"]);
+      if (baseRef === "remote-only") {
+        yield* runGit(repoDir, ["branch", "-D", baseBranch]);
+      }
+      NodeFS.writeFileSync(NodePath.join(repoDir, "feature.txt"), "feature\n");
+      yield* runGit(repoDir, ["add", "feature.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Feature commit"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/configured-base"]);
+      yield* runGit(repoDir, [
+        "config",
+        "branch.feature/configured-base.gh-merge-base",
+        baseRef === "remote-only" ? baseBranch : baseRef,
+      ]);
+      const { manager, glabCalls } = yield* makeManager({
+        glabScenario: { prListSequence: ["[]", "[]"] },
+      });
+
+      const result = yield* runStackedAction(manager, { cwd: repoDir, action: "create_pr" });
+
+      expect(result.pr.status).toBe("created");
+      expect(
+        glabCalls.some((call) =>
+          call.includes(`mr create --target-branch ${baseBranch} --source-branch feature/configured-base`),
+        ),
+      ).toBe(true);
     }),
   );
 

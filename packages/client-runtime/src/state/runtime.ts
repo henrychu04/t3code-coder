@@ -67,6 +67,7 @@ interface EnvironmentQueryAtomOptions<Input, A, E, R> extends Omit<
     input: Input,
     emit: (value: A) => Effect.Effect<void>,
   ) => Effect.Effect<A, E, R>;
+  // Coder: no `persistence` option; upstream's offline query store serves only mobile.
   readonly staleTimeMs?: number;
   readonly idleTtlMs?: number;
   readonly refreshIntervalMs?: number;

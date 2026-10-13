@@ -40,6 +40,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { DraftInput } from "../ui/draft-input";
+import { SecretInput } from "./SecretInput";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -128,13 +129,22 @@ export function deriveProviderModelsForDisplay(input: {
     ),
   );
   const serverModels = input.liveModels?.filter((model) => !model.isCustom) ?? [];
-  const customModels = input.customModels.map((entry) => ({
-    slug: entry.slug,
-    name: entry.name,
-    isCustom: true,
-    capabilities:
-      entry.capabilities ?? liveCustomModelsBySlug.get(entry.slug)?.capabilities ?? null,
-  }));
+  const serverSlugs = new Set(serverModels.map((model) => model.slug));
+  // A custom entry with a built-in slug only renames that built-in on the
+  // server, so the built-in row already shows it.
+  const customModels = input.customModels.flatMap((entry) =>
+    serverSlugs.has(entry.slug)
+      ? []
+      : [
+          {
+            slug: entry.slug,
+            name: entry.name,
+            isCustom: true,
+            capabilities:
+              entry.capabilities ?? liveCustomModelsBySlug.get(entry.slug)?.capabilities ?? null,
+          },
+        ],
+  );
   return [...serverModels, ...customModels];
 }
 
@@ -211,9 +221,6 @@ function ProviderEnvironmentFieldRow(props: {
 }) {
   const inputId = `${props.idPrefix}-environment-${props.field.name}`;
   const value = props.variable?.valueRedacted ? "" : (props.variable?.value ?? "");
-  const placeholder = props.variable?.valueRedacted
-    ? "Stored secret - enter a new value to replace"
-    : props.field.placeholder;
 
   return (
     <SettingsRow
@@ -221,17 +228,29 @@ function ProviderEnvironmentFieldRow(props: {
       description={props.field.description}
       control={
         <div className="flex w-full min-w-0 items-center gap-2 @min-[32rem]/settings-row:w-56">
-          <DraftInput
-            id={inputId}
-            size="sm"
-            className="min-w-0 flex-1"
-            type={props.field.sensitive === false ? undefined : "password"}
-            autoComplete="off"
-            value={value}
-            onCommit={(next) => props.onCommit(props.field, next)}
-            placeholder={placeholder}
-            spellCheck={false}
-          />
+          {props.field.sensitive === false ? (
+            <DraftInput
+              id={inputId}
+              size="sm"
+              className="min-w-0 flex-1"
+              autoComplete="off"
+              value={value}
+              onCommit={(next) => props.onCommit(props.field, next)}
+              placeholder={props.field.placeholder}
+              spellCheck={false}
+            />
+          ) : (
+            <SecretInput
+              id={inputId}
+              size="sm"
+              className="min-w-0 flex-1"
+              value={value}
+              onCommit={(next) => props.onCommit(props.field, next)}
+              placeholder={props.field.placeholder}
+              configured={props.variable?.valueRedacted === true}
+              spellCheck={false}
+            />
+          )}
           {props.variable ? (
             <Button
               type="button"
