@@ -199,18 +199,6 @@ const method = optionValue(args, "--method") ?? "GET";
 let body = null;
 if (stdin.trim()) body = JSON.parse(stdin);
 
-if (path === "projects/0/merge_requests" && method === "POST") {
-  if (state.writeAccess === "policy-blocked") {
-    console.error("GitLab write endpoints are blocked by workspace policy");
-  } else if (state.writeAccess === "indeterminate") {
-    console.error("glab: 404 Not Found (HTTP 404)");
-  } else {
-    console.log('HTTP/2 404\r\nx-gitlab-meta: {"correlation_id":"smoke"}\r\n');
-    console.error("glab: 404 Project Not Found (HTTP 404)");
-  }
-  process.exit(1);
-}
-
 if (method !== "GET" && state.writeAccess !== "writable") {
   console.error("GitLab write endpoints are unavailable in this workspace");
   process.exit(1);

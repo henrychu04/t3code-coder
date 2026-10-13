@@ -34,8 +34,6 @@ export interface VcsProcessInput {
   readonly maxOutputBytes?: number;
   readonly outputMode?: ProcessRunner.ProcessRunInput["outputMode"];
   readonly appendTruncationMarker?: boolean;
-  // Coder: the GitLab write probe classifies stderr before it is discarded.
-  readonly classifyNonZeroExit?: (stderr: string) => VcsProcessExitFailureKind | undefined;
 }
 
 export interface VcsProcessOutput {
@@ -167,10 +165,7 @@ export const make = Effect.gen(function* () {
     }
 
     if (!input.allowNonZeroExit && result.code !== 0) {
-      // Coder: preserve the GitLab write probe's classification hook.
-      const failureKind =
-        input.classifyNonZeroExit?.(result.stderr) ??
-        classifyNonZeroExit(input.command, result.stderr);
+      const failureKind = classifyNonZeroExit(input.command, result.stderr);
       return yield* VcsProcessExitError.fromProcessExit(
         baseError,
         {

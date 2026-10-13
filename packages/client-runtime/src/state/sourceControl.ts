@@ -21,16 +21,6 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       label: "environment-data:server:source-control-discovery",
       tag: WS_METHODS.serverDiscoverSourceControl,
     }),
-    // Coder: GitLab write-access probe.
-    probeWriteAccess: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:source-control:probe-write-access",
-      tag: WS_METHODS.sourceControlProbeWriteAccess,
-      scheduler: commandScheduler,
-      concurrency: {
-        mode: "serial",
-        key: ({ environmentId }) => environmentId,
-      },
-    }),
     repository: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:repository",
       tag: WS_METHODS.sourceControlLookupRepository,

@@ -23,7 +23,6 @@ import { ChildProcessSpawner } from "effect/process";
 import { expect } from "vite-plus/test";
 import type {
   GitActionProgressEvent,
-  SourceControlWriteAccess,
   GitPreparePullRequestThreadInput,
   ModelSelection,
 } from "@t3tools/contracts";
@@ -42,7 +41,6 @@ import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as GitLabWriteProbe from "@t3tools/source-control-gitlab/server/GitLabWriteProbe";
 import * as GitLabSourceControlProvider from "@t3tools/source-control-gitlab/server/GitLabSourceControlProvider";
 import type { SourceControlProvider } from "@t3tools/source-control-core/server/SourceControlProvider";
 import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
@@ -60,8 +58,6 @@ import * as GitManager from "./GitManager.ts";
 const encodeCliJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 interface FakeGlabScenario {
-  writeAccess?: SourceControlWriteAccess;
-  writeProbeCalls?: string[];
   prListSequence?: string[];
   prListByHeadSelector?: Record<string, string>;
   prListSequenceByHeadSelector?: Record<string, string[]>;
@@ -542,14 +538,6 @@ function createGitLabCliWithFakeGlab(scenario: FakeGlabScenario = {}): {
   return {
     service: {
       execute,
-      executeWrite: execute,
-      probeWriteAccess: ({ cwd }) =>
-        Effect.sync(() => {
-          scenario.writeProbeCalls?.push(cwd);
-          return scenario.writeAccess ?? { status: "writable" as const, writable: true };
-        }),
-      getWriteAccess: Effect.succeed({ status: "writable", writable: true }),
-      reprobeWriteAccess: () => Effect.succeed({ status: "writable", writable: true }),
       // The fake answers the CLI shape, so batched lookups read it the way the fallback does.
       listMergeRequests: (input) =>
         execute({
@@ -790,107 +778,6 @@ const GitManagerTestLayer = GitVcsDriver.layer.pipe(
 );
 
 it.layer(GitManagerTestLayer)("GitManager", (it) => {
-  // Coder: preserve the write gate before repository mutations and progress ordering.
-  it.effect.each(["create_pr", "commit_push_pr"] as const)(
-    "blocks %s before branch, commit, or push when GitLab writes are blocked",
-    (action) =>
-      Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-gate-");
-        yield* initRepo(repoDir);
-        const remoteDir = yield* createBareRemote();
-        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
-        const originalHead = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim();
-        if (action === "commit_push_pr") {
-          NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "blocked change\n");
-        }
-        const events: GitActionProgressEvent[] = [];
-        const writeProbeCalls: string[] = [];
-        const { manager, glabCalls } = yield* makeManager({
-          glabScenario: {
-            writeAccess: { status: "policy-blocked", writable: false },
-            writeProbeCalls,
-          },
-        });
-        const error = yield* runStackedAction(
-          manager,
-          {
-            cwd: repoDir,
-            action,
-            ...(action === "commit_push_pr" ? { featureBranch: true } : {}),
-          },
-          {
-            progressReporter: {
-              publish: (event) =>
-                Effect.sync(() => {
-                  events.push(event);
-                }),
-            },
-          },
-        ).pipe(Effect.flip);
-        expect(error).toMatchObject({
-          _tag: "SourceControlProviderError",
-          provider: "gitlab",
-          operation: "createChangeRequest",
-          cwd: repoDir,
-          detail: "GitLab write operations are blocked by this workspace.",
-        });
-        expect(events.map((event) => event.kind)).toEqual(["action_started", "action_failed"]);
-        expect(writeProbeCalls).toEqual([repoDir]);
-        expect(glabCalls).toEqual([]);
-        expect((yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim()).toBe(originalHead);
-        expect((yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim()).toBe("main");
-        expect(
-          (yield* runGit(remoteDir, ["for-each-ref", "--format=%(refname)"])).stdout.trim(),
-        ).toBe("");
-        expect((yield* runGit(repoDir, ["diff", "--cached", "--name-only"])).stdout.trim()).toBe(
-          "",
-        );
-      }),
-  );
-
-  // Coder: a remote that resolves to no registered provider fails before any mutation.
-  it.effect("blocks an MR action before commit when no provider confirms write access", () =>
-    Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-gate-unknown-");
-      yield* initRepo(repoDir);
-      const originalHead = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim();
-      NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "unknown host change\n");
-      const unregistered = (operation: string) =>
-        Effect.die(new Error(`unexpected ${operation} on an unregistered provider`));
-      const { manager } = yield* makeManager({
-        sourceControlProvider: {
-          kind: SourceControlProviderKind.make("unknown"),
-          probeWriteAccess: () =>
-            Effect.succeed({
-              status: "indeterminate",
-              writable: false,
-              detail: "No unknown source control provider is registered.",
-            }),
-          listChangeRequests: () => unregistered("listChangeRequests"),
-          getChangeRequest: () => unregistered("getChangeRequest"),
-          createChangeRequest: () => unregistered("createChangeRequest"),
-          getRepositoryCloneUrls: () => unregistered("getRepositoryCloneUrls"),
-          createRepository: () => unregistered("createRepository"),
-          getDefaultBranch: () => unregistered("getDefaultBranch"),
-          checkoutChangeRequest: () => unregistered("checkoutChangeRequest"),
-        },
-      });
-      const error = yield* runStackedAction(manager, {
-        cwd: repoDir,
-        action: "commit_push_pr",
-        commitMessage: "Should not commit",
-      }).pipe(Effect.flip);
-      expect(error).toMatchObject({
-        _tag: "SourceControlProviderError",
-        provider: "unknown",
-        operation: "createChangeRequest",
-        detail: "No unknown source control provider is registered.",
-      });
-      expect((yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim()).toBe(originalHead);
-      expect((yield* runGit(repoDir, ["status", "--porcelain"])).stdout.trim()).toBe("M README.md");
-    }),
-  );
-
   it.effect("status includes draft PR metadata when branch already has a draft PR", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
@@ -2215,15 +2102,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       ]);
       const calls: SourceControlHost.SourceControlProcessInput[] = [];
       const provider = yield* GitLabSourceControlProvider.make.pipe(
-        Effect.provide(
-          GitLabCli.layer.pipe(
-            Layer.provide(
-              Layer.mock(GitLabWriteProbe.GitLabWriteProbe)({
-                isPolicyBlockedWriteFailure: () => false,
-              }),
-            ),
-          ),
-        ),
+        Effect.provide(GitLabCli.layer),
         Effect.provide(
           TestSourceControlHost.layer({
             process: {
@@ -4441,7 +4320,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       let generatedPolicy: TextGeneration.PrContentGenerationInput["policy"] = undefined;
       let generatedChangeRequestTemplate: string | undefined;
 
-      const writeProbeCalls: string[] = [];
       const { manager, glabCalls } = yield* makeManager({
         serverSettings: {
           sourceControlWritingStyle: {
@@ -4460,7 +4338,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           },
         },
         glabScenario: {
-          writeProbeCalls,
           prListSequence: [
             "[]",
             // @effect-diagnostics-next-line preferSchemaOverJson:off
@@ -4481,7 +4358,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         action: "commit_push_pr",
       });
 
-      expect(writeProbeCalls).toEqual([repoDir]);
       expect(result.branch.status).toBe("skipped_not_requested");
       expect(result.pr.status).toBe("created");
       expect(result.pr.number).toBe(88);

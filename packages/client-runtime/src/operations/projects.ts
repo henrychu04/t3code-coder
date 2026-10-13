@@ -247,8 +247,6 @@ export function getNewProjectPublishTargets(
     const provider = discovery?.sourceControlProviders.find(
       (candidate) => candidate.kind === definition.kind,
     );
-    // Coder: a host is offered only while the workspace write probe allows repository creation.
-    if (provider?.writeAccess?.writable !== true) return [];
     const placement = definition.newRepositoryOwner(
       provider ? Option.getOrNull(provider.auth.account) : null,
     );

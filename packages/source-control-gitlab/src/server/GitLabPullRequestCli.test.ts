@@ -9,17 +9,12 @@ import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
 
 const mockedExecute = vi.fn<GitLabCli.GitLabCli["Service"]["execute"]>();
-const mockedExecuteWrite = vi.fn<GitLabCli.GitLabCli["Service"]["executeWrite"]>((input) =>
-  mockedExecute(input),
-);
 
 const layer = it.layer(
   GitLabPullRequestCli.layer.pipe(
     Layer.provide(
       Layer.mock(GitLabCli.GitLabCli)({
         execute: mockedExecute,
-        executeWrite: mockedExecuteWrite,
-        probeWriteAccess: () => Effect.succeed({ status: "writable", writable: true }),
       }),
     ),
   ),
@@ -114,8 +109,6 @@ const afterBatchWindow = <A, E, R>(read: Effect.Effect<A, E, R>) =>
 
 afterEach(() => {
   mockedExecute.mockReset();
-  mockedExecuteWrite.mockReset();
-  mockedExecuteWrite.mockImplementation((input) => mockedExecute(input));
 });
 
 layer("GitLabPullRequestCli.layer", (it) => {
@@ -425,7 +418,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
         "--yes",
         "--squash",
       ]);
-      expect(mockedExecuteWrite).toHaveBeenCalledOnce();
     }),
   );
 
@@ -534,7 +526,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       ]);
       // A JSON body, so a comment reading as a literal `true` stays text.
       expect(call[0].stdin).toBe('{"body":"true"}');
-      expect(mockedExecuteWrite).toHaveBeenCalledOnce();
     }),
   );
 

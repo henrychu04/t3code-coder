@@ -358,13 +358,9 @@ there is no asset server.
 
 Git action control and merge-request detail are upstream's with a GitLab-only provider registry.
 Repository status, fetch, pull, commit, push, publishing, merge-request creation, and checkout run
-in the workspace over helper RPC, using repository-scoped Git and the workspace `glab`. At helper
-startup a replaceable, state-free `glab` probe checks the workspace-wide write policy once: it sends
-an incomplete merge-request creation to the impossible project ID `0`, and only a GitLab-
-fingerprinted validation or not-found response enables writes. A generic proxy 404, failed probe,
-or indeterminate response disables every GitLab mutation while reads, Git, and checkout stay
-available; Settings → Source Control shows the result and can rerun it, and a later mutation that
-matches the configured policy-block response downgrades the cached result. Generated commit and MR
+in the workspace over helper RPC, using repository-scoped Git and the workspace `glab`. GitLab
+writes are attempted as upstream does, with no write-access pre-check; a write that workspace policy
+blocks fails like any other `glab` error. Generated commit and MR
 text comes from the workspace Claude CLI. A review guide checks the merge request's head out into
 a temporary worktree under the workspace worktrees directory, which the writer model reads
 read-only and T3 removes when the run ends. The gateway never runs Git or `glab`, never connects to
@@ -459,7 +455,7 @@ listed here is drift to remove rather than fork behavior to keep.
     error mapping. `coderWs.ts` wraps `ws.ts`'s upstream Files list, read, and write handlers in
     the root verification, so those handlers stay upstream's code.
   - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
-    branch/worktree rename with `moveWorktree`, write-access probing, chunked review files,
+    branch/worktree rename with `moveWorktree`, chunked review files,
     bounded text/content/media, sent-file (`workspace.readAttachmentFile`), and legacy-artifact
     reads, new-file creation (`projects.createFile`), fixed project-config reads, workspace
     directory listing, merge-request diffs, and upstream's HTTP bounded thread snapshot and
@@ -651,8 +647,7 @@ listed here is drift to remove rather than fork behavior to keep.
     ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
   - `ServerConfig` omits auth, editors, remote open targets, and observability.
-  - `VcsProcessExitFailureKind` adds `policy-blocked` for the GitLab write probe, and
-    `VcsProcessExitError`'s not-found detail drops upstream's `gh`/`az` "Pull request" text.
+  - `VcsProcessExitError`'s not-found detail drops upstream's `gh`/`az` "Pull request" text.
     The rest of `vcs.ts` and `git.ts` keep upstream's shapes, plus the helper-only ref-status
     and thread-branch rename schemas.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
@@ -683,8 +678,7 @@ listed here is drift to remove rather than fork behavior to keep.
   keybindings; every workspace is remote; Add project always shows the workspace picker, which
   also lists each domain's unconnected workspaces and connects the chosen one; there is no desktop or WSL folder picker, browser
   preview, or usage page; and review actions say merge request. Clone sources, host icons, and
-  publish targets come from the GitLab-only client registry (see Source control below); client-runtime's
-  `getNewProjectPublishTargets` offers a host only while the workspace write probe allows writes.
+  publish targets come from the GitLab-only client registry (see Source control below).
   Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
@@ -828,17 +822,12 @@ listed here is drift to remove rather than fork behavior to keep.
     GitLab alone, and every other kind reads as the generic host. The server's
     `sourceControl/sourceControlHostSecrets.ts` reads only GitLab's definition, which declares no
     host settings, so no host secrets exist; upstream's `SourceControlHostSettings` form is not
-    carried. `SourceControlHost` passes the fork's `classifyNonZeroExit` through to `VcsProcess`,
-    which GitLab uses to report a policy-blocked write.
+    carried.
   - GitLab's client definition (`source-control-gitlab/src/client/definition.ts`) has three
     deltas: `isChangeRequestReference` accepts a merge request URL on any HTTP(S) host, because
     self-hosted hostnames need not contain "gitlab"; `authorProfileUrl` links comment authors
     under the host root; and `referenceAutolinkRepositoryUrl` gives the web's GitLab autolinks
     (`pullRequestMarkdown.logic.ts`) the repository URL, where upstream's definition returns null.
-  - `GitLabWriteProbe` (in the GitLab package) gates every host write (`GitLabCli.executeWrite`,
-    repository and merge-request creation, merge-request mutations); discovery reports its
-    `writeAccess`, and while writes are blocked the merge-request detail and viewer permissions
-    become read-only.
   - GitLab implements upstream's optional hover-preview and summary (batched through aliased
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
@@ -880,12 +869,9 @@ listed here is drift to remove rather than fork behavior to keep.
     review RPCs, rejecting malformed UTF-8. A top-level review `sourceKind` returns only that
     source. Worktree creation reads `t3.json` through the bounded `readProjectConfig`.
     Checkpoint commits use the "T3 Coder" identity.
-  - `VcsProcess` has no GitHub CLI semaphore, classifies only `glab` failures, and keeps the
-    `classifyNonZeroExit` hook used by the GitLab write probe.
-  - `GitManager` probes the resolved provider's write access before any stacked action that
-    creates a merge request, so a blocked workspace, or a remote that resolves to no registered
-    provider, commits and pushes nothing. It also reads merge-request
-    templates for GitLab and fetches merge-request heads from `refs/merge-requests/<n>/head`.
+  - `VcsProcess` has no GitHub CLI semaphore and classifies only `glab` failures.
+  - `GitManager` reads merge-request templates for GitLab and fetches merge-request heads from
+    `refs/merge-requests/<n>/head`.
     Upstream's GitHub and Forgejo branches stay verbatim but are unreachable with the GitLab-only
     registry.
   - `GitWorkflowService` adds `moveWorktree` and `localRefStatus` pass-throughs.

@@ -12,7 +12,6 @@ import * as ServerConfig from "../config.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { detailFromCause, firstNonEmptyLine } from "@t3tools/source-control-core/server/discovery";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
-import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 
 interface DiscoveryProbe {
   readonly label: string;
@@ -70,7 +69,6 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const process = yield* VcsProcess.VcsProcess;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-  const gitLab = yield* GitLabCli.GitLabCli;
 
   const probe = <Kind extends VcsDriverKind>(
     input: DiscoveryProbe & { readonly kind: Kind },
@@ -137,17 +135,7 @@ export const make = Effect.gen(function* () {
         VCS_PROBES.map((entry) => probe(entry)) as ReadonlyArray<Effect.Effect<VcsDiscoveryItem>>,
         { concurrency: "unbounded" },
       ),
-      // Coder: GitLab discovery carries the workspace write-access probe result.
-      sourceControlProviders: Effect.all(
-        [sourceControlProviders.discover, gitLab.probeWriteAccess({ cwd: config.cwd })],
-        { concurrency: 2 },
-      ).pipe(
-        Effect.map(([providers, writeAccess]) =>
-          providers.map((provider) =>
-            provider.kind === "gitlab" ? { ...provider, writeAccess } : provider,
-          ),
-        ),
-      ),
+      sourceControlProviders: sourceControlProviders.discover,
     }),
   });
 });

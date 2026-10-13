@@ -46,7 +46,6 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 import { GitIcon, type Icon } from "../Icons";
-import { GitLabWorkspaceSettings } from "./GitLabWorkspaceSettings";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 import {
@@ -602,8 +601,6 @@ export function SourceControlSettingsPanel() {
       )}
 
       <SourceControlWritingSettingsSection />
-      {/* Coder: GitLab workspace status and the write-policy probe. */}
-      <GitLabWorkspaceSettings />
     </SettingsPageContainer>
   );
 }

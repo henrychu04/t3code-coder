@@ -2928,28 +2928,6 @@ export const make = Effect.gen(function* () {
           phases,
         });
 
-        // Coder: reject MR actions before any branch, commit, or push unless the resolved provider
-        // confirms write access (unregistered providers never do).
-        if (wantsPr) {
-          const provider = yield* sourceControlProviders.resolve({ cwd: input.cwd });
-          const writeAccess = yield* provider.probeWriteAccess({ cwd: input.cwd });
-          if (!writeAccess.writable) {
-            const detail =
-              writeAccess.detail ??
-              (writeAccess.status === "policy-blocked"
-                ? "GitLab write operations are blocked by this workspace."
-                : writeAccess.status === "unauthenticated"
-                  ? "The GitLab CLI is not authenticated."
-                  : "GitLab write access could not be verified for this workspace.");
-            return yield* new SourceControlProviderError({
-              provider: provider.kind,
-              operation: "createChangeRequest",
-              cwd: input.cwd,
-              detail,
-            });
-          }
-        }
-
         if (!input.featureBranch && wantsPush && !initialStatus.branch) {
           return yield* new GitManagerError({
             operation: "runStackedAction",

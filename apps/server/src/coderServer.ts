@@ -12,11 +12,9 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 
-import * as ServerConfig from "./config.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
-import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as Keybindings from "./keybindings.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Sqlite.ts";
@@ -239,8 +237,6 @@ const CoderRuntimeStartupLive = Layer.effect(
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
     const projectStore = yield* ProjectStore.ProjectStoreV2;
-    const gitLabCli = yield* GitLabCli.GitLabCli;
-    const config = yield* ServerConfig.ServerConfig;
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const t3Tools = yield* T3ToolDispatch.T3ToolDispatch;
     const runtimeScope = yield* Scope.make("sequential");
@@ -305,7 +301,6 @@ const CoderRuntimeStartupLive = Layer.effect(
       Effect.ignoreCause({ log: true }),
       Effect.forkIn(runtimeScope),
     );
-    yield* Effect.forkScoped(gitLabCli.probeWriteAccess({ cwd: config.cwd }).pipe(Effect.asVoid));
 
     return CoderRuntimeStartup.CoderRuntimeStartup.of({});
   }),

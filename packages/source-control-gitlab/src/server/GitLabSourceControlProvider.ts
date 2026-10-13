@@ -156,8 +156,6 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: SourceControlProviderKind.make("gitlab"),
-    // Coder: the workspace write-access probe.
-    probeWriteAccess: gitlab.probeWriteAccess,
     // Coder: GitLab follows merge request templates, as upstream does only for GitHub.
     readChangeRequestTemplate: ({ cwd, treeish }) =>
       GitLabChangeRequestTemplate.detect(cwd, treeish, git.execute),

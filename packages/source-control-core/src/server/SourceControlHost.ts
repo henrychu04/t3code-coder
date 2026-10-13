@@ -18,7 +18,6 @@ import type {
   ServerSettingsError,
   VcsError,
   VcsListRemotesResult,
-  VcsProcessExitFailureKind,
   VcsSwitchRefInput,
   VcsSwitchRefResult,
 } from "@t3tools/contracts";
@@ -42,8 +41,6 @@ export interface SourceControlProcessInput {
   /** What happens past `maxOutputBytes`: fail the run, or keep the first bytes. */
   readonly outputMode?: "error" | "truncate" | undefined;
   readonly appendTruncationMarker?: boolean;
-  /** Coder: lets GitLab report a workspace policy block as its own failure kind. */
-  readonly classifyNonZeroExit?: (stderr: string) => VcsProcessExitFailureKind | undefined;
 }
 
 export interface SourceControlProcessOutput {

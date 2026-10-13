@@ -8,7 +8,6 @@ import type {
   SourceControlProviderError,
   SourceControlProviderInfo,
   SourceControlProviderKind,
-  SourceControlWriteAccess,
   SourceControlRepositoryCloneUrls,
   SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
@@ -114,10 +113,6 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
-    /** Coder: whether this workspace may write to the host (see the GitLab write probe). */
-    readonly probeWriteAccess: (input: {
-      readonly cwd: string;
-    }) => Effect.Effect<SourceControlWriteAccess>;
     /**
      * How to look up a branch's change requests: which head selectors to ask about, and how many
      * results to read per selector. The caller checks the owner against what comes back, so a

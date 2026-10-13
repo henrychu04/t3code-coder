@@ -67,13 +67,6 @@ function unsupportedProvider(
 ): SourceControlProvider.SourceControlProvider["Service"] {
   return SourceControlProvider.SourceControlProvider.of({
     kind,
-    // Coder: no registered provider means writes are not available.
-    probeWriteAccess: () =>
-      Effect.succeed({
-        status: "indeterminate",
-        writable: false,
-        detail: `No ${kind} source control provider is registered.`,
-      }),
     listChangeRequests: (input) =>
       new SourceControlProviderError({
         provider: kind,
