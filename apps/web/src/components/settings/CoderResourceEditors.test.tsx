@@ -65,6 +65,19 @@ it("associates every deployment field and preserves its draft when saving fails"
   expect(document.querySelector<HTMLInputElement>("input")?.value).toBe("Work");
   expect(document.querySelector("details")?.textContent).toContain("Domain could not be reached");
 });
+it("keeps a saved domain's URL fixed while a new domain's stays editable", async () => {
+  const update = vi.fn(async () => {});
+  const urlInput = () => document.querySelector<HTMLInputElement>('input[inputmode="url"]')!;
+  await act(async () =>
+    root.render(<DeploymentEditor deployment={deployment} updateConfig={update} onClose={close} />),
+  );
+  expect(urlInput().readOnly).toBe(true);
+  expect(urlInput().value).toBe("https://coder.example.com");
+  await act(async () =>
+    root.render(<DeploymentEditor deployment={null} updateConfig={update} onClose={close} />),
+  );
+  expect(urlInput().readOnly).toBe(false);
+});
 it("edits an existing forward without changing its ID or duplicating it", async () => {
   await act(async () =>
     root.render(

@@ -154,7 +154,7 @@ export function deriveProviderInstanceEntries(
  * the thread's own environment.
  */
 /**
- * Coder: new selections are limited to Codex and Claude instances, built-in or added in
+ * Coder: new selections are limited to Codex, Claude, and Pi instances, built-in or added in
  * Settings → Providers. Keep the broader projection above for decoding historical upstream
  * data, but do not surface other providers in interactive pickers.
  */

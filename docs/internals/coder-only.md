@@ -21,7 +21,8 @@ composer attachment stays in gateway memory while it is streamed to the workspac
 written to local disk. Browser UI preferences
 such as theme and panel size may use browser storage; as on main, `uiStateStore` keeps sidebar
 project expansion, order, and scope, thread visit times, changed-file folder expansion, and the
-last merge method there. Composer drafts and prompt stashes retain
+last merge method there, and session storage holds main's one-reload guard for stale split chunks
+(`lib/chunkReloadGuard.ts`). Composer drafts and prompt stashes retain
 text in browser storage, but never image bytes or upload IDs. As on main, IndexedDB caches each
 environment's shell, settled thread snapshots, server config, and full branch lists so a reload
 renders before the workspace answers; the workspace remains the source of truth. Open Files tabs and
@@ -196,7 +197,8 @@ reads, copies, persists, or logs its token.
 Coder owns deployment authentication. For the supported Coder CLI 2.25.3, the gateway assigns each
 deployment an isolated Coder-owned `--global-config` directory, invokes `coder --no-open login
 <url>`, and supplies both that config directory and `--url <url>` to every deployment-specific
-command. Coder prints its login URL and hidden token prompt in the terminal running T3 Coder. The
+command. The directory is keyed by deployment id, so `POST /api/config` rejects a saved
+deployment whose URL changed (409); otherwise Coder could send that session to the new host. Coder prints its login URL and hidden token prompt in the terminal running T3 Coder. The
 gateway never asks for, reads, copies, logs, or writes tokens. Coder 2.25.3 itself stores the session
 token as plaintext in the selected config directory; multi-deployment OS-keyring storage is not
 available until Coder 2.29. Network telemetry and direct workspace connections follow the
@@ -726,6 +728,10 @@ listed here is drift to remove rather than fork behavior to keep.
   `projects.createFile`, so it fails on an existing path. The provider-update launch notification uses the active workspace as upstream's primary
   environment and has no per-backend (WSL) split. There is no default-theme adoption, which follows
   upstream's `t3 theme set` CLI.
+- **App entry.** `index.html`, `bootstrap.ts`, and `main.tsx`'s startup (stale-chunk reload,
+  splash held until the first route loads, boot error) are upstream's. `main.tsx` renders the app
+  inside `CoderBootstrap` and installs `consoleDiagnostics`, with no Electron shell, managed auth,
+  or provider auth delivery.
 - **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
   deltas: there is no legacy sidebar (or its Settings switch), usage page, desktop app-update
   pills, desktop window bridge (fullscreen insets and menu actions), or preview keybinding

@@ -79,7 +79,7 @@ export function CoderWorkspaceDiagnostics({ workspaceId }: { readonly workspaceI
               ) : event.status === "failed" ? (
                 <CircleAlertIcon aria-hidden className="mt-0.5 size-3 text-destructive" />
               ) : (
-                <CheckIcon aria-hidden className="mt-0.5 size-3 text-emerald-600" />
+                <CheckIcon aria-hidden className="mt-0.5 size-3 text-success" />
               )}
               <span>
                 {coderDiagnosticPhaseLabel(event.phase)}
