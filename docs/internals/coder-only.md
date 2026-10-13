@@ -530,7 +530,8 @@ listed here is drift to remove rather than fork behavior to keep.
     exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments,
     so upstream's attachment-cleanup side effects are absent.
   - `provider/builtInDrivers.ts` registers only Codex, Claude, and Pi (upstream's
-    `@t3tools/provider-pi` package), and `ProviderOrchestrationAdapterInfrastructure.ts` provides
+    `@t3tools/provider-pi` package), `settingsSecrets.ts` reads secret settings fields from Pi's
+    client definition alone among the provider packages, and `ProviderOrchestrationAdapterInfrastructure.ts` provides
     only the Claude query runner and the Codex app-server factory. Only shipped providers have
     replay harnesses. Pi keeps upstream's T3 extension for its permission hook (Supervised and
     Auto-accept edits), skill chips, and T3 tools. The extension speaks MCP over HTTP upstream;
@@ -737,6 +738,8 @@ listed here is drift to remove rather than fork behavior to keep.
   pills, desktop window bridge (fullscreen insets and menu actions), or preview keybinding
   context; the active workspace supplies keybindings and the pill's providers. `index.css` is
   upstream's minus the `wco` window-controls variant, drag regions, and desktop resize inset.
+  Without the desktop window-controls overlay (`lib/windowControlsOverlay.ts`), `ui/tooltip.tsx`
+  reads a native titlebar height of zero and the sidebar sheet gets no window-controls inset.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
@@ -787,7 +790,9 @@ listed here is drift to remove rather than fork behavior to keep.
   workspace setting whose `null` means "last selected"), and `!` references and GitLab wording are
   used. Label RPCs exist but GitLab does not advertise label editing, and native stack actions are
   never advertised. Video uploads play inline, other uploads link as on main, and `/uploads/`
-  links resolve against the repository host. Actor avatars load as on main. MR links everywhere
+  links resolve against the repository host (client-runtime `pullRequestMarkdown.ts`, which also
+  names a GitLab or self-hosted upload's host; the `!123` autolinks stay in the web's
+  `pullRequestMarkdown.logic.ts`). Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
   upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl` accepts only a URL a shipped
   host definition claims (GitLab's `/-/merge_requests/`), and project matching uses upstream's host
@@ -838,7 +843,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    5cbe82a870):
+    6524a8d437):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
@@ -856,11 +861,10 @@ listed here is drift to remove rather than fork behavior to keep.
     helper RPC handlers and the bridged tools. The temporary checkout, its fetches, and the
     change it reads are workspace Git; the writer model runs through upstream's Codex or Claude
     text generation in the workspace, and Pi refuses, as upstream's Pi runner does. The Guide
-    tab reads the diff over `pullRequests.diff`. Coder deltas: a head the host will not serve
-    by commit is fetched from `refs/merge-requests/<n>/head`, where upstream falls back to
-    `refs/pull/<n>/head`; the guide tools resolve only merge requests on a GitLab host the
-    projects use, as the link tools do; and the service's reader-facing errors say merge
-    request.
+    tab reads the diff over `pullRequests.diff`; upstream's head lookup already tries
+    `refs/merge-requests/<n>/head`. Coder deltas: the guide tools resolve only merge requests on a
+    GitLab host the projects use, as the link tools do; and the service's reader-facing errors say
+    merge request and `!N`.
 - **Provider drivers.** provider-core's `ProviderDriver.usage` is `never` and its `usage.ts`
   is not carried: there is no usage page, so Claude, Codex, and Pi register no usage readers
   (provider-pi's `usage.ts` is not carried) and `provider/builtInDrivers.ts` has no usage
@@ -897,7 +901,7 @@ listed here is drift to remove rather than fork behavior to keep.
   (no hardware detection), so a workspace shows the generic server icon until one is picked.
   Providers is upstream's panel and add-instance dialog limited to Codex, Claude, and Pi drivers,
   without sign-in, setup or managed install, per-instance environment variables, ACP registry, or
-  usage-limit sources. Source Control appends GitLab workspace status and the write-policy probe.
+  usage-limit sources. Source Control appends GitLab workspace status.
   Background activity uses upstream's profiles without host power-monitor intervals or power and
   lock pauses. Older fork links that name one checkout by its settings key resolve to its group.
 - **Project icons.** Upstream's bounded Lucide names, palette, or emoji (`ProjectEmoji`), persisted
@@ -915,11 +919,16 @@ listed here is drift to remove rather than fork behavior to keep.
   Coder-only `CoderLegacy/` migrations 050 and 055). `CoderMigrationHistory.ts` finishes that
   registry, whose final schema matches upstream ID 54, and rewrites the history to upstream's IDs
   before upstream's migrator runs. A V2 preview ledger is reconciled before that rewrite, because
-  the Coder legacy registry never recorded `OrchestrationV2`. New migrations take upstream's next ID; never add a Coder-only
-  migration ID.
+  the Coder legacy registry never recorded `OrchestrationV2`. Any other history (a site-local
+  migration, or a newer build's later V2 migration, which upstream starts past) fails with
+  "Unrecognized migration history" before upstream's V2 id-clash check runs, and
+  `Migrations.test.ts` expects that refusal. New migrations take upstream's next ID; never add a
+  Coder-only migration ID.
 - **Persistence.** Merge-request snapshots, right-panel tabs, diff-panel selections, closed-view
   history, the last merge method, and the last project grouping mode stay in memory where
-  upstream uses browser storage. Model favorites, visibility, and order are upstream's server
+  upstream uses browser storage. Upstream's offline query persistence, which only its mobile app
+  provides a store for, is not carried: client-runtime's `state/runtime.ts` query atoms take no
+  `persistence` option and `state/pullRequests.ts` passes none. Model favorites, visibility, and order are upstream's server
   settings, so each workspace keeps its own. Upstream migrates a browser's saved lists into an
   environment whose settings have none; here the legacy lists are the workspace's own
   `providerPreferencesByEnvironment` entry, falling back to the global lists
@@ -981,6 +990,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Build tooling.** `scripts/lib/third-party-licenses.ts` never fetches during a build: SPDX
   texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
   ones. It reads no device tool version pins, because device tools are not carried.
+  Packages typecheck with `tsc --noEmit` (TypeScript 7), not upstream's `tsc-rs`, so no extra
+  native typecheck binary or install script is added; the fork never ran upstream's Effect
+  language-service diagnostics (`@effect/tsgo`) either.
   `patches/@ff-labs__fff-node@0.11.0.patch` is upstream's plus the native grep struct's
   `fuzzy_score` read at its real u16 width; 0.11.0 still reads it as a u32, which shifts
   `has_fuzzy_score`, `is_binary`, and `is_definition` one field late. `knip.jsonc` lists the upstream files whose exports are used only by surfaces the fork
@@ -995,12 +1007,15 @@ listed here is drift to remove rather than fork behavior to keep.
   their quota.
 - **Upstream tests.** `storageCleanup.test.ts` roots its test config at the temp directory's real
   path, so its path checks pass on macOS, where the temp directory is behind the `/var` symlink.
-  `serverSettings.test.ts` omits upstream's source control host secret tests, because no carried
-  host definition declares settings. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
+  `serverSettings.test.ts` omits upstream's source control host secret tests, and drops the host
+  tokens from its shared secret-lifecycle test, because no carried host definition declares
+  settings. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
   tests through a fake `claude` executable, since the CLI transport has no SDK spawn hook, and
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query` shim rather than the
   Agent SDK's. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
   tests use GitLab projects.
+  `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
+  worker, which needs a browser `self`.
   `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
   reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
   says when to retry it.
