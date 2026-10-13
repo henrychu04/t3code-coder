@@ -3,6 +3,16 @@
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
+
+/* Secondary hovering pointers reveal sidebar actions on touch-primary devices. */
+@custom-variant any-hover {
+  @media (any-hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
 /* On mobile, morph the expanded hero composer into the compact docked
    composer while it moves; the rest of the app remains visually stationary. */
 html[data-mobile-composer-route-transition="true"]::view-transition-old(root),
@@ -268,7 +278,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
   @keyframes skeleton {
     /* The single loading-bar breath used by every skeleton: one opacity pulse
        per container, stepped so however many bars sit under it, the compositor
@@ -618,7 +627,23 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   margin-left: var(--live-activity-focus-width);
 }
 
+@property --assistant-citation-highlight-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
 @layer base {
+  ::highlight(t3-assistant-citation) {
+    background-color: color-mix(
+      in oklab,
+      var(--primary) calc(var(--assistant-citation-highlight-opacity) * 100%),
+      transparent
+    );
+  }
+  ::highlight(t3-assistant-citation-comment) {
+    background-color: color-mix(in oklab, var(--primary) 45%, transparent);
+  }
   :root {
     /* Keep the original T3 Code artwork palettes as the defaults. Built-in
        themes override them with their own pigments in the components layer. */
@@ -1496,9 +1521,7 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
   }
 }
 
-/* Contrast stays in ordinary custom properties so both Tailwind utilities and
-   global/imperative chrome styles resolve the same adjusted role. Redeclare on
-   the sidebar because it owns a local semantic palette. */
+/* Recompute contrast wherever a subtree owns its own semantic color palette. */
 :root,
 [data-app-sidebar] {
   --contrast-toolbar-foreground: color-mix(
@@ -2021,29 +2044,6 @@ code {
   overflow-wrap: anywhere;
 }
 
-/* Prompt-stash save acknowledgement: the new count fades up from just below
-   its resting position, once, then stops. One-shot and event-driven (React
-   remounts the element by key on each stash) — no continuous animation. */
-@keyframes prompt-stash-count-enter {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes provider-update-pill-countdown {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
-}
-
 :root {
   --diff-addition: var(--success);
   --diff-deletion: var(--destructive);
@@ -2193,25 +2193,6 @@ code {
   }
   to {
     visibility: visible;
-  }
-}
-
-@property --assistant-citation-highlight-opacity {
-  syntax: "<number>";
-  inherits: true;
-  initial-value: 0;
-}
-
-@layer base {
-  ::highlight(t3-assistant-citation) {
-    background-color: color-mix(
-      in oklab,
-      var(--primary) calc(var(--assistant-citation-highlight-opacity) * 100%),
-      transparent
-    );
-  }
-  ::highlight(t3-assistant-citation-comment) {
-    background-color: color-mix(in oklab, var(--primary) 45%, transparent);
   }
 }
 

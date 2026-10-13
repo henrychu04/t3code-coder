@@ -19,7 +19,9 @@ ephemeral port and saves that. It stores only non-secret Coder deployment URLs, 
 structured port-forward rules, an optional Coder executable path, and the last gateway port. A
 composer attachment stays in gateway memory while it is streamed to the workspace and is never
 written to local disk. Browser UI preferences
-such as theme and panel size may use browser storage. Composer drafts and prompt stashes retain
+such as theme and panel size may use browser storage; as on main, `uiStateStore` keeps sidebar
+project expansion, order, and scope, thread visit times, changed-file folder expansion, and the
+last merge method there. Composer drafts and prompt stashes retain
 text in browser storage, but never image bytes or upload IDs. As on main, IndexedDB caches each
 environment's shell, settled thread snapshots, server config, and full branch lists so a reload
 renders before the workspace answers; the workspace remains the source of truth. Open Files tabs and
@@ -733,7 +735,8 @@ listed here is drift to remove rather than fork behavior to keep.
 - **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
   deltas: there is no legacy sidebar (or its Settings switch), usage page, desktop app-update
   pills, desktop window bridge (fullscreen insets and menu actions), or preview keybinding
-  context; the active workspace supplies keybindings and the pill's providers.
+  context; the active workspace supplies keybindings and the pill's providers. `index.css` is
+  upstream's minus the `wco` window-controls variant, drag regions, and desktop resize inset.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
