@@ -181,6 +181,20 @@ The model picker in the composer sets the model for the thread; open it with `mo
 the picker is open, `mod+1` through `mod+9` jump straight to a model. The permission mode control
 sits next to it — see [Permission modes](./permission-modes.md).
 
+To rename a built-in model on every client, edit the workspace's `~/.t3-coder/userdata/settings.json`.
+Add a custom model entry with the built-in model ID and a new name under that provider instance:
+
+```json
+{
+  "providerInstances": {
+    "codex": {
+      "driver": "codex",
+      "config": { "customModels": [{ "slug": "gpt-5.5", "name": "Team GPT" }] }
+    }
+  }
+}
+```
+
 ## Model defaults
 
 T3 Coder remembers your provider, model, and model options for new threads. A project’s configured

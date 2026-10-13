@@ -114,7 +114,7 @@ const createRun = Effect.fn(function* (
 });
 
 // Coder: skipped because it fails on pure upstream too (ProjectionStoreSetupError, SQLite
-// "malformed JSON" under Node 24.12), last seen at upstream merge-base 5cbe82a870. Re-run it on
+// "malformed JSON" under Node 24.12), last seen at upstream merge-base 6524a8d437. Re-run it on
 // every sync and restore `it.effect` once upstream passes.
 it.effect.skip("selects unfinished recovery work without reading settled thread histories", () =>
   Effect.gen(function* () {
@@ -505,7 +505,7 @@ it.effect("includes shared sessions and provider-owned background rosters in rec
       preparedState.providerSessions.map((session) => session.id),
       [preparedSessionId],
     );
-    assert.equal(restartContinuationRun(preparedState)?.id, preparedRunId);
+    assert.equal(restartContinuationRun(preparedState, yield* DateTime.now)?.id, preparedRunId);
     assert.deepEqual(yield* projections.getUnreadableThreadIds(), []);
     const sql = yield* SqlClient.SqlClient;
     yield* sql`

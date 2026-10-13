@@ -41,9 +41,11 @@ battery, power modes, or screen locks. Existing interval settings are preserved 
 
 ## Restart recovery
 
-**Continue threads after restarts** is off by default. When enabled, the workspace helper attempts
-to resume interrupted provider sessions with saved resume state when it next starts. It does not
-reconnect or start a stopped Coder workspace by itself. Archived or deleted threads are excluded.
+**Continue threads after restarts** is on by default. The workspace helper attempts to resume
+interrupted provider sessions with saved resume state when it next starts. It does not reconnect or
+start a stopped Coder workspace by itself. A thread is not resumed while it waits for your
+approval, answer, or secret, or while it is archived, snoozed, or settled; deleted threads are
+excluded. After three automatic resumes in a row, the thread waits for your next message.
 Recovery sends “Continue where you left off.” through the workspace provider. If recovery fails,
 the thread shows an error and can be continued manually.
 

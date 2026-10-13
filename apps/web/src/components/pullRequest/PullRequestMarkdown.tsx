@@ -53,11 +53,11 @@ export function PullRequestMarkdown({
       )}
     >
       {segments.map((segment) => {
-        if (segment.kind === "markdown") {
+        if (segment.kind === "markdown" || segment.media === "image") {
           return (
             <ChatMarkdown
               key={segment.id}
-              text={segment.text}
+              text={segment.kind === "markdown" ? segment.text : `![](<${segment.url}>)`}
               cwd={cwd}
               environmentId={environmentId}
               threadRef={resolvedThreadRef}

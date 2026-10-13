@@ -281,6 +281,10 @@
     "./review-guide-tour": {
       "types": "./src/reviewGuideTour.ts",
       "default": "./src/reviewGuideTour.ts"
+    },
+    "./pull-request-markdown": {
+      "types": "./src/pullRequestMarkdown.ts",
+      "default": "./src/pullRequestMarkdown.ts"
     }
   },
   "scripts": {
