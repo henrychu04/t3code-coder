@@ -283,10 +283,17 @@ export function DeploymentEditor({
           id={`${id}-url`}
           inputMode="url"
           placeholder="https://coder.example.com"
+          // A saved domain keeps its Coder sign-in, so it cannot point at another host.
+          readOnly={deployment !== null}
           required
           value={url}
           onValueChange={setUrl}
         />
+        {deployment ? (
+          <p className="text-xs text-muted-foreground">
+            To use a different domain, add it as a new one.
+          </p>
+        ) : null}
       </SettingsField>
       <SettingsField id={`${id}-executable`} label="Coder executable (optional)">
         <Input

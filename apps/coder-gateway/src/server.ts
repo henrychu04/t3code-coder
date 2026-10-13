@@ -322,6 +322,22 @@ export function runCoderAuthStatus(
   return Effect.runPromise(checkCoderAuthStatus(invocation, timeoutMs, terminationGraceMs));
 }
 
+class CoderConfigConflictError extends Error {}
+
+/**
+ * Coder keeps a deployment's sign-in in the profile directory named by its id, so a saved
+ * deployment's URL never changes; otherwise its session would go to the new host.
+ */
+function assertDeploymentUrlsUnchanged(previous: CoderProfileConfig, next: CoderProfileConfig) {
+  for (const deployment of next.deployments) {
+    const saved = previous.deployments.find((entry) => entry.id === deployment.id);
+    if (saved !== undefined && saved.url !== deployment.url)
+      throw new CoderConfigConflictError(
+        `The domain of ${saved.name} cannot change. Add the new domain instead.`,
+      );
+  }
+}
+
 function workspaceConnectionIsCurrent(
   previous: CoderProfileConfig,
   next: CoderProfileConfig,
@@ -1982,6 +1998,7 @@ export function makeLocalCoderGateway(
           try {
             const savedConfig = await serializeConfigMutation(async () => {
               const previousConfig = profileConfig;
+              assertDeploymentUrlsUnchanged(previousConfig, nextConfig);
               const stalePortForwardIds = new Set(
                 (previousConfig.portForwards ?? [])
                   .filter(
@@ -2011,7 +2028,12 @@ export function makeLocalCoderGateway(
             sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(savedConfig));
           } catch (cause) {
             const message = cause instanceof Error ? cause.message : "Configuration update failed.";
-            sendText(response, 502, "text/plain; charset=utf-8", message);
+            sendText(
+              response,
+              cause instanceof CoderConfigConflictError ? 409 : 502,
+              "text/plain; charset=utf-8",
+              message,
+            );
           }
           return;
         }
