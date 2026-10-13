@@ -195,16 +195,19 @@ published themes change. Published cards cannot be edited or removed through the
 Use **Add domain** or **Add forward** to open an editor. Existing entries have an actions menu
 with edit and removal controls. Changes apply when you save the dialog; a failed save keeps your
 entries available for correction and retry. Domain sign-in still takes place in the terminal
-running T3 Coder.
+running T3 Coder. A saved domain's URL cannot change, since its sign-in belongs to that host; add
+a different domain as a new one.
 
-Workspace rows show runtime status and scheduled stops. Use **Start** or **Reconnect** on the row;
-its actions menu contains update, restart, stop, and removal controls. Operation failures appear
-beside the affected entry, with expandable technical details. Scheduled checks on this page pause while it
+Workspace rows show runtime status, scheduled stops, and whether T3 is connected. Use **Start** or
+**Reconnect** on the row; its actions menu contains the workspace icon and update, restart, stop,
+and removal controls. Each row runs its own actions, so a slow one does not block the others.
+Operation failures appear beside the affected entry, with expandable technical details. Scheduled checks on this page pause while it
 is in a hidden browser tab and refresh when the tab becomes visible.
 
 Port forwards can be edited without removing and recreating them. Local ports must be unique
 within each protocol. A failed forward stays stopped until you explicitly restart it or change
-its configuration. Removing a workspace connection also removes its saved forwards.
+its configuration. A running TCP forward has an **Open** button for `http://127.0.0.1:<port>`.
+Removing a workspace connection asks first and also removes its saved forwards.
 
 These connection settings belong to this computer and do not use workspace or project scope.
 Settings search includes domains, workspace connections, and port forwarding even when no

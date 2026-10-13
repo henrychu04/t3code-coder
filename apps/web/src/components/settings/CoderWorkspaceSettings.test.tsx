@@ -129,8 +129,16 @@ it("keeps restart and stop behind their existing confirmations", async () => {
   expect(state.stop).toHaveBeenCalledWith("one");
   expect(state.refresh).toHaveBeenCalledTimes(1);
 });
-it("removes only the selected workspace and its saved forwards", async () => {
+it("removes only the selected workspace and its saved forwards after confirming", async () => {
   await render();
+  await click("Remove connection");
+  expect(state.confirm).toHaveBeenLastCalledWith(
+    expect.stringContaining("Its saved port forward will be removed."),
+    { variant: "destructive" },
+  );
+  expect(state.disconnect).not.toHaveBeenCalled();
+  expect(state.config.workspaces).toHaveLength(2);
+  state.confirm.mockResolvedValue(true);
   await click("Remove connection");
   expect(state.disconnect).toHaveBeenCalledWith("one");
   expect(state.config.workspaces.map((workspace) => workspace.id)).toEqual(["two"]);
@@ -160,4 +168,15 @@ it("allows status retry after an initial poll fails", async () => {
   await click("Retry status");
   expect(state.refresh).toHaveBeenCalledTimes(1);
   expect(state.connect).not.toHaveBeenCalled();
+});
+it("keeps other workspaces usable while one workspace action is running", async () => {
+  state.runtime.one = { status: "stopped", updateAvailable: false };
+  state.start.mockReturnValueOnce(new Promise(() => {}));
+  await render();
+  await click("Start");
+  const rows = renderer.root.findAllByType(SettingsResource);
+  const button = (row: number, label: string) =>
+    rows[row]!.findAllByType("button").find((node) => node.children.includes(label));
+  expect(button(0, "Starting…")?.props.disabled).toBe(true);
+  expect(button(1, "Reconnect")?.props.disabled).toBe(false);
 });

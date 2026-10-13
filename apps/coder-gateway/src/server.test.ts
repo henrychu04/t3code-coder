@@ -268,6 +268,34 @@ describe("local Coder gateway", () => {
     strictEqual(JSON.parse(await NodeFS.readFile(configPath, "utf8")).version, 1);
   });
 
+  it("keeps a saved deployment's URL so its Coder sign-in never reaches another host", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const gateway = await startLocalCoderGateway({ configPath });
+    closeGateway = gateway.close;
+    const save = (url: string, name = "Goldman") =>
+      request({
+        url: `${gateway.url}/api/config`,
+        method: "POST",
+        headers: { Origin: gateway.url, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: 1,
+          deployments: [{ id: "goldman", name, url }],
+          workspaces: [],
+        }),
+      });
+
+    strictEqual((await save("https://coder.example.gs.com")).statusCode, 200);
+    strictEqual((await save("https://coder.example.gs.com/", "Renamed")).statusCode, 200);
+    const moved = await save("https://coder.attacker.example", "Renamed");
+    strictEqual(moved.statusCode, 409);
+    strictEqual(
+      JSON.parse(await NodeFS.readFile(configPath, "utf8")).deployments[0].url,
+      "https://coder.example.gs.com",
+    );
+  });
+
   it("reuses the saved loopback port so the browser origin stays stable", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);

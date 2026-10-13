@@ -7,6 +7,8 @@ is where you manage domains, sign-ins, workspaces, port forwards, and connection
 
 Add each Coder deployment you use under **Settings → Connections**. Each domain gets its own
 isolated Coder sign-in, so a work deployment and a personal one can stay signed in side by side.
+A domain's URL is fixed once saved so that sign-in never reaches another host; add a different
+domain as a new one.
 
 Choose **Sign in** and complete the flow in the terminal where `npm start` runs: Coder prints its
 login URL and a hidden token prompt there. T3 Coder never asks for, reads, or stores the token —

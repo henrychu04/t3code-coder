@@ -197,7 +197,8 @@ reads, copies, persists, or logs its token.
 Coder owns deployment authentication. For the supported Coder CLI 2.25.3, the gateway assigns each
 deployment an isolated Coder-owned `--global-config` directory, invokes `coder --no-open login
 <url>`, and supplies both that config directory and `--url <url>` to every deployment-specific
-command. Coder prints its login URL and hidden token prompt in the terminal running T3 Coder. The
+command. The directory is keyed by deployment id, so `POST /api/config` rejects a saved
+deployment whose URL changed (409); otherwise Coder could send that session to the new host. Coder prints its login URL and hidden token prompt in the terminal running T3 Coder. The
 gateway never asks for, reads, copies, logs, or writes tokens. Coder 2.25.3 itself stores the session
 token as plaintext in the selected config directory; multi-deployment OS-keyring storage is not
 available until Coder 2.29. Network telemetry and direct workspace connections follow the

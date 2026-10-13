@@ -1,5 +1,6 @@
 import {
   CircleAlertIcon,
+  ExternalLinkIcon,
   LoaderCircleIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -131,6 +132,23 @@ export function PortForwardSettings({
                 }
                 actions={
                   <>
+                    {rule.protocol === "tcp" && status?.status === "running" ? (
+                      <Button
+                        aria-label={`Open 127.0.0.1:${rule.localPort} in a new tab`}
+                        render={
+                          <a
+                            href={`http://127.0.0.1:${rule.localPort}/`}
+                            rel="noreferrer noopener"
+                            target="_blank"
+                          />
+                        }
+                        size="xs"
+                        variant="outline"
+                      >
+                        <ExternalLinkIcon />
+                        Open
+                      </Button>
+                    ) : null}
                     <Button
                       aria-label={
                         query.error ? "Retry port-forward status" : "Restart port forward"
