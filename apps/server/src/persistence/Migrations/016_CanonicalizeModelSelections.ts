@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-// T3 Coder owns a fresh ~/.t3-coder database namespace, so this historical
+// Coder: T3 Coder owns a fresh ~/.t3-coder database namespace, so this historical
 // migration only advances the schema; it does not import upstream provider data.
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

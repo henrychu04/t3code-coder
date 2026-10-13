@@ -4,8 +4,8 @@ import { useCallback } from "react";
 import { readLocalApi } from "~/localApi";
 
 /**
- * Upstream's link opener without the in-app browser preview, which Coder omits. Every link goes
- * to the system browser through the validated HTTP(S)-only `shell.openExternal`.
+ * Coder: upstream's link opener without the in-app browser preview, which Coder omits. Every link
+ * goes to the system browser through the validated HTTP(S)-only `shell.openExternal`.
  */
 export function useOpenLink(_threadRef: ScopedThreadRef | null | undefined): (
   url: string,
