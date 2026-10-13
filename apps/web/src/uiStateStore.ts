@@ -1,3 +1,4 @@
+import { Debouncer } from "@tanstack/react-pacer";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
@@ -5,6 +6,18 @@ import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
 // Version 1 stored card visibility, not folder expansion.
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
+const LEGACY_PERSISTED_STATE_KEYS = [
+  "t3code:renderer-state:v8",
+  "t3code:renderer-state:v7",
+  "t3code:renderer-state:v6",
+  "t3code:renderer-state:v5",
+  "t3code:renderer-state:v4",
+  "t3code:renderer-state:v3",
+  "codething:renderer-state:v4",
+  "codething:renderer-state:v3",
+  "codething:renderer-state:v2",
+  "codething:renderer-state:v1",
+] as const;
 
 export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
@@ -17,6 +30,7 @@ export interface PersistedUiState {
   sidebarProjectScopeKey?: string | null;
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  pullRequestMergeMethod?: string;
 }
 
 export interface UiProjectState {
@@ -37,7 +51,6 @@ export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-/** The last merge method picked. Memory-only like the rest of Coder's UI state. */
 export interface UiPullRequestState {
   pullRequestMergeMethod: PullRequestMergeMethod;
 }
@@ -57,6 +70,7 @@ const initialState: UiState = {
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
 const LEGACY_PROJECT_EXPANSION_DEFAULT_KEY = "legacy-project-expansion-default";
+let legacyKeysCleanedUp = false;
 
 export function legacyProjectCwdPreferenceKey(cwd: string): string {
   return `${LEGACY_PROJECT_CWD_PREFERENCE_PREFIX}${normalizeProjectPathForComparison(cwd)}`;
@@ -103,6 +117,10 @@ function sanitizeTimestampRecord(value: unknown): Record<string, string> {
   );
 }
 
+function isPullRequestMergeMethod(value: unknown): value is PullRequestMergeMethod {
+  return value === "merge" || value === "squash" || value === "rebase";
+}
+
 export function parsePersistedState(parsed: PersistedUiState): UiState {
   const projectExpandedById =
     parsed.projectExpandedById === undefined
@@ -137,12 +155,32 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
         : {},
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
     sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
-    pullRequestMergeMethod: initialState.pullRequestMergeMethod,
+    pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
+      ? parsed.pullRequestMergeMethod
+      : initialState.pullRequestMergeMethod,
   };
 }
 
 function readPersistedState(): UiState {
-  return initialState;
+  if (typeof window === "undefined") {
+    return initialState;
+  }
+  try {
+    const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
+    if (!raw) {
+      for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
+        const legacyRaw = window.localStorage.getItem(legacyKey);
+        if (!legacyRaw) {
+          continue;
+        }
+        return parsePersistedState(JSON.parse(legacyRaw) as PersistedUiState);
+      }
+      return initialState;
+    }
+    return parsePersistedState(JSON.parse(raw) as PersistedUiState);
+  } catch {
+    return initialState;
+  }
 }
 
 function sanitizePersistedThreadChangedFilesExpanded(
@@ -174,8 +212,40 @@ function sanitizePersistedThreadChangedFilesExpanded(
 }
 
 export function persistState(state: UiState): void {
-  void state;
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    const projectExpandedById = Object.fromEntries(
+      Object.entries(state.projectExpandedById).filter(
+        ([key]) => key !== LEGACY_PROJECT_EXPANSION_DEFAULT_KEY,
+      ),
+    );
+    window.localStorage.setItem(
+      PERSISTED_STATE_KEY,
+      JSON.stringify({
+        projectExpandedById,
+        projectOrder: state.projectOrder,
+        threadLastVisitedAtById: state.threadLastVisitedAtById,
+        defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
+        sidebarProjectScopeKey: state.sidebarProjectScopeKey,
+        threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
+        threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        pullRequestMergeMethod: state.pullRequestMergeMethod,
+      } satisfies PersistedUiState),
+    );
+    if (!legacyKeysCleanedUp) {
+      legacyKeysCleanedUp = true;
+      for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
+        window.localStorage.removeItem(legacyKey);
+      }
+    }
+  } catch {
+    // Ignore quota/storage errors to avoid breaking chat UX.
+  }
 }
+
+const debouncedPersistState = new Debouncer(persistState, { wait: 500 });
 
 export function markThreadVisited(state: UiState, threadId: string, visitedAt: string): UiState {
   const visitedAtMs = Date.parse(visitedAt);
@@ -388,3 +458,11 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),
     ),
 }));
+
+useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("beforeunload", () => {
+    debouncedPersistState.flush();
+  });
+}

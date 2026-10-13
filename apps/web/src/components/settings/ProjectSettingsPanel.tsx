@@ -10,7 +10,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { AsyncResult } from "effect/reactivity";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -24,6 +24,7 @@ import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
+import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
 import { useEnvironments } from "../../state/environments";
 import { useThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
@@ -353,6 +354,11 @@ function ProjectDetail({
 
       const draftStore = useComposerDraftStore.getState();
       for (const member of members) {
+        if (checkProjectAccess([member], "Failed to remove project")) return;
+        const memberThreads = projectThreads.filter(
+          (thread) =>
+            thread.environmentId === member.environmentId && thread.projectId === member.id,
+        );
         const result = mapAtomCommandResult(
           await deleteProject({
             environmentId: member.environmentId,
@@ -368,6 +374,14 @@ function ProjectDetail({
           return;
         }
         const projectRef = scopeProjectRef(member.environmentId, member.id);
+        releaseProjectDraftUploads(
+          projectRef,
+          memberThreads.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
+        );
+        const projectDraftThread = draftStore.getDraftThreadByProjectRef(projectRef);
+        if (projectDraftThread) {
+          draftStore.clearDraftThread(projectDraftThread.draftId);
+        }
         draftStore.clearProjectDraftThreadId(projectRef);
       }
 

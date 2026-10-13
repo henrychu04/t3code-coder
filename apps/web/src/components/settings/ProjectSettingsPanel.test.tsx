@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
   confirm: vi.fn(),
   clear: vi.fn(),
+  releaseUploads: vi.fn(),
   navigate: vi.fn(),
   toast: vi.fn(),
 }));
@@ -23,7 +24,15 @@ vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (operation: string) => (operation === "update" ? mocks.update : mocks.remove),
 }));
 vi.mock("../../composerDraftStore", () => ({
-  useComposerDraftStore: { getState: () => ({ clearProjectDraftThreadId: mocks.clear }) },
+  useComposerDraftStore: {
+    getState: () => ({
+      getDraftThreadByProjectRef: () => null,
+      clearProjectDraftThreadId: mocks.clear,
+    }),
+  },
+}));
+vi.mock("../../lib/composerDraftUploads", () => ({
+  releaseProjectDraftUploads: mocks.releaseUploads,
 }));
 vi.mock("../../localApi", () => ({
   readLocalApi: () => ({ dialogs: { confirm: mocks.confirm } }),
@@ -120,6 +129,7 @@ it("cancelling grouped removal leaves projects and drafts intact", async () => {
   );
   expect(mocks.remove).not.toHaveBeenCalled();
   expect(mocks.clear).not.toHaveBeenCalled();
+  expect(mocks.releaseUploads).not.toHaveBeenCalled();
 });
 it("removes a whole group and clears only its drafts after confirmation", async () => {
   const root = await mount();
@@ -134,6 +144,7 @@ it("removes a whole group and clears only its drafts after confirmation", async 
   expect(mocks.clear.mock.calls.map(([ref]) => ref)).toEqual(
     members.map((member) => ({ environmentId: member.environmentId, projectId: member.id })),
   );
+  expect(mocks.releaseUploads).toHaveBeenCalledTimes(2);
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/", replace: true });
 });
 it("stops on a partial removal failure without clearing the failed checkout draft", async () => {
@@ -148,6 +159,7 @@ it("stops on a partial removal failure without clearing the failed checkout draf
       .props.onClick(),
   );
   expect(mocks.clear).toHaveBeenCalledTimes(1);
+  expect(mocks.releaseUploads).toHaveBeenCalledTimes(1);
   expect(mocks.navigate).not.toHaveBeenCalled();
   expect(mocks.toast).toHaveBeenCalled();
 });
