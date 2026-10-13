@@ -106,12 +106,9 @@ export const reconcileCoderMigrationHistory = Effect.fn("reconcileCoderMigration
       SELECT migration_id, name FROM effect_sql_migrations
     `;
     if (isHistoryOf(applied, upstream)) return false;
-    if (!isHistoryOf(applied, legacyMigrationEntries(upstream))) {
-      return yield* new Migrator.MigrationError({
-        kind: "BadState",
-        message: "Unrecognized migration history",
-      });
-    }
+    // Any other history is upstream's to judge: its V2 id-clash check refuses a database that
+    // would skip V2 migrations and starts past a site-local or newer build's migration.
+    if (!isHistoryOf(applied, legacyMigrationEntries(upstream))) return false;
 
     yield* runLegacyMigrations(upstream);
     const rows = upstream

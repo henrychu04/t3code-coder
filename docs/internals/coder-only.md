@@ -919,11 +919,9 @@ listed here is drift to remove rather than fork behavior to keep.
   Coder-only `CoderLegacy/` migrations 050 and 055). `CoderMigrationHistory.ts` finishes that
   registry, whose final schema matches upstream ID 54, and rewrites the history to upstream's IDs
   before upstream's migrator runs. A V2 preview ledger is reconciled before that rewrite, because
-  the Coder legacy registry never recorded `OrchestrationV2`. Any other history (a site-local
-  migration, or a newer build's later V2 migration, which upstream starts past) fails with
-  "Unrecognized migration history" before upstream's V2 id-clash check runs, and
-  `Migrations.test.ts` expects that refusal. New migrations take upstream's next ID; never add a
-  Coder-only migration ID.
+  the Coder legacy registry never recorded `OrchestrationV2`. Any other history is left to
+  upstream's migrator and its V2 id-clash check, so `Migrations.test.ts` is upstream's. New
+  migrations take upstream's next ID; never add a Coder-only migration ID.
 - **Persistence.** Merge-request snapshots, right-panel tabs, diff-panel selections, closed-view
   history, the last merge method, and the last project grouping mode stay in memory where
   upstream uses browser storage. Upstream's offline query persistence, which only its mobile app

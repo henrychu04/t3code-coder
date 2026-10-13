@@ -1,6 +1,5 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -68,14 +67,17 @@ for (const throughId of [undefined, 49, 40]) {
   );
 }
 
-it.effect("refuses an unrecognized migration history", () =>
+it.effect("leaves an unrecognized migration history to upstream's migrator", () =>
   inFreshDatabase(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 10 });
       yield* sql`UPDATE effect_sql_migrations SET name = 'Unknown' WHERE migration_id = 10`;
-      const exit = yield* Effect.exit(runMigrations());
-      assert.isTrue(Exit.isFailure(exit));
+      assert.deepStrictEqual(
+        yield* runMigrations(),
+        migrationManifest.filter(([id]) => id > 10),
+      );
+      assert.strictEqual((yield* history)[9]?.[1], "Unknown");
     }),
   ),
 );
