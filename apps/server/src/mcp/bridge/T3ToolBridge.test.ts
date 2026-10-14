@@ -23,6 +23,7 @@ import * as CoderEnvironment from "../../coderEnvironment.ts";
 import * as ServerConfig from "../../config.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
+import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
@@ -30,6 +31,7 @@ import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import { v2PullRequestThread } from "../../orchestration-v2/testkit/pullRequestFixtures.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
@@ -137,6 +139,8 @@ const harness = (options: {
       Layer.mock(ProviderRegistry.ProviderRegistry)({}),
       Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
       Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+      Layer.mock(GitVcsDriver.GitVcsDriver)({}),
       T3ToolDispatch.layer,
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-tool-bridge-" }).pipe(
         Layer.provide(NodeServices.layer),
