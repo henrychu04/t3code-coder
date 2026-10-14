@@ -723,7 +723,7 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Project actions.** The thread details panel, action editor, and Settings → Actions are
   upstream's. Coder deltas: repository actions come from the helper's validated `t3.json` read by
   project (`projects.getConfig`), which drops `iconPath` and script preview fields; the editor has
-  no preview URL; and, as upstream's browser build, action keybindings are saved only on desktop.
+  no preview URL.
 - **Right panel and composer chrome.** `RightPanelTabs.tsx` is upstream's tab strip and
   `PreviewPanelShell` layout without browser, device, and preview surfaces: no launcher rows,
   favicons, browser profiles, audio controls, or device rename. Never-opened preview and device
