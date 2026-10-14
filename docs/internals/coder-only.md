@@ -623,7 +623,10 @@ listed here is drift to remove rather than fork behavior to keep.
   - `chat/HtmlRenderFrame.tsx` reads the page through that read and `files/BrowserDocumentFrame.tsx`
     writes it into the MCP App shell with the theme in the shell URL's fragment, as upstream's
     signed URL carries it. **Open full size** shows the in-memory page and its source in
-    `AttachmentFilePreview`, whose Save writes those bytes.
+    `AttachmentFilePreview`, whose Save writes those bytes. Links in a page open as upstream's
+    chat links do; that dialog and `SentAttachmentFilePreview` pass the thread for them where
+    upstream's `FilePreviewPanel` does, and with no in-app browser `browser/useOpenLink.ts`
+    sends every other link to the system browser.
   - Pages are kept like other attachments; deleting a thread does not delete them.
 - **Tool output images.** `turnItemOutputImages` lists a fetched item's images as upstream does.
   The inspector reads each image by index from the stored item through `workspace.readTurnItemAsset`
@@ -843,7 +846,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    6524a8d437):
+    aef0e9ca40):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
