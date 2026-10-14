@@ -33,9 +33,8 @@ pnpm install --frozen-lockfile --ignore-scripts
 npm start
 ```
 
-The gateway builds the UI, binds to an ephemeral `127.0.0.1` port, and prints the local URL. Open
-that URL in your browser. T3 Coder never launches a browser on its own; `npm run start:open` is an
-explicit opt-in for machines where that is acceptable.
+The gateway builds the UI, binds to an ephemeral `127.0.0.1` port, prints the local URL, and opens
+it in your default browser.
 
 ## First run
 
