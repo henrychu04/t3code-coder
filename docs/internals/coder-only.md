@@ -475,8 +475,9 @@ listed here is drift to remove rather than fork behavior to keep.
     pending-message budget allows, minus whatever is already queued; that fits a tool-result image
     at the provider's 10 MiB base64 limit, and a longer line fails the session.
     `ClaudeCli.ts`'s `Query` implements `interrupt`, `stopTask`, `setModel`, `setPermissionMode`,
-    `setMaxThinkingTokens`, `getContextUsage`, `getSettings` (read directly by `ClaudeProvider.ts`),
-    `getUsage`, `setMcpServers`, `initializationResult`, and `close` as CLI control requests.
+    `setMaxThinkingTokens`, `applyFlagSettings`, `getContextUsage`, `getSettings` (read directly
+    by `ClaudeProvider.ts`), `getUsage`, `setMcpServers`, `initializationResult`, and `close` as
+    CLI control requests.
     `setMcpServers` sends the SDK's `{ subtype: "mcp_set_servers", servers }` with no deadline, as
     the SDK does; upstream's query runner bounds the wait and sends a session's `mcpServers` that
     way instead of as `--mcp-config`. T3 Coder's own sessions carry no MCP servers (T3 tools use
@@ -490,7 +491,10 @@ listed here is drift to remove rather than fork behavior to keep.
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
     cannot honour fail instead of being dropped; `mcpServers` becomes `--mcp-config`, as the SDK
     passes it. `executableArgs` go before the CLI's own arguments, as the
-    SDK passes them, so upstream's agent scope wrapper launches the CLI. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
+    SDK passes them, so upstream's agent scope wrapper launches the CLI. A
+    `spawnClaudeCodeProcess` option starts the CLI as the SDK does, with the transport's command,
+    arguments, environment, and an abort signal, so upstream's process-group spawner stops what
+    the CLI leaves running; such a spawner's stderr is not read. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
     allocates the fork's session id and stores the source session and message boundary as the
     provider thread's `claudeFork` native metadata. The fork's first query then runs
     `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather
