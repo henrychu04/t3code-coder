@@ -226,7 +226,10 @@ client is needed. The initial
 workspace target is Linux x86-64. The helper launch is one foreground `coder ssh` session that
 first runs the workspace preflight: it checks the remote OS and architecture, realizes a Node.js
 24 package from the workspace's configured `nixpkgs` only when that runtime is not already
-available, and checks Git, the transfer tools (`tar`, `sha256sum`, `head`), at least one of
+available (the preflight accepts any Node.js 24, below the root `engines.node` floor the
+development suite needs: the server never binds a raw ArrayBuffer, and the SQLite checkpoint
+worker falls back to the writer on an older SQLite, so an older 24 is sound in the workspace),
+and checks Git, the transfer tools (`tar`, `sha256sum`, `head`), at least one of
 Claude Code, Codex, or Pi, and the workspace state directory. A failed check prints a `T3_CODER_PREFLIGHT_FAILED:` line, which the gateway reports.
 The preflight has its own five-minute budget; helper negotiation starts its 60-second budget only
 after the launch prints the ready sentinel. As upstream, server settings keep sensitive provider
@@ -1030,12 +1033,6 @@ listed here is drift to remove rather than fork behavior to keep.
   unavailable-URL test and the frame's `sandbox` attribute check (the document shell's CSP
   applies the sandbox). `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
   worker, which needs a browser `self`.
-  `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
-  reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
-  says when to retry it. `packages/shared/src/nodeSqliteClient.test.ts` skips "keeps large text
-  and blob parameters off cached statements" and "checkpoints the WAL on the worker instead of
-  the writer", which fail on unmodified upstream code under the local Node 24.12 (ArrayBuffer
-  parameters bind as NULL; its SQLite 3.50.4 predates the checkpoint worker's 3.51).
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,
