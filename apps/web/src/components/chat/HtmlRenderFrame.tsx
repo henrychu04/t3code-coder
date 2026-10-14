@@ -5,7 +5,7 @@
  * same in-memory page with its source and saves it.
  */
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef, ThreadId, TurnItemId } from "@t3tools/contracts";
 import {
   HTML_RENDER_COLUMN_WIDTH,
   htmlRenderFileName,
@@ -37,6 +37,7 @@ export function HtmlRenderFrame(props: {
   readonly threadId: ThreadId;
   readonly itemId: TurnItemId;
   readonly htmlRender: HtmlRenderReference;
+  readonly threadRef: ScopedThreadRef | undefined;
 }) {
   const { title } = props.htmlRender;
   const boxRef = useRef<HTMLDivElement>(null);
@@ -93,6 +94,7 @@ export function HtmlRenderFrame(props: {
           <HtmlRenderDocument
             html={html}
             title={title}
+            threadRef={props.threadRef}
             className="block size-full"
             onContentHeight={setContentHeight}
           />
