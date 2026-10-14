@@ -853,7 +853,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    aef0e9ca40):
+    dd5c7bd09e):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
@@ -1022,7 +1022,9 @@ listed here is drift to remove rather than fork behavior to keep.
   settings. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
   tests through a fake `claude` executable, since the CLI transport has no SDK spawn hook, and
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query` shim rather than the
-  Agent SDK's. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
+  Agent SDK's. `ProviderSessionManager.test.ts`'s parallel shutdown test waits briefly in real time
+  after moving the test clock, because each release closes a T3 tool bridge on the real file
+  system. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
   tests use GitLab projects.
   `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's
   unavailable-URL test and the frame's `sandbox` attribute check (the document shell's CSP
