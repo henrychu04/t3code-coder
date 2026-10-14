@@ -1,14 +1,13 @@
 /**
  * Coder: upstream's inline HTML render, with the page read through the helper's bounded turn-item
  * read (only the page the stored item references, in the item's own thread) instead of a signed
- * asset URL, and written into the gateway's sandboxed document shell. "Open full size" shows the
- * same in-memory page with its source and saves it.
+ * asset URL, and written into the gateway's sandboxed document shell. Full screen shows the same
+ * in-memory page in upstream's dialog.
  */
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ScopedThreadRef, ThreadId, TurnItemId } from "@t3tools/contracts";
 import {
   HTML_RENDER_COLUMN_WIDTH,
-  htmlRenderFileName,
   htmlRenderFrameHeight,
   type HtmlRenderReference,
 } from "@t3tools/shared/htmlRender";
@@ -21,11 +20,10 @@ import { useConnectedEnvironmentIds } from "~/state/environments";
 import { projectEnvironment } from "~/state/projects";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
 import { HtmlRenderDocument } from "../files/BrowserDocumentFrame";
 import { Button } from "../ui/button";
-import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { HtmlRenderDialog } from "./HtmlRenderDialog";
 
 /**
  * An agent's HTML render inline in the thread: the page itself on the thread's
@@ -38,6 +36,7 @@ export function HtmlRenderFrame(props: {
   readonly itemId: TurnItemId;
   readonly htmlRender: HtmlRenderReference;
   readonly threadRef: ScopedThreadRef | undefined;
+  readonly onFullscreenChange?: (fullscreen: boolean) => void;
 }) {
   const { title } = props.htmlRender;
   const boxRef = useRef<HTMLDivElement>(null);
@@ -57,12 +56,18 @@ export function HtmlRenderFrame(props: {
 
   const connected = useConnectedEnvironmentIds().includes(props.environmentId);
   const readAsset = useAtomCommand(projectEnvironment.readTurnItemAsset, { reportFailure: false });
-  const [page, setPage] = useState<Blob | null>(null);
   const [html, setHtml] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  // Coder: the page is already in memory, so full screen needs no fresh URL.
   const [expanded, setExpanded] = useState(false);
+  const { onFullscreenChange } = props;
   useEffect(() => {
-    if (!connected || page !== null) return;
+    if (!expanded) return;
+    onFullscreenChange?.(true);
+    return () => onFullscreenChange?.(false);
+  }, [expanded, onFullscreenChange]);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!connected || html !== null) return;
     const controller = new AbortController();
     const environmentId = props.environmentId;
     void readTurnItemAsset(
@@ -78,18 +83,17 @@ export function HtmlRenderFrame(props: {
       .then(async (blob) => {
         const text = await blob.text();
         if (controller.signal.aborted) return;
-        setPage(blob);
         setHtml(text);
       })
       .catch(() => {
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, [connected, page, props.environmentId, props.threadId, props.itemId, readAsset]);
+  }, [connected, html, props.environmentId, props.threadId, props.itemId, readAsset]);
 
   return (
     <div ref={boxRef} className="group/html-render relative" style={{ height }}>
-      {html !== null && page !== null ? (
+      {html !== null ? (
         <>
           <HtmlRenderDocument
             html={html}
@@ -98,12 +102,12 @@ export function HtmlRenderFrame(props: {
             className="block size-full"
             onContentHeight={setContentHeight}
           />
-          <div className="absolute end-2 top-2 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/html-render:opacity-100 pointer-coarse:opacity-100">
+          <div className="absolute end-2 top-2 flex gap-1 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/html-render:opacity-100 pointer-coarse:opacity-100">
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
-                    aria-label="Open full size"
+                    aria-label="Open full screen"
                     size="icon-xs"
                     variant="glass"
                     onClick={() => setExpanded(true)}
@@ -112,28 +116,16 @@ export function HtmlRenderFrame(props: {
               >
                 <Maximize2Icon className="size-3.5" />
               </TooltipTrigger>
-              <TooltipPopup side="left">Open full size</TooltipPopup>
+              <TooltipPopup side="left">Open full screen</TooltipPopup>
             </Tooltip>
           </div>
           {expanded ? (
-            <Dialog open onOpenChange={(open) => setExpanded(open)}>
-              <DialogPopup
-                className="h-[min(85vh,52rem)] max-w-5xl overflow-hidden"
-                showCloseButton={false}
-              >
-                <DialogTitle className="sr-only">{title}</DialogTitle>
-                <AttachmentFilePreview
-                  name={htmlRenderFileName(title)}
-                  mimeType="text/html"
-                  sizeBytes={page.size}
-                  file={page}
-                  htmlRender
-                  {...(props.threadRef ? { threadRef: props.threadRef } : {})}
-                  origin="Page"
-                  onClose={() => setExpanded(false)}
-                />
-              </DialogPopup>
-            </Dialog>
+            <HtmlRenderDialog
+              html={html}
+              title={title}
+              threadRef={props.threadRef}
+              onClose={() => setExpanded(false)}
+            />
           ) : null}
         </>
       ) : failed ? (

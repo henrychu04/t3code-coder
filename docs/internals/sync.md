@@ -45,6 +45,9 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   aef0e9ca40 sync, `FilePreviewPanel`'s attachment preview lives in `SentAttachmentFilePreview`
   and HTML render's full-size open is `HtmlRenderFrame`'s dialog, so upstream's new `threadRef`
   went to both; the marker and lost-line checks in section 6 do not catch this.
+- An upstream commit for a cut surface can also add hooks to carried files that only the cut
+  surface calls (in the dd5c7bd09e sync, `ProviderUpdatesAction`'s `quiet` option and returned
+  runs for "Update everything"). Leave those hunks out, mark the file `Coder:`, and list the seam.
 - Fork-only tests that build upstream services (`mcp/bridge/T3ToolBridge.test.ts`) fail typecheck
   when upstream adds a service dependency; mock it as upstream's own tests of that service do.
 
@@ -142,6 +145,9 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   git diff "$MB" "$SHA" -- apps/server/src ':!*.test.*' | grep -E "^\+.*\.($methods)\("
   ```
   SDK bumps: `git diff "$MB" "$SHA" -- '*package.json' | grep claude-agent-sdk`.
+  Upstream may add an SDK hook in the runner's own `query({` call rather than in
+  `makeClaudeQueryOptions` (`spawnClaudeCodeProcess` in dd5c7bd09e); `ClaudeCli.ts` must honour
+  it, and upstream's `ClaudeAgentSdkQueryRunner.test.ts` fake-CLI tests then exercise it.
   A rejected `Query` method is loud only if upstream lets the rejection surface: upstream wraps
   some calls (`setMcpServers` in `layerQueryRunner`) so a failure is logged and the turn continues
   without the feature. For every new call, read how upstream handles its failure; implement the
@@ -168,6 +174,8 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   shells alias `grep` to tools that reject `\b`), and include the source-control packages and
   `#${` references, which the `!123` seam replaces:
   `git diff "$MB" "$SHA" -- apps/web/src packages/client-runtime/src packages/shared/src apps/server/src docs/user packages/source-control-core/src packages/source-control-gitlab/src ':!*.test.*' | rg '^\+.*([Pp]ull [Rr]equest|\bPRs?\b|T3 Code\b|#\$\{)'`.
+  New text that describes a mechanism the fork cut (in dd5c7bd09e, provider update checks
+  "fetch model catalog updates", where the catalog is bundled) keeps describing what T3 Coder does.
 - **Source-control host definitions.** client-runtime's `sourceControlClients.ts` and the server's
   `sourceControl/sourceControlHostSecrets.ts` register only GitLab's definition. When upstream
   moves host behavior into definitions, delete the fork's per-kind GitLab shims that the GitLab-only
@@ -214,6 +222,10 @@ fix and rerun until it completes. Known results:
   work without reading settled thread histories": it fails on pure upstream too
   (`ProjectionStoreSetupError`, "malformed JSON"). Each sync, turn `it.effect.skip` back into
   `it.effect`; keep the skip, with the new merge-base in its comment, only if it still fails.
+- `packages/shared/src/nodeSqliteClient.test.ts` skips two tests that fail on unmodified upstream
+  code under Node 24.12, which is older than upstream's `^24.13.1` engine; retry them each sync,
+  and note that the ProjectionRecovery test above passes under Node 25.8. Check
+  `node -p process.version` against upstream's `engines.node` before blaming the merge.
 - `apps/server/src/serverSettings.test.ts` "follows a settings link that is repointed to another
   directory" and "reloads when a dangling settings link gets its destination" can hit their
   2-second watcher timeout under full-suite load. Rerun it alone:

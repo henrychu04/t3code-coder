@@ -732,8 +732,9 @@ function BackgroundActivityAdvancedDialog({
             <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 space-y-1">
                 <div className="text-sm font-medium">Provider health interval</div>
+                {/* Coder: the model catalog is bundled, so no update follows update checks. */}
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Refresh provider availability, versions, auth state, and model metadata.
+                  Refresh provider availability, versions, and auth state.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -2511,6 +2512,7 @@ export function GeneralSettingsPanel() {
           serverScoped
           settingKeys={["enableProviderUpdateChecks"]}
           {...searchableSetting("provider-update-checks")}
+          // Coder: the model catalog is bundled and never fetched.
           description="Check installed provider CLIs for newer available versions."
           resetAction={
             settings.enableProviderUpdateChecks !==

@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 import type * as Sdk from "@anthropic-ai/claude-agent-sdk";
@@ -92,7 +92,12 @@ export type Options = {
     readonly append?: string;
   };
   readonly stderr?: (data: string) => void;
+  /** Starts the CLI in place of this transport's own spawn, as the SDK's option does. */
+  readonly spawnClaudeCodeProcess?: (options: Sdk.SpawnOptions) => Sdk.SpawnedProcess;
 };
+
+/** The process surface the transport uses, which the SDK's custom spawners also provide. */
+type ClaudeProcess = Pick<Sdk.SpawnedProcess, "stdin" | "stdout" | "exitCode" | "kill">;
 
 type ControlRequest = {
   readonly type: "control_request";
@@ -295,6 +300,8 @@ export interface Query extends AsyncIterable<SDKMessage> {
   setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void>;
   getContextUsage(): Promise<SDKControlGetContextUsageResponse>;
   getSettings(timeoutMs?: number): Promise<Record<string, unknown>>;
+  /** Sets session-scoped flag settings, as the SDK's `applyFlagSettings` does. */
+  applyFlagSettings(settings: Readonly<Record<string, unknown>>): Promise<void>;
   /** Replaces the session's dynamic MCP servers over stdin, as the SDK's `setMcpServers` does. */
   setMcpServers(
     servers: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
@@ -376,7 +383,7 @@ export function buildClaudeCliArgs(options: Options): Array<string> {
 }
 
 class ClaudeCliQuery implements Query {
-  private readonly process: ChildProcessWithoutNullStreams;
+  private readonly process: ClaudeProcess;
   private readonly messages = new AsyncMessageQueue<SDKMessage>(
     () => {
       if (this.pendingResponses.size === 0) this.process.stdout.pause();
@@ -387,6 +394,8 @@ class ClaudeCliQuery implements Query {
   private readonly callbackControllers = new Map<string, AbortController>();
   private readonly initialization: Promise<SDKControlInitializeResponse>;
   private readonly abortController: AbortController;
+  /** Aborted when the transport stops the process, as the SDK aborts a spawner's signal. */
+  private readonly spawnAbort = new AbortController();
   private readonly options: Options;
   private writeChain = Promise.resolve();
   private closed = false;
@@ -399,26 +408,9 @@ class ClaudeCliQuery implements Query {
     if (!environment.CLAUDE_CODE_ENTRYPOINT) {
       environment.CLAUDE_CODE_ENTRYPOINT = "sdk-ts";
     }
-    this.process = spawn(
-      options.pathToClaudeCodeExecutable,
-      [...(options.executableArgs ?? []), ...buildClaudeCliArgs(options)],
-      {
-        cwd: options.cwd,
-        env: environment,
-        shell: false,
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-      },
-    );
-
-    this.process.stderr.setEncoding("utf8");
-    this.process.stderr.on("data", (data: string) => {
-      this.stderrTail = `${this.stderrTail}${data}`.slice(-8_192);
-      options.stderr?.(data);
-    });
-
-    this.process.once("error", (cause) => this.fail(cause));
-    this.process.once("close", (code, signal) => {
+    const command = options.pathToClaudeCodeExecutable;
+    const args = [...(options.executableArgs ?? []), ...buildClaudeCliArgs(options)];
+    const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
       if (this.closed) {
         this.messages.end();
         return;
@@ -439,7 +431,51 @@ class ClaudeCliQuery implements Query {
           }${detail ? `: ${detail}` : ""}`,
         ),
       );
-    });
+    };
+    if (options.spawnClaudeCodeProcess) {
+      // As in the SDK, a caller's spawner owns the process and its stderr is not read.
+      const child = options.spawnClaudeCodeProcess({
+        command,
+        args,
+        ...(options.cwd ? { cwd: options.cwd } : {}),
+        env: environment,
+        signal: this.spawnAbort.signal,
+      });
+      this.process = child;
+      child.once("error", (cause) => this.fail(cause));
+      // A spawner reports plain process exit. Wait for stdout to close as well, as a
+      // ChildProcess 'close' does, so the CLI's last messages are read first.
+      let exit: { readonly code: number | null; readonly signal: NodeJS.Signals | null } | null =
+        null;
+      let stdoutClosed = false;
+      const settle = () => {
+        if (exit !== null && stdoutClosed) onClose(exit.code, exit.signal);
+      };
+      child.once("exit", (code, signal) => {
+        exit = { code, signal };
+        settle();
+      });
+      child.stdout.once("close", () => {
+        stdoutClosed = true;
+        settle();
+      });
+    } else {
+      const child = spawn(command, args, {
+        cwd: options.cwd,
+        env: environment,
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      });
+      this.process = child;
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (data: string) => {
+        this.stderrTail = `${this.stderrTail}${data}`.slice(-8_192);
+        options.stderr?.(data);
+      });
+      child.once("error", (cause) => this.fail(cause));
+      child.once("close", onClose);
+    }
 
     this.readStdout();
     this.abortController.signal.addEventListener("abort", () => this.close(), { once: true });
@@ -500,6 +536,10 @@ class ClaudeCliQuery implements Query {
     );
   }
 
+  applyFlagSettings(settings: Readonly<Record<string, unknown>>): Promise<void> {
+    return this.request({ subtype: "apply_flag_settings", settings }).then(() => undefined);
+  }
+
   setMcpServers(
     servers: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
   ): Promise<McpSetServersResult> {
@@ -536,6 +576,7 @@ class ClaudeCliQuery implements Query {
     this.process.stdin.end();
     if (this.process.exitCode === null) {
       this.process.kill("SIGTERM");
+      this.spawnAbort.abort();
       const forceKillSignal = AbortSignal.timeout(PROCESS_TERMINATION_GRACE_MS);
       forceKillSignal.addEventListener("abort", () => {
         if (this.process.exitCode === null) this.process.kill("SIGKILL");

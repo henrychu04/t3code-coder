@@ -93,7 +93,7 @@ export const layer = Layer.effect(
       ),
     );
     const environmentId = EnvironmentId.make(
-      existing.length > 0 ? existing : yield* crypto.randomUUIDv4,
+      existing.length > 0 ? existing : yield* crypto.randomUUIDv4(),
     );
     const configuredLabel = process.env.T3_CODER_WORKSPACE_LABEL?.trim();
     if (existing.length === 0) {

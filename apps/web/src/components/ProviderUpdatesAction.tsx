@@ -20,7 +20,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
  * Each server queues updates that share an installer, so sending them all
  * together is safe. The server still checks permissions: a session that
  * cannot operate a machine gets a failure line for it. The returned promise
- * settles when every update has finished.
+ * settles when every update has finished. Coder: there is no `quiet` option and no returned
+ * runs, which only upstream's "Update everything" flow reads.
  */
 export function useProviderUpdates() {
   const { environments } = useEnvironments();

@@ -475,8 +475,9 @@ listed here is drift to remove rather than fork behavior to keep.
     pending-message budget allows, minus whatever is already queued; that fits a tool-result image
     at the provider's 10 MiB base64 limit, and a longer line fails the session.
     `ClaudeCli.ts`'s `Query` implements `interrupt`, `stopTask`, `setModel`, `setPermissionMode`,
-    `setMaxThinkingTokens`, `getContextUsage`, `getSettings` (read directly by `ClaudeProvider.ts`),
-    `getUsage`, `setMcpServers`, `initializationResult`, and `close` as CLI control requests.
+    `setMaxThinkingTokens`, `applyFlagSettings`, `getContextUsage`, `getSettings` (read directly
+    by `ClaudeProvider.ts`), `getUsage`, `setMcpServers`, `initializationResult`, and `close` as
+    CLI control requests.
     `setMcpServers` sends the SDK's `{ subtype: "mcp_set_servers", servers }` with no deadline, as
     the SDK does; upstream's query runner bounds the wait and sends a session's `mcpServers` that
     way instead of as `--mcp-config`. T3 Coder's own sessions carry no MCP servers (T3 tools use
@@ -490,7 +491,10 @@ listed here is drift to remove rather than fork behavior to keep.
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
     cannot honour fail instead of being dropped; `mcpServers` becomes `--mcp-config`, as the SDK
     passes it. `executableArgs` go before the CLI's own arguments, as the
-    SDK passes them, so upstream's agent scope wrapper launches the CLI. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
+    SDK passes them, so upstream's agent scope wrapper launches the CLI. A
+    `spawnClaudeCodeProcess` option starts the CLI as the SDK does, with the transport's command,
+    arguments, environment, and an abort signal, so upstream's process-group spawner stops what
+    the CLI leaves running; such a spawner's stderr is not read. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
     allocates the fork's session id and stores the source session and message boundary as the
     provider thread's `claudeFork` native metadata. The fork's first query then runs
     `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather
@@ -622,9 +626,10 @@ listed here is drift to remove rather than fork behavior to keep.
     thread, opened without following symlinks.
   - `chat/HtmlRenderFrame.tsx` reads the page through that read and `files/BrowserDocumentFrame.tsx`
     writes it into the MCP App shell with the theme in the shell URL's fragment, as upstream's
-    signed URL carries it. **Open full size** shows the in-memory page and its source in
-    `AttachmentFilePreview`, whose Save writes those bytes. Links in a page open as upstream's
-    chat links do; that dialog and `SentAttachmentFilePreview` pass the thread for them where
+    signed URL carries it. **Open full screen** shows the same in-memory page in upstream's
+    `chat/HtmlRenderDialog.tsx`, which takes the page (`html`) where upstream mints a fresh
+    signed URL, so the frame has no "Page unavailable" toast. Links in a page open as
+    upstream's chat links do; `SentAttachmentFilePreview` passes the thread for them where
     upstream's `FilePreviewPanel` does, and with no in-app browser `browser/useOpenLink.ts`
     sends every other link to the system browser.
   - Pages are kept like other attachments; deleting a thread does not delete them.
@@ -718,7 +723,7 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Project actions.** The thread details panel, action editor, and Settings → Actions are
   upstream's. Coder deltas: repository actions come from the helper's validated `t3.json` read by
   project (`projects.getConfig`), which drops `iconPath` and script preview fields; the editor has
-  no preview URL; and, as upstream's browser build, action keybindings are saved only on desktop.
+  no preview URL.
 - **Right panel and composer chrome.** `RightPanelTabs.tsx` is upstream's tab strip and
   `PreviewPanelShell` layout without browser, device, and preview surfaces: no launcher rows,
   favicons, browser profiles, audio controls, or device rename. Never-opened preview and device
@@ -739,7 +744,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
   deltas: there is no legacy sidebar (or its Settings switch), usage page, desktop app-update
   pills, desktop window bridge (fullscreen insets and menu actions), or preview keybinding
-  context; the active workspace supplies keybindings and the pill's providers. `index.css` is
+  context; the active workspace supplies keybindings and the pill's providers. Without
+  upstream's "Update everything" (server self-update), `ProviderUpdatesAction.tsx`'s Update all
+  has no `quiet` option or returned runs and `ProviderUpdateRun` no environment id. `index.css` is
   upstream's minus the `wco` window-controls variant, drag regions, and desktop resize inset.
   Without the desktop window-controls overlay (`lib/windowControlsOverlay.ts`), `ui/tooltip.tsx`
   reads a native titlebar height of zero and the sidebar sheet gets no window-controls inset.
@@ -846,7 +853,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    aef0e9ca40):
+    dd5c7bd09e):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
@@ -904,7 +911,9 @@ listed here is drift to remove rather than fork behavior to keep.
   (no hardware detection), so a workspace shows the generic server icon until one is picked.
   Providers is upstream's panel and add-instance dialog limited to Codex, Claude, and Pi drivers,
   without sign-in, setup or managed install, per-instance environment variables, ACP registry, or
-  usage-limit sources. Source Control appends GitLab workspace status.
+  usage-limit sources. Source Control appends GitLab workspace status. Provider update checks
+  and the provider health interval do not mention model catalog updates, because the catalog is
+  bundled (`ModelManifest.layerBundled`).
   Background activity uses upstream's profiles without host power-monitor intervals or power and
   lock pauses. Older fork links that name one checkout by its settings key resolve to its group.
 - **Project icons.** Upstream's bounded Lucide names, palette, or emoji (`ProjectEmoji`), persisted
@@ -1013,13 +1022,20 @@ listed here is drift to remove rather than fork behavior to keep.
   settings. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
   tests through a fake `claude` executable, since the CLI transport has no SDK spawn hook, and
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query` shim rather than the
-  Agent SDK's. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
+  Agent SDK's. `ProviderSessionManager.test.ts`'s parallel shutdown test waits briefly in real time
+  after moving the test clock, because each release closes a T3 tool bridge on the real file
+  system. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
   tests use GitLab projects.
-  `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
+  `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's
+  unavailable-URL test and the frame's `sandbox` attribute check (the document shell's CSP
+  applies the sandbox). `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
   worker, which needs a browser `self`.
   `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
   reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
-  says when to retry it.
+  says when to retry it. `packages/shared/src/nodeSqliteClient.test.ts` skips "keeps large text
+  and blob parameters off cached statements" and "checkpoints the WAL on the worker instead of
+  the writer", which fail on unmodified upstream code under the local Node 24.12 (ArrayBuffer
+  parameters bind as NULL; its SQLite 3.50.4 predates the checkpoint worker's 3.51).
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,

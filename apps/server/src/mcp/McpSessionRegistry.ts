@@ -100,8 +100,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     function* (request) {
       const issuedAt = yield* Clock.currentTimeMillis;
       yield* pruneDead(issuedAt);
-      const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
-      const token = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      const providerSessionId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+      const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
       const scope: McpInvocationContext.McpThreadInvocationScope = {
         environmentId,
         requestNamespace: providerSessionId,

@@ -46,6 +46,7 @@ const SUPPORTED_QUERY_OPTIONS: ReadonlySet<string> = new Set([
   "sessionId",
   "settingSources",
   "settings",
+  "spawnClaudeCodeProcess",
   "stderr",
   "strictMcpConfig",
   "supportedDialogKinds",
@@ -121,6 +122,9 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
     ...(options.settingSources ? { settingSources: options.settingSources } : {}),
     ...(options.settings ? { settings: options.settings as Record<string, unknown> | string } : {}),
     ...(options.stderr ? { stderr: options.stderr } : {}),
+    ...(options.spawnClaudeCodeProcess
+      ? { spawnClaudeCodeProcess: options.spawnClaudeCodeProcess }
+      : {}),
     ...(options.strictMcpConfig ? { strictMcpConfig: true } : {}),
     ...(options.supportedDialogKinds ? { supportedDialogKinds: options.supportedDialogKinds } : {}),
     ...(systemPrompt
@@ -178,7 +182,7 @@ function toSdkQuery(cli: Cli.Query): Sdk.Query {
       >,
     close: () => cli.close(),
     setMcpPermissionModeOverride: reject("MCP permission overrides"),
-    applyFlagSettings: reject("flag settings"),
+    applyFlagSettings: (settings) => cli.applyFlagSettings(settings),
     updateSettings: reject("settings updates"),
     reinitialize: reject("reinitialize"),
     mcpServerStatus: reject("MCP server status"),

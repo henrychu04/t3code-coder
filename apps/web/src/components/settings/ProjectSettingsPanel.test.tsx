@@ -16,7 +16,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("./useSettingsProjectGroups", () => ({ useSettingsProjectGroups: mocks.groups }));
 vi.mock("../../state/environments", () => ({ useEnvironments: mocks.environments }));
-vi.mock("../../state/entities", () => ({ useThreadShells: () => [] }));
+vi.mock("../../state/entities", () => ({
+  useThreadShells: () => [],
+  waitForProjectRemoval: async () => true,
+}));
 vi.mock("../../state/projects", () => ({
   projectEnvironment: { update: "update", delete: "delete" },
 }));

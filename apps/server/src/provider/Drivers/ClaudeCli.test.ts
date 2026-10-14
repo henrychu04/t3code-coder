@@ -3,10 +3,13 @@ import { rejects } from "node:assert/strict";
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 
 import { assert, describe, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
+
+import type * as Sdk from "@anthropic-ai/claude-agent-sdk";
 
 import { buildClaudeCliArgs, query, type SDKUserMessage } from "./ClaudeCli.ts";
 
@@ -498,6 +501,141 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   } finally {
     finishPrompt();
     runtime.close();
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);
+
+it("applies flag settings with the Agent SDK's apply_flag_settings control request", async () => {
+  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-flag-settings-"));
+  const executable = NodePath.join(directory, "fake-claude");
+  const settings = { effortLevel: "high", fastMode: null, ultracode: null };
+  // Answers only the SDK 0.3.276 wire shape: `{ subtype: "apply_flag_settings", settings }`.
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+const expected = ${JSON.stringify(JSON.stringify(settings))};
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type !== "control_request") return;
+  const request = value.request;
+  const keys = Object.keys(request).sort().join(",");
+  const ok = request.subtype === "initialize" ||
+    (request.subtype === "apply_flag_settings" && keys === "settings,subtype" &&
+      JSON.stringify(request.settings) === expected);
+  process.stdout.write(JSON.stringify({
+    type: "control_response",
+    response: ok
+      ? { subtype: "success", request_id: value.request_id, response: {} }
+      : { subtype: "error", request_id: value.request_id, error: JSON.stringify(request) },
+  }) + "\\n");
+});
+`,
+    { mode: 0o700 },
+  );
+  let finishPrompt!: () => void;
+  const promptFinished = new Promise<void>((resolve) => {
+    finishPrompt = resolve;
+  });
+  const runtime = query({
+    prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+      await promptFinished;
+    })(),
+    options: { pathToClaudeCodeExecutable: executable, env: process.env },
+  });
+  try {
+    await runtime.applyFlagSettings(settings);
+    await rejects(runtime.applyFlagSettings({ effortLevel: "low" }));
+  } finally {
+    finishPrompt();
+    runtime.close();
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);
+
+it("starts the CLI through a caller's spawner, as the Agent SDK's spawnClaudeCodeProcess does", async () => {
+  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-spawner-"));
+  const executable = NodePath.join(directory, "fake-claude");
+  // Answers initialize, then prints a result for the prompt and exits at once.
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type === "control_request") {
+    process.stdout.write(JSON.stringify({
+      type: "control_response",
+      response: { subtype: "success", request_id: value.request_id, response: {} },
+    }) + "\\n");
+    return;
+  }
+  if (value.type === "user") {
+    process.stdout.write(JSON.stringify({ type: "result", subtype: "success", cwd: process.cwd() }) + "\\n", () => process.exit(0));
+  }
+});
+`,
+    { mode: 0o700 },
+  );
+  const spawned: Array<Sdk.SpawnOptions> = [];
+  const spawner = (options: Sdk.SpawnOptions): Sdk.SpawnedProcess => {
+    spawned.push(options);
+    return spawn(options.command, options.args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+  };
+  try {
+    const runtime = query({
+      prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+        yield {
+          type: "user",
+          session_id: "",
+          parent_tool_use_id: null,
+          message: { role: "user", content: "hello" },
+        };
+      })(),
+      options: {
+        pathToClaudeCodeExecutable: executable,
+        executableArgs: ["--wrapper-arg"],
+        cwd: directory,
+        env: process.env,
+        spawnClaudeCodeProcess: spawner,
+      },
+    });
+    const messages: Array<unknown> = [];
+    for await (const message of runtime) messages.push(message);
+    assert.deepEqual(messages, [
+      { type: "result", subtype: "success", cwd: await NodeFS.realpath(directory) },
+    ]);
+    assert.equal(spawned.length, 1);
+    assert.equal(spawned[0]?.command, executable);
+    assert.deepEqual(spawned[0]?.args.slice(0, 3), ["--wrapper-arg", "--output-format", "stream-json"]);
+    assert.equal(spawned[0]?.cwd, directory);
+    assert.equal(spawned[0]?.env.CLAUDE_CODE_ENTRYPOINT, "sdk-ts");
+
+    // Closing a live session aborts the spawner's signal, as the SDK does.
+    let finishPrompt!: () => void;
+    const promptFinished = new Promise<void>((resolve) => {
+      finishPrompt = resolve;
+    });
+    const live = query({
+      prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+        await promptFinished;
+      })(),
+      options: {
+        pathToClaudeCodeExecutable: executable,
+        env: process.env,
+        spawnClaudeCodeProcess: spawner,
+      },
+    });
+    await live.initializationResult();
+    assert.equal(spawned[1]?.signal.aborted, false);
+    live.close();
+    finishPrompt();
+    assert.equal(spawned[1]?.signal.aborted, true);
+  } finally {
     await NodeFS.rm(directory, { force: true, recursive: true });
   }
 }, 5000);
