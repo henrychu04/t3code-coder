@@ -7,8 +7,8 @@ with Codex, Claude Code, and Pi.
 
 Pages use your current theme, including custom themes, and follow light and dark mode as you
 switch. Scripts run inside the page, but it is sandboxed away from T3 Coder and your session. Links
-you click in a page open in a new browser tab. Use the expand button to open a page full size; from
-there you can view its source or save it.
+you click in a page open in a new browser tab. Use the expand button to open a page full screen,
+and use the zoom controls to see more detail.
 
 Agents can place images from the workspace in a page by their absolute paths. T3 Coder embeds them
 when the page is published, so the page keeps working after the original files move or are

@@ -235,8 +235,9 @@ restores removed context. Select a terminal chip to read its captured output. Im
 size and upload progress; review-comment chips show formatted comments and highlighted source. Existing drafts keep their saved context when opened in the rich-text
 editor. Large pasted text stays inline prompt content; it does not create a file attachment.
 
-Type `#` to browse recent GitLab merge requests in the current project's repository. Add digits
-to match any part of a merge-request number. A complete number is also looked up directly, so
+Type `#` to browse recent GitLab merge requests in the current project's repository. Merge requests
+linked to the thread are included from any repository and listed first, after any exact number
+match. Add digits to match any part of a merge-request number. A complete number is also looked up directly, so
 older merge requests can be found outside the recent list. Add a single word, such as `#login`,
 to search by text.
 

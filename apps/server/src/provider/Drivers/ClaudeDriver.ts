@@ -114,7 +114,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const { cwd } = yield* ServerConfig.ServerConfig;
+      // Instance-level probes are not tied to a project, so they run in the
+      // server's own state dir. The server cwd is $HOME in packaged desktop
+      // builds, and `claude` wrappers that scope themselves to their cwd refuse
+      // to run there. Workspace probes use the thread cwd via `snapshotForCwd`.
+      const { stateDir } = yield* ServerConfig.ServerConfig;
       const httpClient = yield* HttpClient.HttpClient;
       const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const catalogService = yield* ModelCatalog.ModelCatalog;
@@ -188,13 +192,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         timeToLive: CAPABILITIES_PROBE_TTL,
         // Coder: no organization id; it only keys usage accounts, which are not carried.
         lookup: () =>
-          probeClaudeCapabilities(effectiveConfig, processEnv, cwd).pipe(
+          probeClaudeCapabilities(effectiveConfig, processEnv, stateDir).pipe(
             Effect.provideService(Path.Path, path),
           ),
       });
       const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(
         effectiveConfig,
-        cwd,
+        stateDir,
         processEnv,
       );
 
@@ -208,7 +212,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
                 effectiveConfig,
                 () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
                 processEnv,
-                cwd,
+                stateDir,
                 catalog,
                 scopedLimitNames,
                 // Coder: no reset credits; reading them needs the CLI's OAuth credentials.

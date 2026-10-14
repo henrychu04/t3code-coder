@@ -26,16 +26,16 @@ allowBuilds:
   utf-8-validate: false
 
 catalog:
-  "@effect/atom-react": 4.0.2
-  "@effect/openapi-generator": 4.0.2
-  "@effect/platform-node": 4.0.2
-  "@effect/platform-node-shared": 4.0.2
-  "@effect/vitest": 4.0.2
+  "@effect/atom-react": 4.0.4
+  "@effect/openapi-generator": 4.0.4
+  "@effect/platform-node": 4.0.4
+  "@effect/platform-node-shared": 4.0.4
+  "@effect/vitest": 4.0.4
   "@legendapp/list": 3.3.5
   "@pierre/diffs": 1.5.2
   "@types/node": 24.12.4
   typescript: 7.0.2
-  effect: 4.0.2
+  effect: 4.0.4
   vite: npm:@voidzero-dev/vite-plus-core@1.0.0
   vite-plus: 1.0.0
   yaml: 2.9.0
@@ -54,12 +54,12 @@ catalog:
   unified: 11.0.5
 
 minimumReleaseAgeExclude:
-  - "@effect/atom-react@4.0.2"
-  - "@effect/openapi-generator@4.0.2"
-  - "@effect/platform-node-shared@4.0.2"
-  - "@effect/platform-node@4.0.2"
-  - "@effect/vitest@4.0.2"
-  - "effect@4.0.2"
+  - "@effect/atom-react@4.0.4"
+  - "@effect/openapi-generator@4.0.4"
+  - "@effect/platform-node-shared@4.0.4"
+  - "@effect/platform-node@4.0.4"
+  - "@effect/vitest@4.0.4"
+  - "effect@4.0.4"
   - "@legendapp/list@3.3.5"
 
 overrides:
@@ -94,12 +94,10 @@ packageExtensions:
 
 patchedDependencies:
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
-  "@effect/platform-node-shared@4.0.2": patches/@effect__platform-node-shared@4.0.2.patch
-  "@effect/vitest@4.0.2": patches/@effect__vitest@4.0.2.patch
+  "@effect/vitest@4.0.4": patches/@effect__vitest@4.0.4.patch
   "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch
   "@legendapp/list@3.3.5": patches/@legendapp__list@3.3.5.patch
   "@pierre/diffs@1.5.2": patches/@pierre%2Fdiffs@1.5.2.patch
-  effect@4.0.2: patches/effect@4.0.2.patch
 
 peerDependencyRules:
   ignoreMissing:

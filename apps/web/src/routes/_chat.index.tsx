@@ -16,6 +16,7 @@ import { WorkspaceConnectionStatus } from "../components/WorkspaceConnectionStat
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useEnvironments } from "../state/environments";
 import {
+  readProject,
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
@@ -57,13 +58,25 @@ function IndexDraftLanding() {
     if (mostRecentProject === null || startingRef.current || !isStillOnIndex()) {
       return;
     }
+    const projectRef = scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
+    // A project removed since this render is gone from the store; the next
+    // render picks another one.
+    if (readProject(projectRef) === null) {
+      return;
+    }
     startingRef.current = true;
-    void handleNewThread(scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id), {
-      replace: true,
-    }).catch(() => {
-      startingRef.current = false;
-      setStartState((state) => ({ ...state, failed: true }));
-    });
+    void handleNewThread(projectRef, { replace: true })
+      .then((opened) => {
+        // The project was removed while its draft started; land on the next one.
+        if (opened === null) {
+          startingRef.current = false;
+          setStartState((state) => ({ ...state, retryRequest: state.retryRequest + 1 }));
+        }
+      })
+      .catch(() => {
+        startingRef.current = false;
+        setStartState((state) => ({ ...state, failed: true }));
+      });
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
 
   const configuredWorkspacesUnavailable = config.workspaces.length > 0 && environments.length === 0;
