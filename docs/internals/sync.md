@@ -222,6 +222,10 @@ fix and rerun until it completes. Known results:
   work without reading settled thread histories": it fails on pure upstream too
   (`ProjectionStoreSetupError`, "malformed JSON"). Each sync, turn `it.effect.skip` back into
   `it.effect`; keep the skip, with the new merge-base in its comment, only if it still fails.
+- `packages/shared/src/nodeSqliteClient.test.ts` skips two tests that fail on unmodified upstream
+  code under Node 24.12, which is older than upstream's `^24.13.1` engine; retry them each sync,
+  and note that the ProjectionRecovery test above passes under Node 25.8. Check
+  `node -p process.version` against upstream's `engines.node` before blaming the merge.
 - `apps/server/src/serverSettings.test.ts` "follows a settings link that is repointed to another
   directory" and "reloads when a dangling settings link gets its destination" can hit their
   2-second watcher timeout under full-suite load. Rerun it alone:

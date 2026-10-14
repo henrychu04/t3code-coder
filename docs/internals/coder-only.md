@@ -1032,7 +1032,10 @@ listed here is drift to remove rather than fork behavior to keep.
   worker, which needs a browser `self`.
   `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
   reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
-  says when to retry it.
+  says when to retry it. `packages/shared/src/nodeSqliteClient.test.ts` skips "keeps large text
+  and blob parameters off cached statements" and "checkpoints the WAL on the worker instead of
+  the writer", which fail on unmodified upstream code under the local Node 24.12 (ArrayBuffer
+  parameters bind as NULL; its SQLite 3.50.4 predates the checkpoint worker's 3.51).
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,
