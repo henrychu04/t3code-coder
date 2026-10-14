@@ -911,7 +911,9 @@ listed here is drift to remove rather than fork behavior to keep.
   (no hardware detection), so a workspace shows the generic server icon until one is picked.
   Providers is upstream's panel and add-instance dialog limited to Codex, Claude, and Pi drivers,
   without sign-in, setup or managed install, per-instance environment variables, ACP registry, or
-  usage-limit sources. Source Control appends GitLab workspace status.
+  usage-limit sources. Source Control appends GitLab workspace status. Provider update checks
+  and the provider health interval do not mention model catalog updates, because the catalog is
+  bundled (`ModelManifest.layerBundled`).
   Background activity uses upstream's profiles without host power-monitor intervals or power and
   lock pauses. Older fork links that name one checkout by its settings key resolve to its group.
 - **Project icons.** Upstream's bounded Lucide names, palette, or emoji (`ProjectEmoji`), persisted
