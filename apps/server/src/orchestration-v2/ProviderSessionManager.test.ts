@@ -1639,6 +1639,9 @@ it.effect("ProviderSessionManagerV2 releases sessions in parallel on server shut
       // three sessions, or a busy server outlives the launcher's kill timer.
       const stopping = yield* manager.shutdown.pipe(Effect.forkChild);
       yield* TestClock.adjust("30 seconds");
+      // Coder: a released session's T3 tool bridge closes on the real file system, so give
+      // that real time; the test clock does not move, so a second time box would not end.
+      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 200)));
       yield* Effect.yieldNow;
       assert.isDefined(stopping.pollUnsafe());
     }).pipe(
