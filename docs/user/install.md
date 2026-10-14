@@ -28,8 +28,7 @@ pnpm install --frozen-lockfile --ignore-scripts
 npm start
 ```
 
-T3 Coder prints an ephemeral `127.0.0.1` URL. Open that URL in an approved browser. The app does
-not open a browser automatically.
+T3 Coder prints an ephemeral `127.0.0.1` URL and opens it in your default browser.
 
 ## Connect to Coder
 

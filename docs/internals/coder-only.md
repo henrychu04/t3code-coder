@@ -1026,7 +1026,7 @@ listed here is drift to remove rather than fork behavior to keep.
 
 `npm start` builds the web client and a Linux x86-64 helper bundle from the checked-out source and
 lockfile, including the locked native runtime packages needed by terminals and workspace search,
-then starts the local gateway without opening a browser. Connecting never installs from npm or
+then starts the local gateway and opens its loopback URL in the default browser. Connecting never installs from npm or
 downloads an application update. The first connection may download the pinned Node.js package
 through Nix if it is not already in the workspace's Nix store. The gateway hashes the locally
 built helper bundle (SHA-256 over its relative paths and contents) once per session and passes the

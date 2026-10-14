@@ -92,8 +92,7 @@ installed Codex or Claude Code CLI. GitLab authentication is owned by the worksp
   those operations and does not register GitHub, Azure DevOps, or Bitbucket;
 - the removed T3 preview MCP, Claude browser integration, free-form Claude launch flags, and the
   packaged Anthropic Agent SDK;
-- automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
-  the gateway's loopback URL.
+- hosted CI workflows.
 
 The helper bootstrap and composer attachments travel over a foreground `coder ssh` process's stdin;
 the Coder CLI is the only local program that connects to a workspace. Image preview display uses
@@ -131,8 +130,8 @@ pnpm build
 npm start
 ```
 
-`npm start` prints a loopback URL that keeps its port across restarts when the port is free. Open it
-manually in an approved browser, or use the explicit `npm run start:open` opt-in to open that
-loopback URL. Dependency installation is the only
+`npm start` prints a loopback URL that keeps its port across restarts when the port is free and
+opens it in the default browser through `--open-browser`, which accepts only the gateway's loopback
+URL. Dependency installation is the only
 step that normally contacts a package registry; runtime startup does not install packages or check
 for updates. Registry URLs present in the SBOM are inventory metadata, not runtime endpoints.
