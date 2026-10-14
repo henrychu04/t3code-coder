@@ -234,7 +234,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
             "Too many T3 tool calls are still running. Read their results with task_status first.",
           );
         }
-        const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4.pipe(Effect.orDie)}`;
+        const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`;
         jobs.set(taskId, { threadId: scope.thread.threadId, startedAt: now, fiber });
         return {
           status: "running",
