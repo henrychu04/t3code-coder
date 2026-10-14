@@ -1,4 +1,5 @@
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
 import { filePreviewKind, FILE_TEXT_PREVIEW_MAX_BYTES } from "@t3tools/shared/filePreview";
 import { ChevronRightIcon, DownloadIcon, Trash2Icon, WrapTextIcon, XIcon } from "lucide-react";
@@ -57,6 +58,8 @@ export function AttachmentFilePreview(props: {
   file: Blob;
   /** An agent's HTML render, shown in the app theme. */
   htmlRender?: boolean;
+  /** The thread an HTML render's links open beside. */
+  threadRef?: ScopedThreadRef;
   /** First crumb: where the file comes from. */
   origin?: string;
   onRemove?: () => void;
@@ -163,6 +166,7 @@ export function AttachmentFilePreview(props: {
         html={pageHtml}
         title={props.name}
         htmlRender={props.htmlRender === true}
+        threadRef={props.threadRef}
       />
     )
   ) : kind === "audio" ? (

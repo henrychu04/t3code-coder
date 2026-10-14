@@ -41,6 +41,12 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
 - Upstream test files that merge in without conflict can still exercise a cut surface or an SDK
   hook the CLI transport lacks (for example the SDK's `spawnClaudeCodeProcess`); review every
   added or modified `*.test.*` in the range and adapt or cut it with a `Coder:` comment.
+- When upstream edits a block the fork moved into a Coder file, apply the edit there. In the
+  aef0e9ca40 sync, `FilePreviewPanel`'s attachment preview lives in `SentAttachmentFilePreview`
+  and HTML render's full-size open is `HtmlRenderFrame`'s dialog, so upstream's new `threadRef`
+  went to both; the marker and lost-line checks in section 6 do not catch this.
+- Fork-only tests that build upstream services (`mcp/bridge/T3ToolBridge.test.ts`) fail typecheck
+  when upstream adds a service dependency; mock it as upstream's own tests of that service do.
 
 ## 3. Deleted directories
 

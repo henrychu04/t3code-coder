@@ -2998,6 +2998,7 @@ function HtmlRenderTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "htm
         threadId={row.sourceThreadId}
         itemId={row.itemId}
         htmlRender={row.htmlRender}
+        threadRef={ctx.threadRef ?? undefined}
       />
     </div>
   );

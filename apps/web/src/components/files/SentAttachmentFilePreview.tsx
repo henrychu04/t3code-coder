@@ -2,7 +2,7 @@
  * Coder: a sent file attachment in the right panel. Upstream's FilePreviewPanel loads it from a
  * signed asset URL; here the helper reads it by id into memory for the same preview and Save.
  */
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 
 import { useReadAttachmentFile } from "~/lib/readAttachmentFile";
@@ -14,6 +14,8 @@ import { FileSurfaceFailure, FileSurfaceLoading } from "./fileSurfaceChrome";
 export function SentAttachmentFilePreview(props: {
   readonly environmentId: EnvironmentId;
   readonly attachment: ChatFileAttachment;
+  /** The thread an HTML render's links open beside. */
+  readonly threadRef: ScopedThreadRef | null;
 }) {
   const { attachment } = props;
   const readAttachmentFile = useReadAttachmentFile(props.environmentId);
@@ -47,6 +49,7 @@ export function SentAttachmentFilePreview(props: {
       sizeBytes={attachment.sizeBytes}
       file={state.blob}
       htmlRender={attachment.htmlRender === true}
+      {...(props.threadRef ? { threadRef: props.threadRef } : {})}
     />
   );
 }
