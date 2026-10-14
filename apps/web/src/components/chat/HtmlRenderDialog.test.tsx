@@ -5,14 +5,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { htmlRenderTheme, HTML_RENDER_DEFAULT_FONTS } from "@t3tools/shared/htmlRender";
 import { T3_CODE_DARK_THEME_COLORS } from "@t3tools/shared/themePalettes";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 
 import { HtmlRenderDialog } from "./HtmlRenderDialog";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 
-const { refresh, showError, openLink, openChangeRequestLink } = vi.hoisted(() => ({
-  refresh: vi.fn(),
-  showError: vi.fn(),
+const { openLink, openChangeRequestLink } = vi.hoisted(() => ({
   openLink: vi.fn(),
   openChangeRequestLink: vi.fn(),
 }));
@@ -20,15 +18,14 @@ vi.mock("~/browser/useOpenLink", () => ({ useOpenLink: () => openLink }));
 vi.mock("~/lib/openPullRequestLink", () => ({
   useOpenChangeRequestLink: () => openChangeRequestLink,
 }));
-vi.mock("~/assets/assetUrls", () => ({
-  useAssetUrlState: () => ({
-    _tag: "Success",
-    url: "https://environment.test/original.html",
-    expiresAt: Date.now() + 60 * 60_000,
-  }),
-  useAssetUrlRefresh: () => refresh,
+// Coder: the frame reads its page through the helper, not a signed asset URL.
+vi.mock("~/state/environments", () => ({
+  useConnectedEnvironmentIds: () => [EnvironmentId.make("environment")],
 }));
-vi.mock("../ui/toast", () => ({ toastManager: { add: showError } }));
+vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
+vi.mock("~/lib/readTurnItemAsset", () => ({
+  readTurnItemAsset: async () => new Blob(["<p>Diagram</p>"], { type: "text/html" }),
+}));
 
 vi.mock("~/hooks/useHtmlRenderTheme", () => ({
   useHtmlRenderTheme: () =>
@@ -49,10 +46,8 @@ beforeEach(async () => {
       unobserve() {}
     },
   );
-  refresh.mockReset();
   openLink.mockReset().mockResolvedValue(undefined);
   openChangeRequestLink.mockReset().mockReturnValue(false);
-  showError.mockClear();
   onClose.mockClear();
   container = document.createElement("div");
   document.body.append(container);
@@ -60,7 +55,7 @@ beforeEach(async () => {
   await act(() =>
     root.render(
       <HtmlRenderDialog
-        src="https://environment.test/page.html"
+        html="<p>Diagram</p>"
         title="Diagram"
         onClose={onClose}
       />,
@@ -93,7 +88,7 @@ it("zooms the loaded page within bounds and resets without reloading it", async 
   expect(frame.parentElement!.style.getPropertyValue("zoom")).toBe("1");
   expect(document.querySelector("iframe")).toBe(frame);
   expect(frame.src).toBe(src);
-  expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
+  // Coder: the gateway's document shell applies the sandbox through its CSP.
 });
 
 it("closes with the close button or Escape", async () => {
@@ -113,6 +108,8 @@ async function renderInline() {
     root.render(
       <HtmlRenderFrame
         environmentId={EnvironmentId.make("environment")}
+        threadId={ThreadId.make("thread")}
+        itemId={TurnItemId.make("item")}
         htmlRender={{ attachmentId: "html", title: "Diagram", height: 400 }}
         threadRef={{
           environmentId: EnvironmentId.make("environment"),
@@ -121,9 +118,12 @@ async function renderInline() {
       />,
     ),
   );
+  // Coder: the page arrives from the helper read after the first render.
+  await vi.waitFor(() => expect(document.querySelector("iframe")).not.toBeNull());
 }
 
-it("offers only full screen and opens with a fresh URL while keeping the inline page loaded", async () => {
+// Coder: the page is already in memory, so full screen opens it without a fresh URL.
+it("offers only full screen and opens the page while keeping the inline page loaded", async () => {
   await renderInline();
   expect(document.querySelector('[aria-label="Open in panel"]')).toBeNull();
   const inlineFrame = document.querySelector("iframe")!;
@@ -132,12 +132,8 @@ it("offers only full screen and opens with a fresh URL while keeping the inline 
     '[aria-label="Open full screen"]',
   )!;
   expandButton.focus();
-  refresh.mockResolvedValue("https://environment.test/renewed.html");
   await click("Open full screen");
-  expect(refresh).toHaveBeenCalledOnce();
-  expect(document.querySelector('[role="dialog"] iframe')?.getAttribute("src")).toContain(
-    "https://environment.test/renewed.html#",
-  );
+  expect(document.querySelector('[role="dialog"] iframe')).not.toBeNull();
   expect(inlineFrame.src).toBe(originalSrc);
   await click("Close");
   expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -147,7 +143,6 @@ it("offers only full screen and opens with a fresh URL while keeping the inline 
 
 it("routes links from the expanded page through its thread", async () => {
   await renderInline();
-  refresh.mockResolvedValue("https://environment.test/renewed.html");
   openChangeRequestLink.mockReturnValue(true);
   await click("Open full screen");
   const frame = document.querySelector<HTMLIFrameElement>('[role="dialog"] iframe')!;
@@ -170,16 +165,5 @@ it("routes links from the expanded page through its thread", async () => {
   expect(openLink).not.toHaveBeenCalled();
 });
 
-it.each([null, new Error("Disconnected")])(
-  "reports an unavailable URL instead of opening a blank page: %s",
-  async (failure) => {
-    await renderInline();
-    if (failure === null) refresh.mockResolvedValue(null);
-    else refresh.mockRejectedValue(failure);
-    await click("Open full screen");
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(showError).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "error", title: "Page unavailable" }),
-    );
-  },
-);
+// Coder: upstream's unavailable-URL test is not carried; full screen opens the page the frame
+// already holds, so there is no URL to fail.

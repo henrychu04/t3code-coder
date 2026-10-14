@@ -7,7 +7,8 @@ import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 
 export function HtmlRenderDialog(props: {
-  readonly src: string;
+  /** Coder: the page the frame read through the helper, in place of a signed URL. */
+  readonly html: string;
   readonly title: string;
   readonly threadRef?: ScopedThreadRef | undefined;
   readonly onClose: () => void;
@@ -38,7 +39,7 @@ export function HtmlRenderDialog(props: {
           <div className="h-[min(86vh,calc(100vh-160px))] overflow-auto overscroll-contain rounded-lg bg-background shadow-2xl ring-1 ring-border/70 [container-type:size]">
             <div className="h-[100cqh] w-[100cqw]" style={{ zoom }}>
               <HtmlRenderDocument
-                src={props.src}
+                html={props.html}
                 title={props.title}
                 threadRef={props.threadRef}
                 className="block size-full"

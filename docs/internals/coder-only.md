@@ -626,9 +626,10 @@ listed here is drift to remove rather than fork behavior to keep.
     thread, opened without following symlinks.
   - `chat/HtmlRenderFrame.tsx` reads the page through that read and `files/BrowserDocumentFrame.tsx`
     writes it into the MCP App shell with the theme in the shell URL's fragment, as upstream's
-    signed URL carries it. **Open full size** shows the in-memory page and its source in
-    `AttachmentFilePreview`, whose Save writes those bytes. Links in a page open as upstream's
-    chat links do; that dialog and `SentAttachmentFilePreview` pass the thread for them where
+    signed URL carries it. **Open full screen** shows the same in-memory page in upstream's
+    `chat/HtmlRenderDialog.tsx`, which takes the page (`html`) where upstream mints a fresh
+    signed URL, so the frame has no "Page unavailable" toast. Links in a page open as
+    upstream's chat links do; `SentAttachmentFilePreview` passes the thread for them where
     upstream's `FilePreviewPanel` does, and with no in-app browser `browser/useOpenLink.ts`
     sends every other link to the system browser.
   - Pages are kept like other attachments; deleting a thread does not delete them.
@@ -1019,7 +1020,9 @@ listed here is drift to remove rather than fork behavior to keep.
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query` shim rather than the
   Agent SDK's. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
   tests use GitLab projects.
-  `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
+  `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's
+  unavailable-URL test and the frame's `sandbox` attribute check (the document shell's CSP
+  applies the sandbox). `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
   worker, which needs a browser `self`.
   `orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery work without
   reading settled thread histories", which also fails on upstream; [sync.md](sync.md#7-verify)
