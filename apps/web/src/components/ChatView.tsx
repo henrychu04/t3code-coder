@@ -10122,6 +10122,7 @@ export default function ChatView(props: ChatViewProps) {
         key={`${activeThread.environmentId}:attachment:${renderedRightPanelSurface.attachment.id}`}
         environmentId={activeThread.environmentId}
         attachment={renderedRightPanelSurface.attachment}
+        threadRef={activeThreadRef}
       />
     ) : (renderedRightPanelSurface?.kind === "files" ||
         renderedRightPanelSurface?.kind === "file") &&

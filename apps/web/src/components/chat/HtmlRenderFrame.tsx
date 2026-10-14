@@ -128,6 +128,7 @@ export function HtmlRenderFrame(props: {
                   sizeBytes={page.size}
                   file={page}
                   htmlRender
+                  {...(props.threadRef ? { threadRef: props.threadRef } : {})}
                   origin="Page"
                   onClose={() => setExpanded(false)}
                 />
