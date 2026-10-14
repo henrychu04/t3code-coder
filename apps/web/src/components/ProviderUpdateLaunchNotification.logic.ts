@@ -333,7 +333,7 @@ export function getProviderUpdateProgressToastView(input: {
 
 /** One provider update sent by the cross-machine "Update all", with its result. */
 export interface ProviderUpdateRun {
-  readonly environmentId: EnvironmentId;
+  // Coder: no environment id; only upstream's cut "Update everything" flow reads it.
   readonly machineLabel: string;
   readonly driver: ProviderDriverKind;
   readonly instanceId: ProviderInstanceId;

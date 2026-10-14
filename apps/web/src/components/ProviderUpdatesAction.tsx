@@ -20,8 +20,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
  * Each server queues updates that share an installer, so sending them all
  * together is safe. The server still checks permissions: a session that
  * cannot operate a machine gets a failure line for it. The returned promise
- * settles with every result when every update has finished. `quiet` skips the
- * toast, for a caller that reports the results itself.
+ * settles when every update has finished. Coder: there is no `quiet` option and no returned
+ * runs, which only upstream's "Update everything" flow reads.
  */
 export function useProviderUpdates() {
   const { environments } = useEnvironments();
@@ -45,11 +45,10 @@ export function useProviderUpdates() {
     [environments],
   );
 
-  const updateAll = async ({ quiet = false }: { readonly quiet?: boolean } = {}) => {
+  const updateAll = async () => {
     const runs = await Promise.all(
       machines.flatMap(({ environmentId, label, candidates }) =>
         candidates.map(async (candidate): Promise<ProviderUpdateRun> => ({
-          environmentId,
           machineLabel: label,
           driver: candidate.driver,
           instanceId: candidate.instanceId,
@@ -60,7 +59,7 @@ export function useProviderUpdates() {
         })),
       ),
     );
-    const view = quiet ? null : getProviderUpdateRunToastView(runs);
+    const view = getProviderUpdateRunToastView(runs);
     if (view) {
       toastManager.add(
         stackedThreadToast({
@@ -69,7 +68,6 @@ export function useProviderUpdates() {
         }),
       );
     }
-    return runs;
   };
 
   return { machines, updateAll };

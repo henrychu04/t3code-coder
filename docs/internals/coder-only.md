@@ -744,7 +744,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
   deltas: there is no legacy sidebar (or its Settings switch), usage page, desktop app-update
   pills, desktop window bridge (fullscreen insets and menu actions), or preview keybinding
-  context; the active workspace supplies keybindings and the pill's providers. `index.css` is
+  context; the active workspace supplies keybindings and the pill's providers. Without
+  upstream's "Update everything" (server self-update), `ProviderUpdatesAction.tsx`'s Update all
+  has no `quiet` option or returned runs and `ProviderUpdateRun` no environment id. `index.css` is
   upstream's minus the `wco` window-controls variant, drag regions, and desktop resize inset.
   Without the desktop window-controls overlay (`lib/windowControlsOverlay.ts`), `ui/tooltip.tsx`
   reads a native titlebar height of zero and the sidebar sheet gets no window-controls inset.
