@@ -133,10 +133,7 @@ layer("NodeSqliteClient", (it) => {
 
 const largeText = "x".repeat(64 * 1024 + 1);
 
-// Coder: skipped because it fails on unmodified upstream code here: node:sqlite binds an
-// ArrayBuffer parameter as NULL under Node 24.12 and 25.8 (upstream asks for ^24.13.1). Last seen
-// at upstream dd5c7bd09e; re-run it on every sync.
-it.effect.skip("keeps large text and blob parameters off cached statements", () =>
+it.effect("keeps large text and blob parameters off cached statements", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const statements: Array<NodeSqlite.StatementSync> = [];
@@ -717,10 +714,7 @@ const checkpointWorkerReply = (worker: NodeWorkerThreads.Worker) =>
       }),
   );
 
-// Coder: skipped because Node 24.12 ships SQLite 3.50.4, where the checkpoint worker refuses to
-// start (it needs 3.51) and the writer keeps checkpointing; it passes on Node 25.8. Last seen at
-// upstream dd5c7bd09e; re-run it on every sync.
-it.effect.skip("checkpoints the WAL on the worker instead of the writer", () =>
+it.effect("checkpoints the WAL on the worker instead of the writer", () =>
   withCheckpointClient((sql, filename) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -218,14 +218,13 @@ directory with `pnpm exec vp test run <file>`.
 `pnpm test:coder` exits 0; a failure is real. It stops at the first failing package script, so
 fix and rerun until it completes. Known results:
 
-- `apps/server/src/orchestration-v2/ProjectionRecovery.test.ts` skips "selects unfinished recovery
-  work without reading settled thread histories": it fails on pure upstream too
-  (`ProjectionStoreSetupError`, "malformed JSON"). Each sync, turn `it.effect.skip` back into
-  `it.effect`; keep the skip, with the new merge-base in its comment, only if it still fails.
-- `packages/shared/src/nodeSqliteClient.test.ts` skips two tests that fail on unmodified upstream
-  code under Node 24.12, which is older than upstream's `^24.13.1` engine; retry them each sync,
-  and note that the ProjectionRecovery test above passes under Node 25.8. Check
-  `node -p process.version` against upstream's `engines.node` before blaming the merge.
+- The suite needs the Node version in upstream's `engines.node` (`^24.13.1` at dd5c7bd09e). On an
+  older Node, three upstream tests fail on unmodified upstream code: ProjectionRecovery's "selects
+  unfinished recovery work without reading settled thread histories" (`ProjectionStoreSetupError`,
+  "malformed JSON") and nodeSqliteClient's "keeps large text and blob parameters off cached
+  statements" (node:sqlite binds an ArrayBuffer parameter as NULL) and "checkpoints the WAL on the
+  worker instead of the writer" (its SQLite predates 3.51). Check `node -p process.version`
+  against `engines.node` before blaming the merge; do not skip them.
 - `apps/server/src/serverSettings.test.ts` "follows a settings link that is repointed to another
   directory" and "reloads when a dangling settings link gets its destination" can hit their
   2-second watcher timeout under full-suite load. Rerun it alone:
