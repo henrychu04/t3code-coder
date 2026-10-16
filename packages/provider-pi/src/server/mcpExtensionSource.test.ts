@@ -342,7 +342,8 @@ describe("Pi T3 tools over the file bridge", () => {
         registerTool: (tool: RegisteredTool) => tools.push(tool),
         getActiveTools: () => [],
         setActiveTools: () => undefined,
-        getAllTools: () => tools.map((tool) => ({ name: tool.name, sourceInfo: { path: extensionPath } })),
+        getAllTools: () =>
+          tools.map((tool) => ({ name: tool.name, sourceInfo: { path: extensionPath } })),
       },
     });
     return { directory, tools, handlers };

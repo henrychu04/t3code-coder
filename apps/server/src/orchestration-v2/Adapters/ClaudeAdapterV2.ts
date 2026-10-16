@@ -984,9 +984,9 @@ export const layerQueryRunner: Layer.Layer<
         // Coder: there is no SDK `forkSession`. Allocate the fork's session id here; the
         // CLI copies the source transcript when the fork's first query opens.
         const result: ForkSessionResult = {
-          sessionId: yield* crypto.randomUUIDv4().pipe(
-            Effect.mapError((cause) => queryRunnerError(cause, "forkSession")),
-          ),
+          sessionId: yield* crypto
+            .randomUUIDv4()
+            .pipe(Effect.mapError((cause) => queryRunnerError(cause, "forkSession"))),
         };
         yield* logProtocolEvent({
           direction: "incoming",

@@ -101,10 +101,12 @@ checks dependencies before running a script). It `git rm`s each modify/delete co
 paths listed in the script and prints every other conflict and every upstream-added file under
 those paths, untouched, for you to decide. It never resolves a content conflict. The files it lists are untouched but staged, so removing
 one needs `git rm -f`. To remove every listed upstream-added file at once:
+
 ```sh
 node scripts/sync-resolve-deleted.mjs | awk '/^Added by upstream/ { on = 1; next } on && /^  / { print $1 }' > /tmp/sync-added.txt
 git rm -q -f --pathspec-from-file=/tmp/sync-added.txt
 ```
+
 The script lists only paths under deleted directories. Upstream also adds files for cut surfaces
 in kept directories (in the 5cbe82a870 sync: `observability/OtlpEndpointCheck.ts`,
 `settings/TelemetryExportSettings.tsx`, `provider/antigravityUsageLimits.ts`, and provider-pi's
@@ -265,7 +267,10 @@ Finish with `pnpm knip:check`.
 ## 7. Verify
 
 In this order, fixing each failure before the next: `pnpm test:coder`; every typecheck listed in
-`AGENTS.md`; `pnpm knip:check`; `pnpm build`. Typecheck before the full suite finds most merge
+`AGENTS.md`; `pnpm knip:check`; `pnpm build`; then
+`pnpm exec vp fmt --check $(git diff --name-only "$PREV" HEAD -- '*.ts' '*.tsx' '*.mjs' '*.md')`
+over the files the merge changed, since a comment deletion can leave a doubled blank line that
+typecheck and tests never see (cfafb4bb54: `ModelManifest.test.ts`). Typecheck before the full suite finds most merge
 breakage faster. For one file, `pnpm exec vp test run --config vite.coder.config.ts <file>`
 covers `apps/server` only; run web, client-runtime, and package tests from the package
 directory with `pnpm exec vp test run <file>`.
