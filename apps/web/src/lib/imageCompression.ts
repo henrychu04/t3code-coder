@@ -11,8 +11,8 @@
  *
  * Supported images already within budget pass through untouched, except that
  * a PNG or JPEG longer than `IMAGE_ATTACHMENT_MAX_EDGE` on a side is scaled down
- * to it in its own format before upload. Coder does not decode HEIC/HEIF photos;
- * only PNG, JPEG, and WebP sources are accepted.
+ * to it in its own format before upload. HEIC/HEIF photos are decoded to JPEG
+ * first because providers cannot consume them.
  */
 
 import {
@@ -28,24 +28,6 @@ import {
 /** Longest edge kept when an image has to be re-encoded. */
 const MAX_DIMENSION = IMAGE_ATTACHMENT_MAX_EDGE;
 /** Base64 budget for a single stashed image (~975KB of binary). */
-
-export function readFileAsDataUrl(file: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error("Could not read image data."));
-    });
-    reader.addEventListener("error", () => {
-      reject(reader.error ?? new Error("Failed to read image."));
-    });
-    reader.readAsDataURL(file);
-  });
-}
-
 export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;
 /**
  * Ceiling on the *source* file handed to the re-encoder. File size is a
@@ -53,6 +35,8 @@ export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;
  * ImageBitmap can OOM the tab — beyond this we refuse rather than risk it.
  */
 export const MAX_COMPRESSIBLE_SOURCE_BYTES = 50 * 1024 * 1024;
+const MAX_HEIC_DECODE_PIXELS = 64_000_000;
+const MAX_HEIC_METADATA_BYTES = 1024 * 1024;
 /**
  * Quality ladder tried in order until the encoded image fits the budget.
  * The floor stays high enough to avoid visible blocking on UI screenshots;
@@ -100,25 +84,90 @@ export function isHeicImageFile(file: Pick<File, "name" | "type">): boolean {
   );
 }
 
-/** Chunked so a large image can't blow the argument limit of `fromCharCode`. */
-const BASE64_CHUNK_SIZE = 0x8000;
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK_SIZE) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + BASE64_CHUNK_SIZE));
-  }
-  return btoa(binary);
+interface HeicMetadataBox {
+  payloadOffset: number;
+  endOffset: number;
 }
 
-/**
- * Blob → base64 data URL. Uses `arrayBuffer()` rather than `FileReader` so
- * the module works anywhere `Blob` does (including non-DOM test runners).
- */
-async function blobToDataUrl(blob: File | Blob, mimeTypeOverride?: string): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  const mimeType = mimeTypeOverride || blob.type || "application/octet-stream";
-  return `data:${mimeType};base64,${bytesToBase64(new Uint8Array(buffer))}`;
+function findHeicMetadataBox(
+  view: DataView,
+  startOffset: number,
+  endOffset: number,
+  type: number,
+): HeicMetadataBox | null {
+  let offset = startOffset;
+  while (offset + 8 <= endOffset) {
+    let size = view.getUint32(offset);
+    let headerSize = 8;
+    if (size === 1) {
+      if (offset + 16 > endOffset) return null;
+      const extendedSize = view.getBigUint64(offset + 8);
+      if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+      size = Number(extendedSize);
+      headerSize = 16;
+    } else if (size === 0) {
+      size = endOffset - offset;
+    }
+    if (size < headerSize || size > endOffset - offset) return null;
+
+    const nextOffset = offset + size;
+    if (view.getUint32(offset + 4) === type) {
+      return { payloadOffset: offset + headerSize, endOffset: nextOffset };
+    }
+    offset = nextOffset;
+  }
+  return null;
+}
+
+/** Read HEIC image dimensions before the decoder allocates full RGBA buffers. */
+async function validateHeicImageDimensions(
+  file: File,
+): Promise<ImageCompressionFailureReason | null> {
+  const metadata = await file.slice(0, MAX_HEIC_METADATA_BYTES).arrayBuffer();
+  const view = new DataView(metadata);
+  const meta = findHeicMetadataBox(view, 0, view.byteLength, 0x6d657461);
+  if (!meta || meta.payloadOffset + 4 > meta.endOffset) return "unreadable";
+  const properties = findHeicMetadataBox(view, meta.payloadOffset + 4, meta.endOffset, 0x69707270);
+  if (!properties) return "unreadable";
+  const containers = findHeicMetadataBox(
+    view,
+    properties.payloadOffset,
+    properties.endOffset,
+    0x6970636f,
+  );
+  if (!containers) return "unreadable";
+
+  let offset = containers.payloadOffset;
+  let foundImageDimensions = false;
+  while (offset < containers.endOffset) {
+    const image = findHeicMetadataBox(view, offset, containers.endOffset, 0x69737065);
+    if (!image) break;
+    if (image.payloadOffset + 12 > image.endOffset) return "unreadable";
+    const width = view.getUint32(image.payloadOffset + 4);
+    const height = view.getUint32(image.payloadOffset + 8);
+    if (width === 0 || height === 0) return "unreadable";
+    if (width > MAX_HEIC_DECODE_PIXELS / height) return "too-large";
+    foundImageDimensions = true;
+    offset = image.endOffset;
+  }
+  return foundImageDimensions ? null : "unreadable";
+}
+
+export function readFileAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Could not read image data."));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error ?? new Error("Failed to read image."));
+    });
+    reader.readAsDataURL(file);
+  });
 }
 
 function dataUrlLength(blob: Blob): number {
@@ -470,15 +519,41 @@ export async function compressImageToByteLimit(
 }
 
 /**
- * Prepares a composer image within the attachment size limit. Coder accepts PNG, JPEG, and
- * WebP sources only, so HEIC/HEIF photos are not decoded; upstream converts them to JPEG.
+ * Converts HEIC/HEIF photos to provider-compatible JPEG before applying the
+ * attachment size limit. The decoder is loaded only when such a photo arrives.
  */
 export async function prepareImageForAttachment(
   file: File,
   maxBytes: number,
 ): Promise<CompressImageFileResult> {
-  if (isHeicImageFile(file)) {
+  if (!isHeicImageFile(file)) {
+    return compressImageToByteLimit(file, maxBytes);
+  }
+
+  if (file.size > MAX_COMPRESSIBLE_SOURCE_BYTES) {
+    return { ok: false, reason: "too-large" };
+  }
+
+  let converted: Blob;
+  try {
+    const dimensionError = await validateHeicImageDimensions(file);
+    if (dimensionError) {
+      return { ok: false, reason: dimensionError };
+    }
+    const { heicTo } = await import("heic-to/csp");
+    converted = await heicTo({ blob: file, type: "image/jpeg", quality: QUALITY_STEPS[0] });
+  } catch {
     return { ok: false, reason: "unreadable" };
   }
-  return compressImageToByteLimit(file, maxBytes);
+
+  const jpeg = new File([converted], fileNameForMimeType(file.name || "image", "image/jpeg"), {
+    type: "image/jpeg",
+    lastModified: file.lastModified,
+  });
+  const result = await compressImageToByteLimit(jpeg, maxBytes, {
+    preferredMimeType: "image/jpeg",
+    sourceSizeBytes: file.size,
+  });
+
+  return result.ok ? { ...result, recompressed: true } : result;
 }

@@ -64,9 +64,8 @@ export function normalizeComposerImageFileMimeType(file: File): File {
 export function classifyComposerAttachmentFile(
   file: Pick<File, "name" | "type">,
 ): ComposerAttachmentFileKind {
-  // Coder accepts PNG, JPEG, and WebP only; upstream converts HEIC photos to JPEG.
   if (isHeicImageFile(file)) {
-    return "unsupported-image";
+    return "image";
   }
   if (inferImageMimeTypeForUnknownFile(file)) {
     return "image";
