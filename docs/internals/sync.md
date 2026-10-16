@@ -78,6 +78,15 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   Expect hook dependency-list entries and call sites the refactor rewrote; read every other line,
   since it is a lost or reverted seam (that sync's check caught a "pull request" wording
   regression this way).
+- An upstream commit that only deletes comments (cfafb4bb54's #19559 touched about 3,100
+  files) conflicts wherever the fork edited nearby. Merge it in its own stage: merge up to the
+  commit's parent first, then the commit with the rest of the range. With
+  `-c merge.conflictStyle=diff3`, a hunk whose upstream side differs from the base only in
+  comment lines takes the fork's side with upstream's comment edits applied. Where upstream
+  deleted a comment that also held a `Coder:` note, keep the note as its own comment. Edit
+  comment blocks whole: removing upstream's lines one at a time can drop a `/**` or `*/` the
+  fork's text still needs (typecheck catches the orphaned lines). Afterwards, list comment lines
+  upstream deleted that the result still has, since an auto-merged hunk can keep them too.
 - Upstream code the fork carries can start importing a module the fork deleted (in 2a7bd1673c,
   `ThreadManagementService.ts` imports `environment/ServerEnvironment.ts` for
   `ServerEnvironmentIdentity`). Declare the piece it needs in the matching Coder module
