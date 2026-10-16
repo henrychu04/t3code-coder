@@ -96,9 +96,10 @@ individual REST reads. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
 Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP. Each provider
-session credential from upstream's `McpSessionRegistry` is a private temporary directory holding a
-standalone CLI (run with the helper's pinned Node runtime) and a read-only tool catalog; no socket,
-listener, or MCP server is opened. The CLI writes one request per call into its own call directory,
+session credential from upstream's `McpSessionRegistry` is a private directory under the temporary
+directory, named `t3-tools-<hash>` from the environment and thread ids, holding a standalone CLI
+(run with the helper's pinned Node runtime) and a read-only tool catalog; no socket, listener, or
+MCP server is opened. The CLI writes one request per call into its own call directory,
 and the helper runs the named tool through upstream's toolkit handlers with the credential's
 thread identity, never one the agent supplies. Plan-mode threads may call only tools upstream marks
 read-only. Requests and responses are bounded (`FileBridge.ts`). A call that outlives the inline
@@ -106,9 +107,10 @@ budget answers with a `bridge-job:` task id that `task_status` resolves, so long
 on a provider's shell timeout; the number of such calls per thread and the retention of unread
 results are bounded (`T3ToolBridge.ts`). Upstream's lifecycle owns the bridges: credentials are reused across turns and
 revoked, which deletes the directory, when the session is released, the thread is archived or
-deleted, or the helper stops. If a bridge cannot be created, turns run without T3 tools. Workspace
-processes run as the same OS user; these directories are not an isolation boundary between mutually
-untrusted agents.
+deleted, or the helper stops. The thread's next credential recreates the same directory, so a
+command in the agent's history keeps working after its session rotates. If a bridge cannot be
+created, turns run without T3 tools. Workspace processes run as the same OS user; these
+directories are not an isolation boundary between mutually untrusted agents.
 
 The bridge carries upstream's orchestrator, thread, project, environment, worktree, pull-request,
 and `html_render` toolkits. The pull-request tools accept only merge requests on a GitLab host that a
@@ -534,8 +536,9 @@ listed here is drift to remove rather than fork behavior to keep.
     bridge instead (see [Runtime boundary](#runtime-boundary)):
     - `mcp/McpSessionRegistry.ts` keeps upstream's shape and lifecycle, but each credential is a
       bridge (`mcp/bridge/FileBridge.ts`) whose `toolCommand` (a Coder field on provider-core's
-      `McpProviderSessionConfig`) runs the tools; `endpoint` is the bridge directory. Upstream's
-      tools act only for a caller that owns a live run, as over MCP.
+      `McpProviderSessionConfig`) runs the tools; `endpoint` is the bridge directory, one hashed
+      name per thread that the thread's next credential reuses after waiting for the old bridge
+      to close. Upstream's tools act only for a caller that owns a live run, as over MCP.
     - `mcp/bridge/T3ToolBridge.ts` runs upstream's toolkit handlers by name with the credential's
       `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
       its inline budget into `bridge-job:` tasks. `coderServer.ts` binds it once the orchestrator runs.

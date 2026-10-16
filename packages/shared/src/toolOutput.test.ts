@@ -249,6 +249,17 @@ describe("htmlRenderFromTurnItem", () => {
     ).toEqual(reference);
   });
 
+  it("reads the render from a thread's hashed bridge directory", () => {
+    expect(
+      htmlRenderFromTurnItem({
+        type: "command_execution",
+        input: command.replace("t3-tools-AbC123", "t3-tools-0f3a9c2be41d7a85c6e0"),
+        output: JSON.stringify({ htmlRender: reference }),
+        exitCode: 0,
+      }),
+    ).toEqual(reference);
+  });
+
   it("ignores other commands, failures, and malformed output", () => {
     const output = JSON.stringify({ htmlRender: reference });
     expect(

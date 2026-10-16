@@ -8,6 +8,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { createFileBridge, FileBridgeToolFailure, parseFileBridgeRequest } from "./FileBridge.ts";
 
 const exec = promisify(execFile);
+let bridges = 0;
+const bridgeName = () => `t3-tools-test${process.pid}x${++bridges}`;
 const id = "00000000-0000-4000-8000-000000000000";
 const catalog = [
   {
@@ -26,7 +28,7 @@ describe("T3 tool file bridge", () => {
         requests.push(request);
         return { things: [] };
       },
-      { catalog, intervalMs: 5 },
+      { catalog, name: bridgeName(), intervalMs: 5 },
     );
     try {
       const result = await exec(process.execPath, [bridge.script, "list_things", '{"a":1}']);
@@ -48,7 +50,7 @@ describe("T3 tool file bridge", () => {
         requests.push(request);
         return "ok";
       },
-      { catalog, intervalMs: 5 },
+      { catalog, name: bridgeName(), intervalMs: 5 },
     );
     try {
       expect((await exec(process.execPath, [bridge.script, "--list"])).stdout).toBe(
@@ -81,7 +83,7 @@ describe("T3 tool file bridge", () => {
         await release.promise;
         return started;
       },
-      { catalog, intervalMs: 5 },
+      { catalog, name: bridgeName(), intervalMs: 5 },
     );
     try {
       await Promise.all([
@@ -102,7 +104,7 @@ describe("T3 tool file bridge", () => {
         }
         throw new Error("private backend details");
       },
-      { catalog, intervalMs: 5 },
+      { catalog, name: bridgeName(), intervalMs: 5 },
     );
     try {
       await expect(exec(process.execPath, [bridge.script, "list_things"])).rejects.toMatchObject({
@@ -126,7 +128,7 @@ describe("T3 tool file bridge", () => {
             aborted = true;
           });
         }),
-      { catalog, intervalMs: 5, timeoutMs: 25 },
+      { catalog, name: bridgeName(), intervalMs: 5, timeoutMs: 25 },
     );
     try {
       await expect(exec(process.execPath, [bridge.script, "list_things"])).rejects.toMatchObject({
@@ -156,7 +158,7 @@ describe("T3 tool file bridge", () => {
       async () => {
         calls++;
       },
-      { catalog, intervalMs: 5 },
+      { catalog, name: bridgeName(), intervalMs: 5 },
     );
     const external = await mkdtemp(join(tmpdir(), "t3-tools-test-"));
     try {
@@ -175,6 +177,35 @@ describe("T3 tool file bridge", () => {
     } finally {
       await bridge.close();
       await rm(external, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the given name and replaces a directory a crashed helper left behind", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "t3-tools-parent-"));
+    try {
+      const directory = join(parent, "t3-tools-0123abcd");
+      await mkdir(join(directory, "calls", id), { recursive: true });
+      await writeFile(join(directory, "stale.txt"), "stale");
+      const bridge = await createFileBridge(async () => "fresh", {
+        catalog,
+        name: "t3-tools-0123abcd",
+        parent,
+        intervalMs: 5,
+      });
+      try {
+        expect(bridge.directory).toBe(directory);
+        expect(bridge.script).toBe(join(directory, "t3.mjs"));
+        await expect(access(join(directory, "stale.txt"))).rejects.toThrow();
+        await expect(access(join(directory, "calls", id))).rejects.toThrow();
+        expect((await exec(process.execPath, [bridge.script, "list_things"])).stdout).toBe(
+          '"fresh"\n',
+        );
+      } finally {
+        await bridge.close();
+      }
+      await expect(access(directory)).rejects.toThrow();
+    } finally {
+      await rm(parent, { recursive: true, force: true });
     }
   });
 });
