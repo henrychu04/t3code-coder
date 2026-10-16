@@ -169,7 +169,6 @@ describe("getChangeRequest base freshness", () => {
       expect(changeRequest.behindBy).toBeUndefined();
     }),
   );
-
 });
 
 describe("rewriting what has already been said", () => {

@@ -300,7 +300,10 @@ export function mergeEnvironmentSettings(
   return {
     ...clientSettings,
     ...serverSettings,
-    ...resolveModelPreferences(serverSettings, legacyModelPreferences(clientSettings, environmentId)),
+    ...resolveModelPreferences(
+      serverSettings,
+      legacyModelPreferences(clientSettings, environmentId),
+    ),
   };
 }
 

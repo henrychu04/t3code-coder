@@ -103,7 +103,6 @@ describe("resolveProviderCatalog", () => {
   });
 });
 
-
 // Coder: the helper serves only the bundled manifest; upstream's fetch and cache tests are omitted.
 describe("ModelManifest bundled layer", () => {
   it.effect("serves the bundled manifest without a refresh source", () =>

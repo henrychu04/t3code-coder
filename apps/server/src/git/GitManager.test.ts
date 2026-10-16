@@ -4660,7 +4660,9 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       expect(result.pr.status).toBe("created");
       expect(
         glabCalls.some((call) =>
-          call.includes(`mr create --target-branch ${baseBranch} --source-branch feature/configured-base`),
+          call.includes(
+            `mr create --target-branch ${baseBranch} --source-branch feature/configured-base`,
+          ),
         ),
       ).toBe(true);
     }),

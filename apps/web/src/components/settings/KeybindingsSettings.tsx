@@ -1307,7 +1307,6 @@ export function KeybindingsSettingsPanel() {
   const commandOptions = useMemo(() => buildKeybindingCommandOptions(keybindings), [keybindings]);
   const whenVariables = useMemo(() => buildWhenVariableOptions(), []);
 
-
   const saveKeybinding = useCallback(
     (input: ServerUpsertKeybindingInput) => {
       if (

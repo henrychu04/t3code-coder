@@ -132,7 +132,10 @@ it.effect("native content search excludes binary, oversized, and escaped files a
       await FS.mkdir(root);
       await FS.writeFile(NodePath.join(root, "text.txt"), "needle one\nneedle two\nneedle three\n");
       await FS.writeFile(NodePath.join(root, "binary.bin"), Buffer.from("needle\0binary"));
-      await FS.writeFile(NodePath.join(root, "large.txt"), "needle\n" + "x".repeat(11 * 1024 * 1024));
+      await FS.writeFile(
+        NodePath.join(root, "large.txt"),
+        "needle\n" + "x".repeat(11 * 1024 * 1024),
+      );
       await FS.writeFile(NodePath.join(fixture, "outside.txt"), "needle outside");
       await FS.symlink(NodePath.join(fixture, "outside.txt"), NodePath.join(root, "escape.txt"));
     });
