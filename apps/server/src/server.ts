@@ -55,7 +55,6 @@ const layerSourceControlProviderRegistry = SourceControlProviderRegistry.layer.p
 
 const layerPullRequestService = PullRequestService.layer.pipe(
   Layer.provide(PullRequestProviderRegistry.layer),
-  // Where the viewed-file marks live for a host that keeps none of its own.
   Layer.provide(PullRequestFilesViewed.layer),
   Layer.provide(PullRequestReadCache.layer),
   Layer.provide(layerSourceControlProviderRegistry),
@@ -63,7 +62,6 @@ const layerPullRequestService = PullRequestService.layer.pipe(
 );
 
 const layerGitManager = GitManager.layer.pipe(
-  // Per-project git settings resolve the acting thread's project.
   Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
   Layer.provideMerge(RuntimeLayer.layerProjectSetupScriptRunner),
   Layer.provideMerge(WorktreeSetupTracker.layer),
@@ -110,9 +108,9 @@ const layerVcs = Layer.empty.pipe(
       Layer.provide(layerGitWorkflow),
       // Coder: the demand-only background policy.
       Layer.provide(BackgroundPolicy.layer),
-      // Auto-pull reads the project row. The orchestration runtime also
-      // consumes the broadcaster (run finalization), so the policy cannot read
-      // the store from the runtime's output.
+      // The orchestration runtime also consumes the broadcaster (run
+      // finalization), so the policy cannot read the store from the runtime's
+      // output.
       Layer.provide(
         VcsStatusBroadcaster.layerAutoPullPolicy.pipe(Layer.provide(ProjectStore.layer)),
       ),
@@ -135,9 +133,6 @@ const layerWorkspaceFileSystem = WorkspaceFileSystem.layer.pipe(
   Layer.provide(layerWorkspaceEntries),
 );
 
-// Automatic thread settlement (#8600): a server-owned sweep evaluates
-// inactivity and merged pull requests, then settles through the orchestrator
-// so every client sees the same shelf.
 const layerThreadSettlementWorker = Layer.effectDiscard(
   ThreadSettlementService.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(layerPullRequestService), Layer.provide(ProjectionStoreV2.layer));

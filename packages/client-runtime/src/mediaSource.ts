@@ -26,7 +26,6 @@ export interface MediaSourceResource {
   readonly path: string;
 }
 
-/** What a piece of authored media is and how its bytes can be reached. */
 export type ResolvedMediaSource = {
   readonly kind: "image" | "video";
   readonly mimeType: string;

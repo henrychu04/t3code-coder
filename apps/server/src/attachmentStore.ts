@@ -104,10 +104,10 @@ export function createDeterministicAttachmentId(
 }
 
 /**
- * Stable key for an inline chat attachment. A retry resends the same bytes and
- * keeps its id. Editing a queued message reuses the message id, so the bytes
- * also stop a new image from taking an earlier image's id and file. Clients
- * cache attachment images by id, which relies on ids never changing bytes.
+ * A retry resends the same bytes and keeps its id. Editing a queued message
+ * reuses the message id, so the bytes also stop a new image from taking an
+ * earlier image's id and file. Clients cache attachment images by id, which
+ * relies on ids never changing bytes.
  */
 export function chatAttachmentStableKey(
   messageId: string,
@@ -146,9 +146,8 @@ function legacyAttachmentRelativePath(attachmentId: string): string | null {
 }
 
 /**
- * Attachments a thread's tool calls published: `html_render` pages and
- * captured MCP App documents. Only ids minted for this thread count, so
- * deleting a fork never removes its source's pages.
+ * Only ids minted for this thread count, so deleting a fork never removes its
+ * source's pages.
  */
 export function threadHtmlRenderAttachmentIds(
   threadId: string,
@@ -166,7 +165,6 @@ export function threadHtmlRenderAttachmentIds(
   });
 }
 
-/** Null for attachment types this build does not know; callers skip those. */
 export function attachmentRelativePath(attachment: ChatAttachment): string | null {
   const legacyPath = legacyAttachmentRelativePath(attachment.id);
   if (legacyPath) return attachment.type === "image" ? legacyPath : null;

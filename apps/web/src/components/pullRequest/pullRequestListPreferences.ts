@@ -126,7 +126,5 @@ export function writePullRequestListPreferences(
       PULL_REQUEST_LIST_PREFERENCES_STORAGE_KEY,
       JSON.stringify(pullRequestListPreferences(preferences)),
     );
-  } catch {
-    // Storage can be full or denied; the URL remains the source of truth for this visit.
-  }
+  } catch {}
 }

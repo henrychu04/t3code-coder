@@ -12,12 +12,6 @@ export interface ActiveProjectTarget {
   readonly threadRef: ScopedThreadRef;
 }
 
-/**
- * Resolves the project workspace behind the active persisted thread so
- * project-scoped surfaces like the file picker and content search know which
- * workspace to query and which thread's right panel opens their results.
- * Coder file reads require a persisted thread that owns the project root.
- */
 export function useActiveProjectTarget(): ActiveProjectTarget | null {
   const { activeThread } = useHandleNewThread();
   const projects = useProjects();

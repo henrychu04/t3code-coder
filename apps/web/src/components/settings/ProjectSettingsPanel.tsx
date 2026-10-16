@@ -95,8 +95,6 @@ export function ProjectSettingsPanel({
     };
   }, [selected, members, environmentId, checkoutKey]);
 
-  // A grouping-rule change replaces the group key mid-visit; follow the
-  // project to its new key instead of parking on the not-found state.
   useEffect(() => {
     if (members.length > 0) return;
     const last = lastSelectionRef.current;
@@ -216,8 +214,6 @@ function ProjectDetail({
     [reportFailure],
   );
 
-  // Group-shared fields live on each physical project record, so a
-  // group-level edit fans out to every member.
   const updateAllMembers = useCallback(
     async (
       input: Partial<{
@@ -252,8 +248,6 @@ function ProjectDetail({
           () => undefined,
         );
         if (result._tag === "Failure") {
-          // A partial fan-out is possible: earlier members already took the
-          // write. Name the environment so the user knows where it stopped.
           reportFailure(
             group.memberProjects.length > 1
               ? `${failureTitle} on ${member.environmentLabel ?? "the current environment"}`
@@ -289,7 +283,6 @@ function ProjectDetail({
     [group.memberProjects, updateAllMembers],
   );
 
-  // ----- project icon -----
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
   const savingFaviconRef = useRef(false);

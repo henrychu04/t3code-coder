@@ -39,11 +39,6 @@ export interface McpSessionRegistryShape {
   readonly resolve: (
     rawToken: string,
   ) => Effect.Effect<McpInvocationContext.McpThreadInvocationScope | undefined>;
-  /**
-   * Records a sign of life for every credential bound to `threadId`. Provider
-   * turns call this so that a session which is plainly alive keeps its
-   * credential even when it goes a long time without touching a tool.
-   */
   readonly touch: (threadId: ThreadId) => Effect.Effect<void>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   readonly revokeThread: (threadId: ThreadId) => Effect.Effect<void>;
@@ -55,7 +50,6 @@ export class McpSessionRegistry extends Context.Service<
   McpSessionRegistryShape
 >()("t3/mcp/McpSessionRegistry") {}
 
-/** Registry credentials always belong to a provider session, so their scope has a thread. */
 interface CredentialRecord {
   readonly scope: McpInvocationContext.McpThreadInvocationScope;
   readonly bridge: FileBridge | undefined;
@@ -241,12 +235,7 @@ export const issueActiveMcpCredential = (
         .pipe(Effect.andThen(activeMcpSessionRegistry.issue(request)))
     : Effect.undefined;
 
-/**
- * Refreshes the liveness of a thread's credential. Called on every provider
- * turn so an active session is never mistaken for an abandoned one.
- */
 export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.touch(threadId) : Effect.void;
 
-/** Exposed for tests. */
 export const __testing = { make: makeWithOptions };

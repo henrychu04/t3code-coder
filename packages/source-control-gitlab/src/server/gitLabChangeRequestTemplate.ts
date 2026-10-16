@@ -2,8 +2,6 @@
  * Coder: upstream's GitHub pull request template convention, extended to GitLab merge request
  * templates (`.gitlab/merge_request_templates`, preferring `Default.md`). Upstream reads templates
  * only for GitHub, which this fork does not carry.
- *
- * @module source-control-gitlab/server/gitLabChangeRequestTemplate
  */
 import type { GitCommandError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";

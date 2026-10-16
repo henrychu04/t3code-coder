@@ -253,7 +253,6 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
   );
 }
 
-/** Copies the full error report and swaps to a check mark for a moment as confirmation. */
 function CopyErrorButton({ report }: { report: string }) {
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error-report" });
 
@@ -296,9 +295,7 @@ function errorDetails(error: unknown): string {
 const MAX_ERROR_CAUSE_DEPTH = 5;
 
 /**
- * Full error text for bug reports: app build, page path, time, then the stack
- * and any cause chain. Takes the pathname only so tokens in the query never
- * land on the clipboard.
+ * Takes the pathname only so tokens in the query never land on the clipboard.
  */
 function errorReport(error: unknown, pathname: string): string {
   const lines = [

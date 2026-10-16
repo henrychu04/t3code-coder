@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { projectEnvironment } from "~/state/projects";
 
-/** Loads only requested directories; collapsing a folder keeps its children cached. */
 // Coder: listings name the owner whose project root the helper verifies.
 export function useDirectoryEntries(
   environmentId: EnvironmentId,
@@ -16,7 +15,6 @@ export function useDirectoryEntries(
   const [directories, setDirectories] = useState(new Map<string, readonly ProjectEntry[]>());
   const [errors, setErrors] = useState(new Map<string, string>());
   const [pending, setPending] = useState(0);
-  // First loads only: a refresh keeps showing the cached children, so it gets no row spinner.
   const [loadingDirectories, setLoadingDirectories] = useState<ReadonlySet<string>>(new Set());
   const requests = useRef(new Map<string, Promise<void>>());
   const loaded = useRef(new Set<string>());
@@ -131,7 +129,6 @@ export function useDirectoryEntries(
   );
 
   const refresh = useCallback(() => {
-    // Refresh folders already visited, preserving the current expansion state.
     const paths = [...requested.current].filter((path) => reachableDirectories.has(path));
     let next = 0;
     const worker = async () => {

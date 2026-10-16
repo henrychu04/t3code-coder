@@ -29,11 +29,6 @@ import { Skeleton } from "../ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { HtmlRenderDialog } from "./HtmlRenderDialog";
 
-/**
- * An agent's HTML render inline in the thread: the page itself on the thread's
- * own background, at the agent's height until the page reports its own.
- * Loading and failure hold the same box so nothing below it moves.
- */
 export function HtmlRenderFrame(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -63,7 +58,6 @@ export function HtmlRenderFrame(props: {
   const [html, setHtml] = useState<string | null>(null);
   // Coder: the page is already in memory, so full screen needs no fresh URL.
   const [expanded, setExpanded] = useState(false);
-  // The page stays hidden behind a skeleton until it reports its content.
   const [ready, setReady] = useState(false);
   const showPage = useCallback(() => setReady(true), []);
   const fitPage = useCallback((contentHeight: number) => {
@@ -160,8 +154,6 @@ export function HtmlRenderFrame(props: {
   );
 }
 
-// Without an outline: one heading, a line of text, and a chart-sized block,
-// the shape most pages take, repeated to fill the frame's reserved height.
 const SKELETON_SECTION_HEIGHT = 264;
 
 const OUTLINE_BOX_CLASS = {
@@ -172,8 +164,6 @@ const OUTLINE_BOX_CLASS = {
 
 const OUTLINE_BAR = "color-mix(in srgb, var(--color-muted-foreground) 15%, transparent)";
 
-// Text lines and table rows are bars painted by one gradient per box, so a
-// long page costs one element per block rather than one per line.
 function outlineBoxStyle(box: HtmlRenderOutlineBox): React.CSSProperties {
   const style: React.CSSProperties = {
     left: box.x,
@@ -191,11 +181,6 @@ function outlineBoxStyle(box: HtmlRenderOutlineBox): React.CSSProperties {
   };
 }
 
-/**
- * Holds the frame's place while the page loads: the page's own blocks when the
- * server measured an outline, else a generic page shape. The outline pulses
- * as one layer.
- */
 function HtmlRenderSkeleton(props: {
   readonly title: string;
   readonly height: number;

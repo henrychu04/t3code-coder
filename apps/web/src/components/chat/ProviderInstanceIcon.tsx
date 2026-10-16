@@ -20,7 +20,6 @@ const PROVIDER_TEXT_COLOR_BY_PROVIDER: Partial<Record<ProviderDriverKind, string
   [ProviderDriverKind.make("claudeAgent")]: "text-[#d97757]",
 };
 
-/** Brand text color for a provider label; package glyphs supply theirs as CSS variables. */
 export function providerTextColor(driverKind: ProviderDriverKind): {
   readonly className?: string;
   readonly style?: CSSProperties;

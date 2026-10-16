@@ -4,14 +4,6 @@ import * as Effect from "effect/Effect";
 
 import * as ModelManifest from "./ModelManifest.ts";
 
-/**
- * Test policy: this file covers manifest machinery, not manifest contents.
- * Do not add assertions for real model slugs, names, status, aliases, or
- * profiles when editing model-manifest.json. Add tests only when fetch/cache
- * behavior or the provider-neutral resolver semantics change, and use
- * synthetic models for resolver coverage.
- */
-
 describe("resolveProviderCatalog", () => {
   it("resolves generic model presentation through a reusable profile", () => {
     const manifest: ModelManifest.ModelManifestData = {
@@ -111,7 +103,6 @@ describe("resolveProviderCatalog", () => {
   });
 });
 
-// Remote fixtures date after the bundle so a fetch still outranks it.
 
 // Coder: the helper serves only the bundled manifest; upstream's fetch and cache tests are omitted.
 describe("ModelManifest bundled layer", () => {

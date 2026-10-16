@@ -15,7 +15,6 @@ export function useOpenLink(_threadRef: ScopedThreadRef | null | undefined): (
       readonly ctrlKey: boolean;
       readonly button?: number | undefined;
     };
-    /** Thread to open beside when it is not the hook's own, e.g. a sidebar row's. */
     readonly threadRef?: ScopedThreadRef | undefined;
   },
 ) => Promise<void> {

@@ -102,11 +102,6 @@ export const primaryServerKeybindingsAtom = Atom.make((get): ServerConfig["keybi
 
 const EMPTY_ENVIRONMENT_THEMES: ReadonlyArray<EnvironmentTheme> = [];
 
-/**
- * Palettes published by the primary environment's machine. Only the primary
- * environment: a client follows the machine it is anchored to, not every
- * environment it happens to be connected to.
- */
 export const primaryServerEnvironmentThemesAtom = Atom.make(
   (get): ReadonlyArray<EnvironmentTheme> =>
     get(primaryServerConfigAtom)?.environmentThemes ?? EMPTY_ENVIRONMENT_THEMES,

@@ -1,12 +1,3 @@
-/**
- * Which source control host settings fields hold secrets, read from each built-in host's client
- * definition. `serverSettings` keeps those values in the secret store and redacts them for
- * clients, the same way for every host.
- *
- * A secret field holds a string, or a string per server host such as GitHub's `tokens`.
- *
- * @module sourceControl/sourceControlHostSecrets
- */
 import { secretSettingsFields } from "@t3tools/contracts";
 import type { SourceControlClientDefinition } from "@t3tools/source-control-core/client/definition";
 import * as GitLab from "@t3tools/source-control-gitlab/client/definition";
@@ -14,7 +5,6 @@ import * as GitLab from "@t3tools/source-control-gitlab/client/definition";
 // Coder: GitLab is the only hosted source control provider.
 const definitions: ReadonlyArray<SourceControlClientDefinition> = [GitLab.definition];
 
-/** Secret field names per host kind; a host with none is absent. */
 export const SOURCE_CONTROL_HOST_SECRET_FIELDS: ReadonlyMap<
   string,
   ReadonlyArray<string>
@@ -25,7 +15,6 @@ export const SOURCE_CONTROL_HOST_SECRET_FIELDS: ReadonlyMap<
   }),
 );
 
-/** One stored secret: a host's field, and the server host it is for when the field is per host. */
 export interface SourceControlHostSecretSlot {
   readonly kind: string;
   readonly field: string;
@@ -40,7 +29,6 @@ export function sourceControlHostSecretName(slot: SourceControlHostSecretSlot): 
     : `source-control-${encode(slot.kind)}-${encode(slot.field)}-${encode(slot.serverHost.trim().toLowerCase())}`;
 }
 
-/** The string values a secret field holds, keyed by server host, or `null` for a plain string. */
 export function readSecretFieldValues(
   value: unknown,
 ): ReadonlyArray<readonly [serverHost: string | null, value: string]> {
@@ -51,7 +39,6 @@ export function readSecretFieldValues(
   );
 }
 
-/** A secret field's value rebuilt from per-slot values, in the shape it was read from. */
 export function writeSecretFieldValues(
   original: unknown,
   values: ReadonlyArray<readonly [serverHost: string | null, value: string]>,

@@ -56,7 +56,7 @@ export function shouldPersistProviderEvent(stream: EventNdjsonStream, event: unk
     const nested = Reflect.get(event, "event");
     const envelope = typeof nested === "object" && nested !== null ? nested : event;
     // Decoded frames carry the same information as raw frames without another
-    // copy of every token delta. Decode failures have their own diagnostic frame.
+    // copy of every token delta.
     if (Reflect.get(envelope, "stage") === "raw") return false;
     const decodedPayload = Reflect.get(envelope, "payload");
     const nativeEvent =
@@ -105,7 +105,7 @@ export function shouldPersistProviderEvent(stream: EventNdjsonStream, event: unk
       const partType = Reflect.get(part, "type");
       if (partType === "text" || partType === "reasoning") return false;
       if (partType === "tool") {
-        // Running snapshots repeat growing output. Pending and terminal states stay in the log.
+        // Running snapshots repeat growing output.
         const state = Reflect.get(part, "state");
         if (typeof state === "object" && state !== null) {
           return Reflect.get(state, "status") !== "running";
@@ -188,7 +188,6 @@ function summarizeProviderEvent(event: unknown): unknown {
   }
 }
 
-/** Bounds traversal before adapters copy payloads or the logger encodes them. */
 export function boundProviderEventForLogging(event: unknown): unknown {
   let remainingCharacters = MAX_RECORD_CHARACTERS;
   let remainingFields = MAX_RECORD_FIELDS;
@@ -218,8 +217,6 @@ export function boundProviderEventForLogging(event: unknown): unknown {
   };
   try {
     if (fits(event, 0)) return event;
-  } catch {
-    // A failing accessor must not escape into provider processing.
-  }
+  } catch {}
   return summarizeProviderEvent(event);
 }

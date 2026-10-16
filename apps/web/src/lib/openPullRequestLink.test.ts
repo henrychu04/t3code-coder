@@ -397,8 +397,6 @@ describe("findProjectForChangeRequest", () => {
     ({ id: "p1", repositoryIdentity: identity }) as never;
 
   it("matches a nested GitLab group by the whole path below the host", () => {
-    // The server identifies a repository by `displayName`, which keeps every group segment; the
-    // two-segment owner/name form would look for `t3tools/t3code` and find nothing.
     const projects = [
       project({
         canonicalKey: "gitlab.com/t3tools/platform/t3code",

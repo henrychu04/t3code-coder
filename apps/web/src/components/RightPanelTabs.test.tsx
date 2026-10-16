@@ -52,8 +52,6 @@ describe("surface shortcuts", () => {
 });
 
 describe("surface shortcut typing contexts", () => {
-  // Selector-aware stub: closest() answers only tokens the combined selector
-  // would actually match, mirroring how the browser resolves it.
   const makeTarget = (matches: string | null) => ({
     closest(selectors: string) {
       if (matches === null || !selectors.includes(matches)) return null;
@@ -65,10 +63,6 @@ describe("surface shortcut typing contexts", () => {
     expect(surfaceShortcutTargetsTypingContext(makeTarget("input"))).toBe(true);
     expect(surfaceShortcutTargetsTypingContext(makeTarget("textarea"))).toBe(true);
     expect(surfaceShortcutTargetsTypingContext(makeTarget("select"))).toBe(true);
-    // The chat composer is a contenteditable that sits empty until a draft
-    // exists; launcher letters claimed from it redirected prompts into shells.
-    // The :not clause sees past contenteditable="false" islands to an editable
-    // host around them, so nested editors stay protected too.
     expect(surfaceShortcutTargetsTypingContext(makeTarget("[contenteditable]"))).toBe(true);
   });
 

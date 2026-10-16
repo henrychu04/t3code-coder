@@ -464,7 +464,6 @@ it.effect("shares close, reopen, and merge with an untouched client's mounted PR
           }),
         );
         expect(AsyncResult.isSuccess(result)).toBe(true);
-        // The second client receives only the server push: no local refresh or timer tick.
         yield* detailChanged.await;
         yield* summaryChanged.await;
         yield* listChanged.await;
@@ -809,7 +808,6 @@ it.effect("updates reviewer requests and enriched reviewers without rereading th
         ]);
       }
       expect(reads).toBe(3);
-      // A slow activity read started before the write must not hide the new request.
       pauseActivity = true;
       registry.refresh(activity);
       yield* activityStarted.await;
@@ -828,7 +826,6 @@ it.effect("updates reviewer requests and enriched reviewers without rereading th
       yield* request(false);
       expect((yield* AtomRegistry.getResult(registry, activity)).reviewers).toEqual([hostActor]);
 
-      // A caller without an open picker still needs authoritative reviewer identities.
       const otherTarget = { ...target, input: { ...target.input, number: 2 } };
       const otherDetail = atoms.detail(otherTarget);
       registry.mount(otherDetail);

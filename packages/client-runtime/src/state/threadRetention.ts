@@ -1,5 +1,3 @@
-// Keep recent thread snapshots for back navigation. Live subscriptions end
-// when the last detail consumer leaves.
 export const THREAD_SNAPSHOT_IDLE_TTL_MS = 5 * 60_000;
 
 // Coder: bound idle resume snapshots to 24 threads and 64 MiB. An evicted

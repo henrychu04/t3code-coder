@@ -23,7 +23,6 @@ export default defineConfig({
     ],
   },
   staged: {
-    // Formatter only for now — no lint or typecheck on commit.
     "*": "vp fmt --no-error-on-unmatched-pattern",
   },
   fmt: {
@@ -99,7 +98,6 @@ export default defineConfig({
       ],
     },
     options: {
-      // Revisit once Oxlint's tsgolint path can integrate with @effect/tsgo diagnostics.
       typeAware: false,
       typeCheck: false,
     },

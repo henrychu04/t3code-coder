@@ -16,10 +16,8 @@ function isSameMedia(left: ExpandedImageItem, right: ExpandedImageItem): boolean
   return left.src !== null && left.src === right.src;
 }
 
-// Weak keys retain resolved media actions only while the rendered image is reachable.
 export const markdownImageItems = new WeakMap<Element, ExpandedImageItem>();
 
-/** Collect in document order only when opened, including PR sections separated by videos. */
 export function markdownImageGallery(
   element: Element,
   selected: ExpandedImageItem,

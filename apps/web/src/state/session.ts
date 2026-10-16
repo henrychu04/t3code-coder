@@ -12,7 +12,6 @@ export const environmentSession = createEnvironmentSessionAtoms(connectionAtomRu
 
 // Coder: Coder authenticates the workspace owner and T3 Coder has no environment auth, so the
 // connected workspace grants every scope. Upstream's scope gates keep their call sites and pass.
-/** Uses the selected environment's grant, including cached scopes during a refresh. */
 export function useEnvironmentScope(
   environmentId: EnvironmentId | null,
   _scope: AuthEnvironmentScope,
@@ -20,7 +19,6 @@ export function useEnvironmentScope(
   return environmentId !== null;
 }
 
-/** Subscribe to the grants of every selected environment. */
 export function useEnvironmentsWithScope(
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
   _scope: AuthEnvironmentScope,

@@ -84,14 +84,11 @@ interface RightPanelTabsProps {
   open?: boolean;
   keybindings: ResolvedKeybindingsConfig;
   getShortcutContext: () => ShortcutMatchContext;
-  /** Forwarded to PreviewPanelShell so this surface persists its own width. */
   widthStorageKey?: string;
-  /** Forwarded to PreviewPanelShell as the initial width before a user resize. */
   defaultWidth?: number;
   inlineSize?: PreviewPanelInlineSize;
   layoutControls?: ReactNode;
   surfaces: readonly RightPanelSurface[];
-  /** Fallback environment for surfaces that do not carry their own. */
   environmentId: EnvironmentId | null;
   activeSurfaceId: string | null;
   pendingSurfaceIds: ReadonlySet<string>;
@@ -101,7 +98,6 @@ interface RightPanelTabsProps {
   onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
   onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
   onCloseAllSurfaces: () => void;
-  /** Tabs are draggable only when the owner can persist the new order. */
   onMoveSurface?: (surfaceId: string, toIndex: number) => void;
   onCopyFilePath: (relativePath: string) => void;
   onAddTerminal: () => void;
@@ -137,7 +133,6 @@ const SURFACE_DISABLED_REASONS = {
   pullRequests: "No linked merge requests are available for this thread.",
 } as const;
 
-/** Overlays that must win over the launcher's letter shortcuts. */
 const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
   '[data-slot="dialog-popup"]',
   '[data-slot="alert-dialog-popup"]',
@@ -149,7 +144,6 @@ const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
   '[data-slot="autocomplete-popup"]',
 ].join(",");
 
-/** One-line unavailability hints for the empty-state rows. */
 const SURFACE_UNAVAILABLE_HINTS = {
   terminal: "Available when a project is open.",
   files: "Available when a project is open.",
@@ -185,12 +179,9 @@ export function surfaceShortcutActionForKey<
 }
 
 /**
- * A focused editable is a typing context whether or not it has text yet: an
- * empty chat composer at rest is still where the user's next keystrokes are
- * meant to land, and claiming launcher letters from it would redirect prompts
- * into whatever surface opens. The `:not` clause lets `closest` see past
- * non-editable islands (`contenteditable="false"`) to an editable host around
- * them, matching ComposerPendingUserInputPanel's typing guard.
+ * The `:not` clause lets `closest` see past non-editable islands
+ * (`contenteditable="false"`) to an editable host around them, matching
+ * ComposerPendingUserInputPanel's typing guard.
  */
 export function surfaceShortcutTargetsTypingContext(
   target: { closest(selectors: string): unknown } | null,
@@ -232,13 +223,6 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-/**
- * List launcher shown when the right panel has no surfaces. Keyboard-first
- * without palette chrome: a surface's letter opens it directly from anywhere
- * outside a typing context, and arrows plus Enter work while the launcher is
- * focused. The highlight only appears on hover or arrow use. Unavailable
- * surfaces stay visible with a one-line reason.
- */
 function RightPanelEmptyState(props: {
   onAddTerminal: () => void;
   onAddDiff: () => void;
@@ -251,7 +235,6 @@ function RightPanelEmptyState(props: {
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
 }) {
-  // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
 
   const actions = [
@@ -303,10 +286,6 @@ function RightPanelEmptyState(props: {
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
-  // Letter shortcuts work while the launcher is visible, not only while it
-  // is focused; focus moves around too easily (stray clicks) to carry them.
-  // Capture phase so app-level key handlers cannot swallow the event first;
-  // typing contexts and already-handled events are left alone.
   const shortcutActionsRef = useRef(availableActions);
   useEffect(() => {
     shortcutActionsRef.current = availableActions;
@@ -316,7 +295,6 @@ function RightPanelEmptyState(props: {
       const action = surfaceShortcutActionForKey(shortcutActionsRef.current, event);
       if (!action) return;
       if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
-      // The composed path starts at the real target, which may sit inside a shadow root.
       const target = event.composedPath()[0] ?? event.target;
       if (target instanceof Element && surfaceShortcutTargetsTypingContext(target)) return;
       event.preventDefault();
@@ -345,7 +323,6 @@ function RightPanelEmptyState(props: {
       return;
     }
     if (event.key === "Enter") {
-      // Only activate the highlight when the launcher itself has focus.
       if (event.target !== event.currentTarget) return;
       const action = availableActions[highlightIndex];
       if (!action) return;
@@ -381,8 +358,6 @@ function RightPanelEmptyState(props: {
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
       className={cn(
         "scrollbar-gutter-both flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none",
-        // The panel topbar sits above this container; matching bottom padding
-        // keeps the list centered against the full panel, not the leftover.
         "pb-(--workspace-topbar-height)",
       )}
     >
@@ -597,9 +572,6 @@ function PullRequestSurfaceIcon({
     [surface.projectId, surface.repository, surface.number],
   );
   const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference, null);
-  // The compact tab intentionally shows lifecycle and draft state only. Conflict warnings have
-  // their own presentation on surfaces that have mergeability, while this tab stays stable as
-  // detail data arrives.
   const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
     return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
@@ -611,10 +583,6 @@ function PullRequestSurfaceIcon({
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
-/**
- * Lets its tabs be dragged into a new order. Neighbours slide aside while dragging,
- * and the order commits on drop.
- */
 function SortableTabList(props: {
   surfaces: readonly RightPanelSurface[];
   onMove: ((surfaceId: string, toIndex: number) => void) | undefined;
@@ -916,9 +884,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       <div
         className={cn(
           "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
-          // The sheet overlays from the viewport top, so its tab bar keeps
-          // the titlebar's height: a compact row re-centers the layout
-          // controls a few pixels higher and the cluster jumps on open.
           props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
           ownsDesktopTitleBar && "drag-region",
           ownsDesktopTitleBar && "wco:pr-(--workspace-native-controls-inset)",
@@ -1079,7 +1044,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         ) : null}
         {props.layoutControls}
         {ownsDesktopTitleBar && !props.layoutControls ? (
-          // Keeps the tabs clear of the window controls when the layout toggles live elsewhere.
           <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
         ) : null}
         {ownsDesktopTitleBar ? (

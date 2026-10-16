@@ -177,7 +177,6 @@ it.effect("asks once for every checkout of a server no integration claims", () =
       },
     });
 
-    // Three checkouts read while the first probe is still running share it.
     const started = yield* Effect.forEach(["a", "b", "c"], () => Deferred.make<void>());
     const callers = yield* Effect.forEach(
       ["a", "b", "c"],
@@ -196,10 +195,8 @@ it.effect("asks once for every checkout of a server no integration claims", () =
       ["unknown", "unknown", "unknown"],
     );
     const once = asked.slice();
-    // glab is asked about the remote's host as the remote spells it.
     assert.deepStrictEqual(once, ["glab auth status --hostname Git.Example.Internal"]);
 
-    // A login made in a terminal sends no signal, so the server is asked again later.
     yield* TestClock.adjust("5 minutes");
     yield* resolveUnknown(registry, "a");
     assert.deepStrictEqual(asked, [...once, ...once]);
@@ -236,7 +233,6 @@ it.effect("asks again once Settings change", () =>
       settings: {
         subscribeChanges: PubSub.subscribe(changes).pipe(
           Effect.map((subscription) =>
-            // A change is handled once the registry asks for the next one.
             Stream.fromSubscription(subscription).pipe(
               Stream.flatMap((settings) =>
                 Stream.concat(
