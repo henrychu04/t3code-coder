@@ -66,8 +66,6 @@ const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState
         ),
       );
     const state = yield* SubscriptionRef.make<Option.Option<ServerConfigProjection>>(
-      // Stripped on load as well as on save: a cache written by an earlier
-      // build can still carry published themes.
       Option.map(cachedConfig, (cached) => ({
         config: withoutEnvironmentThemes(cached),
         latestEvent: cachedConfigSnapshotEvent(withoutEnvironmentThemes(cached)),
@@ -278,7 +276,6 @@ export function createServerEnvironmentAtoms<R, E>(
           ]),
       },
     }),
-    /** Live scheduled-task list: snapshot on subscribe, fresh list after every server-side change. */
     scheduledTasksLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:scheduled-tasks:live",
       tag: WS_METHODS.scheduledTasksSubscribe,
@@ -305,9 +302,6 @@ export function createServerEnvironmentAtoms<R, E>(
         ),
     }),
     updateSettings,
-    // Provider-instance mutations share the settings command and its
-    // environment-serial scheduler. The named boundary keeps clients on the
-    // atomic map-entry payload instead of rebuilding a stale whole map.
     mutateProviderInstance: updateSettings,
     upsertKeybinding: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:upsert-keybinding",

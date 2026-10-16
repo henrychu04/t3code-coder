@@ -16,12 +16,6 @@ import {
   type SettingsScopeSearch,
 } from "./settingsScope";
 
-/**
- * Each member's decoded t3.json, so file-backed settings show the file as a
- * layer in the inheritance chain. A member is only present once its read has
- * settled. The workspace helper reads the fixed file through the bounded
- * `projects.getConfig` RPC; the browser never reads the raw file.
- */
 function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
   const members = scope.kind === "project" || scope.kind === "checkout" ? scope.members : [];
   return useAtomValue(
@@ -78,8 +72,6 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
       selected.connectedEnvironments,
       projectFiles,
     );
-    // The representative target supplies display values; project scopes
-    // prefer the member on the primary environment, like environments do.
     const target =
       targets.find(
         (candidate) => candidate.environmentId === selected.environment?.environmentId,

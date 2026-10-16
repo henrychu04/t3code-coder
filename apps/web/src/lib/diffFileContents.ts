@@ -27,7 +27,6 @@ interface GitDiffFileContentsSource {
   readonly sourceKind: ReviewDiffPreviewSourceKind;
   readonly baseRef: string | null;
   readonly headRef: string | null;
-  /** The comparison identity Pierre carries into its hydrated render cache. */
   readonly cacheKey: string;
 }
 

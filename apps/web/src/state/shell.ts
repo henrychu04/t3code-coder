@@ -31,8 +31,6 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
     if (connectionProjectionPhase(connection) !== "disconnected") {
       return false;
     }
-    // A retrying environment is only transiently disconnected; give it its
-    // first retries before letting the landing settle without its snapshot.
     if (connection.phase === "backoff" && connection.desired && connection.attempt <= 2) {
       return false;
     }

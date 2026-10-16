@@ -28,7 +28,6 @@ import {
 
 const SourcePreview = lazy(() => import("./ReadOnlySourcePreview"));
 
-/** Highlighted read-only source, loaded on demand so message rendering never waits on the highlighter. */
 export function ReadOnlySourcePreview(props: { name: string; text: string }) {
   return (
     <Suspense fallback={<FileSurfaceLoading className="p-4" />}>
@@ -53,14 +52,10 @@ function renderedToggleLabel(mode: "markdown" | "html" | "table", rendered: bool
 export function AttachmentFilePreview(props: {
   name: string;
   mimeType: string;
-  /** Zero when unknown. */
   sizeBytes: number;
   file: Blob;
-  /** An agent's HTML render, shown in the app theme. */
   htmlRender?: boolean;
-  /** The thread an HTML render's links open beside. */
   threadRef?: ScopedThreadRef;
-  /** First crumb: where the file comes from. */
   origin?: string;
   onRemove?: () => void;
   onClose?: () => void;
@@ -75,8 +70,6 @@ export function AttachmentFilePreview(props: {
   const [revision, setRevision] = useState(0);
   const [content, setContent] = useState<{ text: string; truncated: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Reading source is a separate failure from loading the file: a rendered HTML page can be
-  // fine while its bytes are not UTF-8, and switching back to the page must not stay stuck.
   const [contentError, setContentError] = useState<string | null>(null);
   useEffect(() => {
     const url = URL.createObjectURL(props.file);
@@ -125,8 +118,6 @@ export function AttachmentFilePreview(props: {
   const failure = error ?? (needsText ? contentError : null);
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
   const updateClientSettings = useUpdateClientSettings();
-  // Only the raw-text body honours word wrap. A rendered table or Markdown lays itself out,
-  // so offering the toggle there would be a control that visibly does nothing.
   const showsRawText =
     failure === null &&
     needsText &&
@@ -138,8 +129,6 @@ export function AttachmentFilePreview(props: {
     <FileSurfaceFailure
       message={failure}
       onRetry={() => {
-        // Clearing first lets a local Blob preview remount: its URL never changes, so the
-        // revision bump alone would re-render the same failed element.
         setError(null);
         setRevision((value) => value + 1);
       }}

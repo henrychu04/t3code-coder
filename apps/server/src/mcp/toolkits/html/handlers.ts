@@ -13,7 +13,6 @@ const INVALID_PAGE_ERRORS = new Set([
   "HtmlRenderPageTooLargeError",
 ]);
 
-// Every HTML render error message is built on the server and tells the agent what to do next.
 const toFailure = (error: { readonly _tag: string; readonly message: string }) =>
   new OrchestratorMcpFailure({
     code: INVALID_PAGE_ERRORS.has(error._tag) ? "invalid_request" : "orchestration_error",
@@ -21,7 +20,6 @@ const toFailure = (error: { readonly _tag: string; readonly message: string }) =
   });
 
 const handlers = {
-  // The page is stored in the calling thread, so it needs that thread's live run.
   html_render: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;

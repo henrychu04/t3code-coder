@@ -1,20 +1,4 @@
-/**
- * ModelManifest — remote provider-model metadata with a bundled offline
- * fallback.
- *
- * Provider catalogs and legacy classification live in `model-manifest.json`.
- * The bundled copy ships with every release; at runtime the service refreshes
- * it from the same file on `main`. Preference order is remote, then the last
- * successful on-disk copy, then the bundle. A failed fetch never fails a
- * provider check.
- *
- * Providers with authoritative discovery can use only the classification
- * overlay. Providers with static catalogs can resolve presentation and
- * capabilities from `providers`, then decode their own allowlisted adapter
- * payload separately.
- *
- * Coder: only the bundled copy is served; see `layerBundled`.
- */
+/** Coder: only the bundled copy is served; see `layerBundled`. */
 import {
   ModelCapabilities,
   TrimmedNonEmptyString,
@@ -59,16 +43,12 @@ const ManifestProviderCatalog = Schema.Struct({
   models: Schema.Array(ManifestProviderModel),
 });
 
-/**
- * `version` gates breaking schema changes. Provider catalogs are additive so
- * clients that only understand `currentModels` keep accepting this v1 file.
- */
 const ModelManifestEnvelopeSchema = Schema.Struct({
   version: Schema.Literal(1),
   /**
-   * ISO date of the last edit. A release bundles its manifest, and a disk
-   * cache of an older edit must not outrank it. Optional so older remote
-   * files still decode; they count as older than any dated bundle.
+   * A release bundles its manifest, and a disk cache of an older edit must not
+   * outrank it. Optional so older remote files still decode; they count as
+   * older than any dated bundle.
    */
   updatedAt: Schema.optional(Schema.String),
   compatibility: Schema.optional(Schema.Array(ProviderCompatibilityPolicy)),
@@ -106,10 +86,6 @@ export type ModelManifestData = typeof ModelManifestSchema.Type;
 export const BUNDLED_MODEL_MANIFEST: ModelManifestData =
   Schema.decodeUnknownSync(ModelManifestSchema)(bundledManifestJson);
 
-/**
- * A driver's catalog entry as provider packages see it, or `null` when the
- * manifest has none or its references are invalid.
- */
 export function resolveProviderCatalog(
   manifest: ModelManifestData,
   driverKind: ProviderDriverKind,
@@ -148,21 +124,17 @@ export function resolveProviderCatalog(
 export class ModelManifest extends Context.Service<
   ModelManifest,
   {
-    /** Manifest already in memory (disk cache or bundle); never fetches.
-     * Snapshot classification reads this, so it never waits on the network. */
+    /**  Snapshot classification reads this, so it never waits on the network. */
     readonly current: Effect.Effect<ModelManifestData>;
-    /** Manifest after a TTL-gated remote refresh; never fails. */
     readonly refresh: Effect.Effect<ModelManifestData>;
-    /** Explicit refresh bypasses freshness and retry timers, retaining last-good data. */
     readonly forceRefresh: Effect.Effect<ModelManifestData>;
-    /** Forks `refresh` into the service's own scope. Drivers call this from
+    /** Drivers call this from
      * provider checks: the fetch is process-shared state, so it must survive
      * the teardown of whichever instance happened to trigger it. */
     readonly refreshInBackground: Effect.Effect<void>;
   }
 >()("t3/provider/ModelManifest") {}
 
-/** Constant service backing the bundled-data test layer. */
 const BundledOnlyModelManifest: ModelManifest["Service"] = {
   current: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   refresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
@@ -177,12 +149,10 @@ const layerBundledOnly = Layer.succeed(ModelManifest, BundledOnlyModelManifest);
 // upstream syncs update it.
 export const layerBundled = layerBundledOnly;
 
-/** Bundled data only, with the provider catalog port drivers read; for tests. */
 export const layerTest = Layer.suspend(() =>
   layerModelCatalog.pipe(Layer.provideMerge(layerBundledOnly)),
 );
 
-/** Exposes the manifest to provider packages as their per-driver catalogs. */
 export const layerModelCatalog = Layer.effect(
   ModelCatalog.ModelCatalog,
   Effect.gen(function* () {

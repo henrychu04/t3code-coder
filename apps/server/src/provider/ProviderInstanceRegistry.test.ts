@@ -1,28 +1,4 @@
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-/**
- * Multi-instance validation slices for the live `ProviderInstanceRegistry`.
- *
- * Two axes of the driver/registry refactor are exercised here:
- *
- *  1. **Same driver, many instances** — the "multi-instance codex slice"
- *     describe block below configures two independent `codex` instances and
- *     asserts each gets its own closures and identity. This is the
- *     multi-codex capability the refactor exists to unlock.
- *
- *  2. **Many drivers, one registry** — the "all drivers slice" describe
- *     block below configures one instance of every shipped driver
- *     (`codex`, `claudeAgent`, `pi`) in a single
- *     `ProviderInstanceConfigMap` and asserts the registry boots them all
- *     without cross-contamination. This proves the driver SPI is uniform
- *     across every provider — any driver plugs into the registry through
- *     the same `ProviderDriver` value contract.
- *
- * Every instance in these tests is configured with `enabled: false` so the
- * provider-status checks short-circuit to pending/disabled snapshots
- * without trying to spawn real `codex` / `claude` / `pi`
- * binaries. That keeps the assertions focused on registry routing
- * behaviour rather than the runtime details of each provider.
- */
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -144,11 +120,6 @@ const makeTildeProviderFixtures = Effect.fn(
 });
 
 describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
-  // `ServerConfig.layerTest` needs `FileSystem` to materialize its scratch
-  // directory. `Layer.merge` just unions requirements, so we have to push
-  // `NodeServices.layer` through `Layer.provideMerge` to satisfy that
-  // dependency while still surfacing NodeServices to the test body (the
-  // codex driver's `create` yields `ChildProcessSpawner` directly).
   const layerBaseDeps = ServerConfig.layerTest(process.cwd(), {
     prefix: "provider-instance-registry-test",
   }).pipe(
@@ -216,7 +187,6 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         ["Codex (personal)", "Codex (work)"].toSorted(),
       );
 
-      // Each instance must be retrievable by id and carry its *own* closures.
       const personal = yield* registry.getInstance(personalId);
       const work = yield* registry.getInstance(workId);
       expect(personal).toBeDefined();
@@ -225,13 +195,10 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       expect(personal!.textGeneration).not.toBe(work!.textGeneration);
       expect(personal!.snapshot).not.toBe(work!.snapshot);
 
-      // Snapshots identify themselves by instanceId + driver — this is
-      // what makes per-instance routing distinguishable downstream.
       const personalSnapshot = yield* personal!.snapshot.getSnapshot;
       expect(personalSnapshot.instanceId).toBe(personalId);
       expect(personalSnapshot.driver).toBe(codexDriverKind);
       expect(personalSnapshot.enabled).toBe(false);
-      // The layout resolves the configured home through the host Path.
       const path = yield* Path.Path;
       expect(personalSnapshot.continuation?.groupKey).toBe(
         `codex:home:${path.resolve("/home/julius/.codex_personal")}`,
@@ -245,7 +212,6 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         `codex:home:${path.resolve("/home/julius/.codex")}`,
       );
 
-      // Nothing goes to the unavailable bucket — both drivers are registered.
       const unavailable = yield* registry.listUnavailable;
       expect(unavailable).toEqual([]);
     }).pipe(Effect.provide(layerTest)),
@@ -253,8 +219,6 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
 
   it.live("treats an explicit in-config enabled:false as disabling despite the envelope", () =>
     Effect.gen(function* () {
-      // Old settings files can carry both flags with conflicting values.
-      // The explicit false must win so a user's disable is never undone.
       const staleId = ProviderInstanceId.make("codex_stale");
       const configMap: ProviderInstanceConfigMap = {
         [staleId]: {
@@ -472,8 +436,6 @@ describe("ProviderInstanceRegistry — all drivers slice", () => {
         configMap,
       });
 
-      // Every configured instance must materialize — none downgraded to a
-      // shadow snapshot, because every driver in the map is registered.
       const unavailable = yield* registry.listUnavailable;
       expect(unavailable).toEqual([]);
 

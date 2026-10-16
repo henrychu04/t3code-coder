@@ -25,7 +25,6 @@ const PAGE_RULES =
 
 // Read-only in the MCP sense: it shows a page in the caller's own thread and
 // touches no workspace, so plan mode and read-only sandboxes can use it.
-// Open-world, since the page may load remote resources, as in a preview.
 const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
   description: `Show a finished HTML page (chart, table, diagram, collage, mockup) inline in this thread, above your final text reply; call it before writing that reply. The reader already sees the page, so the reply should not announce it, say where it is, or restate it: add only what the page doesn't say. T3 fits the frame to the page's height at each reader's width. A height below the page's own height caps the frame there, and the rest scrolls inside it. ${PAGE_RULES} ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
   parameters: Schema.Struct({

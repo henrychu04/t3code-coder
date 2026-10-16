@@ -129,7 +129,6 @@ const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
 const RENDER_TABLE_STORAGE_KEY = "t3code.renderTable";
 const RENDER_BROWSER_FILE_STORAGE_KEY = "t3code.renderBrowserFile";
 const isHtmlPreviewFile = (path: string): boolean => /\.html?$/i.test(path);
-// Shared by the read-only and annotated surfaces, so it is generic over annotation metadata.
 type FilePostRender = <LAnnotation>(
   fileContainer: HTMLElement,
   instance: FileInstance<LAnnotation, undefined>,
@@ -294,16 +293,11 @@ function updateFileLinkReveal(fileContainer: HTMLElement, line: number | null): 
     ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
 }
 
-/**
- * Frames to keep retrying while the file contents or line metrics are not
- * available yet (fresh mounts hydrate asynchronously).
- */
 const REVEAL_MAX_ATTEMPTS = 30;
 /**
  * After scrolling to the target, hold it for a short window so late
  * programmatic scroll resets (editable-editor focus and state restoration)
- * cannot silently snap the file back to the top. Real user input cancels the
- * guard immediately.
+ * cannot silently snap the file back to the top.
  */
 const REVEAL_GUARD_FRAMES = 20;
 const REVEAL_GUARD_TOLERANCE_PX = 2;
@@ -518,7 +512,7 @@ function needsWorkerHighlight(workerPool: WorkerPoolManager | undefined, file: F
 /**
  * Pierre highlights an active edit session on the main thread, so each version
  * of the file becomes editable only once it has rendered the worker's
- * highlight. A failed worker highlight falls back to main-thread highlighting.
+ * highlight.
  */
 function useEditableAfterHighlight(file: FileContents) {
   const workerPool = useWorkerPool();
@@ -633,14 +627,11 @@ function EditableFileSurface({
     [],
   );
 
-  // Mirrors the draft out to the save queue, the optimistic file query and the
-  // composer's review comments.
   const handleEditChange = useCallback(
     ({
       file,
       lineAnnotations: nextLineAnnotations,
     }: EditorChangeEvent<"file", FileCommentAnnotationGroup, undefined>) => {
-      // Adopting an external change reports it as an edit; it is already on disk.
       if (file.contents === getProjectFileContents(environmentId, owner, cwd, relativePath)) return;
       setEditedContents(file.contents);
       setProjectFileQueryData(environmentId, cwd, relativePath, file.contents, revisionRef.current);
@@ -968,7 +959,6 @@ export default function FilePreviewPanel({
   workspaceMutationId,
 }: FilePreviewPanelProps) {
   const relativePath = resolveFilePreviewPath(requestedPath, cwd);
-  // A draft's composer target is its draft id; a thread the server knows is a ref.
   const draft = typeof composerDraftTarget === "string";
   // Coder: every Files request names its owner. The server does not know a draft yet, so a draft
   // names its project and the helper verifies the root against that project instead.
@@ -985,15 +975,10 @@ export default function FilePreviewPanel({
   // Coder: PDFs have no text to show; HTML has, and can toggle between page and source.
   const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);
   const isHtml = relativePath !== null && !isPdf && isHtmlPreviewFile(relativePath);
-  // A file outside the workspace (an absolute path) is shown, never edited.
   const isHostFile = relativePath !== null && isAbsolutePath(relativePath);
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
-  // Media and PDFs render from their absolute path, so their contents are never
-  // shown. The read still runs: a folder named `assets.png` is only knowable as a
-  // folder from the read failure, and the server stats before reading, so a folder
-  // costs an open and a stat and returns no body.
   const file = useProjectFileQuery(environmentId, owner, cwd, relativePath, relativePath !== null);
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
   // Coder: media reads go through the helper by owner, root, and project-relative path.
@@ -1026,8 +1011,6 @@ export default function FilePreviewPanel({
     explorerOpen,
     attachmentOpen: false,
   });
-  // Reading markdown rendered is a preference, not a property of one file. Keeping
-  // it on the panel meant a thread switch dropped it and forced source back.
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
     RENDER_MARKDOWN_STORAGE_KEY,
     false,
@@ -1052,7 +1035,6 @@ export default function FilePreviewPanel({
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
   const tableDelimiter = previewPath ? filePreviewDelimiter({ name: previewPath }) : null;
-  // A reveal still wins over the preference: the line only exists in the source.
   const revealHandled =
     revealLine === null ||
     (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
@@ -1314,9 +1296,6 @@ export default function FilePreviewPanel({
             </div>
           ) : relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (
-              // Markdown reconciles in place across text updates, so a file
-              // switch needs a new key or the previous file's disclosure and
-              // wrap state carries into the next document.
               <RenderedMarkdownSurface
                 key={`${relativePath}:${reloadCount}`}
                 environmentId={environmentId}

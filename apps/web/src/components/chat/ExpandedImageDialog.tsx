@@ -219,7 +219,6 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         }}
       >
         <DialogTitle className="sr-only">Expanded {mediaLabel} preview</DialogTitle>
-        {/* The stage keeps a fixed size, so the close button stays put whatever the media or caption. */}
         <Button
           type="button"
           ref={closeButtonRef}

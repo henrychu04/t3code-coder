@@ -1,13 +1,6 @@
 /**
- * Source for the T3-owned Pi extension that consumes T3's HTTP MCP server.
- *
  * Coder: T3 Coder has no MCP server; the extension reaches T3 tools through the workspace file
  * bridge (`T3_TOOL_COMMAND` and `T3_TOOL_CATALOG`) and registers them under the same names.
- *
- * Pi 0.99+ discovers optional HTTP bridge tools on demand. OpenAI completion
- * gateways need their schemas loaded up front. Older versions keep tools
- * directly available. Pi loads this TypeScript via `--extension`; the
- * server writes it to a cache so packaged builds need no sibling .ts file.
  *
  * Do not import t3code modules from the string body. The Pi process resolves
  * `@earendil-works/pi-coding-agent` and `typebox` from the user's pi install.

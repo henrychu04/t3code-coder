@@ -29,7 +29,6 @@ const permissionsByRuntime = new WeakMap<
   Map<string, ReturnType<typeof makeCommandPermissions>>
 >();
 
-/** Reuse availability atoms and dispatch guards across commands on the same runtime. */
 export function createCommandPermissions<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
   method: string,

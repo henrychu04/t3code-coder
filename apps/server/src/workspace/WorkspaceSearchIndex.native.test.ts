@@ -12,7 +12,6 @@ import * as NodePath from "node:path";
 import * as Result from "effect/Result";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
-// Use the same require export as WorkspaceSearchIndex, with the actual native library.
 const requireForFff = NodeModule.createRequire(import.meta.url);
 const { FileFinder } = requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
 

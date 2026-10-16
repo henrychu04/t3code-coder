@@ -169,8 +169,6 @@ export const make = Effect.gen(function* () {
     if (stat.value.type === "Directory") return { kind: "directory" } as const;
     if (stat.value.type !== "File") return { kind: "other" } as const;
     let mimeType: string | undefined;
-    // Named extensions already choose the icon without a content read. For an
-    // extensionless regular file, read at most 512 bytes, never the whole file.
     if (path.extname(expandedPath) === "" && stat.value.size > 0) {
       mimeType = yield* Effect.tryPromise({
         try: async () => {

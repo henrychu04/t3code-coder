@@ -111,9 +111,7 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
-        // The default sidebar routes creation through the command palette
-        // whenever there is a real choice to make; single-project setups keep
-        // the immediate contextual create. Coder: there is no legacy sidebar.
+        // Coder: there is no legacy sidebar.
         if (projectGroupCount > 1) {
           openCommandPalette({ open: "new-thread-in" });
           return;

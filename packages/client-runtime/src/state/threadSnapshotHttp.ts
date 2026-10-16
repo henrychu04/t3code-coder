@@ -11,21 +11,12 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { PreparedConnection } from "../connection/model.ts";
 import type * as EnvironmentSupervisor from "../connection/supervisor.ts";
 
-/** Progressive history metadata returned by a bounded snapshot loader. */
 export type ThreadSnapshotHistoryMeta = {
   readonly historyCursor: string | null;
   readonly hasMoreHistory: boolean;
-  /** Max local turn ordinal from the full projection; optional on older servers. */
   readonly latestLocalTurnOrdinal?: number | null;
 };
 
-/**
- * Outcome of a thread-detail snapshot load.
- *
- * - `present`: snapshot body is available (seed projection, resume via socket).
- * - `missing`: server definitively reported the thread does not exist (404).
- * - `unavailable`: transport/timeout/5xx/etc.; fall back to the socket path.
- */
 export type ThreadSnapshotLoadResult =
   | {
       readonly _tag: "present";

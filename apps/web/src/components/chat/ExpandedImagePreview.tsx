@@ -36,7 +36,6 @@ export interface ExpandedImagePreview {
   index: number;
 }
 
-/** Wraps navigation in either direction, including offsets beyond a complete cycle. */
 export function wrapExpandedImageIndex(index: number, imageCount: number): number {
   return imageCount > 0 ? ((index % imageCount) + imageCount) % imageCount : 0;
 }

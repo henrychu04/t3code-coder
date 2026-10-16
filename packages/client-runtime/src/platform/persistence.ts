@@ -60,10 +60,6 @@ export class EnvironmentCacheStore extends Context.Service<
       environmentId: EnvironmentId,
       threadId: ThreadId,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
-    /**
-     * The last complete server configuration. This deliberately includes provider
-     * metadata so offline task creation can still offer the models a user last saw.
-     */
     readonly loadServerConfig: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<Option.Option<ServerConfig>, ConnectionPersistenceError>;
@@ -72,8 +68,8 @@ export class EnvironmentCacheStore extends Context.Service<
       config: ServerConfig,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
     /**
-     * The unfiltered branch list for a workspace. Query-specific lists are not
-     * cached because they are incomplete and unsafe to present as a full picker.
+     * Query-specific lists are not cached because they are incomplete and unsafe
+     * to present as a full picker.
      */
     readonly loadVcsRefs: (
       environmentId: EnvironmentId,
@@ -89,9 +85,8 @@ export class EnvironmentCacheStore extends Context.Service<
       cwd: string,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
     /**
-     * Removes every persisted branch-list snapshot for an environment. Git ref
-     * mutations are repository-wide, and linked worktrees may have cached the
-     * same refs under different working-directory keys.
+     * Git ref mutations are repository-wide, and linked worktrees may have
+     * cached the same refs under different working-directory keys.
      */
     readonly clearVcsRefs: (
       environmentId: EnvironmentId,

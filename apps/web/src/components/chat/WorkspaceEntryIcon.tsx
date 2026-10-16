@@ -5,8 +5,6 @@ import { formatAttachmentSize } from "~/lib/attachmentDisplay";
 import { useFileMetadata } from "../../hooks/useFileMetadata";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 
-/** Path chips share metadata queries across messages and the composer. A file
- * icon is neutral while the environment is offline or the path is unknown. */
 export function WorkspaceEntryIcon(props: {
   path: string;
   environmentId?: EnvironmentId | null | undefined;

@@ -54,7 +54,6 @@ function useMediaActions(source: MediaActionSource) {
   return { save, copyImage, canReadMedia, assertCanReadMedia };
 }
 
-/** Adds source-aware actions and a tooltip to the existing media element without a layout wrapper. */
 export function MediaActions({
   source,
   children,

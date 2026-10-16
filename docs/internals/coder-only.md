@@ -467,6 +467,9 @@ listed here is drift to remove rather than fork behavior to keep.
     project's root or a worktree one of that project's threads owns (`draftProjectId`). `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
     `WorkspaceSearchIndex.ts` implement the Files surface and file-search boundaries above in place
     of upstream's absolute-path reads, create-anywhere writes, and `searchContents`.
+    A folder listing stops at `MAX_PROJECT_DIRECTORY_ENTRIES` children and labels ignored ones
+    with a single `git check-ignore` call, so upstream's wide-folder shortcut (asking whether the
+    folder itself is ignored, #20062) has nothing to save and is not carried.
     `projects.createFile` serves upstream's proposed-plan "Save to workspace": it creates a new
     text file inside the verified root and never replaces an existing path, where upstream's
     `writeFile` overwrites. `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
@@ -892,7 +895,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    2a7bd1673c):
+    cfafb4bb54):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
