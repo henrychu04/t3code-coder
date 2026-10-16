@@ -20,5 +20,8 @@ describe("T3 tool bridge instructions", () => {
     const text = t3ToolBridgeInstructions("/nix/node /tmp/t3-tools-x/t3.mjs");
     expect(text).toContain("`/nix/node /tmp/t3-tools-x/t3.mjs --list`");
     expect(text).toContain("task_status");
+    expect(text).toContain("stays the same for this thread for its whole life");
+    expect(text).toContain("retry once with this exact command instead of searching `/tmp`");
+    expect(text).not.toContain("an earlier session");
   });
 });

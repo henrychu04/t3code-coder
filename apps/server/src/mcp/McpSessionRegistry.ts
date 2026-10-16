@@ -6,9 +6,14 @@
  * registry keeps upstream's lifecycle: the provider session manager issues one credential per
  * thread and session, reuses it across turns, and revokes it when the session is released, the
  * thread is archived or deleted, or the helper stops. Revoking a credential closes its bridge.
+ * A thread's bridge directory keeps one name across sessions, so the command in its history stays
+ * valid; the manager revokes the thread's old credential before issuing the next.
  *
  * @module mcp/McpSessionRegistry
  */
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Coder: a synchronous name hash for the bridge directory.
+import * as NodeCrypto from "node:crypto";
+
 import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -63,6 +68,13 @@ const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const shellWord = (value: string) =>
   /^[A-Za-z0-9@%+=:,./_-]+$/u.test(value) ? value : "'" + value.replaceAll("'", "'\\''") + "'";
 
+/**
+ * Thread ids are free-form, so the directory name is a hash. The environment id keeps two servers
+ * in one workspace apart; both ids persist, so the name survives helper restarts.
+ */
+const bridgeName = (environmentId: string, threadId: string) =>
+  `t3-tools-${NodeCrypto.createHash("sha256").update(`${environmentId}\0${threadId}`).digest("hex").slice(0, 20)}`;
+
 const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   options: { readonly livenessWindowMs?: number; readonly bridgeParent?: string } = {},
 ) {
@@ -74,18 +86,37 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   // Keyed by the credential token, the bridge's identity in its config.
   const state = yield* SynchronizedRef.make<ReadonlyMap<string, CredentialRecord>>(new Map());
 
-  const closeAll = (records: Iterable<CredentialRecord>) =>
-    Effect.promise(() =>
-      Promise.allSettled([...records].map((record) => record.bridge?.close())),
-    ).pipe(Effect.asVoid);
+  // Coder: a thread's next bridge reuses its directory name, so it waits for these to finish.
+  // Revocations outside the provider session manager's lock can still be closing one.
+  const closingByThread = new Map<string, Promise<void>>();
 
-  /** Removes matching records, then closes their bridges outside the state lock. */
-  const revokeWhere = (predicate: (record: CredentialRecord) => boolean) =>
-    SynchronizedRef.modify(state, (records) => {
-      const removed = [...records.values()].filter(predicate);
-      if (removed.length === 0) return [removed, records] as const;
-      return [removed, new Map([...records].filter(([, record]) => !predicate(record)))] as const;
-    }).pipe(Effect.flatMap(closeAll));
+  const startClose = (record: CredentialRecord) => {
+    const threadId = record.scope.thread.threadId;
+    const previous = closingByThread.get(threadId);
+    const closing: Promise<void> = Promise.allSettled([previous, record.bridge?.close()]).then(
+      () => {
+        if (closingByThread.get(threadId) === closing) closingByThread.delete(threadId);
+      },
+    );
+    closingByThread.set(threadId, closing);
+    return closing;
+  };
+
+  /** Removes matching records and starts closing their bridges, then waits outside the lock. */
+  const revokeWhere = (predicate: (record: CredentialRecord) => boolean): Effect.Effect<void> =>
+    SynchronizedRef.modifyEffect(state, (records) =>
+      Effect.sync((): readonly [Array<Promise<void>>, ReadonlyMap<string, CredentialRecord>] => {
+        const removed = [...records.values()].filter(predicate);
+        if (removed.length === 0) return [[], records];
+        return [
+          removed.map(startClose),
+          new Map([...records].filter(([, record]) => !predicate(record))),
+        ];
+      }),
+    ).pipe(
+      Effect.flatMap((closing) => Effect.promise(() => Promise.all(closing))),
+      Effect.asVoid,
+    );
 
   const pruneDead = (timestamp: number) =>
     revokeWhere((record) => timestamp - record.lastAliveAt > livenessWindowMs);
@@ -121,15 +152,17 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const bridge =
         binding === undefined
           ? undefined
-          : yield* Effect.tryPromise(() =>
-              createFileBridge(
+          : yield* Effect.tryPromise(async () => {
+              await closingByThread.get(scope.thread.threadId);
+              return createFileBridge(
                 (call, signal) => Effect.runPromise(tools.dispatch(scope, call), { signal }),
                 {
                   catalog: binding.catalog,
+                  name: bridgeName(environmentId, scope.thread.threadId),
                   ...(options.bridgeParent === undefined ? {} : { parent: options.bridgeParent }),
                 },
-              ),
-            ).pipe(
+              );
+            }).pipe(
               // Upstream's issue cannot fail; a turn without T3 tools still runs.
               Effect.catch(() =>
                 Effect.logWarning("T3 tools unavailable for this session").pipe(

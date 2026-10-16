@@ -2,16 +2,17 @@
 /**
  * Coder: the transport that carries T3 tool calls to agents without MCP or a socket.
  *
- * Each credential gets a private temporary directory holding a standalone Node CLI and a
- * read-only tool catalog. The CLI writes one request per call into its own `calls/<id>/`
- * directory; the helper polls, runs the tool, and publishes one reply. Workspace processes run
- * as the same OS user, so these directories are not an isolation boundary between mutually
- * untrusted agents.
+ * Each credential gets a private directory holding a standalone Node CLI and a read-only tool
+ * catalog. The caller names the directory once per thread, so the command in an agent's history
+ * keeps working when its session rotates. The CLI writes one request per call into its own
+ * `calls/<id>/` directory; the helper polls, runs the tool, and publishes one reply. Workspace
+ * processes run as the same OS user, so these directories are not an isolation boundary between
+ * mutually untrusted agents.
  *
  * @module mcp/bridge/FileBridge
  */
 import { constants } from "node:fs";
-import { lstat, mkdir, mkdtemp, open, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -87,13 +88,18 @@ export async function createFileBridge(
   handler: (request: FileBridgeRequest, signal: AbortSignal) => Promise<unknown>,
   options: {
     readonly catalog: ReadonlyArray<FileBridgeCatalogEntry>;
+    /** The directory name, stable for the thread that owns the bridge. */
+    readonly name: string;
     readonly parent?: string;
     readonly intervalMs?: number;
     /** Safety net only: the dispatcher answers long tools with a task id well before this. */
     readonly timeoutMs?: number;
   },
 ): Promise<FileBridge> {
-  const directory = await mkdtemp(join(options.parent ?? tmpdir(), "t3-tools-"));
+  const directory = join(options.parent ?? tmpdir(), options.name);
+  // A helper that crashed may have left this thread's previous bridge behind.
+  await rm(directory, { recursive: true, force: true });
+  await mkdir(directory, { mode: 0o700 });
   const script = join(directory, "t3.mjs");
   const calls = join(directory, "calls");
   try {
