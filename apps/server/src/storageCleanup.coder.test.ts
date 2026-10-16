@@ -22,6 +22,7 @@ import * as Workflow from "./git/GitManager.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as Settings from "./serverSettings.ts";
 import * as Cleanup from "./storageCleanup.ts";
@@ -43,12 +44,25 @@ function fixtures(snapshot: Snapshot = emptySnapshot) {
         Effect.succeed({
           threads: options?.location === "archive" ? [] : snapshot.threads,
         } as never),
+      getThreadWorktreePaths: () =>
+        Effect.succeed(
+          snapshot.threads.flatMap((thread) =>
+            thread.worktreePath === null
+              ? []
+              : [{ threadId: thread.id, worktreePath: thread.worktreePath }],
+          ),
+        ),
+      getThreadShell: (threadId) =>
+        Effect.succeed(snapshot.threads.find((thread) => thread.id === threadId) ?? null),
     }),
     Layer.mock(ProjectStore.ProjectStoreV2)({
       listShells: () => Effect.succeed(snapshot.projects),
     }),
     Layer.mock(Orchestrator.OrchestratorV2)({
       streamDomainEvents: Stream.never,
+    }),
+    Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+      isLive: () => Effect.succeed(false),
     }),
     Layer.mock(Workflow.GitManager)({
       invalidateStatus: () => Effect.void,
@@ -176,6 +190,8 @@ it.effect(
           worktreePath: path,
           status: name === "active" ? "running" : "idle",
           activeRunId: name === "active" ? RunId.make("run-active") : null,
+          lineage: { rootThreadId: ThreadId.make(name), parentThreadId: null },
+          settledAt: null,
           pendingBackgroundTasks: [],
           pendingRuntimeRequest: null,
           latestUserMessageAt: null,

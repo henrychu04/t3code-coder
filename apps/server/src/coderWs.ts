@@ -10,6 +10,7 @@ import {
   type CoderWsRpcGroup,
   OrchestrationV2DispatchCommandError,
   OrchestrationV2GetThreadProjectionError,
+  OrchestrationThreadTranscriptTooLargeError,
   type ProjectFileFailure,
   type ProjectFileOperation,
   type ProjectId,
@@ -31,6 +32,7 @@ import {
 } from "@t3tools/contracts";
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
 
+import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as ServerConfig from "./config.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
@@ -67,6 +69,7 @@ import type * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 export const CODER_WS_METHODS = [
   WS_METHODS.orchestrationGetThreadBoundedSnapshot,
   WS_METHODS.orchestrationGetThreadHistoryPage,
+  WS_METHODS.orchestrationGetThreadTranscript,
   WS_METHODS.pullRequestsDiff,
   WS_METHODS.projectsGetConfig,
   WS_METHODS.projectsSearchText,
@@ -169,6 +172,7 @@ export const makeHandlers = (
     const pullRequests = yield* PullRequestService.PullRequestService;
     const path = yield* Path.Path;
     const fileSystem = yield* FileSystem.FileSystem;
+    const { descriptor } = yield* CoderEnvironment.CoderEnvironment;
 
     // Coder: upstream's HTTP bounded thread snapshot, served over helper stdio.
     const loadThreadSnapshotWindow = (
@@ -225,6 +229,33 @@ export const makeHandlers = (
         return result;
       },
     );
+
+    // Coder: upstream's HTTP thread transcript route, served over helper stdio.
+    const getThreadTranscript = Effect.fn("ws.orchestrationV2.getThreadTranscript")(function* (
+      threadId: ThreadId,
+    ) {
+      const transcript = yield* threadManagement.getThreadTranscript(threadId).pipe(
+        Effect.provideService(CoderEnvironment.ServerEnvironmentIdentity, {
+          getEnvironmentId: Effect.succeed(descriptor.environmentId),
+        }),
+        Effect.catchTag("ThreadTranscriptTooLargeError", () =>
+          Effect.fail(new OrchestrationThreadTranscriptTooLargeError({ threadId })),
+        ),
+        Effect.mapError((cause) =>
+          cause._tag === "OrchestrationThreadTranscriptTooLargeError"
+            ? cause
+            : new OrchestrationV2GetThreadProjectionError({
+                threadId,
+                message: `Failed to load orchestration V2 thread ${threadId} transcript`,
+                cause,
+              }),
+        ),
+      );
+      if (exceedsHelperStdioFrame(transcript)) {
+        return yield* new OrchestrationThreadTranscriptTooLargeError({ threadId });
+      }
+      return transcript;
+    });
 
     // Coder: upstream's HTTP older-history page, served over helper stdio.
     const getThreadHistoryPage = Effect.fn("ws.orchestrationV2.getThreadHistoryPage")(
@@ -561,6 +592,7 @@ export const makeHandlers = (
       [WS_METHODS.orchestrationGetThreadBoundedSnapshot]: (input) =>
         getThreadBoundedSnapshot(input.threadId),
       [WS_METHODS.orchestrationGetThreadHistoryPage]: (input) => getThreadHistoryPage(input),
+      [WS_METHODS.orchestrationGetThreadTranscript]: (input) => getThreadTranscript(input.threadId),
       // Coder: serve GitLab diffs over stdio instead of environment HTTP.
       [WS_METHODS.pullRequestsDiff]: (input) => pullRequests.diff(input),
       // Coder: read fixed bounded project metadata in the workspace.

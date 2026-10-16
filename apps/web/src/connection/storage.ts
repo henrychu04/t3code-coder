@@ -6,6 +6,7 @@ import {
   StoredOrchestrationThreadSnapshot,
   decodeOrDiscardOrchestrationCache,
   Persistence,
+  makeStoredShellSnapshotEncoder,
 } from "@t3tools/client-runtime/platform";
 import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -40,7 +41,6 @@ const StoredVcsRefs = Schema.Struct({
 });
 const StoredVcsRefsJson = Schema.fromJsonString(StoredVcsRefs);
 const decodeStoredShellSnapshot = Schema.decodeUnknownEffect(StoredShellSnapshotJson);
-const encodeStoredShellSnapshot = Schema.encodeEffect(StoredShellSnapshotJson);
 const decodeStoredThreadSnapshot = Schema.decodeUnknownEffect(StoredThreadSnapshotJson);
 const encodeStoredThreadSnapshot = Schema.encodeEffect(StoredThreadSnapshotJson);
 const decodeStoredServerConfig = Schema.decodeUnknownEffect(StoredServerConfigJson);
@@ -340,6 +340,25 @@ function vcsRefsCacheKey(environmentId: EnvironmentId, cwd: string) {
   return `${environmentId}:${cwd}`;
 }
 
+// A posted message resumes in a fresh task, so input and rendering get a turn between
+// encoding chunks. A zero-delay timer would not do: browsers clamp nested timers to
+// 4 ms and throttle them to once a second or less in a background tab.
+const yieldToBrowserTask = Effect.callback<void>((resume) => {
+  const { port1, port2 } = new MessageChannel();
+  port1.addEventListener(
+    "message",
+    () => {
+      port1.close();
+      resume(Effect.void);
+    },
+    { once: true },
+  );
+  port1.start();
+  port2.postMessage(null);
+  // A closed port delivers nothing, so interruption needs no listener bookkeeping.
+  return Effect.sync(() => port1.close());
+});
+
 // Coder: the connection catalog, credentials, and GitHub routing permissions are omitted; Coder
 // owns authentication and the gateway owns workspace targets. Project favicons are not cached.
 export const connectionStorageLayer = Layer.effectContext(
@@ -348,6 +367,11 @@ export const connectionStorageLayer = Layer.effectContext(
       makeDatabaseHandle(),
       (owned) => owned.close,
     );
+    // Remembers each thread row's encoding, so a save only encodes rows that changed.
+    const encodeStoredShellSnapshot = makeStoredShellSnapshotEncoder({
+      yieldToHost: yieldToBrowserTask,
+    });
+
     const cacheStore = Persistence.EnvironmentCacheStore.of({
       loadShell: (environmentId) =>
         readDatabaseValue(database, SHELL_STORE_NAME, environmentId).pipe(

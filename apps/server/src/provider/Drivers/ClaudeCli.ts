@@ -295,6 +295,8 @@ export interface Query extends AsyncIterable<SDKMessage> {
   ): Promise<SDKControlGetUsageResponse>;
   interrupt(): Promise<void>;
   stopTask(taskId: string): Promise<void>;
+  /** Moves foreground tasks to the background, as the SDK's `backgroundTasks` does. */
+  backgroundTasks(toolUseId?: string): Promise<boolean>;
   setModel(model?: string): Promise<void>;
   setPermissionMode(mode: PermissionMode): Promise<void>;
   setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void>;
@@ -505,6 +507,15 @@ class ClaudeCliQuery implements Query {
 
   stopTask(taskId: string): Promise<void> {
     return this.request({ subtype: "stop_task", task_id: taskId }).then(() => undefined);
+  }
+
+  backgroundTasks(toolUseId?: string): Promise<boolean> {
+    // The SDK sends `{ subtype: "background_tasks", tool_use_id }` and reads `backgrounded`,
+    // absent on builds that background every task.
+    return this.request({
+      subtype: "background_tasks",
+      ...(toolUseId === undefined ? {} : { tool_use_id: toolUseId }),
+    }).then((response) => (response.backgrounded as boolean | undefined) ?? true);
   }
 
   setModel(model?: string): Promise<void> {

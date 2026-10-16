@@ -3,8 +3,7 @@
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { readBuildVersion } from "../../scripts/build-info.ts";
 import tailwindcss from "@tailwindcss/vite";
-import react, { reactCompilerPreset } from "@vitejs/plugin-react";
-import babel from "@rolldown/plugin-babel";
+import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
@@ -34,11 +33,7 @@ export default defineConfig({
       ],
     }),
     tanstackRouter(),
-    react(),
-    babel({
-      parserOpts: { plugins: ["typescript", "jsx"] },
-      presets: [reactCompilerPreset()],
-    }),
+    react({ compiler: true }),
     tailwindcss(),
   ],
   resolve: {

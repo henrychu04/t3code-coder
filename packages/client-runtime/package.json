@@ -71,6 +71,22 @@
       "types": "./src/state/entities.ts",
       "default": "./src/state/entities.ts"
     },
+    "./state/filesystem": {
+      "types": "./src/state/filesystem.ts",
+      "default": "./src/state/filesystem.ts"
+    },
+    "./state/git": {
+      "types": "./src/state/git.ts",
+      "default": "./src/state/git.ts"
+    },
+    "./state/command-output": {
+      "types": "./src/state/commandOutput.ts",
+      "default": "./src/state/commandOutput.ts"
+    },
+    "./state/item-support": {
+      "types": "./src/state/itemSupport.ts",
+      "default": "./src/state/itemSupport.ts"
+    },
     "./state/models": {
       "types": "./src/state/models.ts",
       "default": "./src/state/models.ts"
@@ -94,10 +110,6 @@
     "./state/review": {
       "types": "./src/state/review.ts",
       "default": "./src/state/review.ts"
-    },
-    "./state/git": {
-      "types": "./src/state/git.ts",
-      "default": "./src/state/git.ts"
     },
     "./state/source-control": {
       "types": "./src/state/sourceControl.ts",
@@ -178,10 +190,6 @@
       "types": "./src/operations/projects.ts",
       "default": "./src/operations/projects.ts"
     },
-    "./state/filesystem": {
-      "types": "./src/state/filesystem.ts",
-      "default": "./src/state/filesystem.ts"
-    },
     "./composerThreadItems": {
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"
@@ -201,10 +209,6 @@
     "./t3ToolSummary": {
       "types": "./src/t3ToolSummary.ts",
       "default": "./src/t3ToolSummary.ts"
-    },
-    "./state/item-support": {
-      "types": "./src/state/itemSupport.ts",
-      "default": "./src/state/itemSupport.ts"
     },
     "./state/orchestration-v2-projection": {
       "types": "./src/state/orchestrationV2Projection.ts",

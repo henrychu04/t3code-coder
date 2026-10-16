@@ -413,7 +413,8 @@ listed here is drift to remove rather than fork behavior to keep.
   `CoderWsRpcGroup`. `server.ts` keeps upstream's declarations for the layers the helper uses and
   exports them at one hook to `coderServer.ts`, whose `makeCoderRuntimeLayer` composes the helper
   runtime: the Coder provider and orchestration layers, `CoderRuntimeStartup`, `StorageCleanup`,
-  the T3 tool bridge binding, and the RPC layer. In `server.ts`, settings also provide the secret
+  `DatabaseStorage`, the T3 tool bridge binding, and the RPC layer. In `server.ts`, settings also
+  provide the secret
   store, the VCS status broadcaster takes the demand-only background policy, and the terminal
   shares its PTY adapter and process runner with no port scanner or native telemetry. Bootstrap preparation,
   setup activities, cancellation, archive cleanup, clone identity refresh, MR sync-key resolution,
@@ -429,17 +430,27 @@ listed here is drift to remove rather than fork behavior to keep.
     stdout. The launch discards that stderr (`2>/dev/null`, because Coder's remote PTY merges it
     into stdout), so handler defects are not observable; T3 keeps no log file. `CoderRuntimeStartup` completes before the RPC
     layer is built, replacing upstream's startup command queue, so commands, launches, and project
-    mutations run directly. Lifecycle welcome/ready events
+    mutations run directly. It keeps upstream's recovery order (provider runtimes, then
+    `recoverDelegatedTasks`), and `coderServer.ts` starts upstream's delegated-task question
+    reactor with the other workers. Lifecycle welcome/ready events
     are synthesized from workspace projections rather than a startup publisher.
   - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
     remote open targets, telemetry, model-manifest refreshes, and usage-limit sources. A failed
     keybinding-config load falls back to defaults instead of failing the config read. Config updates use upstream's full `providerStatuses` events and gated
     environment themes; subscriptions do not force a provider refresh.
+  - `persistence/DatabaseStorage.ts` keeps upstream's background history compaction and
+    incremental-vacuum reclaim, built beside `StorageCleanup` once startup completes. Its
+    file-size status, which tells the user to run `t3 doctor`, is not carried because the helper
+    has no CLI: `server.getDatabaseStorage` is omitted from `CoderWsRpcGroup`, `databaseStorage`
+    is in `CODER_OMITTED_CAPABILITIES`, and Settings → Storage has no database notice
+    (upstream's `DatabaseStorageNotice` and client-runtime's `databaseStorage` atom are not
+    carried).
   - Shell/thread streams, replay validation, live-event budgets and coalescing, and completion-marker
     negotiation follow upstream. `coderEnvironment.ts` advertises upstream's environment
     capabilities and orchestration protocol version except the cut surfaces listed with a reason
     in `CODER_OMITTED_CAPABILITIES` (usage dashboards, server self-update, desktop app update,
-    relay activity publishing, server browser, and native stack actions). `coderEnvironment.test.ts`
+    relay activity publishing, server browser, native stack actions, and the database storage
+    status). `coderEnvironment.test.ts`
     fails when a key of `ExecutionEnvironmentCapabilities` is in neither list, so a sync that adds
     a capability must decide it. The worktree-location setting describes a workspace path. Coder replaces HTTP thread snapshot
     loading with `orchestration.getThreadSnapshot` over stdio. Initial snapshots and older pages
@@ -463,9 +474,18 @@ listed here is drift to remove rather than fork behavior to keep.
     branch/worktree rename with `moveWorktree`, chunked review files,
     bounded text/content/media, sent-file (`workspace.readAttachmentFile`), and legacy-artifact
     reads, new-file creation (`projects.createFile`), fixed project-config reads, workspace
-    directory listing, merge-request diffs, and upstream's HTTP bounded thread snapshot and
-    history page over stdio. The method set stays `CoderWsRpcGroup`; unsupported upstream methods
-    stay omitted.
+    directory listing, merge-request diffs, and upstream's HTTP bounded thread snapshot,
+    history page, and thread transcript over stdio. The method set stays `CoderWsRpcGroup`;
+    unsupported upstream methods stay omitted.
+  - A thread dropped on the composer from another workspace attaches upstream's saved transcript
+    file, read over `orchestration.getThreadTranscript` in place of upstream's authenticated HTTP
+    route; client-runtime's `threadTranscript` is an RPC command, so the orchestration atoms
+    need no HTTP client. The handler runs upstream's `ThreadManagementService.getThreadTranscript`
+    with upstream's `ServerEnvironmentIdentity`, which `coderEnvironment.ts` declares because
+    `environment/` is not carried (`ThreadManagementService.ts` imports it from there). A
+    transcript over the attachment limit or the helper stdio frame fails with
+    `OrchestrationThreadTranscriptTooLargeError`, which the composer reports as upstream reports
+    `thread_transcript_too_large`.
 - **Provider and orchestration.** Upstream's orchestrator (`orchestration-v2/`: the orchestrator,
   effect worker, projection store, provider session manager, `ClaudeAdapterV2.ts`,
   `CodexAdapterV2.ts`, thread intake and launch, and attachment claims) runs in the helper with
@@ -479,8 +499,10 @@ listed here is drift to remove rather than fork behavior to keep.
     at the provider's 10 MiB base64 limit, and a longer line fails the session.
     `ClaudeCli.ts`'s `Query` implements `interrupt`, `stopTask`, `setModel`, `setPermissionMode`,
     `setMaxThinkingTokens`, `applyFlagSettings`, `getContextUsage`, `getSettings` (read directly
-    by `ClaudeProvider.ts`), `getUsage`, `setMcpServers`, `initializationResult`, and `close` as
-    CLI control requests.
+    by `ClaudeProvider.ts`), `getUsage`, `setMcpServers`, `backgroundTasks`,
+    `initializationResult`, and `close` as CLI control requests. `backgroundTasks` sends the SDK's
+    `{ subtype: "background_tasks", tool_use_id }` and resolves to the response's `backgrounded`
+    (true when absent), which upstream's steer backgrounding reads.
     `setMcpServers` sends the SDK's `{ subtype: "mcp_set_servers", servers }` with no deadline, as
     the SDK does; upstream's query runner bounds the wait and sends a session's `mcpServers` that
     way instead of as `--mcp-config`. T3 Coder's own sessions carry no MCP servers (T3 tools use
@@ -631,7 +653,10 @@ listed here is drift to remove rather than fork behavior to keep.
     writes it into the MCP App shell with the theme in the shell URL's fragment, as upstream's
     signed URL carries it. **Open full screen** shows the same in-memory page in upstream's
     `chat/HtmlRenderDialog.tsx`, which takes the page (`html`) where upstream mints a fresh
-    signed URL, so the frame has no "Page unavailable" toast. Links in a page open as
+    signed URL, so the frame has no "Page unavailable" toast. The frame keeps upstream's loading
+    skeleton until the written page loads; its outline comes from `htmlRenderOutlineBoxes`, which
+    is empty because the helper measures nothing. `BrowserDocumentFrame.tsx` keeps upstream's
+    image dialog and load handling. Links in a page open as
     upstream's chat links do; `SentAttachmentFilePreview` passes the thread for them where
     upstream's `FilePreviewPanel` does, and with no in-app browser `browser/useOpenLink.ts`
     sends every other link to the system browser.
@@ -650,13 +675,15 @@ listed here is drift to remove rather than fork behavior to keep.
   sources, agent sessions, filesystem browse, background policy). Coder deltas:
   - `rpc.ts` omits RPCs whose schemas belong to excluded modules (assets, attachment upload URLs,
     preview automation, relay, resource telemetry, usage, editor launch, GitHub routing, feedback
-    upload, HTTP content search, and the OTLP endpoint check) and adds the helper-only methods and `CoderWsRpcGroup`, the
+    upload, HTTP content search, and the OTLP endpoint check) and adds the helper-only methods
+    (with the transcript read's `OrchestrationThreadTranscriptTooLargeError`) and
+    `CoderWsRpcGroup`, the
     only group the helper serves. That group carries upstream's thread find
     (`searchThread`, `searchThreadStream`), file chip metadata (`filesystem.getMetadata`), turn-item
     reads, passive terminal observation, agent
     secret answers, storage cleanup runs and reports, review guides
-    (`pullRequests.reviewGuide`, `pullRequests.generateReviewGuide`), the workflow stop, and the
-    MCP Apps methods. Upstream's
+    (`pullRequests.reviewGuide`, `pullRequests.generateReviewGuide`), the workflow stop, command
+    output streaming (`subscribeCommandOutput`), and the MCP Apps methods. Upstream's
     `WsRpcGroup` stays dormant, unreferenced, with the RPCs only it uses, and `knip.jsonc`
     ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
@@ -701,7 +728,9 @@ listed here is drift to remove rather than fork behavior to keep.
   `files/AttachmentFilePreview.tsx` (upstream's viewer, with Save writing the in-memory bytes
   instead of a signed-URL download) and videos in the gallery. A draft restored after a reload has no bytes, so it has no
   preview. A context fragment pasted from another workspace
-  brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks. Images
+  brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks.
+  A thread dropped from another workspace attaches its saved transcript (see Transport and RPC
+  handlers). Images
   and files move through the gateway's Coder CLI transfer (see
   [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
   the helper's advertised attachment capabilities, as upstream does. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
@@ -814,7 +843,12 @@ listed here is drift to remove rather than fork behavior to keep.
   snapshot status needs a GitLab URL, with no fallback host. `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL (and GitLab's
   definition URL in `LinkPullRequestDialog`) and keeps a self-hosted install's origin and path
   prefix. A plain click opens the panel or page, and a
-  modifier click or an MR no workspace project can read goes to the system browser. In Markdown
+  modifier or middle click or an MR no workspace project can read goes to the system browser.
+  Upstream's "Open pull requests in T3 Code" client setting lives on the Integrations page, which
+  is not carried, so it keeps its default and MR links always open in the app.
+  Upstream's delete-branch action, panel entries, and menu items are carried with merge-request
+  wording; GitLab does not declare `deleteBranch`, so they never show, and `PullRequestService`
+  runs the action without upstream's verified-credential wrapper. In Markdown
   they are upstream's new-tab anchors with hover previews. The merge requests page resolves a link
   against every workspace that reads merge requests, the primary first. Right-clicking a web link shows upstream's menu (system browser, Copy Link, and
   Link/Unlink to thread through `usePullRequestLinking`). GitLab autolinks keep their
@@ -856,7 +890,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    dd5c7bd09e):
+    2a7bd1673c):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
@@ -918,7 +952,10 @@ listed here is drift to remove rather than fork behavior to keep.
   and the provider health interval do not mention model catalog updates, because the catalog is
   bundled (`ModelManifest.layerBundled`).
   Background activity uses upstream's profiles without host power-monitor intervals or power and
-  lock pauses. Older fork links that name one checkout by its settings key resolve to its group.
+  lock pauses. Upstream's `EnvironmentRow.tsx` and `itemRows.ts` are carried for the scheduled
+  task list and the scope notice; `environmentTransportLabel` names every workspace "Coder
+  workspace", because there are no routes, T3 Connect, WSL, or SSH targets. Older fork links that
+  name one checkout by its settings key resolve to its group.
 - **Project icons.** Upstream's bounded Lucide names, palette, or emoji (`ProjectEmoji`), persisted
   on workspace project records through the project metadata command stream; migration 047 adds the
   nullable `project_icon_json` column. No image-path lookup or external fetch.
@@ -1019,7 +1056,8 @@ listed here is drift to remove rather than fork behavior to keep.
   provider, which needs authenticated workspace or local Codex and Claude Code CLIs and spends
   their quota.
 - **Upstream tests.** `storageCleanup.test.ts` roots its test config at the temp directory's real
-  path, so its path checks pass on macOS, where the temp directory is behind the `/var` symlink.
+  path, and its orphan-report test expects the orphan's real path, so its path checks pass on
+  macOS, where the temp directory is behind the `/var` symlink.
   `serverSettings.test.ts` omits upstream's source control host secret tests, and drops the host
   tokens from its shared secret-lifecycle test, because no carried host definition declares
   settings. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
@@ -1030,8 +1068,18 @@ listed here is drift to remove rather than fork behavior to keep.
   system. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
   tests use GitLab projects.
   `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's
-  unavailable-URL test and the frame's `sandbox` attribute check (the document shell's CSP
-  applies the sandbox). `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
+  unavailable-URL and near-expiry fresh-URL tests and the frame's `sandbox` attribute check (the
+  document shell's CSP applies the sandbox). `SourceControlProviderRegistry.test.ts` runs
+  upstream's registry tests (its `makeRegistry` with remotes, process, and server settings) for
+  the GitLab-only registry, with the "asks once" and "asks again" auth-probe tests driving
+  `glab`. `WorkspaceSearchIndex.native.test.ts` is upstream's native decoding test plus the
+  fork's content-search characterization (fff's `Result` imported as `FffResult` beside
+  Effect's). `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
+  `storageCleanup.test.ts` its saved-usage-cache test, and `PullRequestService.test.ts` its
+  GitHub-credential branch deletion test; upstream's OTLP `config.test.ts` is not carried.
+  client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
+  the Coder config owns registration and there is no per-environment switch.
+  `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
   worker, which needs a browser `self`.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without

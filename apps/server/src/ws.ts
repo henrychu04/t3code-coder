@@ -54,6 +54,7 @@ import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
+import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
@@ -832,6 +833,7 @@ const layerWsRpc = () =>
       // links must belong to a known GitLab host.
       const ensureCoderPullRequestLink = CoderWs.makeEnsureCoderPullRequestLink(projectStore);
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
+      const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
@@ -1223,6 +1225,12 @@ const layerWsRpc = () =>
               Effect.andThen(
                 subscribeOrchestrationV2Thread(input).pipe(Effect.provide(streamContext)),
               ),
+            ),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.subscribeCommandOutput]: (input) =>
+          Stream.unwrap(
+            Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+              Effect.as(commandOutputHub.subscribe(input)),
             ),
           ),
         // Coder: helper stdio has no session scopes, so every webhook URL is visible.

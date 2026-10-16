@@ -8,6 +8,7 @@ import type { PullRequestSpeedActionResult } from "~/components/pullRequest/Pull
 import { usePullRequestCloseBatch } from "~/components/pullRequest/usePullRequestActions";
 import { SidebarPointerSensor } from "~/components/Sidebar.pointer";
 import { resolveSidebarSweepKeys } from "~/components/Sidebar.logic";
+import { sortProjectsByGroupOrder } from "@t3tools/client-runtime/state/project-grouping";
 import { pullRequestHostOf, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import type {
   EnvironmentId,
@@ -48,6 +49,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -92,6 +94,7 @@ import {
   reusePullRequestEntries,
   settlePullRequestOverrides,
   pullRequestHostActions,
+  largestPullRequestReadCount,
 } from "../components/pullRequest/pullRequestList.logic";
 import {
   pullRequestListPreferences,
@@ -157,6 +160,7 @@ import {
 } from "../rightPanelStore";
 import { useDebouncedValue } from "../state/queries";
 import { useAllEnvironmentShellsBootstrapped, useProjects } from "../state/entities";
+import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { useEnvironments } from "../state/environments";
 import {
   pullRequestEnvironment,
@@ -412,9 +416,12 @@ function PullRequestsRouteView() {
   // the one wrong answer the empty state can give.
   const projectsKnown = useAllEnvironmentShellsBootstrapped();
   // Only the projects the page can actually read: one on an environment that cannot list pull
-  // requests could neither be listed nor acted on.
+  // requests could neither be listed nor acted on, and the Scratch folder is never a repository.
   const projects = useMemo(
-    () => allProjects.filter((project) => environmentIds.includes(project.environmentId)),
+    () =>
+      allProjects.filter(
+        (project) => !project.isScratch && environmentIds.includes(project.environmentId),
+      ),
     [allProjects, environmentIds],
   );
   const environmentLabels = useMemo(
@@ -1226,7 +1233,8 @@ function PullRequestsRouteView() {
       return;
     }
     if (related.length > 0) listQuery.refresh(related);
-    const loadedCount = ordered?.key === filterKey ? ordered.entries.length : pageSize;
+    const loadedCount =
+      ordered?.key === filterKey ? largestPullRequestReadCount(ordered.entries) : pageSize;
     setPage({
       key: filterKey,
       regrown: [],
@@ -2052,7 +2060,7 @@ function PullRequestsRouteView() {
     />
   );
   const filtersMenu = (
-    <PullRequestFiltersMenu
+    <PullRequestFiltersMenuInSidebarOrder
       onOpenChange={setFiltersOpen}
       state={search.state}
       stateOptions={STATE_TABS}
@@ -2373,6 +2381,18 @@ function PullRequestsRouteView() {
 }
 
 /** A compact stand-in for one pill group when the header is narrow. */
+/** Lists the projects in the sidebar's order; it re-renders with thread activity, so the page does not. */
+function PullRequestFiltersMenuInSidebarOrder(
+  props: ComponentProps<typeof PullRequestFiltersMenu>,
+) {
+  const sidebarProjectGroups = useSidebarProjectGroups();
+  const projects = useMemo(
+    () => sortProjectsByGroupOrder(props.projects, sidebarProjectGroups),
+    [props.projects, sidebarProjectGroups],
+  );
+  return <PullRequestFiltersMenu {...props} projects={projects} />;
+}
+
 function CompactFilterMenu<Value extends string>({
   label,
   triggerIcon,

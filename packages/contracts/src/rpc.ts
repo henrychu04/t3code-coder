@@ -158,6 +158,7 @@ import {
   OrchestrationV2StopWorkflowError,
   OrchestrationV2DispatchCommandError,
   OrchestrationV2GetShellSnapshotError,
+  OrchestrationV2CommandOutputError,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2RpcSchemas,
   OrchestrationV2ThreadLaunchError,
@@ -259,6 +260,7 @@ import {
 } from "./providerUsageLimits.ts";
 import {
   StorageCleanupReport,
+  DatabaseStorageStatus,
   ServerSettings,
   ServerSettingsError,
   ServerSettingsPatch,
@@ -348,6 +350,7 @@ import {
   OrchestrationV2GetThreadProjectionInput,
   OrchestrationV2ThreadBoundedSnapshot,
   OrchestrationV2ThreadHistoryPage,
+  OrchestrationV2ThreadTranscript,
 } from "./orchestrationV2.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 
@@ -465,6 +468,7 @@ export const WS_METHODS = {
   serverRemoveKeybinding: "server.removeKeybinding",
   serverRunStorageCleanup: "server.runStorageCleanup",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
+  serverGetDatabaseStorage: "server.getDatabaseStorage",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -583,6 +587,7 @@ export const WS_METHODS = {
   subscribeVcsRefStatus: "subscribeVcsRefStatus",
   orchestrationGetThreadBoundedSnapshot: "orchestration.getThreadBoundedSnapshot",
   orchestrationGetThreadHistoryPage: "orchestration.getThreadHistoryPage",
+  orchestrationGetThreadTranscript: "orchestration.getThreadTranscript",
 } as const;
 
 const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -756,6 +761,13 @@ const WsServerRunStorageCleanupRpc = Rpc.make(WS_METHODS.serverRunStorageCleanup
 const WsServerGetStorageCleanupReportRpc = Rpc.make(WS_METHODS.serverGetStorageCleanupReport, {
   payload: Schema.Struct({}),
   success: Schema.NullOr(StorageCleanupReport),
+  stream: true,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStorage, {
+  payload: Schema.Struct({}),
+  success: Schema.NullOr(DatabaseStorageStatus),
   stream: true,
   error: EnvironmentAuthorizationError,
 });
@@ -1548,6 +1560,16 @@ const WsOrchestrationV2SubscribeThreadRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS
   stream: true,
 });
 
+const WsOrchestrationV2SubscribeCommandOutputRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.subscribeCommandOutput,
+  {
+    payload: OrchestrationV2RpcSchemas.subscribeCommandOutput.input,
+    success: OrchestrationV2RpcSchemas.subscribeCommandOutput.output,
+    error: Schema.Union([OrchestrationV2CommandOutputError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
+
 const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -1706,6 +1728,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerRunStorageCleanupRpc,
   WsServerGetStorageCleanupReportRpc,
+  WsServerGetDatabaseStorageRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,
@@ -1844,6 +1867,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeArchivedShellRpc,
   WsOrchestrationV2SubscribeShellRpc,
   WsOrchestrationV2SubscribeThreadRpc,
+  WsOrchestrationV2SubscribeCommandOutputRpc,
 );
 
 // Coder: methods served by the workspace helper, and its RPC group.
@@ -1953,6 +1977,26 @@ const WsOrchestrationGetThreadHistoryPageRpc = Rpc.make(
     }),
     success: OrchestrationV2ThreadHistoryPage,
     error: OrchestrationV2GetThreadProjectionError,
+  },
+);
+
+// Coder: helper-stdio replacement for upstream's HTTP thread transcript route. A transcript over
+// the attachment limit or the helper frame fails with this error, where upstream's route answers
+// `thread_transcript_too_large`.
+export class OrchestrationThreadTranscriptTooLargeError extends Schema.TaggedError<OrchestrationThreadTranscriptTooLargeError>()(
+  "OrchestrationThreadTranscriptTooLargeError",
+  { threadId: ThreadId },
+) {}
+
+const WsOrchestrationGetThreadTranscriptRpc = Rpc.make(
+  WS_METHODS.orchestrationGetThreadTranscript,
+  {
+    payload: Schema.Struct({ threadId: ThreadId }),
+    success: OrchestrationV2ThreadTranscript,
+    error: Schema.Union([
+      OrchestrationV2GetThreadProjectionError,
+      OrchestrationThreadTranscriptTooLargeError,
+    ]),
   },
 );
 
@@ -2072,8 +2116,10 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeArchivedShellRpc,
   WsOrchestrationGetThreadBoundedSnapshotRpc,
   WsOrchestrationGetThreadHistoryPageRpc,
+  WsOrchestrationGetThreadTranscriptRpc,
   WsOrchestrationV2SubscribeShellRpc,
   WsOrchestrationV2SubscribeThreadRpc,
+  WsOrchestrationV2SubscribeCommandOutputRpc,
   WsScheduledTasksListRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,

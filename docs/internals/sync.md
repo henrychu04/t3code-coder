@@ -48,8 +48,40 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
 - An upstream commit for a cut surface can also add hooks to carried files that only the cut
   surface calls (in the dd5c7bd09e sync, `ProviderUpdatesAction`'s `quiet` option and returned
   runs for "Update everything"). Leave those hunks out, mark the file `Coder:`, and list the seam.
-- Fork-only tests that build upstream services (`mcp/bridge/T3ToolBridge.test.ts`) fail typecheck
-  when upstream adds a service dependency; mock it as upstream's own tests of that service do.
+- Fork-only tests that build upstream services (`mcp/bridge/T3ToolBridge.test.ts`,
+  `storageCleanup.coder.test.ts`, `ws.projects.test.ts`) fail typecheck when upstream adds a
+  service dependency; mock it as upstream's own tests of that service do. Their fixtures cast
+  partial records (`as unknown as`), so a field upstream starts reading fails only at runtime
+  (2a7bd1673c: thread shells' `lineage` and `settledAt`); copy the fields from upstream's own
+  fixture for that service.
+- When upstream rewrites a file wholesale (in 2a7bd1673c, `ChatView.tsx` and `ChatComposer.tsx`
+  moved from `useCallback` to plain functions and `useStableCallback`), take upstream's file and
+  replay the fork's delta hunk by hunk: `git diff "$MB" "$PREV" -- <file>`, split it into one
+  file per hunk, and apply each with `patch -p1 --fuzz=3 -i <hunk>` (`patch` reads a positional
+  argument as the file to patch, so pass the hunk with `-i`). Apply rejects by hand, and check
+  that no fuzzy hunk landed in the wrong block (in that sync two retry buttons swapped their
+  `image` and `file` variables). Then confirm the delta survived: every line the fork added in
+  `$MB..$PREV` is in the result, and every line the fork removed that upstream still has is not:
+  ```sh
+  python3 - "$MB" "$PREV" "$SHA" <file> <<'PY'
+  import subprocess, sys; from collections import Counter
+  f = sys.argv[4]
+  rev = lambda r: Counter(l.strip() for l in subprocess.run(["git", "show", f"{r}:{f}"], capture_output=True, text=True).stdout.splitlines() if len(l.strip()) > 3)
+  mb, prev, sha = (rev(r) for r in sys.argv[1:4])
+  res = Counter(l.strip() for l in open(f).read().splitlines() if len(l.strip()) > 3)
+  for l, n in prev.items():
+      if n > mb[l] and res[l] < min(sha[l] + n - mb[l], n): print("lost fork line:", l)
+  for l, n in mb.items():
+      if n > prev[l] and sha[l] and res[l] > max(sha[l] - (n - prev[l]), 0): print("fork cut back:", l)
+  PY
+  ```
+  Expect hook dependency-list entries and call sites the refactor rewrote; read every other line,
+  since it is a lost or reverted seam (that sync's check caught a "pull request" wording
+  regression this way).
+- Upstream code the fork carries can start importing a module the fork deleted (in 2a7bd1673c,
+  `ThreadManagementService.ts` imports `environment/ServerEnvironment.ts` for
+  `ServerEnvironmentIdentity`). Declare the piece it needs in the matching Coder module
+  (`coderEnvironment.ts`) and point the import there with a `Coder:` comment.
 
 ## 3. Deleted directories
 
@@ -67,8 +99,13 @@ git rm -q -f --pathspec-from-file=/tmp/sync-added.txt
 The script lists only paths under deleted directories. Upstream also adds files for cut surfaces
 in kept directories (in the 5cbe82a870 sync: `observability/OtlpEndpointCheck.ts`,
 `settings/TelemetryExportSettings.tsx`, `provider/antigravityUsageLimits.ts`, and provider-pi's
-`usage.ts`); review `git diff --name-only --diff-filter=A "$MB" "$SHA" -- apps packages` for
-them. A fork-deleted file outside those paths that upstream modified (a cut
+`usage.ts`; in the 2a7bd1673c sync: server `outboundHttp.ts` and `zipArchive.ts`, the OTLP
+`config.test.ts`, web `sidebar/SidebarUpdateCapsule.tsx` and `settings/DatabaseStorageNotice.tsx`,
+and client-runtime `state/threadTranscriptHttp.ts`, which the fork replaced with an RPC); review
+`git diff --name-only --diff-filter=A "$MB" "$SHA" -- apps packages` for them. Upstream's
+patches for mobile or desktop packages land in `patches/` (2a7bd1673c: `@expo__ui@58.0.18.patch`);
+delete any that `pnpm-workspace.yaml`'s `patchedDependencies` does not list. A fork-deleted file
+outside those paths that upstream modified (a cut
 surface's test or settings panel) is listed as "deleted by fork"; keep it deleted unless the seams
 doc says otherwise. An upstream rename out of a deleted directory into a kept one (in this batch,
 mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added file with only stage
@@ -117,17 +154,26 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   local editor, and feedback code. Take upstream's hunk, then re-delete the hole and
   keep its `Coder:` comment.
 - `docs/user/*.md`: take upstream's text, then reapply "merge request", "MR", `!N`, "T3 Coder".
-- `knip.jsonc`: keep ours; add or drop `ignoreIssues` entries as `pnpm knip:check` reports.
+- `knip.jsonc`: keep ours; add or drop `ignoreIssues` entries as `pnpm knip:check` reports, and
+  remove any `workspaces` entry upstream adds for a package the fork does not carry (2a7bd1673c:
+  `packages/source-control-github`). Its long entries stay on one line; do not reformat the file.
+- `package.json` export maps: when both sides add an entry near the same place, the merge can keep
+  it twice. JSON parsing silently keeps the last copy, so check changed manifests for duplicate
+  keys (`vp fmt` drops them, as does a `json.load(..., object_pairs_hook=...)` check).
 - Patch files under `patches/`: when upstream bumps a patched package, the fork's patch for the
   old version arrives as modify/delete. Check whether the new version still needs the fork's
   hunks, and append them to upstream's new patch by hand; `pnpm patch-commit` rewrites the whole
-  file in its own order.
+  file in its own order. pnpm checks each hunk header's line counts when it applies a patch, so
+  an appended hunk must keep exact `@@ -a,b +c,d @@` counts; `pnpm install --frozen-lockfile`
+  fails on a miscounted one.
 - `pnpm-lock.yaml`: keep ours, run `pnpm install --no-frozen-lockfile` to apply the merged
   `package.json` files, then confirm `pnpm install --frozen-lockfile` passes. Do this even when the
   lockfile merged cleanly: the auto-merge carries importer entries for deleted packages, and any
   later `pnpm exec`/`vp` run silently rewrites the lockfile when it disagrees with a `package.json`.
   Start from ours with `git show HEAD:pnpm-lock.yaml > pnpm-lock.yaml` (during a merge,
-  `git checkout --ours` works only on a conflicted path).
+  `git checkout --ours` works only on a conflicted path). Resolve the lockfile and every
+  `package.json` before running any `pnpm <script>`, the `typecheck:*` scripts included: pnpm
+  checks dependencies first and installs when a manifest disagrees with the lockfile.
 - A package that gains a dependency on deleted host packages (this batch: client-runtime on every
   `source-control-*` client definition) keeps only `source-control-core` and `-gitlab`.
 
@@ -218,7 +264,7 @@ directory with `pnpm exec vp test run <file>`.
 `pnpm test:coder` exits 0; a failure is real. It stops at the first failing package script, so
 fix and rerun until it completes. Known results:
 
-- The suite needs the Node version in upstream's `engines.node` (`^24.13.1` at dd5c7bd09e). On an
+- The suite needs the Node version in upstream's `engines.node` (`^24.13.1` at 2a7bd1673c). On an
   older Node, three upstream tests fail on unmodified upstream code: ProjectionRecovery's "selects
   unfinished recovery work without reading settled thread histories" (`ProjectionStoreSetupError`,
   "malformed JSON") and nodeSqliteClient's "keeps large text and blob parameters off cached

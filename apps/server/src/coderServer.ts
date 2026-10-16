@@ -4,6 +4,10 @@ import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import { FetchHttpClient } from "effect/http";
 import * as StorageCleanup from "./storageCleanup.ts";
+import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
+import * as DelegatedTaskQuestionReactor from "./orchestration-v2/DelegatedTaskQuestionReactor.ts";
+import * as EventStoreV2 from "./orchestration-v2/EventStore.ts";
+import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as Effect from "effect/Effect";
@@ -168,6 +172,14 @@ const PullRequestWatchWorkerLive = Layer.effectDiscard(
   Layer.provide(ProjectionStoreV2.layer),
 );
 
+// A delegated task's question wakes its parent agent, as upstream.
+const DelegatedTaskQuestionWorkerLive = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const service = yield* DelegatedTaskQuestionReactor.DelegatedTaskQuestionReactor;
+    yield* service.start();
+  }),
+).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer));
+
 // Review guides read through the same merge-request service as every other surface, and are
 // shared by the RPC handlers and the T3 tools.
 const PullRequestReviewGuideLive = PullRequestReviewGuideService.layer.pipe(
@@ -180,6 +192,7 @@ const CoderRuntimeCoreLive = Layer.mergeAll(
   layerThreadPullRequestWorker,
   PullRequestSyncWorkerLive,
   PullRequestWatchWorkerLive,
+  DelegatedTaskQuestionWorkerLive,
   layerPullRequestService,
   PullRequestReviewGuideLive,
   // As upstream: catches project provider overrides left behind by a project deleted before
@@ -273,6 +286,8 @@ const CoderRuntimeStartupLive = Layer.effect(
       ),
     );
     yield* providerRuntimeRecovery.recover;
+    // Settles delegated tasks whose runs recovery just terminalized, as upstream's startup does.
+    yield* orchestrator.recoverDelegatedTasks;
     const effectWorker: Fiber.Fiber<void, never> = yield* EffectWorker.runDaemon.pipe(
       Effect.provide(effectWorkerContext),
       Effect.forkIn(runtimeScope),
@@ -312,10 +327,16 @@ export const makeCoderRuntimeLayer = () => {
   );
   // Coder: storage cleanup starts once workspace startup completes, where upstream parks it
   // until server activation.
-  const startedRuntime = StorageCleanup.layer.pipe(
-    Layer.provide(ProjectionStoreV2.layer),
-    Layer.provideMerge(runtimeStartup),
-  );
+  const startedRuntime = Layer.mergeAll(
+    StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
+    // Background history compaction and space reclaim, as upstream (see DatabaseStorage.ts).
+    DatabaseStorage.layer.pipe(
+      Layer.provide(ProjectionMaintenance.layer),
+      Layer.provide(
+        Layer.merge(EventStoreV2.layerFromOrchestrationEventStore, ProjectionStoreV2.layer),
+      ),
+    ),
+  ).pipe(Layer.provideMerge(runtimeStartup));
   const services = Layer.mergeAll(
     startedRuntime,
     CoderRuntimeDependenciesLive,

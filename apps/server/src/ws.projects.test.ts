@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -28,6 +29,7 @@ import { EnvironmentThemeService } from "./environmentTheme.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as Keybindings from "./keybindings.ts";
+import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -224,6 +226,7 @@ const harness = (
       stub(SecretRequests.SecretRequests),
       stub(McpAppRequests.McpAppRequests),
       stub(StorageCleanup.StorageCleanup),
+      stub(CommandOutputHub.CommandOutputHub),
       ServerConfig.layer(config),
       WorkspacePaths.layer,
     ).pipe(Layer.provideMerge(NodeServices.layer));
@@ -359,6 +362,39 @@ describe("Coder RPC seams", () => {
       }).pipe(Effect.flip);
       assert.equal(error.message, "The merge request must belong to a known GitLab host.");
       assert.equal(dispatched, 0);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("reads a thread transcript with the workspace identity and reports its size limit", () =>
+    Effect.gen(function* () {
+      const h = yield* harness({
+        threadManagement: {
+          getThreadTranscript: (threadId) =>
+            Effect.gen(function* () {
+              const identity = yield* CoderEnvironment.ServerEnvironmentIdentity;
+              assert.equal(yield* identity.getEnvironmentId, EnvironmentId.make("ws-test"));
+              if (threadId !== testThreadId) {
+                return yield* new ThreadManagementService.ThreadTranscriptTooLargeError({
+                  threadId,
+                });
+              }
+              return {
+                threadId,
+                title: "Thread",
+                updatedAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+                items: [],
+              };
+            }),
+        },
+      });
+      const transcript = yield* h.client[WS_METHODS.orchestrationGetThreadTranscript]({
+        threadId: testThreadId,
+      });
+      assert.equal(transcript.title, "Thread");
+      const error = yield* h.client[WS_METHODS.orchestrationGetThreadTranscript]({
+        threadId: ThreadId.make("thread-too-large"),
+      }).pipe(Effect.flip);
+      assert.equal(error._tag, "OrchestrationThreadTranscriptTooLargeError");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
