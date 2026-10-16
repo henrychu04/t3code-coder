@@ -42,12 +42,10 @@ describe("composer attachment files", () => {
     ).toEqual([files[1]]);
   });
 
-  it("keeps supported images on the image path and refuses HEIC photos", () => {
+  it("keeps supported images and HEIC photos on the image path", () => {
     expect(classifyComposerAttachmentFile({ name: "photo.png", type: "image/png" })).toBe("image");
-    // Coder accepts PNG, JPEG, and WebP only; upstream converts HEIC to JPEG.
-    expect(classifyComposerAttachmentFile({ name: "photo.heic", type: "" })).toBe(
-      "unsupported-image",
-    );
+    expect(classifyComposerAttachmentFile({ name: "photo.heic", type: "" })).toBe("image");
+    // Coder: the gateway accepts PNG, JPEG, and WebP uploads only, so a GIF is a plain file.
     expect(classifyComposerAttachmentFile({ name: "photo.gif", type: "" })).toBe("file");
   });
 

@@ -282,7 +282,9 @@ dropped into the message composer or a question answer. The browser posts it onl
 gateway: `clipboard-image` accepts signature-validated PNG, JPEG, or WebP within
 `PROVIDER_SEND_TURN_MAX_IMAGE_BYTES`, and `attachment-file` accepts any non-empty file within
 `PROVIDER_SEND_TURN_MAX_FILE_BYTES`, using the name only for the stored extension
-(`@t3tools/shared/attachmentFileExtension`). The gateway streams the bytes from memory to
+(`@t3tools/shared/attachmentFileExtension`). HEIC and HEIF photos are decoded to JPEG in the
+browser before that upload, as upstream does (`heic-to`'s bundled WASM decoder, which the
+gateway's `wasm-unsafe-eval` script policy allows); no image leaves the laptop undecoded. The gateway streams the bytes from memory to
 upstream's pending-upload name, `pending-<uuid>-<ext>.<ext>`, and returns the workspace path, id,
 size, and (for images) media type. The helper advertises upstream's `attachmentUploads`,
 `questionAttachments`, and `fileAttachments` capabilities. The browser uses upstream's upload queue,
