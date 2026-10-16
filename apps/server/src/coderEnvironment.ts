@@ -21,6 +21,16 @@ export class CoderEnvironment extends Context.Service<
   { readonly descriptor: ExecutionEnvironmentDescriptor }
 >()("t3/coderEnvironment") {}
 
+// Coder: upstream's `environment/ServerEnvironment.ts` identity service, which the thread
+// transcript builder reads. That module is not carried; `coderWs.ts` provides this from the
+// descriptor.
+export class ServerEnvironmentIdentity extends Context.Service<
+  ServerEnvironmentIdentity,
+  {
+    readonly getEnvironmentId: Effect.Effect<EnvironmentId>;
+  }
+>()("t3/environment/ServerEnvironment/ServerEnvironmentIdentity") {}
+
 // Coder: upstream's capabilities minus the cut surfaces in CODER_OMITTED_CAPABILITIES. Every
 // key of ExecutionEnvironmentCapabilities must appear in exactly one of the two.
 export const CODER_ENVIRONMENT_CAPABILITIES = {
@@ -38,6 +48,9 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadAutoSettlement: true,
   storageCleanup: true,
   storageCleanupRun: true,
+  settledWorktreeCleanup: true,
+  threadAutoSettlementScope: true,
+  commandOutputStreaming: true,
   projectWorktreeCleanup: true,
   worktreesDirectory: true,
   threadRestartContinuation: true,
@@ -72,6 +85,7 @@ export const CODER_OMITTED_CAPABILITIES = {
   agentActivityPublishing: "No relay, push notifications, or Live Activities.",
   desktopAppUpdate: "No desktop app.",
   serverBrowser: "No browser preview.",
+  databaseStorage: "No `t3 doctor` in the workspace helper; it compacts and reclaims space itself.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 
 const platformArch = (): ExecutionEnvironmentDescriptor["platform"]["arch"] => {

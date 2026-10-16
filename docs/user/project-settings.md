@@ -219,18 +219,21 @@ Open **Settings → Storage** to configure retention for selected Coder workspac
 by default. Enabled policies run when the helper starts, when settings change, and hourly while
 the helper is running. Offline workspaces retain their settings and resume cleanup on reconnect.
 
-Worktree rules can remove T3-managed checkouts after inactivity, after their branch is merged,
-when unchanged from the remote default branch, or after deleting their last thread. Active sessions,
-terminals, and shared checkouts prevent removal. **Keep worktrees with local changes** defaults to
-**Uncommitted changes**, which protects tracked edits and untracked files but deletes ignored files
-such as `.env` and build output. **Any local files** also protects ignored files other than
-`node_modules`. **Edited tracked files** protects only tracked edits and allows untracked and
-ignored files to be deleted. Branches and conversation history stay; resuming a thread recreates
-its worktree. Choose a project to inherit the workspace policy, turn cleanup off, or define custom
-rules.
+Worktree rules can remove T3-managed checkouts after inactivity, after a thread settles, after
+their branch is merged, when unchanged from the remote default branch, or after deleting their last
+thread. Set settled retention to 0 days to remove a worktree at the next cleanup after settlement.
+Active sessions, terminals, and shared checkouts prevent removal. **Keep worktrees with local
+changes** defaults to **Uncommitted changes**, which protects tracked edits and untracked files but
+deletes ignored files such as `.env` and build output. **Any local files** also protects ignored
+files other than `node_modules`. **Edited tracked files** protects only tracked edits and allows
+untracked and ignored files to be deleted. Branches and conversation history stay; resuming a
+thread recreates its worktree. Choose a project to inherit the workspace policy, turn cleanup off,
+or define custom rules.
 
 Choose **Delete now** to run the enabled rules immediately. The latest results show which
-worktrees were removed or kept and why, plus any failures.
+worktrees were removed or kept and why, plus any failures. Results also list folders in the
+worktree folder that no thread uses, with their sizes; cleanup never removes them, so remove them
+manually if you want.
 
 Saved image artifacts and rotated logs have separate workspace-wide retention periods. Artifact
 retention applies to legacy copies in `$HOME/.t3-coder/artifacts`: expired links stop opening.

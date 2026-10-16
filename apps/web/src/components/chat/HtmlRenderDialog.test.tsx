@@ -104,7 +104,8 @@ it("closes with the close button or Escape", async () => {
 });
 
 async function renderInline() {
-  await act(() =>
+  // Async so a URL minted at mount lands inside act.
+  await act(async () =>
     root.render(
       <HtmlRenderFrame
         environmentId={EnvironmentId.make("environment")}
@@ -165,5 +166,5 @@ it("routes links from the expanded page through its thread", async () => {
   expect(openLink).not.toHaveBeenCalled();
 });
 
-// Coder: upstream's unavailable-URL test is not carried; full screen opens the page the frame
-// already holds, so there is no URL to fail.
+// Coder: upstream's unavailable-URL and near-expiry fresh-URL tests are not carried; full screen
+// opens the page the frame already holds, so there is no URL to mint or fail.

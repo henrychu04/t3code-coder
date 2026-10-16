@@ -252,6 +252,11 @@ carries a reference: the agent reads the thread's history on demand, so attachin
 costs nothing until the agent looks. Attaching a thread does not change it, and the agent cannot
 send messages to it unless you ask.
 
+Dropping a thread from another workspace attaches a saved transcript file. The source workspace
+must be connected. The transcript includes the visible history and saved text context at the time
+of the drop; later messages and the contents of attached files are not copied. The agent can read
+the saved transcript after the source disconnects. Normal file attachment limits apply.
+
 ## Run shell code blocks
 
 Completed shell code blocks in agent messages offer **Run**. It opens a terminal in the thread's

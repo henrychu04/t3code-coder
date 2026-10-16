@@ -137,7 +137,8 @@ By default, workspaces settle inactive threads after three days and settle
 threads whose merge request merged. A closed merge request can also settle an idle
 thread. Work in progress, pending questions or approvals, and live background work
 prevent automatic settlement. An open merge request does not prevent inactivity
-settlement, but an old closed or merged merge request does not settle work you
+settlement unless you turn on **Keep threads with an MR** in **Settings → General**,
+but an old closed or merged merge request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a merge request watch starts on its own does not.
 

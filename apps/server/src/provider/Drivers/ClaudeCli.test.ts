@@ -445,6 +445,57 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
 }, 5000);
 
+it("backgrounds a foreground task with the Agent SDK's background_tasks control request", async () => {
+  const directory = await NodeFS.mkdtemp(
+    NodePath.join(NodeOS.tmpdir(), "t3-claude-background-tasks-"),
+  );
+  const executable = NodePath.join(directory, "fake-claude");
+  // Answers only the SDK 0.3.276 wire shape: `{ subtype: "background_tasks", tool_use_id }`,
+  // with `backgrounded` false for an unknown call and absent for a build that backgrounds all.
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type !== "control_request") return;
+  const request = value.request;
+  const keys = Object.keys(request).sort().join(",");
+  const ok = request.subtype === "initialize" ||
+    (request.subtype === "background_tasks" && (keys === "subtype" || keys === "subtype,tool_use_id"));
+  const response = request.tool_use_id === "toolu_unknown" ? { backgrounded: false } : {};
+  process.stdout.write(JSON.stringify({
+    type: "control_response",
+    response: ok
+      ? { subtype: "success", request_id: value.request_id, response }
+      : { subtype: "error", request_id: value.request_id, error: JSON.stringify(request) },
+  }) + "\\n");
+});
+`,
+    { mode: 0o700 },
+  );
+  let finishPrompt!: () => void;
+  const promptFinished = new Promise<void>((resolve) => {
+    finishPrompt = resolve;
+  });
+  const runtime = query({
+    prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+      await promptFinished;
+    })(),
+    options: { pathToClaudeCodeExecutable: executable, env: process.env },
+  });
+  try {
+    await runtime.initializationResult();
+    assert.equal(await runtime.backgroundTasks("toolu_1"), true);
+    assert.equal(await runtime.backgroundTasks(), true);
+    assert.equal(await runtime.backgroundTasks("toolu_unknown"), false);
+  } finally {
+    finishPrompt();
+    runtime.close();
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);
+
 it("registers MCP servers with the Agent SDK's mcp_set_servers control request", async () => {
   const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-mcp-servers-"));
   const executable = NodePath.join(directory, "fake-claude");

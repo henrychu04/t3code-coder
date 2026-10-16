@@ -10,7 +10,12 @@ import { readLocalApi } from "~/localApi";
 export function useOpenLink(_threadRef: ScopedThreadRef | null | undefined): (
   url: string,
   options?: {
-    readonly event?: { readonly metaKey: boolean; readonly ctrlKey: boolean };
+    readonly event?: {
+      readonly metaKey: boolean;
+      readonly ctrlKey: boolean;
+      readonly button?: number | undefined;
+    };
+    /** Thread to open beside when it is not the hook's own, e.g. a sidebar row's. */
     readonly threadRef?: ScopedThreadRef | undefined;
   },
 ) => Promise<void> {

@@ -204,7 +204,7 @@ function toSdkQuery(cli: Cli.Query): Sdk.Query {
     reloadOutputStyles: reject("output style reloads"),
     reloadPlugins: reject("plugin reloads"),
     reloadSkills: reject("skill reloads"),
-    backgroundTasks: reject("background task listing"),
+    backgroundTasks: (toolUseId) => cli.backgroundTasks(toolUseId),
     streamInput: reject("stream input after start"),
   };
   return Object.assign(messages(), query) as Sdk.Query;

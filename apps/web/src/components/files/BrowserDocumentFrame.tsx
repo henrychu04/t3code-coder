@@ -25,6 +25,7 @@ import {
   htmlRenderThemeMessage,
   htmlRenderResult,
   readHtmlRenderContentHeight,
+  readHtmlRenderImageRequest,
   readHtmlRenderKeyDown,
   readHtmlRenderLinkRequest,
 } from "@t3tools/shared/htmlRender";
@@ -37,6 +38,8 @@ import { HTML_DOCUMENT_FRAME_PATH, MCP_APP_FRAME_PATH } from "@t3tools/shared/mc
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
+import { ExpandedImageDialog } from "~/components/chat/ExpandedImageDialog";
+import type { ExpandedImagePreview } from "~/components/chat/ExpandedImagePreview";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
 import { shortcutConflictKey } from "~/keybindings";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
@@ -162,12 +165,17 @@ export function HtmlRenderDocument(props: {
   readonly threadRef?: ScopedThreadRef | undefined;
   /** Receives the page's content height whenever it changes, so an inline frame can fit it. */
   readonly onContentHeight?: (height: number) => void;
+  /** Reports the image viewer opening and closing, so a virtualized row can stay mounted. */
+  readonly onFullscreenChange?: ((fullscreen: boolean) => void) | undefined;
+  /** Called when the page has loaded. */
+  readonly onLoad?: () => void;
 }) {
   const theme = useHtmlRenderTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [src] = useState(() => `${MCP_APP_FRAME_PATH}${htmlRenderThemeFragment(theme)}`);
   const [loaded, setLoaded] = useState(false);
   const written = useRef(false);
+  const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const postTheme = () => {
     frameRef.current?.contentWindow?.postMessage(htmlRenderThemeMessage(theme), "*");
   };
@@ -304,6 +312,31 @@ export function HtmlRenderDocument(props: {
     window.addEventListener("message", replayKey);
     return () => window.removeEventListener("message", replayKey);
   }, []);
+  // A clicked page image opens in the same viewer as chat images, gated like a link.
+  useEffect(() => {
+    const openImage = (event: MessageEvent) => {
+      const frame = frameRef.current;
+      const request = readHtmlRenderImageRequest(event.data);
+      if (
+        request === undefined ||
+        frame === null ||
+        event.source !== frame.contentWindow ||
+        document.activeElement !== frame ||
+        navigator.userActivation?.isActive === false
+      ) {
+        return;
+      }
+      setExpandedImage({ images: [{ src: request.src, name: request.name }], index: 0 });
+    };
+    window.addEventListener("message", openImage);
+    return () => window.removeEventListener("message", openImage);
+  }, []);
+  const { onFullscreenChange } = props;
+  useEffect(() => {
+    if (expandedImage === null) return;
+    onFullscreenChange?.(true);
+    return () => onFullscreenChange?.(false);
+  }, [expandedImage, onFullscreenChange]);
   const { onContentHeight } = props;
   // A page posts its height once per change, so listen from the commit that
   // inserts the frame; a passive effect could run after a fast page's first post.
@@ -319,28 +352,35 @@ export function HtmlRenderDocument(props: {
     return () => window.removeEventListener("message", resize);
   }, [onContentHeight]);
   return (
-    <iframe
-      ref={frameRef}
-      src={src}
-      title={props.title}
-      loading="lazy"
-      onLoad={() => {
-        if (!written.current) {
-          // The first load is the shell; it replaces itself with the page.
-          written.current = true;
-          frameRef.current?.contentWindow?.postMessage({ html: props.html }, "*");
-          return;
-        }
-        setLoaded(true);
-        // Covers a theme change that landed while the page was loading.
-        postTheme();
-        postShortcuts();
-      }}
-      // A frame whose color scheme differs from its document's paints an opaque
-      // canvas, so the blank document a frame starts with would flash white in
-      // dark mode. Once the page is in, its prefers-color-scheme follows the app.
-      className={cn("border-0 scheme-light", props.className)}
-      style={loaded ? { colorScheme: theme.appearance } : undefined}
-    />
+    <>
+      <iframe
+        ref={frameRef}
+        src={src}
+        title={props.title}
+        // Coder: the shell's CSP sandbox applies; see the file header.
+        loading="lazy"
+        onLoad={() => {
+          if (!written.current) {
+            // The first load is the shell; it replaces itself with the page.
+            written.current = true;
+            frameRef.current?.contentWindow?.postMessage({ html: props.html }, "*");
+            return;
+          }
+          setLoaded(true);
+          // Covers a theme change that landed while the page was loading.
+          postTheme();
+          postShortcuts();
+          props.onLoad?.();
+        }}
+        // A frame whose color scheme differs from its document's paints an opaque
+        // canvas, so the blank document a frame starts with would flash white in
+        // dark mode. Once the page is in, its prefers-color-scheme follows the app.
+        className={cn("border-0 scheme-light", props.className)}
+        style={loaded ? { colorScheme: theme.appearance } : undefined}
+      />
+      {expandedImage !== null ? (
+        <ExpandedImageDialog preview={expandedImage} onClose={() => setExpandedImage(null)} />
+      ) : null}
+    </>
   );
 }
