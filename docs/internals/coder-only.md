@@ -467,6 +467,9 @@ listed here is drift to remove rather than fork behavior to keep.
     project's root or a worktree one of that project's threads owns (`draftProjectId`). `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
     `WorkspaceSearchIndex.ts` implement the Files surface and file-search boundaries above in place
     of upstream's absolute-path reads, create-anywhere writes, and `searchContents`.
+    A folder listing stops at `MAX_PROJECT_DIRECTORY_ENTRIES` children and labels ignored ones
+    with a single `git check-ignore` call, so upstream's wide-folder shortcut (asking whether the
+    folder itself is ignored, #20062) has nothing to save and is not carried.
     `projects.createFile` serves upstream's proposed-plan "Save to workspace": it creates a new
     text file inside the verified root and never replaces an existing path, where upstream's
     `writeFile` overwrites. `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
