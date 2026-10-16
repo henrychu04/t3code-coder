@@ -5880,7 +5880,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           title: "Unable to read the dropped thread",
           description: isThreadTranscriptTooLargeError(error)
             ? "This thread exceeds the attachment size limit. Try a shorter thread."
-            : "Check that its environment is connected and up to date, then try again.",
+            : // Coder: each environment is a Coder workspace.
+              "Check that its workspace is connected and up to date, then try again.",
         });
       } finally {
         toastManager.close(loadingToast);
