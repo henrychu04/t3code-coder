@@ -90,6 +90,7 @@ import React, {
   useCallback,
   memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -2349,16 +2350,41 @@ function useChatMarkdownState({
   headingLevelOffset = 0,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
-  const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
   const markdownRef = useRef<HTMLDivElement>(null);
-  const expandMedia = onImageExpand ?? setLocalMediaPreview;
   const mediaRequestId = useRef(0);
-  useEffect(() => {
-    setLocalMediaPreview(null);
-    return () => {
+  // A preview opened from another thread or workspace never carries over.
+  const mediaScopeKey = [
+    threadRef?.environmentId,
+    threadRef?.threadId,
+    explicitEnvironmentId,
+    cwd,
+    imageBaseDir,
+  ].join("\u0000");
+  // Tagged with the scope it was opened in: a request from the previous scope can
+  // resolve before the effect cleanup below invalidates it, and must stay hidden.
+  const [localMedia, setLocalMedia] = useState<{
+    scope: string;
+    preview: ExpandedImagePreview;
+  } | null>(null);
+  const localMediaPreview = localMedia?.scope === mediaScopeKey ? localMedia.preview : null;
+  const closeLocalMediaPreview = () => setLocalMedia(null);
+  const expandMedia =
+    onImageExpand ??
+    ((preview: ExpandedImagePreview) => setLocalMedia({ scope: mediaScopeKey, preview }));
+  const [mediaScope, setMediaScope] = useState(mediaScopeKey);
+  if (mediaScope !== mediaScopeKey) {
+    setMediaScope(mediaScopeKey);
+    setLocalMedia(null);
+  }
+  // A layout cleanup runs in the commit that changes scope, so a request resolving
+  // before paint cannot reach a parent onImageExpand either.
+  useLayoutEffect(
+    () => () => {
       mediaRequestId.current += 1;
-    };
-  }, [threadRef?.environmentId, threadRef?.threadId, explicitEnvironmentId, cwd, imageBaseDir]);
+    },
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Leaving the scope invalidates media requests still loading for it.
+    [mediaScopeKey],
+  );
   const searchProjectEntries = useAtomQueryRunner(projectEnvironment.searchEntries, {
     reportFailure: false,
   });
@@ -2659,7 +2685,7 @@ function useChatMarkdownState({
     markdownRef,
     markdownUrlTransform,
     localMediaPreview,
-    setLocalMediaPreview,
+    closeLocalMediaPreview,
   };
 }
 
@@ -3218,7 +3244,7 @@ function ChatMarkdown({
     markdownRef,
     markdownUrlTransform,
     localMediaPreview,
-    setLocalMediaPreview,
+    closeLocalMediaPreview,
   } = useChatMarkdownState({ text, ...props });
   const incrementalParsing =
     props.isStreaming === true &&
@@ -3263,7 +3289,7 @@ function ChatMarkdown({
       {localMediaPreview ? (
         <ExpandedImageDialog
           preview={localMediaPreview}
-          onClose={() => setLocalMediaPreview(null)}
+          onClose={closeLocalMediaPreview}
         />
       ) : null}
     </div>
