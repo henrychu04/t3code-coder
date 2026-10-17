@@ -24,7 +24,6 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import { isCoderPullRequestLink } from "../../../coderPullRequestLink.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
@@ -232,17 +231,6 @@ const make = Effect.gen(function* () {
       Effect.mapError((cause) => new Failure({ cause })),
     );
 
-  // Coder: agents may name only merge requests on a GitLab host this workspace's projects use.
-  const requireCoderLink = (target: ResolvedTarget) =>
-    projects.listShells().pipe(
-      Effect.orElseSucceed(() => []),
-      Effect.flatMap((shells) =>
-        isCoderPullRequestLink(target, shells)
-          ? Effect.void
-          : Effect.fail(new PullRequestUrlInvalidError({})),
-      ),
-    );
-
   const dispatchFailure =
     (
       Failure:
@@ -318,11 +306,6 @@ const make = Effect.gen(function* () {
     const callerProject = known.find((project) => project.id === callerThread?.projectId);
     return yield* Effect.forEach(targets, (input) =>
       resolveTarget(input, callerProject).pipe(
-        // Coder: as for links, only a merge request on a GitLab host the projects use.
-        Effect.filterOrFail(
-          (target) => isCoderPullRequestLink(target, known),
-          () => new PullRequestUrlInvalidError({}),
-        ),
         Effect.map((target) => ({
           input,
           target,
@@ -359,7 +342,6 @@ const make = Effect.gen(function* () {
         const thread = yield* requireThread(PullRequestLinkFailedError, input.threadId);
         const project = yield* projectOf(thread, PullRequestLinkFailedError);
         const target = yield* resolveTarget(input, project);
-        yield* requireCoderLink(target);
         const existing = threadPullRequestsOf(thread).find((link) =>
           threadPullRequestKeysEqual(link, target),
         );
@@ -389,7 +371,6 @@ const make = Effect.gen(function* () {
         const thread = yield* requireThread(PullRequestUnlinkFailedError, input.threadId);
         const project = yield* projectOf(thread, PullRequestUnlinkFailedError);
         const target = yield* resolveTarget(input, project);
-        yield* requireCoderLink(target);
         if (!threadPullRequestsOf(thread).some((link) => threadPullRequestKeysEqual(link, target)))
           return {
             host: target.host,

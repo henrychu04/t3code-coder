@@ -9,9 +9,7 @@ import * as Stream from "effect/Stream";
 import { assert, describe, it } from "@effect/vitest";
 import {
   CoderWsRpcGroup,
-  CommandId,
   EnvironmentId,
-  ORCHESTRATION_V2_WS_METHODS,
   ProjectId,
   ThreadId,
   WS_METHODS,
@@ -112,7 +110,6 @@ const threadShell = {
 
 const harness = (
   options: {
-    readonly dispatch?: Orchestrator.OrchestratorV2["Service"]["dispatch"];
     readonly threadManagement?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
     readonly lifecycle?: Partial<ServerLifecycleEvents.ServerLifecycleEvents["Service"]>;
     readonly workspaceEntries?: Partial<WorkspaceEntries.WorkspaceEntries["Service"]>;
@@ -155,9 +152,7 @@ const harness = (
       stub(ThreadSearch.ThreadSearch),
       stub(ProviderSessionManager.ProviderSessionManagerV2),
       stub(ScheduledTasks.ScheduledTaskService),
-      stub(Orchestrator.OrchestratorV2, {
-        ...(options.dispatch === undefined ? {} : { dispatch: options.dispatch }),
-      }),
+      stub(Orchestrator.OrchestratorV2),
       stub(AgentSessionScanner.AgentSessionScanner),
       stub(AgentSessionImporter.AgentSessionImporter),
       stub(ServerLifecycleEvents.ServerLifecycleEvents, {
@@ -340,62 +335,39 @@ describe("Coder RPC seams", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("rejects links to hosts outside the known GitLab projects", () =>
-    Effect.gen(function* () {
-      let dispatched = 0;
-      const h = yield* harness({
-        dispatch: () =>
-          Effect.sync(() => {
-            dispatched += 1;
-            return { sequence: dispatched } as never;
-          }),
-      });
-      const error = yield* h.client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand]({
-        type: "thread.pull-request.link",
-        commandId: CommandId.make("link-command"),
-        threadId: testThreadId,
-        host: "github.com",
-        repository: "team/repo",
-        number: 42,
-        source: "manual",
-        url: "https://github.com/team/repo/pull/42",
-      }).pipe(Effect.flip);
-      assert.equal(error.message, "The merge request must belong to a known GitLab host.");
-      assert.equal(dispatched, 0);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("reads a thread transcript with the workspace identity and reports its size limit", () =>
-    Effect.gen(function* () {
-      const h = yield* harness({
-        threadManagement: {
-          getThreadTranscript: (threadId) =>
-            Effect.gen(function* () {
-              const identity = yield* CoderEnvironment.ServerEnvironmentIdentity;
-              assert.equal(yield* identity.getEnvironmentId, EnvironmentId.make("ws-test"));
-              if (threadId !== testThreadId) {
-                return yield* new ThreadManagementService.ThreadTranscriptTooLargeError({
+  it.effect(
+    "reads a thread transcript with the workspace identity and reports its size limit",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* harness({
+          threadManagement: {
+            getThreadTranscript: (threadId) =>
+              Effect.gen(function* () {
+                const identity = yield* CoderEnvironment.ServerEnvironmentIdentity;
+                assert.equal(yield* identity.getEnvironmentId, EnvironmentId.make("ws-test"));
+                if (threadId !== testThreadId) {
+                  return yield* new ThreadManagementService.ThreadTranscriptTooLargeError({
+                    threadId,
+                  });
+                }
+                return {
                   threadId,
-                });
-              }
-              return {
-                threadId,
-                title: "Thread",
-                updatedAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
-                items: [],
-              };
-            }),
-        },
-      });
-      const transcript = yield* h.client[WS_METHODS.orchestrationGetThreadTranscript]({
-        threadId: testThreadId,
-      });
-      assert.equal(transcript.title, "Thread");
-      const error = yield* h.client[WS_METHODS.orchestrationGetThreadTranscript]({
-        threadId: ThreadId.make("thread-too-large"),
-      }).pipe(Effect.flip);
-      assert.equal(error._tag, "OrchestrationThreadTranscriptTooLargeError");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+                  title: "Thread",
+                  updatedAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+                  items: [],
+                };
+              }),
+          },
+        });
+        const transcript = yield* h.client[WS_METHODS.orchestrationGetThreadTranscript]({
+          threadId: testThreadId,
+        });
+        assert.equal(transcript.title, "Thread");
+        const error = yield* h.client[WS_METHODS.orchestrationGetThreadTranscript]({
+          threadId: ThreadId.make("thread-too-large"),
+        }).pipe(Effect.flip);
+        assert.equal(error._tag, "OrchestrationThreadTranscriptTooLargeError");
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("synthesizes welcome and ready before legacy thread migration progress", () =>
