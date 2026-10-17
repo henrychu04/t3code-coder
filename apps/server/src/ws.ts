@@ -798,9 +798,7 @@ const layerWsRpc = () =>
       const threadSearch = yield* ThreadSearch.ThreadSearch;
 
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
-      // Coder: helper stdio has no client-origin attribution or analytics. Thread merge-request
-      // links must belong to a known GitLab host.
-      const ensureCoderPullRequestLink = CoderWs.makeEnsureCoderPullRequestLink(projectStore);
+      // Coder: helper stdio has no client-origin attribution or analytics.
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -1000,22 +998,18 @@ const layerWsRpc = () =>
               : {}),
           }).pipe(
             Effect.andThen(
-              ensureCoderPullRequestLink(command).pipe(
-                Effect.andThen(
-                  (command.type === "prepared-run.retry"
-                    ? threadLaunch.retryPreparation(command)
-                    : ThreadMessageIntake.dispatchCommand(
-                        ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: "user",
-                          creationSource:
-                            "creationSource" in command ? command.creationSource : "web",
-                        }),
-                      )
-                  ).pipe(Effect.provide(intakeContext)),
-                ),
+              (command.type === "prepared-run.retry"
+                ? threadLaunch.retryPreparation(command)
+                : ThreadMessageIntake.dispatchCommand(
+                    ThreadManagementService.withCreationProvenance(command, {
+                      createdBy: "user",
+                      creationSource: "creationSource" in command ? command.creationSource : "web",
+                    }),
+                  )
+              ).pipe(
+                Effect.provide(intakeContext),
                 Effect.map((result) => ({ sequence: result.sequence })),
                 Effect.mapError((cause) => {
-                  if (cause instanceof OrchestrationV2DispatchCommandError) return cause;
                   const detail = userFacingDispatchErrorMessage(cause);
                   return new OrchestrationV2DispatchCommandError({
                     commandId: command.commandId,

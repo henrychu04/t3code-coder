@@ -463,8 +463,7 @@ listed here is drift to remove rather than fork behavior to keep.
     that exceed the stdio frame bound fail before transport encoding. Shell snapshot loading
     uses upstream's socket fallback because no HTTP shell loader exists.
   - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials
-    (`withPullRequestViewer` is an identity in `ws.ts`). Thread MR links must belong to a known
-    GitLab host (`makeEnsureCoderPullRequestLink` in `coderWs.ts`).
+    (`withPullRequestViewer` is an identity in `ws.ts`).
   - Files listings, reads, writes, file creation, content search, and media reads verify the requesting thread's
     project root; Files listings, reads, writes, and media reads from a draft verify its named
     project's root or a worktree one of that project's threads owns (`draftProjectId`). `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
@@ -543,9 +542,8 @@ listed here is drift to remove rather than fork behavior to keep.
     - `mcp/bridge/T3ToolBridge.ts` runs upstream's toolkit handlers by name with the credential's
       `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
       its inline budget into `bridge-job:` tasks. `coderServer.ts` binds it once the orchestrator runs.
-    - `toolkits/pullRequests/handlers.ts` rejects merge requests outside the workspace's GitLab
-      hosts. `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of
-      upstream's `ServerEnvironment`.
+    - `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of upstream's
+      `ServerEnvironment`.
     - `mcp/bridge/T3ToolInstructions.ts` reuses upstream's orchestration guidance without its MCP
       and ACP transport paragraphs or its `html_preview` step; its test fails if upstream rewords
       them.
@@ -654,7 +652,8 @@ listed here is drift to remove rather than fork behavior to keep.
     upstream's hourly fetch or disk cache. Both providers attach
     per-model `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
-    closed) and Codex's `configRequirements/read`. The Claude signed-out message names API
+    closed; the same modes on every model, since the CLI itself drops a mode the model or policy
+    forbids) and Codex's `configRequirements/read`. The Claude signed-out message names API
     credentials rather than subscription login. Claude's usage read asks the CLI to skip its local
     transcript scan (`ClaudeCli.getUsage({ skipBehaviors })`), as upstream's SDK call does.
     provider-core's `maintenanceResolver.ts` and `providerStatusCache.ts` log the first cause tag

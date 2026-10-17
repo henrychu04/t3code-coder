@@ -193,12 +193,6 @@ it.live("links a merge request through the bridge CLI with upstream's handler", 
         threadId: THREAD_ID,
         source: "agent",
       });
-      const rejected = yield* call(
-        "link_pull_request",
-        JSON.stringify({ url: "https://github.com/team/repo/pull/1" }),
-      );
-      assert.deepInclude(rejected, { ok: false });
-      assert.deepInclude(rejected.output as object, { error: "PullRequestUrlInvalidError" });
       const unknown = yield* call("preview_open", "{}");
       assert.deepInclude(unknown.output as object, { error: "UnknownTool" });
 
