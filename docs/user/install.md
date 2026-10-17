@@ -16,10 +16,10 @@ The Coder workspace needs:
 
 - Linux x86-64
 - Git, Nix, `tar`, `sha256sum`, `head`, and the standard Linux `script` utility
-- Codex, Claude Code, or Pi on `PATH`
+- Codex, Claude Code, Pi, or Kilo Code on `PATH`
 
 The workspace template is expected to provide the agent CLI. T3 Coder does not install or
-authenticate Codex, Claude Code, or Pi.
+authenticate Codex, Claude Code, Pi, or Kilo Code.
 
 ## Start the local app
 
@@ -70,9 +70,10 @@ claude auth login
 ```
 
 For Pi, run `pi` once and finish its API-key setup; see [Pi](./providers-pi.md).
+For Kilo Code, run `kilo` once and finish its sign-in; see [Kilo Code](./providers-kilo.md).
 
 Reconnect to the workspace after authentication so T3 Coder can read the updated provider status.
-A workspace can use any combination of Codex, Claude Code, and Pi.
+A workspace can use any combination of Codex, Claude Code, Pi, and Kilo Code.
 
 T3 Coder warns when a workspace provider version has known compatibility problems with this
 release. **Settings → Providers** shows the recommended version or range; update the CLI in the
@@ -80,7 +81,8 @@ workspace the same way you installed it. An unlisted version is unverified.
 
 ## Next steps
 
-- [Codex, Claude Code, and Pi](./providers.md)
+- [Codex, Claude Code, Pi, and Kilo Code](./providers.md)
 - [Pi](./providers-pi.md)
+- [Kilo Code](./providers-kilo.md)
 - [Access modes](./permission-modes.md)
 - [Coder workspaces](./workspaces.md)

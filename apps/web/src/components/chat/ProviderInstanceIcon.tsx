@@ -9,7 +9,8 @@ import { cn } from "~/lib/utils";
 
 import { ProviderPackageIcon } from "./ProviderPackageIcon";
 import { providerClients } from "../settings/providerDriverMeta";
-// Coder: only Codex and Claude are shipped; other drivers fall back to initials.
+// Coder: Codex and Claude use these icons; Pi and Kilo Code use their package icons, and Kilo
+// Code's is inlined rather than loaded from the ACP Registry CDN.
 const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("codex")]: OpenAI,
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
@@ -39,7 +40,8 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   driverKind: ProviderDriverKind;
   displayName: string;
   accentColor?: string | undefined;
-  // Coder: accepted from upstream callers; ACP registry providers are not shipped.
+  // Coder: accepted from upstream callers; Kilo Code's icon comes from its package, never a
+  // registry URL.
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
   showBadge?: boolean;

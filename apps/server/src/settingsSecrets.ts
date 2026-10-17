@@ -6,6 +6,7 @@ import {
   UsageLimitSourceConfig,
   secretSettingsFields,
 } from "@t3tools/contracts";
+import { acpRegistryClient } from "@t3tools/provider-acp-registry/client";
 import { piClient } from "@t3tools/provider-pi/client";
 import {
   readSecretFieldValues,
@@ -20,8 +21,9 @@ const providerSecretFields = new Map([
   ["codex", secretSettingsFields(CodexSettings)],
   ["claudeAgent", secretSettingsFields(ClaudeSettings)],
   ["antigravity", secretSettingsFields(AntigravitySettings)],
-  // Coder: Pi is the only provider package carried; the other provider clients are not.
-  ...[piClient].map(
+  // Coder: Pi and Kilo Code (ACP Registry) are the only provider packages carried; the other
+  // provider clients are not.
+  ...[piClient, acpRegistryClient].map(
     (definition) =>
       [definition.driverKind, secretSettingsFields(definition.settingsSchema)] as const,
   ),

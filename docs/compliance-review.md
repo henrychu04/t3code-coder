@@ -79,7 +79,7 @@ installed Codex or Claude Code CLI. GitLab authentication is owned by the worksp
 
 - Electron, native desktop packaging, mobile, hosted web, relay, Tailscale, Cloudflare, OAuth,
   Clerk, telemetry, auto-update, and browser preview;
-- providers other than workspace Codex, Claude Code, and Pi;
+- providers other than workspace Codex, Claude Code, Pi, and Kilo Code;
 - generic user-facing SSH, reverse forwarding, arbitrary tunnels, non-loopback port-forward binds,
   and background workspace daemons; the structured foreground `coder port-forward` feature is the
   sole forwarding exception;

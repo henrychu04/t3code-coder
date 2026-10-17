@@ -15,7 +15,7 @@ login URL and a hidden token prompt there. T3 Coder never asks for, reads, or st
 Coder owns the credential. If a sign-in expires, repeat the same flow.
 
 Provider authentication is separate and remains inside the workspace. See
-[Codex, Claude Code, and Pi](./providers.md) for provider status and sign-in guidance.
+[Codex, Claude Code, Pi, and Kilo Code](./providers.md) for provider status and sign-in guidance.
 
 ## Workspaces
 
@@ -78,7 +78,7 @@ credentials, and provider credentials remain in the workspace.
 managed Node.js runtime, and at least one supported provider. Fix the missing piece in the
 workspace and reconnect — the diagnostics timeline shows which check failed and when.
 
-**Codex, Claude Code, or Pi is missing or not authenticated.** Install or sign in to that provider
+**Codex, Claude Code, Pi, or Kilo Code is missing or not authenticated.** Install or sign in to that provider
 in the workspace itself. T3 Coder uses what the workspace provides. The other providers remain
 usable when they are ready.
 

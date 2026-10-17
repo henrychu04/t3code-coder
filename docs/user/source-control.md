@@ -116,7 +116,7 @@ agent registers its GitLab URL so T3 tracks it alongside the thread. These tools
 associations; they do not create, close, merge, or rebase GitLab MRs. Plan mode allows listing
 only.
 
-No MCP setup is needed: Codex, Claude, and Pi run T3 tools through a workspace command that T3 supplies
+No MCP setup is needed: Codex, Claude, Pi, and Kilo Code run T3 tools through a workspace command that T3 supplies
 to each provider session and removes when the session stops. URLs must identify a GitLab host
 known to workspace project metadata, including when linking an MR from another repository.
 
@@ -181,7 +181,8 @@ Choose **Write guide** to have the review guide model from Settings → Source C
 change in a temporary checkout in the workspace; without one set, the source control writer model
 is used. Nothing in the checkout is changed, and a large merge request takes a few minutes; you can
 go elsewhere in the app, and you are told when the guide is ready. Claude Code and Codex can write
-guides; Pi cannot, because it has no read-only mode to read the checkout with. The guide is kept in
+guides; Pi cannot, because it has no read-only mode to read the checkout with, and neither can
+Kilo Code, which does not do T3 Coder's text generation. The guide is kept in
 the workspace for everyone using it. To write it again, for example after a push or after changing
 the model or instructions, choose **Rewrite guide** from the merge request's **⋯** menu.
 

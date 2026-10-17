@@ -10,6 +10,8 @@
   "dependencies": {
     "@effect/platform-node": "catalog:",
     "@ff-labs/fff-node": "0.11.0",
+    "@t3tools/provider-acp": "workspace:*",
+    "@t3tools/provider-acp-registry": "workspace:*",
     "@t3tools/provider-core": "workspace:*",
     "@t3tools/provider-pi": "workspace:*",
     "@t3tools/source-control-core": "workspace:*",
@@ -30,6 +32,7 @@
     "@t3tools/shared": "workspace:*",
     "@t3tools/source-control-testing": "workspace:*",
     "@types/node": "catalog:",
+    "effect-acp": "workspace:*",
     "effect-codex-app-server": "workspace:*",
     "vite-plus": "catalog:"
   },

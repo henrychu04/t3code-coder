@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS,
   t3ToolBridgeInstructions,
-} from "./T3ToolInstructions.ts";
+} from "./t3ToolBridgeInstructions.ts";
 
 describe("T3 tool bridge instructions", () => {
   // Fails when upstream rewords a transport paragraph, so the replacement is revisited.

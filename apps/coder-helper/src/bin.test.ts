@@ -113,7 +113,7 @@ describe("Coder foreground helper", () => {
       strictEqual(configEnvelope.exit?._tag, "Success");
       deepStrictEqual(
         configEnvelope.exit?.value?.providers?.map((provider) => provider.driver),
-        ["codex", "claudeAgent", "pi"],
+        ["codex", "claudeAgent", "acpRegistry", "pi"],
       );
 
       helper.stdin.write(

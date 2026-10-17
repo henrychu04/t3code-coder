@@ -1,6 +1,6 @@
-# Codex, Claude Code, and Pi
+# Codex, Claude Code, Pi, and Kilo Code
 
-T3 Coder uses the Codex, Claude Code, and Pi installations already available in the connected
+T3 Coder uses the Codex, Claude Code, Pi, and Kilo Code installations already available in the connected
 Coder workspace. It does not run a provider on the local computer, install a missing provider in the
 workspace, or copy provider credentials between them.
 
@@ -28,7 +28,7 @@ silently change agent behavior or conversation history.
 
 ## API authentication
 
-Configure API access through the workspace's Codex, Claude Code, or Pi configuration and your
+Configure API access through the workspace's Codex, Claude Code, Pi, or Kilo Code configuration and your
 organization's credential-management process. Credentials belong in the workspace provider
 configuration, never in T3 Coder's browser or local gateway. T3 Coder does not collect API keys.
 
@@ -41,6 +41,8 @@ The model picker is capability-driven rather than a hard-coded compatibility lis
 - Codex models, reasoning choices, and service tiers come from the workspace Codex app server.
 - Claude models and supported access modes come from the workspace Claude Code installation.
 - Pi models and thinking levels come from the workspace Pi installation; see [Pi](./providers-pi.md).
+- Kilo Code models and options come from the workspace Kilo Code installation; see
+  [Kilo Code](./providers-kilo.md).
 - A model appears only while its provider is ready.
 - The current and older model sections follow the upstream model lifecycle list bundled with the
   T3 Coder release.
@@ -56,7 +58,7 @@ See [Access modes](./permission-modes.md) for what each mode means.
 
 Type `/` in the composer to search available commands. Type `$` to search available skills.
 T3 Coder uses the inventory reported by the selected workspace provider and project, so the list
-can differ between Codex, Claude, and Pi or between workspaces.
+can differ between Codex, Claude, Pi, and Kilo Code or between workspaces.
 
 Codex sub-agent activity includes model and reasoning information when Codex reports it. T3 Coder
 leaves missing metadata blank rather than copying the parent agent's settings.
@@ -81,7 +83,7 @@ an approval request. The Claude browser integration is disabled.
 
 ## T3 tools
 
-Codex, Claude, and Pi can still use T3 Coder's own tools: delegating work to child agents, reading and
+Codex, Claude, Pi, and Kilo Code can still use T3 Coder's own tools: delegating work to child agents, reading and
 messaging other threads, managing the queue and pending questions, scheduling recurring tasks,
 launching threads in worktrees, managing projects, and linking merge requests. Instead of an MCP
 server, T3 gives each provider session a workspace command that runs these tools and removes it
@@ -99,11 +101,11 @@ connections before its provider settings can be read or changed.
 Provider configuration and text-generation defaults are stored in the selected workspace. Model
 favorites, hidden models, and model ordering are browser preferences shared by every workspace.
 
-The default Codex, Claude, and Pi settings use the workspace's standard executables, provider homes,
+The default Codex, Claude, Pi, and Kilo Code settings use the workspace's standard executables, provider homes,
 and existing API authentication. Most users should leave them unchanged. Each provider can be enabled or
 disabled independently.
 
-Additional provider instances let a workspace expose another Codex, Claude, or Pi installation,
+Additional provider instances let a workspace expose another Codex, Claude, Pi, or Kilo Code installation,
 identity, or configuration without replacing the default. The same settings experience is used
 for every provider, while each provider shows only the choices it supports.
 

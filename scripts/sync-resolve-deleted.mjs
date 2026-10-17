@@ -81,16 +81,24 @@ const DELETED_PATHS = {
     "packages/source-control-gitcafe/",
     "packages/source-control-github/",
   ],
-  // Other provider packages: Codex, Claude Code, and Pi are the only providers.
+  // Other provider packages: Codex, Claude Code, Pi, and Kilo Code are the only providers.
   "other provider packages": [
+    "apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts",
     "apps/server/src/provider/acp/",
-    "packages/effect-acp/",
-    "packages/provider-acp/",
-    "packages/provider-acp-registry/",
     "packages/provider-cursor/",
     "packages/provider-grok/",
     "packages/provider-muse/",
     "packages/provider-opencode/",
+  ],
+  // Kilo Code runs upstream's ACP Registry driver from its local command only: no registry
+  // installs, agent sign-in, per-agent flavors, or native protocol logging.
+  "ACP Registry surfaces": [
+    "packages/provider-acp-registry/src/server/auth.ts",
+    "packages/provider-acp-registry/src/server/authenticationState.ts",
+    "packages/provider-acp-registry/src/server/copilotAcp.ts",
+    "packages/provider-acp-registry/src/server/devinAcp.ts",
+    "packages/provider-acp-registry/src/server/testing/",
+    "packages/provider-acp/src/server/nativeLogging.ts",
   ],
   // Desktop: no Electron app, local primary environment, desktop updates, OS permission
   // checklist, native helpers, or packaging.

@@ -129,8 +129,11 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
 - HTTP routes and assets (`apps/server/src/assets`, `http.ts` route files).
 - Forgejo, GitHub, Azure DevOps, Bitbucket, and GitCafe (`packages/source-control-*` except core,
   gitlab, and testing).
-- Other provider packages (`packages/provider-{acp,acp-registry,cursor,grok,muse,opencode}`,
-  `packages/effect-acp`).
+- Other provider packages (`packages/provider-{cursor,grok,muse,opencode}`,
+  `apps/server/src/provider/acp`).
+- ACP Registry surfaces Kilo Code does not use (provider-acp-registry's `auth.ts`,
+  `authenticationState.ts`, `copilotAcp.ts`, `devinAcp.ts`, and `testing/`; provider-acp's
+  `nativeLogging.ts`).
 - Desktop (`apps/desktop`, `native`, `packaging`, `assets`); mobile (`apps/mobile`); hosted web
   (`apps/marketing`, `apps/server/src/cloud`, web `cloud`, `components/clerk`).
 - Relay (`apps/server/src/relay`, `infra`, `packages/ssh`, `packages/tailscale`); telemetry
