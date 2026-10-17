@@ -583,9 +583,6 @@ importers:
       '@effect/vitest':
         specifier: 4.0.5
         version: 4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@types/node@24.12.4)(@vitest/ui@5.0.1(vitest@5.0.1))(effect@4.0.5)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(vitest@5.0.1(@types/node@24.12.4)(@vitest/browser-preview@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0))(yaml@2.9.0)
-      '@t3tools/provider-testing':
-        specifier: workspace:*
-        version: link:../provider-testing
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
