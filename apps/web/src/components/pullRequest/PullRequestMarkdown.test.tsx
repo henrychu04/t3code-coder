@@ -30,9 +30,17 @@ vi.mock("../../state/entities", async (original) => ({
       },
     },
   ],
-  useServerConfigs: () =>
-    new Map([["workspace", { environment: { capabilities: { pullRequests: true } } }]]),
 }));
+// The link handler reads the server configs from the atom registry when clicked.
+vi.mock("../../state/server", async (original) => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    ...(await original<typeof import("../../state/server")>()),
+    environmentServerConfigsAtom: Atom.make(
+      new Map([["workspace", { environment: { capabilities: { pullRequests: true } } }]]),
+    ),
+  };
+});
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
