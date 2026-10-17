@@ -31,7 +31,7 @@ export function buildSupportedRuntimeModes(input: {
   });
 }
 
-export function withSupportedRuntimeModes(
+function withSupportedRuntimeModes(
   capabilities: ModelCapabilities | null | undefined,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
 ): ModelCapabilities {
