@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import { ProviderDriverKind, resolveProviderInstanceEnabled } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "../settings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
@@ -29,6 +30,16 @@ describe("AcpRegistryCatalog", () => {
       commandPath: "kilo",
       commandArgs: ["acp"],
     });
+  });
+
+  it("starts disabled in the shared settings resolution, matching its schema default", () => {
+    expect(decodeAcpRegistrySettings({}).enabled).toBe(false);
+    expect(
+      resolveProviderInstanceEnabled({
+        driver: ProviderDriverKind.make("acpRegistry"),
+        config: {},
+      }),
+    ).toBe(false);
   });
 
   it.effect("resolves a local command on the selected environment", () =>

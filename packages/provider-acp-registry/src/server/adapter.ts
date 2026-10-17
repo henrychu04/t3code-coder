@@ -109,6 +109,8 @@ function makeAcpRegistryRuntime(
           customModels: readCustomModelEntries(options.settings.customModels).map(
             (entry) => entry.slug,
           ),
+          // Coder: T3 starts no agent sign-in; an unauthenticated Kilo Code fails the session.
+          authenticateOnAuthRequired: false,
         }),
       );
       return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(

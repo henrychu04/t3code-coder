@@ -595,6 +595,7 @@ listed here is drift to remove rather than fork behavior to keep.
     - `settings.ts` keeps only `commandPath` (default `kilo`, titled "Kilo executable"), hidden
       `commandArgs` (default `["acp"]`), `customModels`, and `enabled` (default off, as Pi's).
       Upstream's `source`, `agentId`, `distribution`, and `authMethodId` are not carried.
+      contracts' `DEFAULT_DISABLED_PROVIDER_DRIVERS` lists `acpRegistry` to match that default.
       `client.ts` labels the driver "Kilo Code", inlines Kilo's ACP Registry icon so the browser
       never loads it from the registry CDN, and has a default instance.
     - `AcpRegistrySupport.ts` keeps only upstream's local-command `inspect` and `resolve`; the
@@ -607,7 +608,11 @@ listed here is drift to remove rather than fork behavior to keep.
       URL authentication action, and `acpSessionManagement` (native session list, import, and
       delete; provider list, set, and disable; logout) are not carried, and neither are their
       `auth.ts`, `authenticationState.ts`, or management requests in `probe.ts`. The probe
-      offers no terminal login and declines URL elicitation.
+      offers no terminal login and declines URL elicitation, and real sessions set
+      `authenticateOnAuthRequired: false`, so an unauthenticated Kilo Code fails the session
+      instead of T3 calling ACP `authenticate`. Because no sign-in ever reports `authenticated`,
+      `ProviderRegistry.ts` also treats a ready snapshot that lists a discovered model beyond the
+      `default` placeholder as a completed probe, so removed models leave the picker.
     - `AcpRegistryRuntimeCoordinator.ts` has no URL authentication consent or session mutation
       permit. `adapter.ts` has no Devin, GitHub Copilot, or Mistral Vibe flavor (`copilotAcp.ts`
       and `devinAcp.ts` are not carried) and no native protocol logging.
@@ -615,14 +620,18 @@ listed here is drift to remove rather than fork behavior to keep.
       and when the thread has a bridge command the first prompt carries
       `t3ToolBridgeInstructions` (moved to provider-core for this) through provider-core's
       `t3AcpPromptWithInstructions`, which takes the bridge text in place of upstream's MCP
-      orchestration and browser text. Its `mcpOverAcpBridge.ts` stays upstream's and is dormant:
-      no Coder session has an MCP endpoint, so it is never created. `nativeLogging.ts` is not
-      carried.
+      orchestration and browser text. Two upstream modules stay dormant on purpose, as Pi's HTTP
+      MCP client does, because cutting them would add about 34 seams to the 7.5k-line adapter:
+      `mcpOverAcpBridge.ts` (no Coder session has an MCP endpoint, so it is never created) and
+      `clientTerminals.ts` (only the Devin flavor passed `clientTerminals`).
+      `nativeLogging.ts` is not carried.
     - The server tests carry upstream's ACP Registry replay harness
       (`AcpRegistryAdapterV2.testkit.ts`, `AcpAdapterV2.testkit.ts`, and `scripts/`'s ACP replay
       and mock agents), its adapter and probe tests without the registry, Devin, and
       session-management cases, and a Coder test that the bridge command reaches the prompt.
       Upstream's 14k-line `AcpAdapterV2.test.ts` is not carried.
+    - The user guide is the fork's `docs/user/providers-kilo.md`, adapted from upstream's
+      `providers-acp.md` (not carried) to the local command.
   - Thread-title and branch-name generation use only Codex, Claude, or Pi models (Pi through
     upstream's ephemeral `pi --mode rpc --no-session` process). Text generation is
     upstream's except that Codex reads branch-name and title images through

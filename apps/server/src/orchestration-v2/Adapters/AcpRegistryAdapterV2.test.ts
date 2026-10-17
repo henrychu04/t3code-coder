@@ -418,6 +418,45 @@ describe("AcpRegistryAdapterV2", () => {
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
+  // Coder: T3 starts no agent sign-in. When Kilo Code reports that authentication is required,
+  // the session fails instead of calling ACP `authenticate` with an agent-managed method.
+  it.effect("fails an unauthenticated session instead of signing in", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const mockAgentPath = yield* path.fromFileUrl(
+        new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+      );
+      const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog();
+      const instanceId = ProviderInstanceId.make("acp-registry-auth-required");
+      const threadId = ThreadId.make("thread-acp-registry-auth-required");
+      const adapter = yield* makeAcpRegistryAdapterV2({
+        instanceId,
+        settings: yield* decodeAcpRegistryAdapterSettings({
+          commandPath: process.execPath,
+          commandArgs: [mockAgentPath],
+        }),
+        environment: { T3_ACP_SESSION_LIFECYCLE: "1", T3_ACP_REQUIRE_AUTH: "1" },
+      }).pipe(Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, resolver));
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      const modelSelection = { instanceId, model: "default" } as const;
+      const result = yield* Effect.gen(function* () {
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-acp-registry-auth-required"),
+          modelSelection,
+          runtimePolicy,
+        });
+        return yield* runtime.ensureThread({ threadId, modelSelection, runtimePolicy });
+      }).pipe(Effect.result);
+
+      assert.isTrue(result._tag === "Failure", "an auth-required session must not sign in");
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
   // Coder: T3 tools reach Kilo Code over the workspace file bridge. No MCP server is attached to
   // its session, and the first prompt names the thread's bridge command.
   it.live("describes the workspace file bridge instead of attaching an MCP server", () =>
