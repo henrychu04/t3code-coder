@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { makeProviderSettingsSchema, ProviderDriverKind, TrimmedString } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
 import { providerClients } from "./providerDriverMeta";
 import {
@@ -31,6 +32,18 @@ describe("ProviderSettingsForm helpers", () => {
       "homePath",
       "autoCompactWindow",
       "launchArgs",
+    ]);
+  });
+
+  it("keeps every masked field as a stored secret", () => {
+    const settingsSchema = makeProviderSettingsSchema({
+      token: TrimmedString.pipe(
+        Schema.annotateKey({ providerSettingsForm: { control: "password" } }),
+      ),
+    });
+
+    expect(deriveProviderSettingsFields({ settingsSchema })).toMatchObject([
+      { key: "token", secret: true },
     ]);
   });
 

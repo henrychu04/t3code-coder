@@ -4,26 +4,34 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import { transform } from "oxc-transform-react";
 import { describe, expect, it } from "vite-plus/test";
-import { REACT_COMPILED_FILES } from "../reactCompiledFiles";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../../..",
 );
 
-function expandPattern(pattern: string): string[] {
-  if (!pattern.endsWith("/**")) return [pattern];
-  const directory = pattern.slice(0, -3);
-  return NodeFS.readdirSync(NodePath.join(repoRoot, directory), { recursive: true })
-    .map(String)
-    .filter((file) => /\.tsx?$/.test(file) && !/\.(test|browser)\.tsx?$/.test(file))
-    .map((file) => `${directory}/${file}`);
-}
+// Coder: fork-only files whose try/finally and captured counters the compiler skips. They build
+// unmemoized, as before the compiler covered every file; see docs/internals/coder-only.md.
+const CODER_UNCOMPILED_FILES = new Set([
+  "apps/web/src/coder/CoderBootstrap.tsx",
+  "apps/web/src/components/WorkspaceConnectionStatus.tsx",
+  "apps/web/src/components/settings/useSettingsOperation.ts",
+  "apps/web/src/components/settings/useSettingsPolling.ts",
+]);
+
+const webSourceFiles = NodeFS.readdirSync(NodePath.join(repoRoot, "apps/web/src"), {
+  recursive: true,
+})
+  .map(String)
+  .filter((file) => /\.tsx?$/.test(file) && !/\.(test|browser)\.tsx?$/.test(file))
+  .filter((file) => !file.endsWith(".gen.ts"))
+  .map((file) => `apps/web/src/${file}`)
+  .filter((file) => !CODER_UNCOMPILED_FILES.has(file));
 
 // Lint reports most compiler bailouts, but not every one (try/finally, throw
 // inside try). A skipped file still builds, just unmemoized, so check the output.
 describe("React Compiler coverage", () => {
-  it.each(REACT_COMPILED_FILES.flatMap(expandPattern))("compiles %s", async (file) => {
+  it.each(webSourceFiles)("compiles %s", async (file) => {
     const absolute = NodePath.join(repoRoot, file);
     const result = await transform(absolute, NodeFS.readFileSync(absolute, "utf8"), {
       jsx: { runtime: "automatic", development: false, refresh: false },

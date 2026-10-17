@@ -1,6 +1,4 @@
-// @vitest-environment jsdom
 // Coder: there is no floating preview, so these cover only the details card inset below Find.
-
 import { act, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";

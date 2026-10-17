@@ -14,7 +14,7 @@ import {
   type HtmlRenderReference,
 } from "@t3tools/shared/htmlRender";
 import { Maximize2Icon } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { readTurnItemAsset } from "~/lib/readTurnItemAsset";
 import { observeResize } from "~/lib/observeResize";
@@ -59,11 +59,11 @@ export function HtmlRenderFrame(props: {
   // Coder: the page is already in memory, so full screen needs no fresh URL.
   const [expanded, setExpanded] = useState(false);
   const [ready, setReady] = useState(false);
-  const showPage = useCallback(() => setReady(true), []);
-  const fitPage = useCallback((contentHeight: number) => {
+  const showPage = () => setReady(true);
+  const fitPage = (contentHeight: number) => {
     setContentHeight(contentHeight);
     setReady(true);
-  }, []);
+  };
   const { onFullscreenChange } = props;
   useEffect(() => {
     if (!expanded) return;

@@ -5,6 +5,7 @@ import { readBuildVersion } from "../../scripts/build-info.ts";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import { playwright } from "vite-plus/test/browser-playwright";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
 
@@ -13,9 +14,29 @@ const unitTestProject = {
   test: {
     name: "unit",
     include: ["src/**/*.test.{ts,tsx}"],
+    exclude: ["src/**/*.browser.test.{ts,tsx}"],
     hookTimeout: 15_000,
     testTimeout: 15_000,
     setupFiles: ["../../packages/shared/src/testing/longTempDir.ts"],
+  },
+} satisfies TestProjectInlineConfiguration;
+
+// Anything that renders React or touches the DOM is named *.browser.test.{ts,tsx} and runs
+// in headless Chromium through the same plugins as the app, so it exercises compiled code.
+const browserTestProject = {
+  extends: true,
+  test: {
+    name: "browser",
+    include: ["src/**/*.browser.test.{ts,tsx}"],
+    hookTimeout: 15_000,
+    testTimeout: 15_000,
+    browser: {
+      enabled: true,
+      headless: true,
+      provider: playwright(),
+      instances: [{ browser: "chromium" }],
+      screenshotFailures: false,
+    },
   },
 } satisfies TestProjectInlineConfiguration;
 
@@ -49,5 +70,5 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: false,
   },
-  test: { projects: [defineProject(unitTestProject)] },
+  test: { projects: [defineProject(unitTestProject), defineProject(browserTestProject)] },
 });

@@ -1,7 +1,7 @@
 // Upstream's ExpandedImageDialog. Coder reads workspace media through helper stdio chunks instead
 // of signed asset URLs: the selected image is read with priority, a video loads when the dialog
 // opens, and adapters may report `loading` and `retry`. SnapShot accessibility details are omitted.
-import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -124,16 +124,13 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       }
     : shownSource;
 
-  const navigateImage = useCallback(
-    (direction: -1 | 1) => {
-      if (onIndexChange) {
-        onIndexChange(wrapExpandedImageIndex(index + direction, imageCount));
-        return;
-      }
-      setImageOffset((current) => current + direction);
-    },
-    [imageCount, index, onIndexChange],
-  );
+  const navigateImage = (direction: -1 | 1) => {
+    if (onIndexChange) {
+      onIndexChange(wrapExpandedImageIndex(index + direction, imageCount));
+      return;
+    }
+    setImageOffset((current) => current + direction);
+  };
 
   // The element that opened the preview gets focus back on close. Without
   // this a close button click leaves focus on the unmounted dialog, and the

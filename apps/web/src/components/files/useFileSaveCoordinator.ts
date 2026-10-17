@@ -4,7 +4,7 @@ import {
   type ProjectFilesOwner,
   type ProjectWriteFileResult,
 } from "@t3tools/contracts";
-import { createRef, useEffect, useMemo, useRef } from "react";
+import { createRef, useEffect, useState } from "react";
 
 import { projectEnvironment } from "~/state/projects";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
@@ -39,73 +39,43 @@ export function useFileSaveCoordinator({
   onSaveFailed,
 }: FileSaveOptions): Pick<FileSaveCoordinator, "change"> {
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
-  const writeFile = useAtomCommand(projectEnvironment.writeFile);
+  const writeFile = useProjectFileWriter();
   // Coder: the base revision of the open file. It is tagged with the file identity so a write
   // confirmed for a retired file cannot leak its revision into the next file's writes.
   const fileKey = JSON.stringify([environmentId, owner, cwd, relativePath]);
-  const revisionRef = useRef({ fileKey, revision });
+  // Held in state rather than a ref so render can hand it to a new session.
+  const [latestRevision] = useState(() => createRevisionTracker({ fileKey, revision }));
   useEffect(() => {
-    revisionRef.current = { fileKey, revision };
-  }, [fileKey, revision]);
-  const session = useMemo(() => {
-    const coordinatorRef = createRef<FileSaveCoordinator<ProjectWriteFileResult>>();
-    const sessionFileKey = JSON.stringify([environmentId, owner, cwd, relativePath]);
-    // The revision this session last used, so a retired session's retry keeps its own file's.
-    const sessionRevision: { current: string | undefined } = { current: undefined };
-    const currentRevision = () => {
-      if (revisionRef.current.fileKey === sessionFileKey) {
-        sessionRevision.current = revisionRef.current.revision;
-      }
-      return sessionRevision.current ?? revisionRef.current.revision;
-    };
-    return {
-      change: (contents: string) => coordinatorRef.current?.change(contents),
-      setup: () => {
-        // Coder: a retired editor still retries its pending edit on close, as upstream does,
-        // but its failure must not flag the surface that replaced it.
-        let active = true;
-        const coordinator = new FileSaveCoordinator<ProjectWriteFileResult>({
-          debounceMs: FILE_SAVE_DEBOUNCE_MS,
-          canPersist: () => readEnvironmentScope(environmentId, AuthFilesystemWriteScope),
-          onPendingChange: (pending) => onPendingChange(relativePath, pending),
-          onFailed: () => {
-            if (active) onSaveFailed(relativePath);
-          },
-          persist: (nextContents) =>
-            writeFile({
-              environmentId,
-              input: {
-                ...owner,
-                cwd,
-                relativePath,
-                contents: nextContents,
-                expectedRevision: currentRevision(),
-              },
-            }),
-          onConfirmed: (confirmedContents, result) => {
-            sessionRevision.current = result.revision;
-            if (revisionRef.current.fileKey === sessionFileKey) {
-              revisionRef.current = { fileKey: sessionFileKey, revision: result.revision };
-            }
-            return confirmProjectFileQueryData(
-              environmentId,
-              owner,
-              cwd,
-              relativePath,
-              confirmedContents,
-              result.revision,
-            );
-          },
-        });
-        coordinatorRef.current = coordinator;
-        return () => {
-          active = false;
-          coordinatorRef.current = null;
-          coordinator.dispose();
-        };
-      },
-    };
-  }, [cwd, environmentId, onPendingChange, onSaveFailed, owner, relativePath, writeFile]);
+    latestRevision.write({ fileKey, revision });
+  }, [fileKey, revision, latestRevision]);
+  // A session owns the pending debounce, so it must outlive rerenders and be
+  // replaced only when what it writes to changes.
+  const inputs = {
+    environmentId,
+    owner,
+    cwd,
+    relativePath,
+    onPendingChange,
+    onSaveFailed,
+    writeFile,
+    latestRevision,
+  };
+  const [current, setCurrent] = useState(() => ({
+    inputs,
+    session: createFileSaveSession(inputs),
+  }));
+  if (
+    current.inputs.environmentId !== environmentId ||
+    current.inputs.owner !== owner ||
+    current.inputs.cwd !== cwd ||
+    current.inputs.relativePath !== relativePath ||
+    current.inputs.onPendingChange !== onPendingChange ||
+    current.inputs.onSaveFailed !== onSaveFailed ||
+    current.inputs.writeFile !== writeFile
+  ) {
+    setCurrent({ inputs, session: createFileSaveSession(inputs) });
+  }
+  const session = current.session;
 
   // StrictMode replays effect setup. Retired file sessions stay inert, while the
   // replay gets a fresh coordinator instead of reusing a disposed one.
@@ -124,4 +94,95 @@ export function useFileSaveCoordinator({
     };
   }, [canWriteFiles, cwd, environmentId, relativePath, session]);
   return session;
+}
+
+interface FileRevision {
+  readonly fileKey: string;
+  readonly revision: string;
+}
+
+function createRevisionTracker(initial: FileRevision) {
+  let latest = initial;
+  return {
+    read: () => latest,
+    write: (next: FileRevision) => {
+      latest = next;
+    },
+  };
+}
+
+function useProjectFileWriter() {
+  return useAtomCommand(projectEnvironment.writeFile);
+}
+
+function createFileSaveSession({
+  environmentId,
+  owner,
+  cwd,
+  relativePath,
+  onPendingChange,
+  onSaveFailed,
+  writeFile,
+  latestRevision,
+}: Omit<FileSaveOptions, "revision"> & {
+  writeFile: ReturnType<typeof useProjectFileWriter>;
+  latestRevision: ReturnType<typeof createRevisionTracker>;
+}) {
+  const coordinatorRef = createRef<FileSaveCoordinator<ProjectWriteFileResult>>();
+  const sessionFileKey = JSON.stringify([environmentId, owner, cwd, relativePath]);
+  // The revision this session last used, so a retired session's retry keeps its own file's.
+  const sessionRevision: { current: string | undefined } = { current: undefined };
+  const currentRevision = () => {
+    if (latestRevision.read().fileKey === sessionFileKey) {
+      sessionRevision.current = latestRevision.read().revision;
+    }
+    return sessionRevision.current ?? latestRevision.read().revision;
+  };
+  return {
+    change: (contents: string) => coordinatorRef.current?.change(contents),
+    setup: () => {
+      // Coder: a retired editor still retries its pending edit on close, as upstream does,
+      // but its failure must not flag the surface that replaced it.
+      let active = true;
+      const coordinator = new FileSaveCoordinator<ProjectWriteFileResult>({
+        debounceMs: FILE_SAVE_DEBOUNCE_MS,
+        canPersist: () => readEnvironmentScope(environmentId, AuthFilesystemWriteScope),
+        onPendingChange: (pending) => onPendingChange(relativePath, pending),
+        onFailed: () => {
+          if (active) onSaveFailed(relativePath);
+        },
+        persist: (nextContents) =>
+          writeFile({
+            environmentId,
+            input: {
+              ...owner,
+              cwd,
+              relativePath,
+              contents: nextContents,
+              expectedRevision: currentRevision(),
+            },
+          }),
+        onConfirmed: (confirmedContents, result) => {
+          sessionRevision.current = result.revision;
+          if (latestRevision.read().fileKey === sessionFileKey) {
+            latestRevision.write({ fileKey: sessionFileKey, revision: result.revision });
+          }
+          return confirmProjectFileQueryData(
+            environmentId,
+            owner,
+            cwd,
+            relativePath,
+            confirmedContents,
+            result.revision,
+          );
+        },
+      });
+      coordinatorRef.current = coordinator;
+      return () => {
+        active = false;
+        coordinatorRef.current = null;
+        coordinator.dispose();
+      };
+    },
+  };
 }

@@ -1,6 +1,6 @@
 import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
 import { cn } from "~/lib/utils";
@@ -41,10 +41,9 @@ export function PullRequestMarkdown({
   const repositoryUrl = context?.repositoryUrl ?? null;
   const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
   const segments = splitPullRequestBody(text, hostUrl ?? repositoryUrl);
-  const extraRemarkPlugins = useMemo<NonNullable<ReactMarkdownOptions["remarkPlugins"]>>(
-    () => (repositoryUrl ? [[remarkPullRequestAutolinks, { repositoryUrl }]] : []),
-    [repositoryUrl],
-  );
+  const extraRemarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = repositoryUrl
+    ? [[remarkPullRequestAutolinks, { repositoryUrl }]]
+    : [];
   return (
     <div
       className={cn(

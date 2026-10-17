@@ -2,7 +2,6 @@ import { splitPathAndPosition } from "./terminal-links";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useRightPanelStore } from "./rightPanelStore";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useMemo } from "react";
 import type { ContextMenuItem } from "./localApiTypes";
 import { readLocalApi } from "./localApi";
 import { useCopyToClipboard } from "./hooks/useCopyToClipboard";
@@ -68,25 +67,22 @@ export function useFileContextMenuHandler(
   threadRef?: ScopedThreadRef | null,
 ) {
   const { copyToClipboard } = useCopyToClipboard();
-  return useCallback(
-    (target: FileContextMenuTarget, event?: { clientX: number; clientY: number }) => {
-      if (environmentId === null || target.environmentId !== environmentId) return;
-      const path = resolveFileContextMenuRelativePath(target);
-      const api = readLocalApi();
-      if (!path || !api) return;
-      void api.contextMenu
-        .show(
-          buildFileContextMenuItems(target, threadRef?.environmentId === environmentId),
-          event ? { x: event.clientX, y: event.clientY } : undefined,
-        )
-        .then((action) => {
-          if (action === "open" && threadRef?.environmentId === environmentId)
-            useRightPanelStore.getState().openFile(threadRef, path);
-          if (action === "copy-path") copyToClipboard(path, undefined);
-        });
-    },
-    [environmentId, copyToClipboard, threadRef],
-  );
+  return (target: FileContextMenuTarget, event?: { clientX: number; clientY: number }) => {
+    if (environmentId === null || target.environmentId !== environmentId) return;
+    const path = resolveFileContextMenuRelativePath(target);
+    const api = readLocalApi();
+    if (!path || !api) return;
+    void api.contextMenu
+      .show(
+        buildFileContextMenuItems(target, threadRef?.environmentId === environmentId),
+        event ? { x: event.clientX, y: event.clientY } : undefined,
+      )
+      .then((action) => {
+        if (action === "open" && threadRef?.environmentId === environmentId)
+          useRightPanelStore.getState().openFile(threadRef, path);
+        if (action === "copy-path") copyToClipboard(path, undefined);
+      });
+  };
 }
 
 /**
@@ -95,14 +91,11 @@ export function useFileContextMenuHandler(
  */
 export function useFileContextMenu(_environmentId: EnvironmentId | null) {
   const { copyToClipboard } = useCopyToClipboard({ target: "project-relative path" });
-  return useMemo(
-    () => ({
-      buildItems: (target: FileContextMenuTarget) => buildFileContextMenuItems(target),
-      activate: async (action: FileContextMenuAction, target: FileContextMenuTarget) => {
-        const relativePath = resolveFileContextMenuRelativePath(target);
-        if (action === "copy-path" && relativePath) copyToClipboard(relativePath, undefined);
-      },
-    }),
-    [copyToClipboard],
-  );
+  return {
+    buildItems: (target: FileContextMenuTarget) => buildFileContextMenuItems(target),
+    activate: async (action: FileContextMenuAction, target: FileContextMenuTarget) => {
+      const relativePath = resolveFileContextMenuRelativePath(target);
+      if (action === "copy-path" && relativePath) copyToClipboard(relativePath, undefined);
+    },
+  };
 }

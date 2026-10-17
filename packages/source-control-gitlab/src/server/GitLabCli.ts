@@ -389,7 +389,10 @@ function normalizeHeadSelector(headSelector: string): string {
 }
 
 // Coder: upstream passes MR URLs straight to `glab`, which older versions read as branch names.
-function mergeRequestReferenceArgs(reference: string): ReadonlyArray<string> {
+function mergeRequestReferenceArgs(reference: string): {
+  readonly options: ReadonlyArray<string>;
+  readonly reference: string;
+} {
   // Coder: older glab versions interpret MR URLs as branch names. Keep the URL's repository
   // and host explicit while using the numeric MR selector supported by those versions.
   const url = URL.parse(reference);
@@ -399,11 +402,11 @@ function mergeRequestReferenceArgs(reference: string): ReadonlyArray<string> {
     url.username ||
     url.password
   ) {
-    return [reference];
+    return { options: [], reference };
   }
   const match = /^(\/.+)\/-\/merge_requests\/([1-9]\d*)(?:\/.*)?$/u.exec(url.pathname);
-  if (!match) return [reference];
-  return [match[2]!, "--repo", `${url.origin}${match[1]}`];
+  if (!match) return { options: [], reference };
+  return { options: ["--repo", `${url.origin}${match[1]}`], reference: match[2]! };
 }
 
 function sourceRefName(input: {
@@ -554,7 +557,10 @@ export const make = Effect.gen(function* () {
       executeMergeRequest({
         cwd: input.cwd,
         reference: input.reference,
-        args: ["mr", "view", ...mergeRequestReferenceArgs(input.reference), "--output", "json"],
+        args: (() => {
+          const selector = mergeRequestReferenceArgs(input.reference);
+          return ["mr", "view", ...selector.options, "--output", "json", "--", selector.reference];
+        })(),
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -744,13 +750,18 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         reference: input.reference,
         // Coder: upstream ignores `branch` and `force`, and passes MR URLs straight through.
-        args: [
-          "mr",
-          "checkout",
-          ...mergeRequestReferenceArgs(input.reference),
-          ...(input.branch ? ["--branch", input.branch] : []),
-          ...(input.force ? ["--force"] : []),
-        ],
+        args: (() => {
+          const selector = mergeRequestReferenceArgs(input.reference);
+          return [
+            "mr",
+            "checkout",
+            ...selector.options,
+            ...(input.branch ? ["--branch", input.branch] : []),
+            ...(input.force ? ["--force"] : []),
+            "--",
+            selector.reference,
+          ];
+        })(),
       }).pipe(Effect.asVoid),
   });
 });

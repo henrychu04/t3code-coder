@@ -36,7 +36,15 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
+
+// Windows also reaches `.git` through trailing dots or spaces, a `:` stream
+// suffix, or the 8.3 short name `GIT~1`. Names compare upcased, as NTFS does.
+const isGitMetadataName = (segment: string) => {
+  const name = (segment.split(":")[0] ?? "").replace(/[. ]+$/, "").toUpperCase();
+  return name === ".GIT" || name === "GIT~1";
+};
 
 type WorkspaceReadFileInput = Omit<ProjectReadFileInput, "threadId">;
 type WorkspaceWriteFileInput = Omit<ProjectWriteFileInput, "threadId">;
@@ -127,33 +135,33 @@ export class WorkspaceFileSystem extends Context.Service<
       ProjectReadFileResult,
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
     >;
+    /** Writes inside a known workspace only. */
     readonly writeFile: (
       input: WorkspaceWriteFileInput,
     ) => Effect.Effect<
       ProjectWriteFileResult,
-      WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
+      | WorkspaceFileSystemError
+      | WorkspacePaths.WorkspacePathOutsideRootError
+      | KnownWorkspaces.UnknownWorkspaceError
     >;
+    /** Writes inside a known workspace only. */
     readonly createFile: (
       input: WorkspaceCreateFileInput,
     ) => Effect.Effect<
       ProjectWriteFileResult,
-      WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
+      | WorkspaceFileSystemError
+      | WorkspacePaths.WorkspacePathOutsideRootError
+      | KnownWorkspaces.UnknownWorkspaceError
     >;
   }
 >()("t3/workspace/WorkspaceFileSystem") {}
-
-function isContained(root: string, target: string): boolean {
-  const relative = NodePath.relative(root, target);
-  return (
-    relative !== ".." && !relative.startsWith(`..${NodePath.sep}`) && !NodePath.isAbsolute(relative)
-  );
-}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const writeLocks = yield* RcMap.make({ lookup: (_path: string) => Semaphore.make(1) });
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+  const knownWorkspaces = yield* KnownWorkspaces.KnownWorkspaces;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const refreshWorker = yield* makeKeyedCoalescingWorker<string, boolean, never, never>({
@@ -204,6 +212,75 @@ export const make = Effect.gen(function* () {
     return { entries: input.paths.map((value) => byPath.get(value) ?? null) };
   });
 
+  /** Both paths must already be real paths. */
+  const isInsideRealRoot = (realWorkspaceRoot: string, realPath: string) => {
+    const relative = path.relative(realWorkspaceRoot, realPath);
+    return !(
+      relative.startsWith(`..${path.sep}`) ||
+      relative === ".." ||
+      path.isAbsolute(relative)
+    );
+  };
+
+  /**
+   * Git runs config and hooks from its own folders, so a write never lands in one:
+   * a `.git` entry, or a repository folder under another name such as `.bare`.
+   * Folders are checked upward to a linked worktree's top, which holds a `.git`
+   * file, since worktrees can sit inside a bare repository. `absolutePath` must
+   * be normalized.
+   */
+  const isInGitFolder = async (absolutePath: string) => {
+    if (absolutePath.split(path.sep).some(isGitMetadataName)) return true;
+    for (let folder = path.dirname(absolutePath); ; folder = path.dirname(folder)) {
+      const [head, commondir, objects, refs, dotGit] = await Promise.all(
+        ["HEAD", "commondir", "objects", "refs", ".git"].map((name) =>
+          NodeFSP.lstat(path.join(folder, name)).catch((error: NodeJS.ErrnoException) => {
+            // Any other failure leaves the folder unknown, so the write is refused.
+            if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+            throw error;
+          }),
+        ),
+      );
+      // What git reads as a repository: HEAD, plus objects and refs here or in
+      // the folder a `commondir` file names, as in a linked worktree's git folder.
+      if (head && (commondir || (objects && refs))) return true;
+      if (dotGit?.isFile() || path.dirname(folder) === folder) return false;
+    }
+  };
+
+  // Coder: an edit or new file also refuses git folders and unknown workspaces, as upstream's
+  // resolveWriteTarget does; the fork's writes keep their own existing-file and create-only paths.
+  const refuseGitFolder = Effect.fn("WorkspaceFileSystem.refuseGitFolder")(function* (input: {
+    readonly cwd: string;
+    readonly relativePath: string;
+    readonly realWorkspaceRoot: string;
+    readonly namedTargetPath: string;
+    readonly realTargetPath: string;
+  }) {
+    // The path as named is checked too: a `.git/config` symlink resolves away the `.git`.
+    const inGitFolder = (checkedPath: string) =>
+      Effect.tryPromise({
+        try: () => isInGitFolder(checkedPath),
+        catch: (cause) =>
+          new WorkspaceFileSystemOperationError({
+            workspaceRoot: input.cwd,
+            relativePath: input.relativePath,
+            resolvedPath: input.realTargetPath,
+            operationPath: checkedPath,
+            operation: "stat",
+            cause,
+          }),
+      });
+    if ((yield* inGitFolder(input.realTargetPath)) || (yield* inGitFolder(input.namedTargetPath))) {
+      return yield* new WorkspaceFilePathEscapeError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedWorkspaceRoot: input.realWorkspaceRoot,
+        resolvedPath: input.realTargetPath,
+      });
+    }
+  });
+
   const resolveExisting = Effect.fn("WorkspaceFileSystem.resolveExisting")(function* (input: {
     cwd: string;
     relativePath: string;
@@ -213,7 +290,8 @@ export const make = Effect.gen(function* () {
       relativePath: input.relativePath,
     });
     const realWorkspaceRoot = yield* Effect.tryPromise({
-      try: () => NodeFSP.realpath(input.cwd),
+      // Resolve `..` in cwd the way the relative path was resolved, before following links.
+      try: () => NodeFSP.realpath(path.resolve(input.cwd)),
       catch: (cause) =>
         new WorkspaceFileSystemOperationError({
           workspaceRoot: input.cwd,
@@ -236,7 +314,7 @@ export const make = Effect.gen(function* () {
           cause,
         }),
     });
-    if (!isContained(realWorkspaceRoot, realTargetPath)) {
+    if (!isInsideRealRoot(realWorkspaceRoot, realTargetPath)) {
       return yield* new WorkspaceFilePathEscapeError({
         workspaceRoot: input.cwd,
         relativePath: input.relativePath,
@@ -244,7 +322,7 @@ export const make = Effect.gen(function* () {
         resolvedPath: realTargetPath,
       });
     }
-    return { target, realTargetPath };
+    return { target, realWorkspaceRoot, realTargetPath };
   });
 
   const readFile: WorkspaceFileSystem["Service"]["readFile"] = Effect.fn(
@@ -311,7 +389,15 @@ export const make = Effect.gen(function* () {
   const writeFile: WorkspaceFileSystem["Service"]["writeFile"] = Effect.fn(
     "WorkspaceFileSystem.writeFile",
   )(function* (input) {
-    const { target, realTargetPath } = yield* resolveExisting(input);
+    yield* knownWorkspaces.assertContains(input.cwd);
+    const { target, realWorkspaceRoot, realTargetPath } = yield* resolveExisting(input);
+    yield* refuseGitFolder({
+      cwd: input.cwd,
+      relativePath: input.relativePath,
+      realWorkspaceRoot,
+      namedTargetPath: path.resolve(target.absolutePath),
+      realTargetPath,
+    });
     const bytes = new TextEncoder().encode(input.contents);
     if (bytes.byteLength > PROJECT_FILE_MAX_BYTES) {
       return yield* new WorkspaceFileSystemOperationError({
@@ -377,6 +463,7 @@ export const make = Effect.gen(function* () {
   const createFile: WorkspaceFileSystem["Service"]["createFile"] = Effect.fn(
     "WorkspaceFileSystem.createFile",
   )(function* (input) {
+    yield* knownWorkspaces.assertContains(input.cwd);
     const target = yield* workspacePaths.resolveRelativePathWithinRoot({
       workspaceRoot: input.cwd,
       relativePath: input.relativePath,
@@ -401,8 +488,17 @@ export const make = Effect.gen(function* () {
       );
     }
     const realWorkspaceRoot = yield* Effect.tryPromise({
-      try: () => NodeFSP.realpath(input.cwd),
+      try: () => NodeFSP.realpath(path.resolve(input.cwd)),
       catch: (cause) => failure("realpath-workspace-root", cause),
+    });
+    // No folder is made inside a git folder: the path as named is checked before creation.
+    const namedTargetPath = path.resolve(target.absolutePath);
+    yield* refuseGitFolder({
+      cwd: input.cwd,
+      relativePath: input.relativePath,
+      realWorkspaceRoot,
+      namedTargetPath,
+      realTargetPath: namedTargetPath,
     });
     // A symlinked ancestor must not carry the new file, or the folders made for it, outside the
     // project: the nearest existing ancestor is checked before any folder is made, and the parent
@@ -419,7 +515,7 @@ export const make = Effect.gen(function* () {
         ) {
           existing = NodePath.dirname(existing);
         }
-        if (!isContained(realWorkspaceRoot, await NodeFSP.realpath(existing))) return null;
+        if (!isInsideRealRoot(realWorkspaceRoot, await NodeFSP.realpath(existing))) return null;
         await NodeFSP.mkdir(parent, { recursive: true });
         return NodeFSP.realpath(parent);
       },
@@ -434,7 +530,7 @@ export const make = Effect.gen(function* () {
       });
     }
     const realTargetPath = NodePath.join(realParent, NodePath.basename(target.absolutePath));
-    if (!isContained(realWorkspaceRoot, realTargetPath)) {
+    if (!isInsideRealRoot(realWorkspaceRoot, realTargetPath)) {
       return yield* new WorkspaceFilePathEscapeError({
         workspaceRoot: input.cwd,
         relativePath: input.relativePath,
@@ -442,6 +538,13 @@ export const make = Effect.gen(function* () {
         resolvedPath: realTargetPath,
       });
     }
+    yield* refuseGitFolder({
+      cwd: input.cwd,
+      relativePath: input.relativePath,
+      realWorkspaceRoot,
+      namedTargetPath,
+      realTargetPath,
+    });
     yield* Effect.tryPromise({
       try: () => NodeFSP.writeFile(realTargetPath, bytes, { flag: "wx" }),
       catch: (cause) => failure("write-file", cause),

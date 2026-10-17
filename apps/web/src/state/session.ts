@@ -1,7 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createEnvironmentSessionAtoms } from "@t3tools/client-runtime/state/session";
 import type { AuthEnvironmentScope, EnvironmentId } from "@t3tools/contracts";
-import { useMemo } from "react";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 
@@ -23,10 +22,7 @@ export function useEnvironmentsWithScope(
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
   _scope: AuthEnvironmentScope,
 ): ReadonlySet<EnvironmentId> {
-  return useMemo(
-    () => new Set(environments.map((environment) => environment.environmentId)),
-    [environments],
-  );
+  return new Set(environments.map((environment) => environment.environmentId));
 }
 
 export function readEnvironmentScope(
