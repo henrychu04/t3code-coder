@@ -148,7 +148,7 @@ import {
 } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
-import { t3ToolBridgeInstructions } from "../../mcp/bridge/T3ToolInstructions.ts";
+import { t3ToolBridgeInstructions } from "@t3tools/provider-core/server/t3ToolBridgeInstructions";
 import { resolvePastedImageAttachments } from "../../provider/PastedImageAttachments.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";

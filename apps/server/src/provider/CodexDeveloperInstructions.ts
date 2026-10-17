@@ -1,6 +1,6 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
-import { t3ToolBridgeInstructions } from "../mcp/bridge/T3ToolInstructions.ts";
+import { t3ToolBridgeInstructions } from "@t3tools/provider-core/server/t3ToolBridgeInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 
 import {

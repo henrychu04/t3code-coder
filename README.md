@@ -1,10 +1,10 @@
 # T3 Coder
 
-T3 Coder is a browser interface for Codex, Claude Code, and Pi running inside your Coder workspaces.
+T3 Coder is a browser interface for Codex, Claude Code, Pi, and Kilo Code running inside your Coder workspaces.
 Start threads, review changes, run terminals, and manage repositories from a local web app while
 your code, provider sessions, and history stay in the workspace.
 
-This fork is intended solely for API-backed Codex, Claude Code, and Pi usage. Configure API credentials
+This fork is intended solely for API-backed Codex, Claude Code, Pi, and Kilo Code usage. Configure API credentials
 inside the workspace using your provider's configuration. Subscription-backed ChatGPT and Claude
 consumer plans are outside the supported scope; T3 Coder does not provide subscription-quota or
 API billing dashboards.
@@ -28,7 +28,7 @@ where you started.
 - **Workspace management** — connect to Coder domains, start and stop workspaces, watch health
   and latency, and forward workspace ports to your machine.
 
-Codex, Claude Code, and Pi are the only agents T3 Coder drives, and they always run inside the
+Codex, Claude Code, Pi, and Kilo Code are the only agents T3 Coder drives, and they always run inside the
 workspace — never on your computer. A workspace may provide any of them.
 
 ## Requirements
@@ -41,7 +41,7 @@ On the local machine (macOS for development, Windows 11 for daily use):
 
 Inside each Linux Coder workspace:
 
-- Codex, Claude Code, or Pi, already configured for API access in the workspace
+- Codex, Claude Code, Pi, or Kilo Code, already configured for API access in the workspace
 - Git
 - GitLab CLI (`glab`), authenticated when using GitLab merge-request features
 - Nix with a configured `nixpkgs` (used once to provision a pinned Node.js runtime)
@@ -64,7 +64,7 @@ Then:
    `npm start`; the token is handled there, never in the browser.
 3. Choose **Add project** in the sidebar, pick your domain and workspace, and select a folder in
    the remote folder picker.
-4. Choose an available Codex, Claude, or Pi model and start a thread.
+4. Choose an available Codex, Claude, Pi, or Kilo Code model and start a thread.
 
 The first connection to a workspace runs a short preflight. It verifies the workspace platform,
 Git, Nix, and that at least one supported provider is present, then installs a version-matched
@@ -74,32 +74,33 @@ Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 
 ## Documentation
 
-| Guide                                                            | Covers                                                       |
-| ---------------------------------------------------------------- | ------------------------------------------------------------ |
-| [Install and first run](./docs/user/getting-started.md)          | Requirements, setup, and the first connection                |
-| [Codex, Claude Code, and Pi](./docs/user/providers.md)           | Availability, sign-in, models, skills, and provider settings |
-| [Pi](./docs/user/providers-pi.md)                                | Setting up Pi, permission modes, extensions, skills          |
-| [Coder workspaces](./docs/user/workspaces.md)                    | Domains, lifecycle, health, port forwards, troubleshooting   |
-| [Projects and threads](./docs/user/projects-and-threads.md)      | Organizing projects, threads, pins, snooze, archive          |
-| [Working with threads](./docs/user/thread-sidebar.md)            | Starting, ordering, settling, and finding threads            |
-| [Permission modes](./docs/user/permission-modes.md)              | How much the selected agent does on its own                  |
-| [Message composer](./docs/user/composer.md)                      | Images, files, skills, commands, stash, context              |
-| [Files in question answers](./docs/user/question-attachments.md) | Attaching files when an agent asks a question                |
-| [Files and search](./docs/user/files-and-search.md)              | Browsing, editing, and searching project files               |
-| [Images and screenshots](./docs/user/images-and-screenshots.md)  | Pasting images and viewing agent screenshots                 |
-| [Visual replies and MCP apps](./docs/user/html-renders.md)       | Pages agents publish and interactive MCP apps                |
-| [Source control](./docs/user/source-control.md)                  | Diffs, branches, worktrees, commits, checkpoints             |
-| [Terminal history](./docs/user/terminal.md)                      | Scrollback limits and navigation                             |
-| [Appearance and themes](./docs/user/appearance.md)               | Themes, theme import, workspace themes, motion               |
-| [Keyboard shortcuts](./docs/user/keybindings.md)                 | Every shortcut and how to remap it                           |
-| [Product decisions](./docs/product-differences.md)               | What matches upstream and what changes for Coder             |
+| Guide                                                             | Covers                                                       |
+| ----------------------------------------------------------------- | ------------------------------------------------------------ |
+| [Install and first run](./docs/user/getting-started.md)           | Requirements, setup, and the first connection                |
+| [Codex, Claude Code, Pi, and Kilo Code](./docs/user/providers.md) | Availability, sign-in, models, skills, and provider settings |
+| [Pi](./docs/user/providers-pi.md)                                 | Setting up Pi, permission modes, extensions, skills          |
+| [Kilo Code](./docs/user/providers-kilo.md)                        | Setting up Kilo Code, models, permissions, checkpoints       |
+| [Coder workspaces](./docs/user/workspaces.md)                     | Domains, lifecycle, health, port forwards, troubleshooting   |
+| [Projects and threads](./docs/user/projects-and-threads.md)       | Organizing projects, threads, pins, snooze, archive          |
+| [Working with threads](./docs/user/thread-sidebar.md)             | Starting, ordering, settling, and finding threads            |
+| [Permission modes](./docs/user/permission-modes.md)               | How much the selected agent does on its own                  |
+| [Message composer](./docs/user/composer.md)                       | Images, files, skills, commands, stash, context              |
+| [Files in question answers](./docs/user/question-attachments.md)  | Attaching files when an agent asks a question                |
+| [Files and search](./docs/user/files-and-search.md)               | Browsing, editing, and searching project files               |
+| [Images and screenshots](./docs/user/images-and-screenshots.md)   | Pasting images and viewing agent screenshots                 |
+| [Visual replies and MCP apps](./docs/user/html-renders.md)        | Pages agents publish and interactive MCP apps                |
+| [Source control](./docs/user/source-control.md)                   | Diffs, branches, worktrees, commits, checkpoints             |
+| [Terminal history](./docs/user/terminal.md)                       | Scrollback limits and navigation                             |
+| [Appearance and themes](./docs/user/appearance.md)                | Themes, theme import, workspace themes, motion               |
+| [Keyboard shortcuts](./docs/user/keybindings.md)                  | Every shortcut and how to remap it                           |
+| [Product decisions](./docs/product-differences.md)                | What matches upstream and what changes for Coder             |
 
 ## How this differs from upstream T3 Code
 
 T3 Coder is a Coder-only fork of the open-source [T3 Code](https://github.com/pingdotgg/t3code).
 It keeps the T3 Code interface and developer workflow but specializes it for Coder-managed Linux
 workspaces: no desktop or mobile apps, no hosted web or relay service, no telemetry or auto-update,
-only Codex, Claude Code, and Pi as providers, and GitLab as the only hosted source-control provider.
+only Codex, Claude Code, Pi, and Kilo Code as providers, and GitLab as the only hosted source-control provider.
 Git and `glab` run inside the workspace
 through the existing Coder RPC connection; the local gateway never handles GitLab credentials.
 Where upstream and T3 Coder share behavior, upstream's documentation is the source of truth; T3

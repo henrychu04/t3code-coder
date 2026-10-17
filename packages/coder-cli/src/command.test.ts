@@ -145,7 +145,8 @@ describe("Coder CLI command construction", () => {
     match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /command -v claude/u);
     match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /command -v codex/u);
     match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /command -v pi/u);
-    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /requires Claude Code, Codex, or Pi/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /command -v kilo/u);
+    match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /requires Claude Code, Codex, Pi, or Kilo Code/u);
     match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /workspace HOME directory/u);
     match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /\.t3-coder\/attachments/u);
     match(REMOTE_WORKSPACE_PREFLIGHT_COMMAND, /T3_CODER_PREFLIGHT_FAILED: /u);

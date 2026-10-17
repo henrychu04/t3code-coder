@@ -3,7 +3,7 @@
 Agents can answer with a page instead of only text: a chart, table, diagram, image collage, or
 mockup. Ask for one ("show this as a chart", "make a collage of these screenshots") and the agent
 builds a self-contained HTML page, which appears in the thread above its written reply. It works
-with Codex, Claude Code, and Pi.
+with Codex, Claude Code, Pi, and Kilo Code.
 
 Pages use your current theme, including custom themes, and follow light and dark mode as you
 switch. Scripts run inside the page, but it is sandboxed away from T3 Coder and your session. Links

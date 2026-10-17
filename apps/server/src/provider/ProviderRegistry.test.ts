@@ -871,6 +871,51 @@ it.layer(
       );
     });
 
+    // Coder: Kilo Code has no T3 sign-in, so its completed probes stay auth "unknown".
+    it("replaces Kilo Code models from a completed probe without authentication", () => {
+      const readinessProvider = {
+        instanceId: ProviderInstanceId.make("acpRegistry"),
+        driver: ProviderDriverKind.make("acpRegistry"),
+        status: "ready",
+        enabled: true,
+        installed: true,
+        auth: { status: "unknown" },
+        checkedAt: "2026-08-13T00:00:00.000Z",
+        version: null,
+        models: [{ slug: "default", name: "Default", isCustom: false, capabilities: null }],
+        slashCommands: [],
+        skills: [],
+      } as const satisfies ServerProvider;
+      const probedProvider = {
+        ...readinessProvider,
+        checkedAt: "2026-08-13T00:01:00.000Z",
+        models: [
+          { slug: "kilo/auto", name: "Kilo Auto", isCustom: false, capabilities: null },
+          { slug: "kilo/removed", name: "Removed", isCustom: false, capabilities: null },
+        ],
+      } satisfies ServerProvider;
+      const reprobedProvider = {
+        ...probedProvider,
+        checkedAt: "2026-08-13T00:02:00.000Z",
+        models: [{ slug: "kilo/auto", name: "Kilo Auto", isCustom: false, capabilities: null }],
+      } satisfies ServerProvider;
+
+      const probed = ProviderRegistry.mergeProviderSnapshot(readinessProvider, probedProvider);
+      assert.deepStrictEqual(probed.models, [...probedProvider.models]);
+      assert.deepStrictEqual(
+        ProviderRegistry.mergeProviderSnapshot(probed, reprobedProvider).models,
+        [...reprobedProvider.models],
+      );
+      // A later readiness-only snapshot still keeps the discovered models.
+      assert.deepStrictEqual(
+        ProviderRegistry.mergeProviderSnapshot(reprobedProvider, readinessProvider).models,
+        [
+          { slug: "default", name: "Default", isCustom: false, capabilities: null },
+          { slug: "kilo/auto", name: "Kilo Auto", isCustom: false, capabilities: null },
+        ],
+      );
+    });
+
     it("drops stale OpenCode models missing from a successful refresh", () => {
       const previousProvider = {
         instanceId: ProviderInstanceId.make("opencode"),

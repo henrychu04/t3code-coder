@@ -157,6 +157,12 @@ importers:
       '@ff-labs/fff-node':
         specifier: 0.11.0
         version: 0.11.0(patch_hash=765c192f75289d2a65d54011f65e3c9397603298eefb7203e7e05260352e47c8)
+      '@t3tools/provider-acp':
+        specifier: workspace:*
+        version: link:../../packages/provider-acp
+      '@t3tools/provider-acp-registry':
+        specifier: workspace:*
+        version: link:../../packages/provider-acp-registry
       '@t3tools/provider-core':
         specifier: workspace:*
         version: link:../../packages/provider-core
@@ -212,6 +218,9 @@ importers:
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
+      effect-acp:
+        specifier: workspace:*
+        version: link:../../packages/effect-acp
       effect-codex-app-server:
         specifier: workspace:*
         version: link:../../packages/effect-codex-app-server
@@ -257,6 +266,9 @@ importers:
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@t3tools/provider-acp-registry':
+        specifier: workspace:*
+        version: link:../../packages/provider-acp-registry
       '@t3tools/provider-core':
         specifier: workspace:*
         version: link:../../packages/provider-core
@@ -469,6 +481,28 @@ importers:
         specifier: 1.0.0
         version: 1.0.0(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0)
 
+  packages/effect-acp:
+    dependencies:
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+    devDependencies:
+      '@effect/openapi-generator':
+        specifier: 'catalog:'
+        version: 4.0.5(@effect/platform-node@4.0.5(effect@4.0.5))(effect@4.0.5)
+      '@effect/platform-node':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)
+      '@effect/vitest':
+        specifier: 4.0.5
+        version: 4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@types/node@24.12.4)(@vitest/ui@5.0.1(vitest@5.0.1))(effect@4.0.5)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(vitest@5.0.1(@types/node@24.12.4)(@vitest/browser-preview@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0))(yaml@2.9.0)
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
+      vite-plus:
+        specifier: 1.0.0
+        version: 1.0.0(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0)
+
   packages/effect-codex-app-server:
     dependencies:
       effect:
@@ -487,6 +521,74 @@ importers:
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
+      vite-plus:
+        specifier: 1.0.0
+        version: 1.0.0(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0)
+
+  packages/provider-acp:
+    dependencies:
+      '@t3tools/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@t3tools/provider-core':
+        specifier: workspace:*
+        version: link:../provider-core
+      '@t3tools/shared':
+        specifier: workspace:*
+        version: link:../shared
+      diff:
+        specifier: 8.0.3
+        version: 8.0.3
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+    devDependencies:
+      '@effect/platform-node':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)
+      '@effect/vitest':
+        specifier: 4.0.5
+        version: 4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@types/node@24.12.4)(@vitest/ui@5.0.1(vitest@5.0.1))(effect@4.0.5)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(vitest@5.0.1(@types/node@24.12.4)(@vitest/browser-preview@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0))(yaml@2.9.0)
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
+      effect-acp:
+        specifier: workspace:*
+        version: link:../effect-acp
+      vite-plus:
+        specifier: 1.0.0
+        version: 1.0.0(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0)
+
+  packages/provider-acp-registry:
+    dependencies:
+      '@t3tools/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@t3tools/provider-acp':
+        specifier: workspace:*
+        version: link:../provider-acp
+      '@t3tools/provider-core':
+        specifier: workspace:*
+        version: link:../provider-core
+      '@t3tools/shared':
+        specifier: workspace:*
+        version: link:../shared
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+    devDependencies:
+      '@effect/platform-node':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)
+      '@effect/vitest':
+        specifier: 4.0.5
+        version: 4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@types/node@24.12.4)(@vitest/ui@5.0.1(vitest@5.0.1))(effect@4.0.5)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(vitest@5.0.1(@types/node@24.12.4)(@vitest/browser-preview@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0))(yaml@2.9.0)
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
+      effect-acp:
+        specifier: workspace:*
+        version: link:../effect-acp
       vite-plus:
         specifier: 1.0.0
         version: 1.0.0(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(jsdom@30.1.2)(typescript@7.0.2)(yaml@2.9.0)

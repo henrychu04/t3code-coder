@@ -1,8 +1,8 @@
 # T3 Coder
 
 T3 Coder is a Coder-only browser fork of T3 Code: upstream's projects, threads, review, terminals,
-and files for Codex, Claude Code, and Pi running inside Linux Coder workspaces. The local machine is
-a corporate Windows 11 laptop with endpoint security, so every boundary below is about what runs
+and files for Codex, Claude Code, Pi, and Kilo Code running inside Linux Coder workspaces. The
+local machine is a corporate Windows 11 laptop with endpoint security, so every boundary below is about what runs
 on, listens on, or leaves that machine. Product scope otherwise follows upstream.
 
 Use the global `karpathy-guidelines` skill. Read `docs/internals/coder-only.md` before changing the
@@ -36,8 +36,10 @@ runtime boundary or syncing upstream.
    provider credentials stay in the workspace. Upstream's agent secret request card stays as is.
 6. The workspace helper runs in the foreground over `coder ssh`, speaks newline-delimited RPC over
    stdio, and opens no listener of any kind.
-7. Codex, Claude Code, and Pi are the only providers; they exist only in the workspace, and T3
-   never probes for or launches a local provider. Carry no other provider driver or package.
+7. Codex, Claude Code, Pi, and Kilo Code are the only providers; they exist only in the workspace,
+   and T3 never probes for or launches a local provider. Kilo Code runs through upstream's ACP
+   Registry driver from its local `kilo acp` command only: no registry index, installs, or agent
+   sign-in. Carry no other provider driver or package.
 8. No provider binary is bundled on the laptop; the Anthropic Agent SDK stays type-only.
 9. Durable application state stays in the workspace. Local persistence is limited to non-secret
    deployment URLs, Coder executable paths, workspace targets, port-forward rules, and the last
@@ -52,8 +54,8 @@ upload, and upstream's `html_preview` and its headless browser are not carried.
 
 ## Provider scope
 
-Codex, Claude Code, and Pi with API-backed usage only, configured in the workspace (Pi's lives in
-`~/.pi/agent`). Do not add local credential entry, provider sign-in, subscription dashboards, plan
+Codex, Claude Code, Pi, and Kilo Code with API-backed usage only, configured in the workspace
+(Pi's lives in `~/.pi/agent`; Kilo Code keeps its own configuration there too). Do not add local credential entry, provider sign-in, subscription dashboards, plan
 windows, or account management. Provider readiness, authentication status, context and token usage,
 and rate-limit errors stay.
 
@@ -74,8 +76,10 @@ and rate-limit errors stay.
   and attachment transfer over `coder ssh` stdin, helper connection lifecycle, and foreground
   port-forward lifecycle.
 - `apps/coder-helper`: bundled Linux stdio entry point.
-- `apps/server`: workspace-owned orchestration, Codex, Claude, and Pi adapters, persistence, terminal,
-  filesystem, and repository-local VCS implementation.
+- `apps/server`: workspace-owned orchestration, Codex, Claude, Pi, and Kilo Code adapters,
+  persistence, terminal, filesystem, and repository-local VCS implementation.
+- `packages/effect-acp`, `packages/provider-acp`, `packages/provider-acp-registry`: upstream's ACP
+  protocol, generic ACP adapter, and ACP Registry driver, limited to Kilo Code's local command.
 - `apps/web`: browser client and Coder deployment/workspace manager.
 - `packages/contracts`, `packages/client-runtime`, `packages/shared`: typed wire and shared runtime
   logic retained by the web/helper pair, including the named byte limits.
@@ -97,6 +101,7 @@ pnpm --filter @t3tools/shared typecheck
 pnpm --filter @t3tools/client-runtime typecheck
 pnpm --filter @t3tools/coder-cli typecheck
 pnpm --filter @t3tools/provider-core --filter @t3tools/provider-pi --filter @t3tools/provider-testing typecheck
+pnpm --filter effect-acp --filter @t3tools/provider-acp --filter @t3tools/provider-acp-registry typecheck
 pnpm --filter @t3tools/source-control-core --filter @t3tools/source-control-gitlab --filter @t3tools/source-control-testing typecheck
 pnpm build
 ```

@@ -11,6 +11,7 @@ import * as Path from "effect/Path";
 
 import { ClaudeOrchestratorReplayHarness } from "../Adapters/ClaudeAdapterV2.testkit.ts";
 import { CodexOrchestratorReplayHarness } from "../Adapters/CodexAdapterV2.testkit.ts";
+import { AcpRegistryOrchestratorReplayHarness } from "../Adapters/AcpRegistryAdapterV2.testkit.ts";
 import { PiOrchestratorReplayHarness } from "../Adapters/PiAdapterV2.testkit.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { provideDeterministicTestRuntime } from "./DeterministicRuntime.ts";
@@ -174,6 +175,11 @@ function runFixtureProviderWithRegisteredHarness(input: {
         ...input,
         harness: ClaudeOrchestratorReplayHarness,
       }).pipe(Effect.mapError(normalizeTestError), Effect.scoped);
+    case "acpRegistry":
+      return runFixtureProvider({
+        ...input,
+        harness: AcpRegistryOrchestratorReplayHarness,
+      }).pipe(Effect.mapError(normalizeTestError), Effect.scoped);
     case "pi":
       return runFixtureProvider({
         ...input,
@@ -187,7 +193,12 @@ function runFixtureProviderWithRegisteredHarness(input: {
 }
 
 // Coder: only the shipped providers have replay harnesses.
-const SHIPPED_REPLAY_DRIVERS: ReadonlySet<string> = new Set(["codex", "claudeAgent", "pi"]);
+const SHIPPED_REPLAY_DRIVERS: ReadonlySet<string> = new Set([
+  "codex",
+  "claudeAgent",
+  "pi",
+  "acpRegistry",
+]);
 
 describe("orchestrator replay fixtures", () => {
   it.effect.each(

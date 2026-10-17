@@ -128,7 +128,8 @@ describe("deriveProviderInstanceConfigMap", () => {
   it("adds a default instance for each built-in driver", () => {
     const instances = deriveProviderInstanceConfigMap(DEFAULT_SERVER_SETTINGS);
 
-    expect(Object.keys(instances)).toEqual(["codex", "claudeAgent", "pi"]);
+    // Coder: Kilo Code (acpRegistry) has a default instance, as Pi does.
+    expect(Object.keys(instances)).toEqual(["codex", "claudeAgent", "pi", "acpRegistry"]);
     expect(instances[CODEX_INSTANCE_ID]).toEqual({ driver: "codex" });
     expect(instances[CLAUDE_INSTANCE_ID]).toEqual({ driver: "claudeAgent" });
   });

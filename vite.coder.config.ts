@@ -8,6 +8,7 @@ export default defineConfig({
     ...base.test,
     // Every retained server suite exercises supported workspace behavior.
     // Upstream-only surfaces have been removed from this fork, so no exclusions are needed.
-    include: ["apps/server/src/**/*.test.ts"],
+    // The ACP mock and replay agents under scripts/ carry their own suite.
+    include: ["apps/server/src/**/*.test.ts", "apps/server/scripts/**/*.test.ts"],
   },
 });

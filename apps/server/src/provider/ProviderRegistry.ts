@@ -150,10 +150,13 @@ const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean =>
     // otherwise agents that rename or collapse models leave stale entries
     // pinned forever through the snapshot cache. Readiness-only and failed
     // probe snapshots only know the "default" placeholder and stay partial.
+    // Coder: Kilo Code has no T3 sign-in, so its auth never becomes "authenticated"; a ready
+    // snapshot that lists any discovered model beyond that placeholder is a completed probe.
     return !(
       provider.installed &&
       provider.status === "ready" &&
-      provider.auth.status === "authenticated"
+      (provider.auth.status === "authenticated" ||
+        provider.models.some((model) => !model.isCustom && model.slug !== "default"))
     );
   }
 

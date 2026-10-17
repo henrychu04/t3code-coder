@@ -11,7 +11,7 @@ against these decisions and record new intentional differences here.
 ## Kept from upstream
 
 - The browser-based project, thread, conversation, terminal, review, and settings experience.
-- Codex, Claude Code, and Pi conversations, including streaming responses, approvals, asynchronous
+- Codex, Claude Code, Pi, and Kilo Code conversations, including streaming responses, approvals, asynchronous
   questions, interruption, resumption, context information, native context compaction, and
   provider-reported sub-agent activity.
 - Provider-aware model selection. Models, reasoning choices, service tiers, skills, commands, and
@@ -30,7 +30,7 @@ but provider sessions, repositories, terminals, and durable T3 state belong to t
 
 ### Providers are workspace capabilities
 
-T3 Coder supports Codex, Claude Code, and Pi when their CLIs are available in the workspace. The
+T3 Coder supports Codex, Claude Code, Pi, and Kilo Code when their CLIs are available in the workspace. The
 app does not install a missing provider or move its credentials to the local computer. On explicit
 request, it can update an existing workspace installation using its identified installer. A
 workspace can connect with any one of these providers present.
@@ -39,7 +39,7 @@ The model picker offers models only from providers that are enabled, available, 
 one provider is missing or unauthenticated, the others remain usable when they are ready. T3 Coder may choose a ready provider for a new draft, but it never silently changes the
 provider for an existing thread or a turn already in progress.
 
-Codex, Claude, and Pi share one provider-settings experience, and a workspace can expose
+Codex, Claude, Pi, and Kilo Code share one provider-settings experience, and a workspace can expose
 additional instances of any of them. The workspace remains the source of the installations, identities,
 configuration, and login state behind every instance.
 
@@ -96,7 +96,7 @@ helper connection.
 - Electron and other native desktop packaging, iOS and Android clients, and a hosted web client.
 - Relay, Tailscale, Cloudflare, OAuth, Clerk, generic SSH environments, and public or non-loopback
   application listeners.
-- Providers other than workspace-installed Codex, Claude Code, and Pi.
+- Providers other than workspace-installed Codex, Claude Code, Pi, and Kilo Code.
 - Upstream's cost dashboard, remote pricing aggregation, and user-configured CLI-proxy usage
   sources, and subscription-quota dashboards. This fork supports API-backed provider usage only;
   per-thread context usage and provider-reported runtime limit errors remain available.

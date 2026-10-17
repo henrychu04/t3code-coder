@@ -845,7 +845,16 @@ describe("provider enabled defaults", () => {
       resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make(driver), config: {} });
     expect(enabledByDefault("codex")).toBe(true);
     expect(enabledByDefault("claudeAgent")).toBe(true);
-    for (const driver of ["cursor", "grok", "muse", "pi", "opencode", "antigravity"]) {
+    // Coder: Kilo Code (acpRegistry) starts disabled, as Pi does.
+    for (const driver of [
+      "cursor",
+      "grok",
+      "muse",
+      "pi",
+      "opencode",
+      "antigravity",
+      "acpRegistry",
+    ]) {
       expect(enabledByDefault(driver)).toBe(false);
     }
   });

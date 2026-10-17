@@ -6,7 +6,7 @@
 > To merge upstream, follow the [upstream sync checklist](sync.md).
 
 T3 Coder runs its browser interface on the developer's computer while repository, Codex, Claude,
-Pi, terminal, checkpoint, and durable orchestration work stays inside Linux Coder workspaces. The
+Pi, Kilo Code, terminal, checkpoint, and durable orchestration work stays inside Linux Coder workspaces. The
 laptop runs only the loopback gateway, the Coder CLI, and a browser; `AGENTS.md` lists the
 boundaries, and this document records how the code keeps them and where it departs from upstream.
 
@@ -176,7 +176,8 @@ the local gateway does not open or mirror its SQLite file or artifact directory.
 
 The helper starts workspace-installed provider executables directly with argument-array spawning.
 Codex uses its app-server protocol over stdin/stdout; Claude uses streaming JSON over stdin/stdout;
-Pi uses its RPC mode (`pi --mode rpc`) over stdin/stdout.
+Pi uses its RPC mode (`pi --mode rpc`) over stdin/stdout; Kilo Code speaks ACP over stdin/stdout
+(`kilo acp`).
 No provider executable or Anthropic Agent SDK runtime is bundled. The Agent SDK is a type-only
 development dependency; pnpm's `ignoredOptionalDependencies` keeps its bundled Claude Code
 binaries from ever installing. T3 does not inject its removed
@@ -232,7 +233,7 @@ available (the preflight accepts any Node.js 24, below the root `engines.node` f
 development suite needs: the server never binds a raw ArrayBuffer, and the SQLite checkpoint
 worker falls back to the writer on an older SQLite, so an older 24 is sound in the workspace),
 and checks Git, the transfer tools (`tar`, `sha256sum`, `head`), at least one of
-Claude Code, Codex, or Pi, and the workspace state directory. A failed check prints a `T3_CODER_PREFLIGHT_FAILED:` line, which the gateway reports.
+Claude Code, Codex, Pi, or Kilo Code, and the workspace state directory. A failed check prints a `T3_CODER_PREFLIGHT_FAILED:` line, which the gateway reports.
 The preflight has its own five-minute budget; helper negotiation starts its 60-second budget only
 after the launch prints the ready sentinel. As upstream, server settings keep sensitive provider
 environment values out of `settings.json` in a `0700` secrets directory in that state directory;
@@ -248,7 +249,7 @@ that connects to a workspace or deployment; its network telemetry and direct con
 the configured deployment and CLI defaults. Structured port-forward rules use foreground
 `coder port-forward` processes bound to IPv4 loopback; reverse forwarding, arbitrary bind
 addresses, and raw tunnel arguments are not exposed. The helper opens no network listener; Codex,
-Claude, Pi, and user-initiated terminal commands remain subject to workspace policy.
+Claude, Pi, Kilo Code, and user-initiated terminal commands remain subject to workspace policy.
 
 Both laptop-to-workspace transfers, the helper bundle install and composer attachments, stream over
 the stdin of one foreground `coder ssh <workspace> -- sh -l -c '<command>'` process
@@ -564,9 +565,10 @@ listed here is drift to remove rather than fork behavior to keep.
     images whose signature does not match their media type, and writes the validated bytes
     exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments,
     so upstream's attachment-cleanup side effects are absent.
-  - `provider/builtInDrivers.ts` registers only Codex, Claude, and Pi (upstream's
-    `@t3tools/provider-pi` package), `settingsSecrets.ts` reads secret settings fields from Pi's
-    client definition alone among the provider packages, and `ProviderOrchestrationAdapterInfrastructure.ts` provides
+  - `provider/builtInDrivers.ts` registers only Codex, Claude, Pi (upstream's
+    `@t3tools/provider-pi` package), and Kilo Code (upstream's ACP Registry driver, below),
+    `settingsSecrets.ts` reads secret settings fields from Pi's and the ACP Registry's client
+    definitions alone among the provider packages, and `ProviderOrchestrationAdapterInfrastructure.ts` provides
     only the Claude query runner and the Codex app-server factory. Only shipped providers have
     replay harnesses. Pi keeps upstream's T3 extension for its permission hook (Supervised and
     Auto-accept edits), skill chips, and T3 tools. The extension speaks MCP over HTTP upstream;
@@ -581,10 +583,56 @@ listed here is drift to remove rather than fork behavior to keep.
     path, to stay close to upstream. It is dormant: every Coder MCP session carries a bridge
     `toolCommand`, so `buildPiRpcLaunch` never sets `T3_MCP_URL` and the extension opens no HTTP
     connection. Upstream's other provider packages
-    (Cursor, OpenCode, Muse, ACP, ACP Registry, Grok, Antigravity) are not carried. Their replay
-    fixtures (`orchestration-v2/testkit/fixtures/{grok_*,muse_*,opencode*,acp_elicitation}`) and
+    (Cursor, OpenCode, Muse, Grok, Antigravity) are not carried. Their replay
+    fixtures (`orchestration-v2/testkit/fixtures/{grok_*,muse_*,opencode*}`) and
     `testkit/DormantProviderCapabilities.ts` are kept on purpose: orchestrator tests replay them
     to exercise those capability combinations, and no driver for them is registered.
+  - Kilo Code is upstream's ACP Registry driver (`@t3tools/provider-acp-registry`, driver kind
+    `acpRegistry`) on upstream's `effect-acp` and `@t3tools/provider-acp`, limited to the local
+    command, as Pi is limited to the workspace's own `pi`. Coder deltas, each marked in the file:
+    - `settings.ts` keeps only `commandPath` (default `kilo`, titled "Kilo executable"), hidden
+      `commandArgs` (default `["acp"]`), `customModels`, and `enabled` (default off, as Pi's).
+      Upstream's `source`, `agentId`, `distribution`, and `authMethodId` are not carried.
+      contracts' `DEFAULT_DISABLED_PROVIDER_DRIVERS` lists `acpRegistry` to match that default.
+      `client.ts` labels the driver "Kilo Code", inlines Kilo's ACP Registry icon so the browser
+      never loads it from the registry CDN, and has a default instance.
+    - `AcpRegistrySupport.ts` keeps only upstream's local-command `inspect` and `resolve`; the
+      registry index, search, and binary, npx, and uvx installs (and `@noble/hashes`) are not
+      carried, and `acpRegistryManagedBinaryDirectories` is gone, so terminals add no managed
+      agent directories to `PATH`.
+    - `driver.ts` reports only local readiness, with no registry icon, documentation link, or
+      sign-in (`canAuthenticate` is false; an authentication failure tells the user to sign in to
+      Kilo Code in the workspace). Upstream's auth controller, confirmed-authentication cache,
+      URL authentication action, and `acpSessionManagement` (native session list, import, and
+      delete; provider list, set, and disable; logout) are not carried, and neither are their
+      `auth.ts`, `authenticationState.ts`, or management requests in `probe.ts`. The probe
+      offers no terminal login and declines URL elicitation, and real sessions set
+      `authenticateOnAuthRequired: false`, so an unauthenticated Kilo Code fails the session
+      instead of T3 calling ACP `authenticate`. Because no sign-in ever reports `authenticated`,
+      `ProviderRegistry.ts` also treats a ready snapshot that lists a discovered model beyond the
+      `default` placeholder as a completed probe, so removed models leave the picker. A probe
+      that discovers no models at all cannot be told apart from a readiness snapshot, so it keeps
+      the previous list; Kilo Code always lists its models, and upstream keeps the list in the
+      same case for an instance never signed in through T3.
+    - `AcpRegistryRuntimeCoordinator.ts` has no URL authentication consent or session mutation
+      permit. `adapter.ts` has no Devin, GitHub Copilot, or Mistral Vibe flavor (`copilotAcp.ts`
+      and `devinAcp.ts` are not carried) and no native protocol logging.
+    - provider-acp's `adapter.ts` has no self-invocation: every ACP session gets no MCP server,
+      and when the thread has a bridge command the first prompt carries
+      `t3ToolBridgeInstructions` (moved to provider-core for this) through provider-core's
+      `t3AcpPromptWithInstructions`, which takes the bridge text in place of upstream's MCP
+      orchestration and browser text. Two upstream modules stay dormant on purpose, as Pi's HTTP
+      MCP client does, because cutting them would add about 34 seams to the 7.5k-line adapter:
+      `mcpOverAcpBridge.ts` (no Coder session has an MCP endpoint, so it is never created) and
+      `clientTerminals.ts` (only the Devin flavor passed `clientTerminals`).
+      `nativeLogging.ts` is not carried.
+    - The server tests carry upstream's ACP Registry replay harness
+      (`AcpRegistryAdapterV2.testkit.ts`, `AcpAdapterV2.testkit.ts`, and `scripts/`'s ACP replay
+      and mock agents), its adapter and probe tests without the registry, Devin, and
+      session-management cases, and a Coder test that the bridge command reaches the prompt.
+      Upstream's 14k-line `AcpAdapterV2.test.ts` is not carried.
+    - The user guide is the fork's `docs/user/providers-kilo.md`, adapted from upstream's
+      `providers-acp.md` (not carried) to the local command.
   - Thread-title and branch-name generation use only Codex, Claude, or Pi models (Pi through
     upstream's ephemeral `pi --mode rpc --no-session` process). Text generation is
     upstream's except that Codex reads branch-name and title images through
@@ -706,7 +754,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `mcpServers` and `strictMcpConfig` as the SDK does and rejects in-process (`sdk`) MCP servers,
     which the CLI transport cannot host.
   - The web provider list and client-runtime `state/server.ts` stay limited to the methods the
-    helper serves and to Codex, Claude, and Pi driver instances (`isCoderProviderDriver`).
+    helper serves and to Codex, Claude, Pi, and Kilo Code (`acpRegistry`) driver instances
+    (`isCoderProviderDriver`).
   - Client settings keep `providerPreferencesByEnvironment`, the per-workspace favorites and model
     order the browser stored before upstream moved them into server settings, read only as the
     legacy lists each workspace migrates (see [Persistence](#upstream-seams)).
@@ -914,13 +963,13 @@ listed here is drift to remove rather than fork behavior to keep.
     the guide T3 tools, and the web Guide tab). `coderServer.ts` provides the service to the
     helper RPC handlers and the bridged tools. The temporary checkout, its fetches, and the
     change it reads are workspace Git; the writer model runs through upstream's Codex or Claude
-    text generation in the workspace, and Pi refuses, as upstream's Pi runner does. The Guide
+    text generation in the workspace, and Pi and Kilo Code refuse, as upstream's runners do. The Guide
     tab reads the diff over `pullRequests.diff`; upstream's head lookup already tries
     `refs/merge-requests/<n>/head`. Coder deltas: the guide tools resolve only merge requests on a
     GitLab host the projects use, as the link tools do; and the service's reader-facing errors say
     merge request and `!N`.
 - **Provider drivers.** provider-core's `ProviderDriver.usage` is `never` and its `usage.ts`
-  is not carried: there is no usage page, so Claude, Codex, and Pi register no usage readers
+  is not carried: there is no usage page, so Claude, Codex, Pi, and Kilo Code register no usage readers
   (provider-pi's `usage.ts` is not carried) and `provider/builtInDrivers.ts` has no usage
   driver list.
 - **Git layer.** `vcs/GitVcsDriver.ts`, `vcs/GitVcsDriverCore.ts`, `vcs/VcsProcess.ts`,
@@ -953,8 +1002,8 @@ listed here is drift to remove rather than fork behavior to keep.
   workspaces, and TCP/UDP port forwards in place of pairing and network access. Each workspace
   row's menu carries upstream's `EnvironmentIconMenu`; the helper reports no `platform.machine`
   (no hardware detection), so a workspace shows the generic server icon until one is picked.
-  Providers is upstream's panel and add-instance dialog limited to Codex, Claude, and Pi drivers,
-  without sign-in, setup or managed install, per-instance environment variables, ACP registry, or
+  Providers is upstream's panel and add-instance dialog limited to Codex, Claude, Pi, and Kilo Code
+  drivers (Kilo Code is a plain driver choice, not a registry search), without sign-in, setup or managed install, per-instance environment variables, ACP registry, or
   usage-limit sources. Source Control appends GitLab workspace status. Provider update checks
   and the provider health interval do not mention model catalog updates, because the catalog is
   bundled (`ModelManifest.layerBundled`).

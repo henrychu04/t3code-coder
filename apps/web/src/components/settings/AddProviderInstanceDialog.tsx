@@ -41,8 +41,9 @@ import {
 } from "./AddProviderInstanceDialog.logic";
 import { AddProviderInstanceWizardSteps } from "./AddProviderInstanceWizardSteps";
 
-// Coder: only Codex and Claude instances can be added, configured manually against the
-// workspace's CLI. There is no ACP registry, ChatGPT account connection, managed Codex install,
+// Coder: only Codex, Claude, Pi, and Kilo Code instances can be added, configured manually
+// against the workspace's CLI. Kilo Code is a plain choice beside the others, running its local
+// command: there is no ACP registry search, ChatGPT account connection, managed Codex install,
 // or post-create sign-in step; API credentials are configured in the workspace.
 
 /**

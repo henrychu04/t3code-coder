@@ -1246,8 +1246,9 @@ export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | un
 /**
  * Matches the `enabled` decoding default of each driver's settings schema.
  */
+// Coder: Kilo Code's ACP Registry settings default to disabled, as Pi's do.
 const DEFAULT_DISABLED_PROVIDER_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
-  ["cursor", "grok", "muse", "pi", "opencode", "antigravity"].map((driver) =>
+  ["cursor", "grok", "muse", "pi", "opencode", "antigravity", "acpRegistry"].map((driver) =>
     ProviderDriverKind.make(driver),
   ),
 );

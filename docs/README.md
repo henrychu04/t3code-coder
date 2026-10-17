@@ -8,8 +8,9 @@ the update here.
 ## Using T3 Coder
 
 - [Install and first run](./user/getting-started.md)
-- [Codex, Claude Code, and Pi](./user/providers.md)
+- [Codex, Claude Code, Pi, and Kilo Code](./user/providers.md)
 - [Pi](./user/providers-pi.md)
+- [Kilo Code](./user/providers-kilo.md)
 - [Coder workspaces](./user/workspaces.md)
 - [Projects and threads](./user/projects-and-threads.md)
 - [Working with threads](./user/thread-sidebar.md)
