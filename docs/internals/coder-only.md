@@ -606,7 +606,8 @@ listed here is drift to remove rather than fork behavior to keep.
     upstream's hourly fetch or disk cache. Both providers attach
     per-model `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
-    closed) and Codex's `configRequirements/read`. The Claude signed-out message names API
+    closed; the same modes on every model, since the CLI itself drops a mode the model or policy
+    forbids) and Codex's `configRequirements/read`. The Claude signed-out message names API
     credentials rather than subscription login. Claude's usage read asks the CLI to skip its local
     transcript scan (`ClaudeCli.getUsage({ skipBehaviors })`), as upstream's SDK call does.
     provider-core's `maintenanceResolver.ts` and `providerStatusCache.ts` log the first cause tag

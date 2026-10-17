@@ -25,6 +25,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ServerSettings,
+  type RuntimeMode,
   type ServerProvider,
   type ServerProviderSlashCommand,
   type ServerSettings as ContractServerSettings,
@@ -133,7 +134,6 @@ type TestClaudeCapabilities = {
   readonly tokenSource: string | undefined;
   readonly apiKeySource: string | undefined;
   readonly apiProvider: string | undefined;
-  readonly models: ReadonlyArray<never> | undefined;
   readonly autoModeDisabled: boolean;
   readonly bypassPermissionsDisabled: boolean;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
@@ -147,7 +147,6 @@ function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
       tokenSource: undefined,
       apiKeySource: undefined,
       apiProvider: undefined,
-      models: undefined,
       autoModeDisabled: false,
       bypassPermissionsDisabled: false,
       slashCommands: [],
@@ -3013,6 +3012,48 @@ it.layer(
         );
         assert.strictEqual(status.status, "error");
         assert.strictEqual(status.auth.status, "unauthenticated");
+      }).pipe(
+        Effect.provide(
+          layerMockSpawner((args) => {
+            const joined = args.join(" ");
+            if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+            throw new Error(`Unexpected args: ${joined}`);
+          }),
+        ),
+      ),
+    );
+
+    it.effect("offers the runtime modes the workspace policy allows on every model", () =>
+      Effect.gen(function* () {
+        const settings = { ...defaultClaudeSettings, customModels: ["my-gateway-model"] };
+        const expectModes = (
+          status: Effect.Success<ReturnType<typeof checkClaudeProviderStatus>>,
+          expected: ReadonlyArray<RuntimeMode>,
+        ) =>
+          assert.deepStrictEqual(
+            status.models.map((model) => model.capabilities?.supportedRuntimeModes),
+            status.models.map(() => expected),
+          );
+        const safe: ReadonlyArray<RuntimeMode> = ["approval-required", "auto-accept-edits"];
+
+        const work = yield* checkClaudeProviderStatus(
+          settings,
+          claudeCapabilities({ bypassPermissionsDisabled: true }),
+        );
+        assert.isTrue(work.models.some((model) => model.isCustom));
+        expectModes(work, [...safe, "auto"]);
+
+        const open = yield* checkClaudeProviderStatus(settings, claudeCapabilities());
+        expectModes(open, [...safe, "auto", "full-access"]);
+
+        const locked = yield* checkClaudeProviderStatus(
+          settings,
+          claudeCapabilities({ autoModeDisabled: true, bypassPermissionsDisabled: true }),
+        );
+        expectModes(locked, safe);
+
+        const unread = yield* checkClaudeProviderStatus(settings, noClaudeCapabilities);
+        expectModes(unread, safe);
       }).pipe(
         Effect.provide(
           layerMockSpawner((args) => {

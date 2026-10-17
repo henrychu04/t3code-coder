@@ -1,7 +1,6 @@
 import {
   type ClaudeSettings,
   type ModelCapabilities,
-  type ServerProviderModel,
   type ServerProvider,
   type ServerProviderSlashCommand,
   type ServerProviderResetCredits,
@@ -20,7 +19,6 @@ import {
   query as claudeQuery,
   type Options as ClaudeQueryOptions,
   type SlashCommand as ClaudeSlashCommand,
-  type ModelInfo as ClaudeModelInfo,
   type SDKUserMessage,
   type SettingSource,
 } from "./Drivers/ClaudeCli.ts";
@@ -51,13 +49,12 @@ import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
   formatClaudeVersionUpgradeMessage,
-  resolveClaudeModelSlug,
   resolveClaudeModelsForVersion,
   resolveClaudeUpdateRequiredModels,
 } from "./ClaudeModelCatalog.ts";
 import {
+  attachSupportedRuntimeModes,
   buildSupportedRuntimeModes,
-  withSupportedRuntimeModes,
 } from "./runtimeModeCapabilities.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
@@ -266,8 +263,7 @@ type ClaudeCapabilitiesProbe = {
    * the subscription/token fields are absent and auth is external AWS creds.
    */
   readonly apiProvider: string | undefined;
-  /** Coder: models and permission policy the CLI reports, for per-model runtime modes. */
-  readonly models: ReadonlyArray<ClaudeModelInfo> | undefined;
+  /** Coder: the permission policy the CLI reports, for runtime modes. */
   readonly autoModeDisabled: boolean;
   readonly bypassPermissionsDisabled: boolean;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
@@ -295,56 +291,6 @@ function readClaudePermissionModeDisabled(
     typeof permissions === "object" &&
     (permissions as Record<string, unknown>)[key] === "disable"
   );
-}
-
-function stripClaudeContextSuffix(model: string): string {
-  return model.replace(/\[(?:1m|200k)\]$/i, "");
-}
-
-function resolveClaudeCatalogSlug(
-  model: ClaudeModelInfo,
-  catalog: ClaudeModelCatalog,
-): string | undefined {
-  const models = catalog.models.map((entry) => entry.model);
-  for (const candidate of [model.resolvedModel, model.value]) {
-    if (!candidate) continue;
-    const normalized = stripClaudeContextSuffix(candidate.trim());
-    if (models.some((entry) => entry.slug === normalized)) return normalized;
-    const resolved = resolveClaudeModelSlug(catalog, normalized);
-    if (models.some((entry) => entry.slug === resolved)) return resolved;
-  }
-  return undefined;
-}
-
-/**
- * Coder: attach each model's supported runtime modes. Auto mode needs the CLI to report the model
- * as auto-capable; both elevated modes stay off when the policy forbids them or could not be read.
- */
-function withClaudeRuntimeModes(
-  models: ReadonlyArray<ServerProviderModel>,
-  capabilities: ClaudeCapabilitiesProbe | undefined,
-  catalog: ClaudeModelCatalog,
-): ReadonlyArray<ServerProviderModel> {
-  const autoCapable = new Set(
-    (capabilities?.models ?? []).flatMap((model) => {
-      if (model.supportsAutoMode !== true) return [];
-      const slug = resolveClaudeCatalogSlug(model, catalog);
-      return slug ? [slug] : [];
-    }),
-  );
-  return models.map((model) => ({
-    ...model,
-    capabilities: withSupportedRuntimeModes(
-      model.capabilities,
-      buildSupportedRuntimeModes({
-        auto:
-          capabilities !== undefined &&
-          !capabilities.autoModeDisabled &&
-          autoCapable.has(model.slug),
-        fullAccess: capabilities !== undefined && !capabilities.bypassPermissionsDisabled,
-      }),
-    ),
-  }));
 }
 
 function parseClaudeInitializationCommands(
@@ -498,7 +444,6 @@ const probeClaudeCapabilities = (
           tokenSource: account?.tokenSource,
           apiKeySource: account?.apiKeySource,
           apiProvider: account?.apiProvider,
-          models: init.models,
           autoModeDisabled:
             Option.isNone(settings) ||
             readClaudePermissionModeDisabled(settings.value, "disableAutoMode"),
@@ -671,15 +616,18 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
     : undefined;
-  // Coder: per-model runtime modes follow the workspace's Claude permission policy.
-  const models = withClaudeRuntimeModes(
+  // Coder: runtime modes follow the workspace's Claude permission policy, failing closed when
+  // it could not be read.
+  const models = attachSupportedRuntimeModes(
     providerModelsFromSettings(
       resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
       claudeSettings.customModels,
       DEFAULT_CLAUDE_MODEL_CAPABILITIES,
     ),
-    capabilities,
-    modelCatalog,
+    buildSupportedRuntimeModes({
+      auto: capabilities !== undefined && !capabilities.autoModeDisabled,
+      fullAccess: capabilities !== undefined && !capabilities.bypassPermissionsDisabled,
+    }),
   );
   const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
