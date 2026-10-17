@@ -702,18 +702,19 @@ async function rewindToMessage(input: {
     ) {
       throw new Error("Make room for this message's attachments in the composer before rewinding.");
     }
-    // Coder: sent images are read back through the helper's bounded chunk reads; upstream
-    // fetches attachments from asset URLs. File attachments live only in the workspace and
-    // are not downloaded, so only images return to the draft.
-    const images: ComposerImageAttachment[] = [];
-    for (const image of imageReferences) {
-      const blob = await readScreenshotBlob(
-        image,
-        input.readImageChunk,
-        new AbortController().signal,
-      );
-      const file = new File([blob], image.name, { type: image.mimeType });
-      images.push({
+    // Coder: sent images are read back through the helper's bounded chunk reads, all at once
+    // as upstream fetches its asset URLs; a rewind cannot be cancelled, so nothing aborts them.
+    // File attachments live only in the workspace and are not downloaded, so only images
+    // return to the draft. Preview URLs are created only once every read has succeeded.
+    const signal = new AbortController().signal;
+    const files = await Promise.all(
+      imageReferences.map(async (image) => {
+        const blob = await readScreenshotBlob(image, input.readImageChunk, signal);
+        return new File([blob], image.name, { type: image.mimeType });
+      }),
+    );
+    const images = files.map(
+      (file): ComposerImageAttachment => ({
         type: "image",
         id: randomUUID(),
         name: file.name,
@@ -721,8 +722,8 @@ async function rewindToMessage(input: {
         sizeBytes: file.size,
         previewUrl: URL.createObjectURL(file),
         file,
-      });
-    }
+      }),
+    );
     const commandId = CommandId.make(randomUUID());
     await waitForRevertedMessage(
       input.routeThreadRef,
