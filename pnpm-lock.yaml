@@ -74,7 +74,7 @@ patchedDependencies:
   '@ff-labs/fff-node@0.11.0': 765c192f75289d2a65d54011f65e3c9397603298eefb7203e7e05260352e47c8
   '@legendapp/list@3.3.5': 455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67
   '@pierre/diffs@1.5.2': ae395835ffebade7871f3c509389d88f8ca7d50aab9fb5ea580d07daa8e78c5c
-  node-pty@1.2.0-beta.15: f2fe901c61cde17986240002d05c172d5d0272d83ffaab8d0ebeb922763be414
+  node-pty@1.2.0-beta.15: f1e680afec85f650699ea756f91f469844ec4c976f4f168492a45c6b3f67d651
 
 importers:
 
@@ -180,7 +180,7 @@ importers:
         version: 4.0.5
       node-pty:
         specifier: 1.2.0-beta.15
-        version: 1.2.0-beta.15(patch_hash=f2fe901c61cde17986240002d05c172d5d0272d83ffaab8d0ebeb922763be414)
+        version: 1.2.0-beta.15(patch_hash=f1e680afec85f650699ea756f91f469844ec4c976f4f168492a45c6b3f67d651)
       stream-chain:
         specifier: ^4.2.5
         version: 4.2.6
@@ -8489,7 +8489,7 @@ snapshots:
     dependencies:
       whatwg-url: 5.0.0
 
-  node-pty@1.2.0-beta.15(patch_hash=f2fe901c61cde17986240002d05c172d5d0272d83ffaab8d0ebeb922763be414):
+  node-pty@1.2.0-beta.15(patch_hash=f1e680afec85f650699ea756f91f469844ec4c976f4f168492a45c6b3f67d651):
     dependencies:
       node-addon-api: 7.1.1
 

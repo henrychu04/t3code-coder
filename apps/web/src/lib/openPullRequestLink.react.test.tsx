@@ -23,14 +23,22 @@ vi.mock("../state/entities", () => ({
       },
     },
   ],
-  useServerConfigs: () =>
-    new Map(
-      ["workspace", "other"].map((id) => [
-        id,
-        { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
-      ]),
-    ),
 }));
+// The link handler reads the server configs from the atom registry when clicked.
+vi.mock("../state/server", async (original) => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    ...(await original<typeof import("../state/server")>()),
+    environmentServerConfigsAtom: Atom.make(
+      new Map(
+        ["workspace", "other"].map((id) => [
+          id,
+          { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
+        ]),
+      ),
+    ),
+  };
+});
 
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { useOpenPrLink } from "./openPullRequestLink";
