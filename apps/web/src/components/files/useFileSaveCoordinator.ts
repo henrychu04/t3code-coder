@@ -53,6 +53,7 @@ export function useFileSaveCoordinator({
   const inputs = {
     environmentId,
     owner,
+    revision,
     cwd,
     relativePath,
     onPendingChange,
@@ -118,25 +119,27 @@ function useProjectFileWriter() {
 function createFileSaveSession({
   environmentId,
   owner,
+  revision,
   cwd,
   relativePath,
   onPendingChange,
   onSaveFailed,
   writeFile,
   latestRevision,
-}: Omit<FileSaveOptions, "revision"> & {
+}: FileSaveOptions & {
   writeFile: ReturnType<typeof useProjectFileWriter>;
   latestRevision: ReturnType<typeof createRevisionTracker>;
 }) {
   const coordinatorRef = createRef<FileSaveCoordinator<ProjectWriteFileResult>>();
   const sessionFileKey = JSON.stringify([environmentId, owner, cwd, relativePath]);
-  // The revision this session last used, so a retired session's retry keeps its own file's.
-  const sessionRevision: { current: string | undefined } = { current: undefined };
+  // The revision this session last used, so a retired session's retry keeps its own file's
+  // and never borrows the revision of the file that replaced it.
+  const sessionRevision = { current: revision };
   const currentRevision = () => {
     if (latestRevision.read().fileKey === sessionFileKey) {
       sessionRevision.current = latestRevision.read().revision;
     }
-    return sessionRevision.current ?? latestRevision.read().revision;
+    return sessionRevision.current;
   };
   return {
     change: (contents: string) => coordinatorRef.current?.change(contents),

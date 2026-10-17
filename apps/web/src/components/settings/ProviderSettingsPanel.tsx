@@ -743,7 +743,8 @@ export function EnvironmentProviderSettings({
         return;
       }
 
-      // Coder: no ACP registry, so no managed binaries to clean up.
+      // Coder: the ACP Registry driver runs only the workspace's local `kilo` command, so there
+      // are no managed binaries to clean up.
     },
   );
 
