@@ -236,7 +236,7 @@ worktree folder that no thread uses, with their sizes; cleanup never removes the
 manually if you want.
 
 Saved image artifacts and rotated logs have separate workspace-wide retention periods. Artifact
-retention applies to legacy copies in `$HOME/.t3-coder/artifacts`: expired links stop opening.
+retention applies to legacy copies in `$HOME/.t3-coder/artifacts`, which conversations no longer show.
 Submitted composer attachments, current workspace source images, and current logs are kept.
 
 ## Theme shortcuts

@@ -74,12 +74,10 @@ There is no per-turn preview count limit, total storage quota, or automatic purg
 where you placed them and workspace cleanup is user-controlled. Submitted image attachments use their
 workspace copies and survive reload while those copies exist; unsent drafts disappear on reload.
 
-Conversations from before the current orchestration still show the screenshots they saved, below
-the message that preceded them. Those legacy copies live
-in `$HOME/.t3-coder/artifacts`, outside worktrees; deleting a worktree does not delete them.
-Opt-in saved-artifact retention under **Settings → Storage** can remove expired legacy copies.
-Their links then stop opening. Retention is off by default and excludes submitted attachments
-and current workspace source images.
+Conversations from before the current orchestration no longer show the screenshots they saved.
+Those legacy copies stay in `$HOME/.t3-coder/artifacts`, outside worktrees, until you remove
+them; opt-in saved-artifact retention under **Settings → Storage** can delete expired copies.
+Retention is off by default and excludes submitted attachments and current workspace source images.
 
 The flow follows [main's image previews](https://github.com/henrychu04/t3code-coder/blob/f328db30da063a7bce9a9d038fc583d3ff83673a/docs/user/composer.md#images-and-videos-in-messages).
 Attachment sizing follows main. Coder-specific differences are bounded helper stdio transport,

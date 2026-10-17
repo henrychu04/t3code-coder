@@ -65,7 +65,7 @@ Native Codex image input accepts only bounded opaque ids for generated workspace
 the helper rejects symlinks and revalidates file size and image signatures before reading bytes.
 Project image previews read current files through bounded helper stdio chunks after thread/root
 ownership, project containment, file revision, signature, and size checks. No new screenshot
-artifacts are created. Previously saved artifact IDs remain readable for older conversations.
+artifacts are created, and previously saved artifacts are no longer read.
 Image bytes exist in the browser only as revocable, memory-only object URLs.
 
 Coder owns deployment credentials. With the supported Coder CLI 2.25.3, T3 selects a separate opaque
