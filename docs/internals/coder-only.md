@@ -612,7 +612,10 @@ listed here is drift to remove rather than fork behavior to keep.
       `authenticateOnAuthRequired: false`, so an unauthenticated Kilo Code fails the session
       instead of T3 calling ACP `authenticate`. Because no sign-in ever reports `authenticated`,
       `ProviderRegistry.ts` also treats a ready snapshot that lists a discovered model beyond the
-      `default` placeholder as a completed probe, so removed models leave the picker.
+      `default` placeholder as a completed probe, so removed models leave the picker. A probe
+      that discovers no models at all cannot be told apart from a readiness snapshot, so it keeps
+      the previous list; Kilo Code always lists its models, and upstream keeps the list in the
+      same case for an instance never signed in through T3.
     - `AcpRegistryRuntimeCoordinator.ts` has no URL authentication consent or session mutation
       permit. `adapter.ts` has no Devin, GitHub Copilot, or Mistral Vibe flavor (`copilotAcp.ts`
       and `devinAcp.ts` are not carried) and no native protocol logging.

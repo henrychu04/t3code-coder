@@ -453,7 +453,16 @@ describe("AcpRegistryAdapterV2", () => {
         return yield* runtime.ensureThread({ threadId, modelSelection, runtimePolicy });
       }).pipe(Effect.result);
 
+      // The mock agent accepts `authenticate`, so a session that signed in would have opened.
+      // It must instead fail on `session/new` with the agent's auth-required error.
       assert.isTrue(result._tag === "Failure", "an auth-required session must not sign in");
+      if (result._tag !== "Failure") return;
+      assert.equal(result.failure._tag, "ProviderAdapterOpenSessionError");
+      assert.deepInclude(result.failure.cause as object, {
+        _tag: "AcpRequestError",
+        code: -32000,
+        method: "session/new",
+      });
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
