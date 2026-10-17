@@ -198,7 +198,6 @@ import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { settleAndAdvance } from "../settleAndAdvance";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { FileMetadataThreadProvider } from "../hooks/FileMetadataThreadProvider";
 import { usePreviewPanelInlineSize } from "../hooks/usePreviewPanelInlineSize";
 import {
@@ -331,6 +330,7 @@ import {
   useChildThreadInputs,
   useThreadRefs,
   useThreadVisibleTurnItems,
+  useThreadCheckpointSummaries,
   waitForThreadShell,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
@@ -2589,7 +2589,7 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationsActive,
     panelAnimationDurationMs,
   );
-  const { turnDiffSummaries } = useTurnDiffSummaries(serverProjection);
+  const turnDiffSummaries = useThreadCheckpointSummaries(routeThreadDetailRef);
 
   /**
    * File tools are explicit; completed commands are included because a shell
@@ -2824,10 +2824,13 @@ export default function ChatView(props: ChatViewProps) {
     const pending = environmentChangeRef.current;
     return pending !== null && pending.scope === environmentChangeScopeRef.current ? pending : null;
   };
-  const [environmentChangingScope, setEnvironmentChangingScope] = useState<string | null>(null);
-  const isEnvironmentChanging = environmentChangingScope === environmentChangeScope;
-  const setIsEnvironmentChanging = (changing: boolean) =>
-    setEnvironmentChangingScope(changing ? environmentChangeScope : null);
+  // The busy state belongs to the request that set it, so an older request settling late
+  // (abandoned, or superseded by a newer switch) can never clear a newer one's.
+  const [busyEnvironmentChange, setBusyEnvironmentChange] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly scope: string;
+  } | null>(null);
+  const isEnvironmentChanging = busyEnvironmentChange?.scope === environmentChangeScope;
 
   const onEnvironmentChange = (nextEnvironmentId: EnvironmentId) => {
     if (envLocked || !draftId || sendInFlightRef.current) return;
@@ -2839,7 +2842,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!target) return;
     const request = { environmentId: target.environmentId, scope: environmentChangeScope };
     environmentChangeRef.current = request;
-    setIsEnvironmentChanging(false);
+    setBusyEnvironmentChange(null);
     const retarget = (project: (typeof allProjects)[number]) => {
       const currentDraft = getDraftSession(draftId);
       if (
@@ -2869,10 +2872,8 @@ export default function ChatView(props: ChatViewProps) {
       }
     };
     const finish = () => {
-      if (environmentChangeRef.current === request) {
-        environmentChangeRef.current = null;
-        setIsEnvironmentChanging(false);
-      }
+      if (environmentChangeRef.current === request) environmentChangeRef.current = null;
+      setBusyEnvironmentChange((busy) => (busy === request ? null : busy));
     };
     if (target.projectId !== null) {
       const project = allProjects.find(
@@ -2883,7 +2884,7 @@ export default function ChatView(props: ChatViewProps) {
       finish();
       return;
     }
-    setIsEnvironmentChanging(true);
+    setBusyEnvironmentChange(request);
     void openScratchProject(target.environmentId, "Could not switch machine")
       .then((project) => {
         if (project) retarget(project);
@@ -5088,6 +5089,12 @@ export default function ChatView(props: ChatViewProps) {
       "diff.toggle": () => onToggleDiffStable(),
       "modelPicker.toggle": ({ event }) => {
         if (!event.repeat) composerRef.current?.toggleModelPicker();
+      },
+      "composer.increaseEffort": ({ event }) => {
+        if (!event.repeat) composerRef.current?.stepReasoningEffort(1);
+      },
+      "composer.decreaseEffort": ({ event }) => {
+        if (!event.repeat) composerRef.current?.stepReasoningEffort(-1);
       },
       "composer.host": openComposerControl("composer.host"),
       "composer.effort": openComposerControl("composer.effort"),

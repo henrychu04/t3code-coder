@@ -12,6 +12,7 @@ import * as Path from "effect/Path";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
+import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -21,8 +22,18 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...actual, rename: vi.fn(actual.rename) };
 });
 
+// Temp folders count as known workspaces unless named as unknown.
+const UNKNOWN_WORKSPACE_PREFIX = "t3code-unknown-workspace-";
+const layerKnownWorkspacesTest = Layer.mock(KnownWorkspaces.KnownWorkspaces)({
+  assertContains: (cwd) =>
+    cwd.includes(UNKNOWN_WORKSPACE_PREFIX)
+      ? Effect.fail(new KnownWorkspaces.UnknownWorkspaceError({ cwd }))
+      : Effect.void,
+});
+
 const EntriesLayer = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
 const ProjectLayer = WorkspaceFileSystem.layer.pipe(
+  Layer.provide(layerKnownWorkspacesTest),
   Layer.provide(WorkspacePaths.layer),
   Layer.provide(EntriesLayer),
 );
@@ -304,6 +315,124 @@ it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
   });
 
   describe("createFile", () => {
+    // Coder: upstream's write-target tests, ported to the fork's create-only and edit paths.
+    it.effect("rejects writes outside a known workspace", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: UNKNOWN_WORKSPACE_PREFIX,
+        });
+        yield* writeTextFile(cwd, "README.md", "keep\n");
+
+        const created = yield* files
+          .createFile({ cwd, relativePath: "plan.md", contents: "# nope\n" })
+          .pipe(Effect.flip);
+        const edited = yield* files
+          .writeFile({
+            cwd,
+            relativePath: "README.md",
+            contents: "# nope\n",
+            expectedRevision: "any",
+          })
+          .pipe(Effect.flip);
+
+        expect(created).toBeInstanceOf(KnownWorkspaces.UnknownWorkspaceError);
+        expect(edited).toBeInstanceOf(KnownWorkspaces.UnknownWorkspaceError);
+        expect(yield* fileSystem.readDirectory(cwd)).toEqual(["README.md"]);
+      }),
+    );
+
+    it.effect("refuses writes into git's own folders", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, ".git/config", "[core]\n");
+        // A bare repository named `.bare`, and a linked worktree's git folder inside it.
+        yield* writeTextFile(cwd, ".bare/HEAD", "ref: refs/heads/main\n");
+        yield* writeTextFile(cwd, ".bare/objects/info/packs", "");
+        yield* writeTextFile(cwd, ".bare/refs/heads/main", "");
+        yield* writeTextFile(cwd, ".bare/hooks/pre-push.sample", "");
+        // Only a linked worktree's `.git` file ends the upward check, not any `.git` folder.
+        yield* fileSystem.makeDirectory(path.join(cwd, ".bare/hooks/.git"));
+        yield* writeTextFile(cwd, ".bare/worktrees/main/HEAD", "ref: refs/heads/main\n");
+        yield* writeTextFile(cwd, ".bare/worktrees/main/commondir", "../..\n");
+        if (symlinksSupported) yield* fileSystem.symlink(".git", path.join(cwd, "docs"));
+
+        for (const [folder, relativePath] of [
+          [cwd, ".git/hooks/pre-commit"],
+          [cwd, "sub/.git"],
+          [cwd, ".GIT/config"],
+          [cwd, ".git. /config"],
+          [cwd, "GIT~1/config"],
+          [cwd, ".bare/config"],
+          [path.join(cwd, ".bare"), "hooks/post-checkout"],
+          [path.join(cwd, ".bare/hooks"), "post-checkout"],
+          ...(symlinksSupported ? [[cwd, "docs/new-config"] as const] : []),
+        ] as const) {
+          const error = yield* files
+            .createFile({ cwd: folder, relativePath, contents: "[core]\n\tfsmonitor = x\n" })
+            .pipe(Effect.flip);
+          expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+        }
+        for (const [folder, relativePath] of [
+          [cwd, ".git/config"],
+          [path.join(cwd, ".git"), "config"],
+          [path.join(cwd, ".bare/worktrees/main"), "commondir"],
+          ...(symlinksSupported ? [[cwd, "docs/config"] as const] : []),
+        ] as const) {
+          const error = yield* files
+            .writeFile({
+              cwd: folder,
+              relativePath,
+              contents: "[core]\n\tfsmonitor = x\n",
+              expectedRevision: "any",
+            })
+            .pipe(Effect.flip);
+          expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+        }
+
+        expect(yield* fileSystem.readFileString(path.join(cwd, ".git/config"))).toBe("[core]\n");
+        expect(yield* fileSystem.exists(path.join(cwd, ".bare/config"))).toBe(false);
+        expect((yield* fileSystem.readDirectory(path.join(cwd, ".bare/hooks"))).toSorted()).toEqual(
+          [".git", "pre-push.sample"],
+        );
+        expect(yield* fileSystem.exists(path.join(cwd, "sub"))).toBe(false);
+        expect(
+          yield* fileSystem.readFileString(path.join(cwd, ".bare/worktrees/main/commondir")),
+        ).toBe("../..\n");
+      }),
+    );
+
+    it.effect("writes files that sit beside git's folders", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const parentDir = yield* makeTempDir;
+        // A bare repository with a worktree checked out inside it.
+        const bare = path.join(parentDir, "repo.git");
+        yield* writeTextFile(bare, "HEAD", "ref: refs/heads/main\n");
+        yield* writeTextFile(bare, "objects/info/packs", "");
+        yield* writeTextFile(bare, "refs/heads/main", "");
+        yield* writeTextFile(bare, "main/.git", `gitdir: ${path.join(bare, "worktrees/main")}\n`);
+
+        for (const [cwd, relativePath] of [
+          [path.join(bare, "main"), ".gitignore"],
+          [path.join(bare, "main"), ".gitattributes"],
+          [path.join(bare, "main"), ".github/workflows/ci.yml"],
+          [path.join(bare, "main"), "vendor/lib.git/README.md"],
+          [path.join(bare, "main/.github"), "CODEOWNERS"],
+          [bare, "main/plan.md"],
+        ] as const) {
+          yield* files.createFile({ cwd, relativePath, contents: "ok\n" });
+          expect(yield* fileSystem.readFileString(path.join(cwd, relativePath))).toBe("ok\n");
+        }
+      }),
+    );
+
     it.effect("creates a new file and its folders inside the project", () =>
       Effect.gen(function* () {
         const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;

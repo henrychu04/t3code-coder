@@ -30,7 +30,6 @@
     "../../scripts/lib/third-party-licenses.ts",
     "src",
     "vite.config.ts",
-    "reactCompiledFiles.ts",
     "test"
   ]
 }

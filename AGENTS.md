@@ -106,9 +106,13 @@ pnpm --filter @t3tools/source-control-core --filter @t3tools/source-control-gitl
 pnpm build
 ```
 
-Backend boundary changes need focused tests; `apps/coder-gateway/src/boundaryGuard.test.ts` checks
-the gateway's URLs, connections, and spawn targets. Do not launch browsers or use computer-control
-tooling without explicit user permission. Do not test against or modify `~/.t3/userdata`.
+`pnpm test:coder` includes upstream's web `browser` Vitest project, which runs headless Chromium
+through Playwright on the development machine; install it once with
+`pnpm --filter @t3tools/web exec playwright install chromium`. Backend boundary changes need
+focused tests; `apps/coder-gateway/src/boundaryGuard.test.ts` checks the gateway's URLs,
+connections, and spawn targets. Apart from that test project, do not launch browsers or use
+computer-control tooling without explicit user permission. Do not test against or modify
+`~/.t3/userdata`.
 
 ## Working practices
 

@@ -474,7 +474,10 @@ listed here is drift to remove rather than fork behavior to keep.
     folder itself is ignored, #20062) has nothing to save and is not carried.
     `projects.createFile` serves upstream's proposed-plan "Save to workspace": it creates a new
     text file inside the verified root and never replaces an existing path, where upstream's
-    `writeFile` overwrites. `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
+    `writeFile` overwrites. Both write paths keep upstream's write-target hardening: the cwd must
+    be a `KnownWorkspaces` folder, the root resolves after `path.resolve`, and a target in a git
+    folder (`.git`, a bare repository, a linked worktree's git folder, as named or resolved) is
+    refused, with new files checked before any folder is made. `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
     error mapping. `coderWs.ts` wraps `ws.ts`'s upstream Files list, read, and write handlers in
     the root verification, so those handlers stay upstream's code.
   - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
@@ -959,8 +962,8 @@ listed here is drift to remove rather than fork behavior to keep.
     cfafb4bb54):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
-    request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
-    names; `mr checkout` honours `branch` and `force`.
+    request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
+    branch names (options stay before upstream's `--`); `mr checkout` honours `branch` and `force`.
   - GitLab implements upstream's `readChangeRequestTemplate` hook with
     `gitLabChangeRequestTemplate.ts`, upstream's GitHub template reader plus
     `.gitlab/merge_request_templates`, preferring `Default.md`.
@@ -1126,7 +1129,8 @@ listed here is drift to remove rather than fork behavior to keep.
   macOS, where the temp directory is behind the `/var` symlink.
   `serverSettings.test.ts` omits upstream's source control host secret tests, and drops the host
   tokens from its shared secret-lifecycle test, because no carried host definition declares
-  settings. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
+  settings; it also omits the credential-migration test, which reads the uncarried Antigravity
+  and OpenCode settings schemas. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
   tests through a fake `claude` executable, since the CLI transport has no SDK spawn hook, and
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query` shim rather than the
   Agent SDK's. `ProviderSessionManager.test.ts`'s parallel shutdown test waits briefly in real time
@@ -1146,7 +1150,10 @@ listed here is drift to remove rather than fork behavior to keep.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
   the Coder config owns registration and there is no per-environment switch.
   `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
-  worker, which needs a browser `self`.
+  worker, which needs a browser `self`. Upstream's `*.browser.test.*` files run in headless
+  Chromium through Playwright as upstream's `browser` Vitest project, on the development machine
+  only; `reactCompilerCoverage.test.ts` skips four fork-only files the compiler bails on
+  (`CODER_UNCOMPILED_FILES`).
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,

@@ -59,6 +59,7 @@ import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 import { readTurnItemAssetChunk } from "./workspace/TurnItemAssets.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import type * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 
 /** The methods only the helper serves; `ws.ts` builds every other `CoderWsRpcGroup` method. */
@@ -111,7 +112,8 @@ interface UpstreamHelpers {
   readonly projectFileFailureContext: (
     error:
       | WorkspaceFileSystem.WorkspaceFileSystemError
-      | WorkspacePaths.WorkspacePathOutsideRootError,
+      | WorkspacePaths.WorkspacePathOutsideRootError
+      | KnownWorkspaces.UnknownWorkspaceError,
   ) => {
     readonly failure: ProjectFileFailure;
     readonly resolvedPath?: string;

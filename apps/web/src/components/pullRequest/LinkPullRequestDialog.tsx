@@ -6,7 +6,8 @@ import {
   type SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useEffect, useRef, useState } from "react";
 
 import { gitLabMergeRequestBrowserUrl, parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { parsePullRequestReference } from "~/pullRequestReference";
@@ -123,6 +124,15 @@ export function resolveLinkPullRequestProject(identity: RepositoryIdentity | nul
   };
 }
 
+function resolveOwnProject(
+  environmentProjects: ReturnType<typeof useProjects>,
+  projectId: LinkPullRequestDialogProps["projectId"],
+) {
+  return resolveLinkPullRequestProject(
+    environmentProjects.find((candidate) => candidate.id === projectId)?.repositoryIdentity,
+  );
+}
+
 function LinkPullRequestDialog({
   open,
   threadRef,
@@ -134,54 +144,50 @@ function LinkPullRequestDialog({
   const [dirty, setDirty] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const projects = useProjects();
-  const environmentProjects = useMemo(
-    () => projects.filter((project) => project.environmentId === threadRef.environmentId),
-    [projects, threadRef.environmentId],
-  );
-  const ownProject = useMemo(
-    () =>
-      resolveLinkPullRequestProject(
-        environmentProjects.find((candidate) => candidate.id === projectId)?.repositoryIdentity,
-      ),
-    [environmentProjects, projectId],
+  const ownProject = resolveOwnProject(
+    projects.filter((project) => project.environmentId === threadRef.environmentId),
+    projectId,
   );
   const linking = usePullRequestLinking(threadRef.environmentId);
   const [pending, setPending] = useState(false);
 
+  const [openSeen, setOpenSeen] = useState(open);
+  if (openSeen !== open) {
+    setOpenSeen(open);
+    if (open) {
+      setReference("");
+      setDirty(false);
+      setSubmitError(null);
+    }
+  }
   useEffect(() => {
     if (!open) return;
-    setReference("");
-    setDirty(false);
-    setSubmitError(null);
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
 
-  const resolved = useMemo(
-    () =>
-      resolveLinkPullRequestInput({
-        reference,
-        project: ownProject,
-        hasProject: (reference) => linking.canLink(reference.url),
-      }),
-    [linking, ownProject, reference],
-  );
+  const resolved = resolveLinkPullRequestInput({
+    reference,
+    project: ownProject,
+    hasProject: (reference) => linking.canLink(reference.url),
+  });
 
-  const submit = useCallback(async () => {
+  const submit = async () => {
     setDirty(true);
     if (resolved === null || "error" in resolved) return;
     setSubmitError(null);
     setPending(true);
-    try {
-      await linking.changeLink(threadRef, resolved.link.url, true);
-    } catch (error) {
+    const result = await settlePromise(() =>
+      linking.changeLink(threadRef, resolved.link.url, true),
+    );
+    setPending(false);
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
       setSubmitError(error instanceof Error ? error.message : "Could not link the merge request.");
       return;
-    } finally {
-      setPending(false);
     }
     onOpenChange(false);
-  }, [linking, onOpenChange, resolved, threadRef]);
+  };
 
   const validation = !dirty
     ? null

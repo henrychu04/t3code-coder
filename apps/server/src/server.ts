@@ -15,6 +15,7 @@ import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
+import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
@@ -89,8 +90,13 @@ const layerProjectCloneTracker = ProjectCloneTracker.layer.pipe(
   Layer.provide(layerSourceControlRepositoryService),
 );
 
-const layerReview = ReviewService.layer.pipe(
+const layerKnownWorkspaces = KnownWorkspaces.layer.pipe(
   Layer.provide(ProjectStore.layer),
+  Layer.provide(GitVcsDriver.layer),
+);
+
+const layerReview = ReviewService.layer.pipe(
+  Layer.provideMerge(layerKnownWorkspaces),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerVcsDriverRegistry),
 );
@@ -131,6 +137,7 @@ const layerWorkspaceEntries = WorkspaceEntries.layer.pipe(Layer.provide(Workspac
 const layerWorkspaceFileSystem = WorkspaceFileSystem.layer.pipe(
   Layer.provide(WorkspacePaths.layer),
   Layer.provide(layerWorkspaceEntries),
+  Layer.provide(layerKnownWorkspaces),
 );
 
 const layerThreadSettlementWorker = Layer.effectDiscard(

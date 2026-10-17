@@ -1586,32 +1586,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
-  it.effect("moves a saved Antigravity key to the secret store when settings load", () =>
-    Effect.gen(function* () {
-      const service = yield* ServerSettingsModule.ServerSettingsService;
-      const config = yield* ServerConfig.ServerConfig;
-      const fs = yield* FileSystem.FileSystem;
-      yield* fs.writeFileString(
-        config.settingsPath,
-        JSON.stringify({
-          providerInstances: {
-            antigravity: { driver: "antigravity", config: { apiKey: "legacy-api-key" } },
-          },
-        }),
-      );
-      const saved = yield* service.getSettings;
-      assert.propertyVal(
-        saved.providerInstances[ProviderInstanceId.make("antigravity")]?.config,
-        "apiKey",
-        "legacy-api-key",
-      );
-      assert.notInclude(yield* fs.readFileString(config.settingsPath), "legacy-api-key");
-      assert.notInclude(
-        JSON.stringify(ServerSettingsModule.redactServerSettingsForClient(saved)),
-        "legacy-api-key",
-      );
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
+  // Coder: upstream's credential-migration test reads the Antigravity and OpenCode settings
+  // schemas, which the fork does not register, so their fields are not known to be secret.
 
   it.effect("stores sensitive provider instance environment values outside settings.json", () =>
     Effect.gen(function* () {

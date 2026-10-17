@@ -10,7 +10,6 @@ import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useCallback } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useFilesystemReadAccess } from "~/state/filesystem";
@@ -212,7 +211,7 @@ export function useProjectEntriesQuery(
     : EMPTY_PROJECT_ENTRIES_QUERY_ATOM;
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
-  const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
+  const refresh = () => refreshAtom();
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
     error: fileAccess.isPending
@@ -275,7 +274,7 @@ export function useProjectFileQuery(
       : EMPTY_PROJECT_FILE_QUERY_ATOM;
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
-  const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
+  const refresh = () => refreshAtom();
   const data = Option.getOrNull(AsyncResult.value(result));
   const optimisticResult = useAtomValue(
     optimisticFileAtom(environmentId, cwd, relativePath ?? EMPTY_PROJECT_FILE_PATH),

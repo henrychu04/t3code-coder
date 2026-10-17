@@ -6,7 +6,9 @@ import {
   type MediaReference,
 } from "@t3tools/client-runtime/media-reference";
 import type { ContextMenuItem } from "../../localApiTypes";
-import { useCallback, useRef, useState, type ReactElement } from "react";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
+import { useRef, useState, type ReactElement } from "react";
 
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { readLocalApi } from "../../localApi";
@@ -31,15 +33,15 @@ function mediaFileName(source: MediaActionSource): string {
 function useMediaActions(source: MediaActionSource) {
   // Coder: the workspace owner always holds the filesystem read scope.
   const canReadMedia = true;
-  const assertCanReadMedia = useCallback(() => {}, []);
-  const actionUrl = useCallback(async () => {
+  const assertCanReadMedia = () => {};
+  const actionUrl = async () => {
     if (!source.src) throw new Error("This media is unavailable. Try reopening the preview.");
     return source.src;
-  }, [source]);
-  const save = useCallback(async () => {
+  };
+  const save = async () => {
     await downloadMedia(await actionUrl(), mediaFileName(source));
-  }, [actionUrl, source]);
-  const copyImage = useCallback(async () => {
+  };
+  const copyImage = async () => {
     assertCanReadMedia();
     if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
       throw new Error(
@@ -50,7 +52,7 @@ function useMediaActions(source: MediaActionSource) {
     await navigator.clipboard.write([
       new ClipboardItem({ "image/png": actionUrl().then(readMediaPng) }),
     ]);
-  }, [actionUrl, assertCanReadMedia]);
+  };
   return { save, copyImage, canReadMedia, assertCanReadMedia };
 }
 
@@ -74,7 +76,7 @@ export function MediaActions({
     setTooltipOpen(false);
     let failureTitle = "Could not open media menu";
     let progressToast: ReturnType<typeof toastManager.add> | undefined;
-    try {
+    const result = await settlePromise(async () => {
       const noun = source.kind === "image" ? "image" : "video";
       const unavailable = source.src === null;
       const canCopyImage =
@@ -131,7 +133,9 @@ export function MediaActions({
           title: action === "save" ? "Download started" : "Image copied",
         });
       }
-    } catch (error) {
+    });
+    if (AsyncResult.isFailure(result)) {
+      const error = squashAtomCommandFailure(result);
       const toast = stackedThreadToast({
         type: "error",
         title: failureTitle,
@@ -139,9 +143,8 @@ export function MediaActions({
       });
       if (progressToast) toastManager.update(progressToast, toast);
       else toastManager.add(toast);
-    } finally {
-      menuOpen.current = false;
     }
+    menuOpen.current = false;
   };
 
   return (

@@ -77,7 +77,7 @@ layer("GitLabCli.layer", (it) => {
         expect.objectContaining({
           command: "glab",
           cwd: "/repo",
-          args: ["mr", "view", "42", "--output", "json"],
+          args: ["mr", "view", "--output", "json", "--", "42"],
         }),
       );
     }),
@@ -120,13 +120,23 @@ layer("GitLabCli.layer", (it) => {
         expect(mockedRun).toHaveBeenNthCalledWith(
           1,
           expect.objectContaining({
-            args: ["mr", "view", "42", "--repo", repository, "--output", "json"],
+            args: ["mr", "view", "--repo", repository, "--output", "json", "--", "42"],
           }),
         );
         expect(mockedRun).toHaveBeenNthCalledWith(
           2,
           expect.objectContaining({
-            args: ["mr", "checkout", "42", "--repo", repository, "--branch", "mr-42", "--force"],
+            args: [
+              "mr",
+              "checkout",
+              "--repo",
+              repository,
+              "--branch",
+              "mr-42",
+              "--force",
+              "--",
+              "42",
+            ],
           }),
         );
       }),
@@ -451,7 +461,7 @@ layer("GitLabCli.layer", (it) => {
         expect.objectContaining({
           command: "glab",
           cwd: "/repo",
-          args: ["mr", "checkout", "42", "--branch", "t3code/mr-42-thread", "--force"],
+          args: ["mr", "checkout", "--branch", "t3code/mr-42-thread", "--force", "--", "42"],
         }),
       );
     }),
