@@ -847,7 +847,17 @@ listed here is drift to remove rather than fork behavior to keep.
   worktree whose branch moved, but only a local checkout can be restored or follow the current
   branch on send. `chatCanvasLayout.ts` has no preview obstacles (it accepts upstream's `findBar` and ignores it),
   and `ChatCanvas.test.tsx` covers only the details card inset below Find; the right panel keeps
-  Coder's per-thread width storage instead of upstream's preview inline size.
+  Coder's per-thread width storage instead of upstream's preview inline size. Pieces upstream
+  moved out of `ChatView` carry the same cuts (each marked `Coder:`): `RightPanelSurfaceContent`
+  renders nothing for browser and device surfaces, previews sent attachments through
+  `SentAttachmentFilePreview`, passes the project id to `FilePreviewPanel`, and names merge
+  requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
+  confirmation; `useQueuedRunEdit` carries no preview annotations and previews only images the
+  helper reads; `useThreadLinkedPullRequest` names merge requests. Upstream's `useUsageLimitsPanel`,
+  `useAgentOpenedPreviews`, and `mergeDirectPreviewAnnotation` are not carried, and a rewind
+  reads the message's images back through the helper instead of `prepareRevertedMessageAttachments`.
+  `reactCompiledFiles.ts` omits `useAgentOpenedPreviews`; the root lint config does not carry
+  upstream's overrides, so the list feeds only `reactCompiledFiles.test.ts`.
 - **Markdown.** `ChatMarkdown.tsx` is upstream's, with these differences (each marked `Coder:` in
   the file):
   - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's props
@@ -996,7 +1006,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
-  pairing, or `keybindings.json` editor. Appearance's **Add theme** is upstream's
+  pairing, mobile app links (`MobileAppSettingsRow`), or `keybindings.json` editor. Appearance's **Add theme** is upstream's
   `ThemeImportDialog` without its remote theme catalog search or desktop file picker: the browser
   reads picked, dropped, or pasted theme files itself. Connections holds the Coder deployments,
   workspaces, and TCP/UDP port forwards in place of pairing and network access. Each workspace
