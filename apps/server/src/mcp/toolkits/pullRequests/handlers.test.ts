@@ -57,15 +57,14 @@ const invocation = (
 });
 
 function makeProject(
-  // Coder: links must name the workspace's GitLab host, so fixtures use GitLab.
   repositoryIdentity: OrchestrationProjectShell["repositoryIdentity"] = {
-    canonicalKey: "gitlab.com/t3tools/t3code",
+    canonicalKey: "github.com/t3tools/t3code",
     locator: {
       source: "git-remote",
       remoteName: "origin",
-      remoteUrl: "git@gitlab.com:T3Tools/T3Code.git",
+      remoteUrl: "git@github.com:T3Tools/T3Code.git",
     },
-    provider: "gitlab",
+    provider: "github",
     displayName: "T3Tools/T3Code",
     owner: "T3Tools",
     name: "T3Code",
@@ -112,10 +111,10 @@ function makeLink(
 ): ThreadPullRequestLink {
   const { headBranch, baseBranch, ...rest } = overrides;
   return {
-    host: "gitlab.com",
+    host: "github.com",
     repository: "t3tools/t3code",
     number,
-    url: `https://gitlab.com/t3tools/t3code/-/merge_requests/${number}`,
+    url: `https://github.com/t3tools/t3code/pull/${number}`,
     source: "manual",
     linkedAt: "2026-08-10T00:00:00.000Z",
     snapshot:
@@ -244,20 +243,20 @@ describe("pull request toolkit handlers", () => {
     Effect.gen(function* () {
       const harness = yield* makeHarness();
       const result = yield* harness.call("link_pull_request", {
-        url: "https://gitlab.com/T3Tools/T3Code/-/merge_requests/123/diffs",
+        url: "https://github.com/T3Tools/T3Code/pull/123/files",
       });
       expect(result).toEqual({
-        host: "gitlab.com",
+        host: "github.com",
         repository: "t3tools/t3code",
         number: 123,
-        url: "https://gitlab.com/T3Tools/T3Code/-/merge_requests/123/diffs",
+        url: "https://github.com/T3Tools/T3Code/pull/123/files",
         alreadyLinked: false,
       });
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         {
           type: "thread.pull-request.link",
           threadId: THREAD_ID,
-          host: "gitlab.com",
+          host: "github.com",
           repository: "t3tools/t3code",
           number: 123,
           source: "agent",
@@ -361,10 +360,10 @@ describe("pull request toolkit handlers", () => {
         number: 7,
       });
       expect(result).toEqual({
-        host: "gitlab.com",
+        host: "github.com",
         repository: "t3tools/other",
         number: 7,
-        url: "https://gitlab.com/t3tools/other/-/merge_requests/7",
+        url: "https://github.com/t3tools/other/pull/7",
         alreadyLinked: false,
       });
     }),
@@ -393,21 +392,37 @@ describe("pull request toolkit handlers", () => {
     }),
   );
 
-  // Coder: only merge requests on a GitLab host that this workspace's projects use are linkable.
-  it.effect("rejects pull requests on other hosts and providers", () =>
+  it.effect("links a numeric Forgejo reference with its remote's web origin and mount path", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness();
-      for (const params of [
-        { url: "https://github.com/t3tools/t3code/pull/1" },
-        { url: "https://gitlab.example/t3tools/t3code/-/merge_requests/1" },
-        { host: "other.example", repository: "owner/repo", number: 42 },
-      ]) {
-        const error = yield* harness.call("link_pull_request", params).pipe(Effect.flip);
-        expect(error).toMatchObject({ _tag: "PullRequestUrlInvalidError" });
-        const unlink = yield* harness.call("unlink_pull_request", params).pipe(Effect.flip);
-        expect(unlink).toMatchObject({ _tag: "PullRequestUrlInvalidError" });
-      }
-      expect(yield* Ref.get(harness.commands)).toEqual([]);
+      const harness = yield* makeHarness({
+        project: makeProject({
+          canonicalKey: "forge.example/git/owner/repo",
+          locator: {
+            source: "git-remote",
+            remoteName: "origin",
+            remoteUrl: "http://forge.example:3000/git/owner/repo.git",
+          },
+          provider: "forgejo",
+          displayName: "git/owner/repo",
+        }),
+      });
+      const result = yield* harness.call("link_pull_request", {
+        repository: "git/owner/repo",
+        number: 42,
+      });
+      expect(result).toEqual({
+        host: "forge.example:3000",
+        repository: "git/owner/repo",
+        number: 42,
+        url: "http://forge.example:3000/git/owner/repo/pulls/42",
+        alreadyLinked: false,
+      });
+      const other = yield* harness.call("link_pull_request", {
+        host: "other.example",
+        repository: "owner/repo",
+        number: 42,
+      });
+      expect(other.url).toBe("https://other.example/owner/repo/pull/42");
     }),
   );
 
@@ -437,7 +452,7 @@ describe("pull request toolkit handlers", () => {
           command.type === "thread.pull-request.link" ? "already linked" : null,
       });
       const result = yield* harness.call("link_pull_request", {
-        url: "https://gitlab.com/t3tools/t3code/-/merge_requests/123",
+        url: "https://github.com/t3tools/t3code/pull/123",
       });
       expect(result.alreadyLinked).toBe(true);
     }),
@@ -457,13 +472,13 @@ describe("pull request toolkit handlers", () => {
         number: 5,
       });
       expect(linked).toEqual({
-        host: "gitlab.com",
+        host: "github.com",
         repository: "t3tools/t3code",
         number: 5,
         wasLinked: true,
       });
       const missing = yield* harness.call("unlink_pull_request", {
-        url: "https://gitlab.com/t3tools/t3code/-/merge_requests/9",
+        url: "https://github.com/t3tools/t3code/pull/9",
       });
       expect(missing.wasLinked).toBe(false);
       expect(yield* Ref.get(harness.commands)).toMatchObject([
@@ -472,8 +487,17 @@ describe("pull request toolkit handlers", () => {
     }),
   );
 
-  // Coder: upstream's Forgejo port recovery test is omitted; `shared/threadPullRequests.ts` does
-  // not carry Forgejo authorities, and Forgejo links are not linkable here.
+  it("reports an older Forgejo link's HTTP port when listing thread links", () => {
+    const result = listThreadPullRequests(
+      makeThread([
+        makeLink(42, {
+          host: "forge.example",
+          url: "http://forge.example:3000/t3tools/t3code/pulls/42",
+        }),
+      ]),
+    );
+    expect(result.pullRequests[0]?.host).toBe("forge.example:3000");
+  });
 
   it.effect("fails cleanly when the token's thread no longer exists", () =>
     Effect.gen(function* () {
@@ -497,10 +521,10 @@ describe("pull request toolkit handlers", () => {
       const result = yield* harness.call("list_thread_pull_requests", {});
       expect(result.pullRequests.map((entry) => entry.number)).toEqual([3, 1, 2, 10]);
       expect(result.pullRequests[0]).toEqual({
-        host: "gitlab.com",
+        host: "github.com",
         repository: "t3tools/t3code",
         number: 3,
-        url: "https://gitlab.com/t3tools/t3code/-/merge_requests/3",
+        url: "https://github.com/t3tools/t3code/pull/3",
         source: "agent",
         watching: false,
         state: "open",
@@ -575,13 +599,13 @@ describe("pull request guide tools", () => {
       Effect.gen(function* () {
         const other = {
           ...makeProject({
-            canonicalKey: "gitlab.com/acme/web",
+            canonicalKey: "github.com/acme/web",
             locator: {
               source: "git-remote",
               remoteName: "origin",
-              remoteUrl: "git@gitlab.com:acme/web.git",
+              remoteUrl: "git@github.com:acme/web.git",
             },
-            provider: "gitlab",
+            provider: "github",
             displayName: "acme/web",
             owner: "acme",
             name: "web",
@@ -591,9 +615,9 @@ describe("pull request guide tools", () => {
         const harness = yield* makeHarness({ projects: [makeProject(), other] });
         const result = yield* harness.call("write_pull_request_guides", {
           pullRequests: [
-            { url: "https://gitlab.com/acme/web/-/merge_requests/7" },
+            { url: "https://github.com/acme/web/pull/7" },
             { repository: "t3tools/t3code", number: 12 },
-            { url: "https://gitlab.com/someone/else/-/merge_requests/1" },
+            { url: "https://github.com/someone/else/pull/1" },
           ],
         });
         expect(
@@ -664,19 +688,6 @@ describe("pull request guide tools", () => {
     }),
   );
 
-  // Coder: a guide, like a link, names only a merge request on a GitLab host the projects use.
-  it.effect("refuses a guide for a pull request on another host", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeHarness();
-      const result = yield* harness.call("write_pull_request_guides", {
-        pullRequests: [{ url: "https://github.com/acme/web/pull/7" }],
-      });
-      expect(result.guides.map((guide) => guide.outcome)).toEqual(["failed"]);
-      expect(result.guides[0]?.detail).toContain("not a recognised merge request URL");
-      expect(yield* Ref.get(harness.guideRequests)).toEqual([]);
-    }),
-  );
-
   it.effect("reports a run the service joined as running, not as a new one", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
@@ -694,31 +705,30 @@ describe("pull request guide tools", () => {
     }),
   );
 
-  // Coder: upstream checks an Azure DevOps path; a GitLab subgroup is the GitLab full path.
-  it.effect("finds a GitLab subgroup checkout for a merge request named by its full path", () =>
+  it.effect("finds an Azure DevOps checkout for a pull request named by its full path", () =>
     Effect.gen(function* () {
-      const subgroup = {
+      const azure = {
         ...makeProject({
-          canonicalKey: "gitlab.com/org/team/web",
+          canonicalKey: "dev.azure.com/org/project/_git/web",
           locator: {
             source: "git-remote",
             remoteName: "origin",
-            remoteUrl: "git@gitlab.com:org/team/web.git",
+            remoteUrl: "https://dev.azure.com/org/project/_git/web",
           },
-          provider: "gitlab",
-          displayName: "org/team/web",
-          owner: "org/team",
+          provider: "azure-devops",
+          displayName: "org/project/_git/web",
+          owner: "org",
           name: "web",
         }),
-        id: ProjectId.make("project-subgroup"),
+        id: ProjectId.make("project-azure"),
       };
-      const harness = yield* makeHarness({ projects: [makeProject(), subgroup] });
+      const harness = yield* makeHarness({ projects: [makeProject(), azure] });
       const result = yield* harness.call("write_pull_request_guides", {
-        pullRequests: [{ host: "gitlab.com", repository: "org/team/web", number: 9 }],
+        pullRequests: [{ host: "dev.azure.com", repository: "org/project/_git/web", number: 9 }],
       });
       expect(result.guides.map((guide) => guide.outcome)).toEqual(["started"]);
       expect((yield* Ref.get(harness.guideRequests)).map((ref) => ref.projectId)).toEqual([
-        "project-subgroup",
+        "project-azure",
       ]);
     }),
   );

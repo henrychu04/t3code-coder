@@ -8,7 +8,6 @@ import type * as RpcGroup from "effect/rpc/RpcGroup";
 import {
   type CommandId,
   type CoderWsRpcGroup,
-  OrchestrationV2DispatchCommandError,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationThreadTranscriptTooLargeError,
   type ProjectFileFailure,
@@ -38,9 +37,7 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
 import * as LegacyScreenshotArtifacts from "./orchestration-v2/legacy/LegacyScreenshotArtifacts.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
-import type * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
-import type * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import {
   buildBoundedThreadProjection,
   decodeThreadHistoryCursor,
@@ -51,7 +48,6 @@ import {
   THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
 } from "./orchestration-v2/threadHistoryPaging.ts";
 import { projectThreadProjectionForWire } from "./orchestration-v2/WireProjection.ts";
-import { isCoderPullRequestLink } from "./coderPullRequestLink.ts";
 import { readProjectConfig } from "./project/configMetadata.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -93,28 +89,6 @@ const HELPER_STDIO_FRAME_LIMIT_BYTES = 8 * 1024 * 1024 - 64 * 1024;
 export function exceedsHelperStdioFrame(value: unknown): boolean {
   return Buffer.byteLength(JSON.stringify(value), "utf8") > HELPER_STDIO_FRAME_LIMIT_BYTES;
 }
-
-/** Thread merge-request links must belong to a known GitLab host. */
-export const makeEnsureCoderPullRequestLink = (
-  projectStore: ProjectStore.ProjectStoreV2["Service"],
-) =>
-  Effect.fn("ws.ensureCoderPullRequestLink")(function* (
-    command: Parameters<(typeof ThreadMessageIntake)["dispatchCommand"]>[0],
-  ) {
-    if (command.type !== "thread.pull-request.link") return;
-    const projects = yield* projectStore.listShells();
-    if (
-      isCoderPullRequestLink(command, projects) &&
-      ["manual", "created", "agent"].includes(command.source)
-    ) {
-      return;
-    }
-    return yield* new OrchestrationV2DispatchCommandError({
-      commandId: command.commandId,
-      commandType: command.type,
-      message: "The merge request must belong to a known GitLab host.",
-    });
-  });
 
 type CoderWsHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof CoderWsRpcGroup>>;
 
