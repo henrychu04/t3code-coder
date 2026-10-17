@@ -1,5 +1,5 @@
 // Coder: `t3.json` comes from the helper's bounded `projects.getConfig` read, never a raw file read.
-import type { T3ProjectFile } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, T3ProjectFile } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -16,24 +16,39 @@ import {
   type SettingsScopeSearch,
 } from "./settingsScope";
 
+type ProjectFileMember = readonly [
+  environmentId: EnvironmentId,
+  projectId: ProjectId,
+  physicalProjectKey: string,
+];
+
+// Keyed by the members' identifying fields so each render reads the same atom.
+const memberProjectFilesAtom = Atom.family((membersKey: string) => {
+  const members = JSON.parse(membersKey) as ReadonlyArray<ProjectFileMember>;
+  return Atom.make((get) => {
+    const files = new Map<string, T3ProjectFile | null>();
+    for (const [environmentId, projectId, physicalProjectKey] of members) {
+      const result = get(projectEnvironment.getConfig({ environmentId, input: { projectId } }));
+      if (result.waiting && Option.isNone(AsyncResult.value(result))) continue;
+      const config = Option.getOrNull(AsyncResult.value(result));
+      files.set(physicalProjectKey, config?.status === "valid" ? config.file : null);
+    }
+    return files;
+  }).pipe(Atom.withLabel(`web-settings-member-project-files:${membersKey}`));
+});
+
 function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
   const members = scope.kind === "project" || scope.kind === "checkout" ? scope.members : [];
   return useAtomValue(
-    Atom.make((get) => {
-      const files = new Map<string, T3ProjectFile | null>();
-      for (const member of members) {
-        const result = get(
-          projectEnvironment.getConfig({
-            environmentId: member.environmentId,
-            input: { projectId: member.id },
-          }),
-        );
-        if (result.waiting && Option.isNone(AsyncResult.value(result))) continue;
-        const config = Option.getOrNull(AsyncResult.value(result));
-        files.set(member.physicalProjectKey, config?.status === "valid" ? config.file : null);
-      }
-      return files;
-    }),
+    memberProjectFilesAtom(
+      JSON.stringify(
+        members.map((member): ProjectFileMember => [
+          member.environmentId,
+          member.id,
+          member.physicalProjectKey,
+        ]),
+      ),
+    ),
   );
 }
 

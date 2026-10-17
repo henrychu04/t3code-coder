@@ -63,7 +63,6 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
-import * as LegacyScreenshotArtifacts from "./orchestration-v2/legacy/LegacyScreenshotArtifacts.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
@@ -170,7 +169,6 @@ const harness = (
       stub(WorkspaceEntries.WorkspaceEntries, options.workspaceEntries),
       stub(WorkspaceFileSystem.WorkspaceFileSystem),
       stub(ScreenshotArtifacts.ScreenshotArtifacts),
-      stub(LegacyScreenshotArtifacts.LegacyScreenshotArtifacts),
       stub(VcsStatusBroadcaster.VcsStatusBroadcaster, {
         refreshStatus: (cwd) =>
           Effect.sync(() => {

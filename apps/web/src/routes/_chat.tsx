@@ -1,10 +1,9 @@
-import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
-import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
@@ -23,6 +22,7 @@ import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 
 import { AuthPreviewOperateScope } from "@t3tools/contracts";
 function ChatRouteGlobalShortcuts() {
@@ -149,10 +149,7 @@ function ChatRouteGlobalShortcuts() {
 function ChatRouteLayout() {
   // Both thread routes render here, not in their own leaf components, so the
   // draft-to-thread promotion keeps one ChatView mounted across the swap.
-  const threadTarget = useParams({
-    strict: false,
-    select: (params) => resolveThreadRouteTarget(params),
-  });
+  const threadTarget = useThreadRouteTarget();
   return (
     <>
       <ChatRouteGlobalShortcuts />

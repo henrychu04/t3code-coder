@@ -14,7 +14,11 @@ import { Button } from "./ui/button";
 import { setMarkdownTaskChecked } from "./files/filePreviewMode";
 
 vi.mock("../hooks/useFileMetadata", () => ({ useFileMetadata: () => null }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
+// Markdown reads only the config fields atom; every other atom reads as empty.
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: { readonly label?: readonly [string, ...unknown[]] }) =>
+    atom.label?.[0] === "markdown-server-config-fields" ? { pullRequestsEnabled: false } : null,
+}));
 vi.mock("./chat/MermaidDiagram", () => ({
   // Real Mermaid needs layout APIs jsdom lacks; a rendered diagram is an SVG.
   MermaidDiagram: () => <svg aria-label="Diagram" />,

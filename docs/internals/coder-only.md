@@ -347,8 +347,8 @@ machine. It checks the opened file's identity, rejects non-files, validates each
 its extension (main's image, video, and audio formats), and keeps a file revision constant across
 chunks. Images are bounded by `MAX_SCREENSHOT_ARTIFACT_BYTES`, video and audio by
 `MAX_PROJECT_MEDIA_BYTES`, and each stdio chunk by `MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES`. No
-artifact copies, capture budgets, or quotas exist; existing artifact ids stay readable through the
-legacy chunk read.
+artifact copies, capture budgets, or quotas exist, and saved v1 screenshot artifacts are no longer
+shown (see the v1 import note below).
 
 The browser keeps main's thumbnails, gallery, and `MediaActions` menu (copy path or URL, Save, Copy
 image). Workspace media has no signed URL, so the browser reads it whole into a memory-only blob
@@ -449,7 +449,8 @@ listed here is drift to remove rather than fork behavior to keep.
     has no CLI: `server.getDatabaseStorage` is omitted from `CoderWsRpcGroup`, `databaseStorage`
     is in `CODER_OMITTED_CAPABILITIES`, and Settings → Storage has no database notice
     (upstream's `DatabaseStorageNotice` and client-runtime's `databaseStorage` atom are not
-    carried).
+    carried). Upstream's `persistence/DatabaseMaintenance.ts`, which only `t3 doctor` uses, is
+    not carried either.
   - Shell/thread streams, replay validation, live-event budgets and coalescing, and completion-marker
     negotiation follow upstream. `coderEnvironment.ts` advertises upstream's environment
     capabilities and orchestration protocol version except the cut surfaces listed with a reason
@@ -803,14 +804,10 @@ listed here is drift to remove rather than fork behavior to keep.
   `FilePreviewPanel` loads a signed URL. Native app icons fall back to the tool glyph.
   `WorkspaceEntryIcon.tsx` formats sizes with the web's `lib/attachmentDisplay.ts`, because
   client-runtime's attachment upload module is not carried.
-  Upstream's v1 importer carries only messages, so screenshots that pre-v2 conversations saved
-  as `artifacts` on v1 tool activities have no v2 item. The v2 database starts as a copy of the
-  v1 one, so `orchestration-v2/legacy/LegacyScreenshotArtifacts.ts` reads them from the kept v1
-  `projection_thread_activities` rows, only for imported threads, and returns those recorded
-  between an imported message and the next (`workspace.listLegacyScreenshotArtifacts`, bounded by
-  `MAX_LEGACY_SCREENSHOT_ARTIFACTS_PER_MESSAGE`). The timeline's `LegacyScreenshotArtifactsTimelineRow` renders them after messages without
-  a run, through the bounded legacy chunk read. Nothing is written, so already-migrated
-  workspaces need no backfill.
+  Upstream's v1 importer carries only messages, and upstream migration 063 drops the v1
+  `projection_thread_activities` rows, so screenshots that pre-v2 conversations saved as
+  `artifacts` on v1 tool activities are not shown, as on upstream. `workspace.readScreenshotArtifact`
+  reads submitted image attachments only.
 - **Project actions.** The thread details panel, action editor, and Settings → Actions are
   upstream's. Coder deltas: repository actions come from the helper's validated `t3.json` read by
   project (`projects.getConfig`), which drops `iconPath` and script preview fields; the editor has
@@ -859,8 +856,9 @@ listed here is drift to remove rather than fork behavior to keep.
   helper reads; `useThreadLinkedPullRequest` names merge requests. Upstream's `useUsageLimitsPanel`,
   `useAgentOpenedPreviews`, and `mergeDirectPreviewAnnotation` are not carried, and a rewind
   reads the message's images back through the helper instead of `prepareRevertedMessageAttachments`.
-  `reactCompiledFiles.ts` omits `useAgentOpenedPreviews`; the root lint config does not carry
-  upstream's overrides, so the list feeds only `reactCompiledFiles.test.ts`.
+  `RightPanelTabs.tsx` stays the fork's version without upstream's per-tab memoization (#20853);
+  `ChatOverlayHosts.tsx` has no device setup dialog host, and `ProviderSettingsPanel`'s
+  `ProviderInstanceRow` passes no ACP sign-in, managed Codex runtime, or provider setup section.
 - **Markdown.** `ChatMarkdown.tsx` is upstream's, with these differences (each marked `Coder:` in
   the file):
   - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's props
@@ -1153,7 +1151,15 @@ listed here is drift to remove rather than fork behavior to keep.
   worker, which needs a browser `self`. Upstream's `*.browser.test.*` files run in headless
   Chromium through Playwright as upstream's `browser` Vitest project, on the development machine
   only; `reactCompilerCoverage.test.ts` skips four fork-only files the compiler bails on
-  (`CODER_UNCOMPILED_FILES`).
+  (`CODER_UNCOMPILED_FILES`). The fork keeps `jsdom` and `react-test-renderer` as web dev
+  dependencies for its own unit tests and for fork-adapted suites that stay unit tests in place
+  of upstream's browser versions: `ChatMarkdown.test.tsx` (upstream's `ChatMarkdown.browser`,
+  `.logic`, and `.assets` browser tests are not carried), `AttachmentFilePreview.test.tsx`,
+  `ProjectSettingsPanel.test.tsx`, `HtmlRenderDialog.test.tsx`, and `RightPanelTabs.test.tsx`
+  (upstream's `RightPanelTabs.browser.test.tsx` is not carried). The carried browser tests omit
+  cases for cut surfaces: grant checks in `ProjectSettingsPanel`, signed-URL renewal in
+  `AttachmentFilePreview`, SnapShot details in `MessagesTimeline`, uncarried providers in
+  `ProviderModelPicker`, and preview mocks in `ReopenClosedViewShortcut`.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,

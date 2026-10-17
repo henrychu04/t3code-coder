@@ -1,4 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore, use } from "react";
+import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -40,6 +41,7 @@ import {
   modelPreferencesMigrationPatch,
   resolveModelPreferences,
 } from "@t3tools/shared/serverSettings";
+import * as Equal from "effect/Equal";
 import * as Struct from "effect/Struct";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -282,11 +284,23 @@ export function useClientSettingsHydrationStatus(): ClientSettingsHydrationStatu
   );
 }
 
-function useClientSettingsValue(): ClientSettings {
-  return useSyncExternalStore(
+const getDefaultClientSettings = () => DEFAULT_CLIENT_SETTINGS;
+const selectWholeClientSettings = (settings: ClientSettings) => settings;
+
+/**
+ * The selection, not the whole snapshot, is what the store compares, so a write re-renders only
+ * readers whose selected value changed. Selectors may build objects or arrays: a structurally
+ * equal result keeps the previous reference.
+ */
+export function useClientSettings<T = ClientSettings>(
+  selector?: (settings: ClientSettings) => T,
+): T {
+  return useSyncExternalStoreWithSelector(
     subscribeClientSettings,
     getClientSettingsSnapshot,
-    () => DEFAULT_CLIENT_SETTINGS,
+    getDefaultClientSettings,
+    selector ?? (selectWholeClientSettings as (settings: ClientSettings) => T),
+    Equal.equals,
   );
 }
 
@@ -329,11 +343,16 @@ export function legacyModelPreferences(
 
 const pendingModelPreferencesMigrations = new Set<EnvironmentId>();
 
+// Coder: the legacy lists a workspace migrates include its per-workspace browser lists.
+const selectLegacyModelPreferences =
+  (environmentId: EnvironmentId | null) => (settings: ClientSettings) =>
+    legacyModelPreferences(settings, environmentId);
+
 export function useMigrateModelPreferences(
   environmentId: EnvironmentId | null,
   settings: ServerSettings | null,
 ) {
-  const clientSettings = useClientSettingsValue();
+  const clientSettings = useClientSettings(selectLegacyModelPreferences(environmentId));
   const hydrated = useClientSettingsHydrated();
   const migrate = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   useEffect(() => {
@@ -344,10 +363,7 @@ export function useMigrateModelPreferences(
       pendingModelPreferencesMigrations.has(environmentId)
     )
       return;
-    const patch = modelPreferencesMigrationPatch(
-      settings,
-      legacyModelPreferences(clientSettings, environmentId),
-    );
+    const patch = modelPreferencesMigrationPatch(settings, clientSettings);
     if (!patch) return;
     pendingModelPreferencesMigrations.add(environmentId);
     void migrate({ environmentId, input: { patch } }).finally(() =>
@@ -356,20 +372,16 @@ export function useMigrateModelPreferences(
   }, [clientSettings, environmentId, hydrated, migrate, settings]);
 }
 
-// Returns the merged object alone so the selector, often inline, cannot widen its cache key.
-function useMergedSettings(
+/** Selecting inside the client store keeps a client write from re-rendering unaffected readers. */
+export function useMergedSettings<T = UnifiedSettings>(
   serverSettings: ServerSettings,
+  selector?: (settings: UnifiedSettings) => T,
   environmentId: EnvironmentId | null = null,
-): UnifiedSettings {
-  const clientSettings = useClientSettingsValue();
-  return mergeEnvironmentSettings(serverSettings, clientSettings, environmentId);
-}
-
-export function useClientSettings<T = ClientSettings>(
-  selector?: (settings: ClientSettings) => T,
 ): T {
-  const settings = useClientSettingsValue();
-  return selector ? selector(settings) : (settings as T);
+  return useClientSettings((clientSettings) => {
+    const merged = mergeEnvironmentSettings(serverSettings, clientSettings, environmentId);
+    return selector ? selector(merged) : (merged as T);
+  });
 }
 
 export function resolveEnvironmentIdentificationMode(input: {
@@ -386,7 +398,7 @@ export function resolveEnvironmentIdentificationMode(input: {
 
 export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMode {
   const settingsHydrated = useClientSettingsHydrated();
-  const mode = useClientSettingsValue().environmentIdentificationMode;
+  const mode = useClientSettings((settings) => settings.environmentIdentificationMode);
   const { resolvedTheme, theme, themeHalves } = useTheme();
   const previewSidebarArtwork = useSyncExternalStore(
     subscribeToThemePreview,
@@ -518,12 +530,9 @@ export function useEnvironmentModelPreferences(environmentId: EnvironmentId | nu
   const settings = useAtomValue(
     environmentId ? serverEnvironment.settingsValueAtom(environmentId) : noEnvironmentSettingsAtom,
   );
-  const clientSettings = useClientSettingsValue();
+  const legacy = useClientSettings(selectLegacyModelPreferences(environmentId));
   useMigrateModelPreferences(environmentId, settings);
-  return resolveModelPreferences(
-    settings ?? DEFAULT_SERVER_SETTINGS,
-    legacyModelPreferences(clientSettings, environmentId),
-  );
+  return resolveModelPreferences(settings ?? DEFAULT_SERVER_SETTINGS, legacy);
 }
 
 export function useEnvironmentSettings<T = UnifiedSettings>(
@@ -532,8 +541,7 @@ export function useEnvironmentSettings<T = UnifiedSettings>(
 ): T {
   const serverSettings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
   useMigrateModelPreferences(environmentId, serverSettings);
-  const merged = useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, environmentId);
-  return selector ? selector(merged) : (merged as T);
+  return useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, selector, environmentId);
 }
 
 export function usePersistEnvironmentProviderInstanceMutation(environmentId: EnvironmentId) {
@@ -557,8 +565,7 @@ export function usePrimarySettings<T = UnifiedSettings>(
     environment?.serverConfig?.settings ?? null,
   );
   // Coder: the primary environment is the active workspace, whose legacy preferences apply.
-  const merged = useMergedSettings(settings, environment?.environmentId ?? null);
-  return selector ? selector(merged) : (merged as T);
+  return useMergedSettings(settings, selector, environment?.environmentId ?? null);
 }
 
 export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
@@ -577,10 +584,7 @@ function useSharedSettingsSyncTargetIds(includePending = false): ReadonlyArray<E
   // Coder: every workspace grants the settings write scope to its owner. `includePending`
   // matters only while a session grant loads, which never happens here.
   void includePending;
-  const writableTargetsAtom = Atom.make(() =>
-    environments.filter(supportsSharedSettingsSync).map((environment) => environment.environmentId),
-  );
-  return useAtomValue(writableTargetsAtom);
+  return environments.filter(supportsSharedSettingsSync).map(({ environmentId }) => environmentId);
 }
 
 function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {

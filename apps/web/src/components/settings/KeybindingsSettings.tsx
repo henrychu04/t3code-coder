@@ -49,6 +49,7 @@ import { Toggle } from "../ui/toggle";
 import { toastManager } from "../ui/toast";
 import {
   buildKeybindingRows,
+  filterKeybindingRows,
   buildKeybindingCommandOptions,
   buildWhenVariableOptions,
   commandLabel,
@@ -1269,6 +1270,18 @@ function keybindingAnchorIds(rows: ReturnType<typeof buildKeybindingRows>) {
   return ids;
 }
 
+// Rows come from a hook so they are cached on the server keybindings alone. Built
+// inline, the compiler joins them to the query's cache scope (filtering might
+// mutate them), and every keystroke rebuilds and re-renders every row.
+function useKeybindingCatalog() {
+  const serverKeybindings = useSettingsScope().environment?.serverConfig?.keybindings;
+  const merged = mergeWithDefaultKeybindings(serverKeybindings ?? []);
+  return {
+    commandOptions: buildKeybindingCommandOptions(merged),
+    allRows: buildKeybindingRows(merged),
+  };
+}
+
 export function KeybindingsSettingsPanel() {
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
   const canOpenKeybindingsFile = useEnvironmentScope(
@@ -1297,13 +1310,8 @@ export function KeybindingsSettingsPanel() {
     if (searchTargetId.startsWith("keybinding-")) setQuery("");
   }
   const whenVariables = buildWhenVariableOptions();
-  const serverKeybindings = primaryEnvironment?.serverConfig?.keybindings;
-  // Each derivation merges the defaults itself so the command options key on the
-  // server keybindings alone and do not rebuild on every search keystroke.
-  const commandOptions = buildKeybindingCommandOptions(
-    mergeWithDefaultKeybindings(serverKeybindings ?? []),
-  );
-  const rows = buildKeybindingRows(mergeWithDefaultKeybindings(serverKeybindings ?? []), query);
+  const { commandOptions, allRows } = useKeybindingCatalog();
+  const rows = filterKeybindingRows(allRows, query);
   const groups = groupKeybindingRows(rows);
   const anchorIds = keybindingAnchorIds(rows);
 
@@ -1393,7 +1401,7 @@ export function KeybindingsSettingsPanel() {
   const cancelAdd = () => setIsAddingBinding(false);
 
   const rowActions: KeybindingRowActions = {
-    allRows: rows,
+    allRows,
     variables: whenVariables,
     onSave: saveKeybinding,
     onReset: resetKeybinding,
@@ -1434,7 +1442,7 @@ export function KeybindingsSettingsPanel() {
           <SettingsGroup>
             <NewKeybindingSettingsRow
               commandOptions={commandOptions}
-              allRows={rows}
+              allRows={allRows}
               variables={whenVariables}
               isSaving={savingCommand !== null}
               onSave={saveKeybinding}

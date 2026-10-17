@@ -10,8 +10,6 @@ export function useScreenshotArtifacts(
   environmentId: EnvironmentId,
   artifacts: ReadonlyArray<Omit<ScreenshotArtifactReference, "sizeBytes"> & { sizeBytes?: number }>,
   expanded: boolean,
-  source: "artifact" | "attachment" = "artifact",
-  priority = false,
 ) {
   "use no memo"; // Resource entries mutate outside React; each subscription notification must reread them.
   const readArtifact = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
@@ -27,11 +25,10 @@ export function useScreenshotArtifacts(
     const references = JSON.parse(resourceKey) as typeof artifacts;
     const releases = references.map((artifact) =>
       imageResources.subscribe(
-        JSON.stringify([environmentId, source, artifact.id]),
+        JSON.stringify([environmentId, "attachment", artifact.id]),
         async (signal) => {
           return readScreenshotBlob(
             artifact,
-            source,
             async (input) => {
               const result = await readArtifact({ environmentId, input });
               if (result._tag !== "Success") throw squashAtomCommandFailure(result);
@@ -41,18 +38,17 @@ export function useScreenshotArtifacts(
           );
         },
         rerender,
-        priority,
       ),
     );
     return () => {
       for (const release of releases) release();
     };
-  }, [environmentId, source, resourceKey, expanded, readArtifact, priority]);
+  }, [environmentId, resourceKey, expanded, readArtifact]);
   const images: Record<string, ImageResourceState> = {};
   if (expanded)
     for (const artifact of artifacts)
       images[artifact.id] = imageResources.get(
-        JSON.stringify([environmentId, source, artifact.id]),
+        JSON.stringify([environmentId, "attachment", artifact.id]),
       );
   return images;
 }

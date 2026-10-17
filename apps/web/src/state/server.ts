@@ -19,6 +19,7 @@ import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
+import { reuseProvidersIgnoringCheckedAt } from "./serverProviders.logic";
 
 // Coder: the client runtime always opts into environment themes and has no usage-limit sources.
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
@@ -135,3 +136,13 @@ export const environmentServerStatesAtom = Atom.make(
     return states;
   },
 ).pipe(Atom.withLabel("web-environment-server-states"));
+
+/** Providers for views that do not show `checkedAt`; see {@link reuseProvidersIgnoringCheckedAt}. */
+export const providersIgnoringCheckedAtAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): ReadonlyArray<ServerProvider> =>
+    reuseProvidersIgnoringCheckedAt(
+      Option.getOrNull(get.self<ReadonlyArray<ServerProvider>>()),
+      get(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS,
+    ),
+  ).pipe(Atom.withLabel(`web-providers-ignoring-checked-at:${environmentId}`)),
+);

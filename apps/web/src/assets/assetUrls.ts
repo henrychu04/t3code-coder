@@ -27,7 +27,6 @@ export function useAssetUrls(
       ...(resource.sizeBytes === undefined ? {} : { sizeBytes: resource.sizeBytes }),
     })),
     connected && resources.length > 0,
-    "attachment",
   );
   return resources.map((resource) => {
     const image = images[resource.attachmentId];
