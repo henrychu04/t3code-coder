@@ -1,5 +1,6 @@
 import { createCommandPermissions } from "./commandPermissions.ts";
 import { followStreamInEnvironment } from "./environmentStreams.ts";
+import { reuseUnchanged } from "./serverConfigProjection.ts";
 export { runStreamInEnvironment, followStreamInEnvironment } from "./environmentStreams.ts";
 import {
   type ClientGuardedRpcTag,
@@ -521,6 +522,14 @@ const refreshEveryUntilFinal =
       { initialValueTarget: self },
     );
 
+/**
+ * A query result's data alone. A refetch always publishes a new result (a new
+ * timestamp, `waiting` on and off), while equal data keeps its identity, so a
+ * reader of only this skips the refetches that changed nothing.
+ */
+export const selectEnvironmentQueryData = <A, E>(result: AsyncResult.AsyncResult<A, E>): A | null =>
+  Option.getOrNull(AsyncResult.value(result));
+
 export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, ER>,
   options: EnvironmentQueryAtomOptions<
@@ -571,8 +580,17 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
           return Effect.never;
         }
         const [connectionState, session] = connection;
+        // A refetch that returns equal content keeps the previous value's
+        // references, so readers of the data skip re-rendering on idle polls.
+        const share = (value: A): A =>
+          reuseUnchanged(
+            Option.getOrUndefined(
+              Option.flatMap(get.self<AsyncResult.AsyncResult<A, unknown>>(), AsyncResult.value),
+            ),
+            value,
+          );
         const emit = (value: A) =>
-          Effect.sync(() => get.setSelf(AsyncResult.success(value, { waiting: true }))).pipe(
+          Effect.sync(() => get.setSelf(AsyncResult.success(share(value), { waiting: true }))).pipe(
             // A value set while the atom builds wins over the build's own
             // result, so a query that then settled synchronously would stay
             // waiting forever. Suspend on a promise (`yieldNow` is drained
@@ -582,7 +600,9 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         switch (connectionState.phase) {
           case "connected":
             return Option.isSome(session)
-              ? runInEnvironment(target.environmentId, options.execute(target.input, emit))
+              ? runInEnvironment(target.environmentId, options.execute(target.input, emit)).pipe(
+                  Effect.map(share),
+                )
               : Effect.never;
           case "connecting":
           case "backoff":

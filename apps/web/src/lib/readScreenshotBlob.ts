@@ -14,7 +14,6 @@ function decodeBase64Bytes(value: string): ArrayBuffer {
 
 export async function readScreenshotBlob(
   artifact: Omit<ScreenshotArtifactReference, "sizeBytes"> & { sizeBytes?: number },
-  source: "artifact" | "attachment",
   readChunk: (input: ScreenshotArtifactReadInput) => Promise<ScreenshotArtifactChunk>,
   signal: AbortSignal,
 ): Promise<Blob> {
@@ -25,7 +24,6 @@ export async function readScreenshotBlob(
     signal.throwIfAborted();
     const result = await readChunk({
       artifactId: artifact.id,
-      source,
       offset,
       limit: MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
     });

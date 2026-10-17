@@ -72,11 +72,9 @@ it("keeps the legacy importer out of reach of new code", () => {
     )
     .map(({ path }) => path)
     .toSorted();
-  // Coder: workspace startup runs in `coderServer.ts`, and `coderWs.ts` serves the read-only
-  // lookup of screenshots that V1 tool activities saved.
+  // Coder: workspace startup runs in `coderServer.ts`.
   assert.deepEqual(importers, [
     "coderServer.ts",
-    "coderWs.ts",
     "orchestration-v2/ThreadManagementService.ts",
     "orchestration-v2/runtimeLayer.ts",
     "project/ProjectService.ts",

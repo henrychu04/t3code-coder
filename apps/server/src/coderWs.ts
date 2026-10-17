@@ -35,7 +35,6 @@ import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as ServerConfig from "./config.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
-import * as LegacyScreenshotArtifacts from "./orchestration-v2/legacy/LegacyScreenshotArtifacts.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import {
@@ -76,7 +75,6 @@ export const CODER_WS_METHODS = [
   WS_METHODS.workspaceReadScreenshotArtifact,
   WS_METHODS.workspaceReadTurnItemAsset,
   WS_METHODS.workspaceReadAttachmentFile,
-  WS_METHODS.workspaceListLegacyScreenshotArtifacts,
   WS_METHODS.subscribeVcsRefStatus,
   WS_METHODS.vcsRenameThreadBranch,
   WS_METHODS.reviewOpenDiffFileContents,
@@ -144,7 +142,6 @@ export const makeHandlers = (
     const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     // Legacy images are read in bounded chunks over helper stdio.
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
-    const legacyScreenshotArtifacts = yield* LegacyScreenshotArtifacts.LegacyScreenshotArtifacts;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const path = yield* Path.Path;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -656,8 +653,6 @@ export const makeHandlers = (
       // Coder: a sent file attachment, in place of upstream's signed attachment asset URL.
       [WS_METHODS.workspaceReadAttachmentFile]: (input) =>
         screenshotArtifacts.readAttachmentFileChunk(input),
-      [WS_METHODS.workspaceListLegacyScreenshotArtifacts]: (input) =>
-        legacyScreenshotArtifacts.listAfterMessage(input.messageId),
       // Coder: subscribe to non-mutating local branch status.
       [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatusBroadcaster.streamRefStatus(cwd),
       // Coder: rename the branch and managed worktree together.

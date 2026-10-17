@@ -19,6 +19,8 @@ import {
 import { isAbsolutePath } from "@t3tools/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import { Atom } from "effect/reactivity";
 import {
   CHAT_MARKDOWN_REMARK_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
@@ -2302,6 +2304,8 @@ function areMarkdownFileLinkPropsEqual(
   );
 }
 
+type MarkdownServerConfigFields = ReturnType<typeof markdownServerConfigFields>;
+
 /** The server config fields markdown reads. */
 function markdownServerConfigFields(config: ServerConfig | null) {
   // Coder: no local editor or file-manager actions, so only the pull request flag is read.
@@ -2309,6 +2313,24 @@ function markdownServerConfigFields(config: ServerConfig | null) {
     pullRequestsEnabled: config?.environment.capabilities.pullRequests === true,
   };
 }
+
+function markdownServerConfigFieldsEqual(
+  previous: MarkdownServerConfigFields,
+  next: MarkdownServerConfigFields,
+): boolean {
+  return previous.pullRequestsEnabled === next.pullRequestsEnabled;
+}
+
+// The config object changes with every provider status push and snapshot. The
+// atom keeps its previous value while the fields markdown reads are equal, so
+// those pushes don't re-render every visible reply.
+const markdownServerConfigFieldsAtom = Atom.family((environmentId: EnvironmentId | null) =>
+  Atom.make((get) => {
+    const next = markdownServerConfigFields(get(serverEnvironment.configValueAtom(environmentId)));
+    const previous = Option.getOrNull(get.self<MarkdownServerConfigFields>());
+    return previous !== null && markdownServerConfigFieldsEqual(previous, next) ? previous : next;
+  }).pipe(Atom.withLabel("markdown-server-config-fields")),
+);
 
 function useChatMarkdownState({
   text,
@@ -2385,16 +2407,7 @@ function useChatMarkdownState({
     },
     [cwd, expandMedia, threadRef],
   );
-  // Only the parts of the server config markdown reads. The config object itself
-  // changes with every provider status push, which would re-render every
-  // visible reply.
-  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const nextConfigFields = markdownServerConfigFields(serverConfig);
-  const [configFields, setConfigFields] = useState(nextConfigFields);
-  if (configFields.pullRequestsEnabled !== nextConfigFields.pullRequestsEnabled) {
-    setConfigFields(nextConfigFields);
-  }
-  const { pullRequestsEnabled } = configFields;
+  const { pullRequestsEnabled } = useAtomValue(markdownServerConfigFieldsAtom(environmentId));
   const projects = useProjects();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const markdownFileLinkMetaByHref = useMemo(() => {

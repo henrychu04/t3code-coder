@@ -1,6 +1,13 @@
-import { ScreenshotArtifactId, type ChatAttachment } from "@t3tools/contracts";
+import {
+  ScreenshotArtifactId,
+  type ChatAttachment,
+  type ScreenshotArtifactReference,
+} from "@t3tools/contracts";
 import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
-import type { ImagePreviewReference } from "../components/chat/ScreenshotArtifactsRow";
+
+export type ImagePreviewReference = Omit<ScreenshotArtifactReference, "sizeBytes"> & {
+  sizeBytes?: number;
+};
 
 /**
  * Removes links to internally generated attachment files from sent prompts; the images render

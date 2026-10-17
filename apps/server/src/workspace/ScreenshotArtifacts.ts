@@ -1,7 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Workspace artifact storage is a Linux filesystem adapter.
 import { constants as FILE_SYSTEM_CONSTANTS } from "node:fs";
 import * as NodeFS from "node:fs/promises";
-import * as NodePath from "node:path";
 
 import {
   type AttachmentFileChunk,
@@ -22,16 +21,8 @@ import { resolveAttachmentPathById } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const ARTIFACT_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 /** Chat attachment ids, as in contracts; the attachment store resolves them to one file. */
 const ATTACHMENT_ID_PATTERN = /^[a-z0-9_-]{1,128}$/i;
-
-const extensionByMimeType: Record<ScreenshotArtifactMimeType, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
 
 export async function detectStoredScreenshotMimeType(
   handle: NodeFS.FileHandle,
@@ -79,93 +70,57 @@ export class ScreenshotArtifacts extends Context.Service<
   }
 >()("t3/workspace/ScreenshotArtifacts") {}
 
-/** @public Read-only compatibility for submitted attachments and previously captured images. */
+/** @public Read-only access to submitted attachments by id. */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const readChunk: ScreenshotArtifacts["Service"]["readChunk"] = Effect.fn(
     "ScreenshotArtifacts.readChunk",
   )(function* (input) {
-    const isAttachment = input.source === "attachment";
-    if (!(isAttachment ? ATTACHMENT_ID_PATTERN : ARTIFACT_ID_PATTERN).test(input.artifactId)) {
-      return yield* new ScreenshotArtifactReadError({
-        artifactId: input.artifactId,
-        message: "Screenshot artifact was not found.",
-      });
-    }
+    const notFound = new ScreenshotArtifactReadError({
+      artifactId: input.artifactId,
+      message: "Screenshot artifact was not found.",
+    });
+    const filePath = ATTACHMENT_ID_PATTERN.test(input.artifactId)
+      ? resolveAttachmentPathById({
+          attachmentsDir: config.attachmentsDir,
+          attachmentId: input.artifactId,
+        })
+      : null;
+    if (filePath === null) return yield* notFound;
 
     const candidate = yield* Effect.tryPromise({
       try: async () => {
-        const attachmentPath = isAttachment
-          ? resolveAttachmentPathById({
-              attachmentsDir: config.attachmentsDir,
-              attachmentId: input.artifactId,
-            })
-          : null;
-        const candidates: ReadonlyArray<{
-          readonly filePath: string;
-          readonly mimeType: ScreenshotArtifactMimeType | undefined;
-        }> = isAttachment
-          ? attachmentPath === null
-            ? []
-            : [{ filePath: attachmentPath, mimeType: undefined }]
-          : (
-              Object.entries(extensionByMimeType) as Array<[ScreenshotArtifactMimeType, string]>
-            ).map(([mimeType, extension]) => ({
-              filePath: NodePath.join(
-                config.screenshotArtifactsDir,
-                `${input.artifactId}.${extension}`,
-              ),
-              mimeType,
-            }));
-        for (const { filePath, mimeType } of candidates) {
-          try {
-            const handle = await NodeFS.open(
-              filePath,
-              FILE_SYSTEM_CONSTANTS.O_RDONLY | FILE_SYSTEM_CONSTANTS.O_NOFOLLOW,
-            );
-            try {
-              const stat = await handle.stat();
-              if (!stat.isFile() || stat.size === 0 || stat.size > MAX_SCREENSHOT_ARTIFACT_BYTES) {
-                return undefined;
-              }
-              const detectedMimeType = await detectStoredScreenshotMimeType(handle, stat.size);
-              if (
-                detectedMimeType === undefined ||
-                (mimeType !== undefined && detectedMimeType !== mimeType) ||
-                input.offset >= stat.size
-              ) {
-                return undefined;
-              }
-              const bytesToRead = Math.min(
-                input.limit,
-                MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
-                stat.size - input.offset,
-              );
-              const buffer = Buffer.allocUnsafe(bytesToRead);
-              const { bytesRead } = await handle.read(buffer, 0, bytesToRead, input.offset);
-              return {
-                mimeType: detectedMimeType,
-                totalBytes: stat.size,
-                bytes: buffer.subarray(0, bytesRead),
-              };
-            } finally {
-              await handle.close();
-            }
-          } catch (cause) {
-            if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+        const handle = await NodeFS.open(
+          filePath,
+          FILE_SYSTEM_CONSTANTS.O_RDONLY | FILE_SYSTEM_CONSTANTS.O_NOFOLLOW,
+        );
+        try {
+          const stat = await handle.stat();
+          if (!stat.isFile() || stat.size === 0 || stat.size > MAX_SCREENSHOT_ARTIFACT_BYTES) {
+            return undefined;
           }
+          const detectedMimeType = await detectStoredScreenshotMimeType(handle, stat.size);
+          if (detectedMimeType === undefined || input.offset >= stat.size) return undefined;
+          const bytesToRead = Math.min(
+            input.limit,
+            MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
+            stat.size - input.offset,
+          );
+          const buffer = Buffer.allocUnsafe(bytesToRead);
+          const { bytesRead } = await handle.read(buffer, 0, bytesToRead, input.offset);
+          return {
+            mimeType: detectedMimeType,
+            totalBytes: stat.size,
+            bytes: buffer.subarray(0, bytesRead),
+          };
+        } finally {
+          await handle.close();
         }
-        return undefined;
       },
       catch: (cause) => cause,
     }).pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-    if (!candidate || candidate.bytes.byteLength === 0) {
-      return yield* new ScreenshotArtifactReadError({
-        artifactId: input.artifactId,
-        message: "Screenshot artifact was not found.",
-      });
-    }
+    if (!candidate || candidate.bytes.byteLength === 0) return yield* notFound;
     const nextOffset = input.offset + candidate.bytes.byteLength;
     return {
       artifactId: input.artifactId,

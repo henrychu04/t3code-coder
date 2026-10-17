@@ -35,6 +35,7 @@ import {
 } from "@t3tools/shared/model";
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { useStableCallback } from "../../hooks/useStableCallback";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -77,11 +78,6 @@ function ProviderStatusDiagnostic({
       <TooltipPopup side="top">{detail}</TooltipPopup>
     </Tooltip>
   );
-}
-
-function readConfigCustomModels(config: unknown): ReadonlyArray<CustomModelDefinition> {
-  if (config === null || typeof config !== "object") return [];
-  return readCustomModelEntries((config as Record<string, unknown>).customModels);
 }
 
 function readConfigString(config: unknown, key: string): string | null {
@@ -363,6 +359,8 @@ interface ProviderInstanceCardProps {
   readonly projectOverride?: ProjectOverrideControl | undefined;
 }
 
+const NO_CUSTOM_MODELS: ReadonlyArray<CustomModelDefinition> = [];
+
 /**
  * Unknown drivers (`driverOption === undefined`) get a read-only
  *     notice instead of editable fields, so fork instances round-trip
@@ -460,8 +458,16 @@ export function ProviderInstanceCard({
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
+  // Keyed on the stored list, not the whole instance, so writing another field
+  // leaves the models list (often ~50 rows) with the same props.
+  const storedCustomModels =
+    instance.config !== null && typeof instance.config === "object"
+      ? (instance.config as Record<string, unknown>).customModels
+      : undefined;
   const customModels =
-    instance.driver === "antigravity" ? [] : readConfigCustomModels(instance.config);
+    instance.driver === "antigravity"
+      ? NO_CUSTOM_MODELS
+      : readCustomModelEntries(storedCustomModels);
   const modelsForDisplay = deriveProviderModelsForDisplay({
     liveModels: liveProvider?.models,
     customModels,
@@ -503,7 +509,7 @@ export function ProviderInstanceCard({
     );
   };
 
-  const updateCustomModels = (next: ReadonlyArray<CustomModelDefinition>) => {
+  const updateCustomModels = useStableCallback((next: ReadonlyArray<CustomModelDefinition>) => {
     const nextConfig = nextConfigBlobWithValue(
       instance.config,
       "customModels",
@@ -511,7 +517,7 @@ export function ProviderInstanceCard({
     );
     const { config: _omit, ...rest } = instance;
     onUpdate({ ...rest, config: nextConfig } as ProviderInstanceConfig);
-  };
+  });
 
   const updateEnvironment = (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => {
     const cleaned = environment.filter((variable) => variable.name.trim().length > 0);

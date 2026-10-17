@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   connected: [] as string[],
-  calls: [] as Array<{ expanded: boolean; source: string }>,
+  calls: [] as Array<{ expanded: boolean }>,
 }));
 
 vi.mock("../state/environments", () => ({
@@ -14,9 +14,8 @@ vi.mock("../components/chat/useScreenshotArtifacts", () => ({
     _environmentId: string,
     artifacts: ReadonlyArray<{ id: string }>,
     expanded: boolean,
-    source: string,
   ) => {
-    state.calls.push({ expanded, source });
+    state.calls.push({ expanded });
     return expanded
       ? Object.fromEntries(
           artifacts.map((artifact) => [
@@ -43,10 +42,10 @@ describe("useAssetUrls", () => {
 
   it("waits for the workspace connection before reading submitted images", () => {
     expect(useAssetUrls(environmentId, resources)).toEqual([null]);
-    expect(state.calls).toEqual([{ expanded: false, source: "attachment" }]);
+    expect(state.calls).toEqual([{ expanded: false }]);
 
     state.connected = ["env"];
     expect(useAssetUrls(environmentId, resources)).toEqual(["blob:image"]);
-    expect(state.calls.at(-1)).toEqual({ expanded: true, source: "attachment" });
+    expect(state.calls.at(-1)).toEqual({ expanded: true });
   });
 });

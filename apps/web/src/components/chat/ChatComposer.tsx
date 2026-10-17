@@ -2867,7 +2867,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           mimeType: record.mimeType,
           ...(record.sizeBytes > 0 ? { sizeBytes: record.sizeBytes } : {}),
         },
-        "attachment",
         async (input) => {
           const result = await readSourceAttachment({
             environmentId: sourceEnvironmentId,

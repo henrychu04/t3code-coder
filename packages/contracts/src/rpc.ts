@@ -335,8 +335,6 @@ import {
   ProjectImageChunk,
   ProjectImageReadError,
   ScreenshotArtifactChunk,
-  LegacyScreenshotArtifactsInput,
-  LegacyScreenshotArtifactsResult,
   ScreenshotArtifactReadError,
   ScreenshotArtifactReadInput,
   AttachmentFileChunk,
@@ -559,7 +557,6 @@ export const WS_METHODS = {
   projectsReadImage: "projects.readImage",
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
-  workspaceListLegacyScreenshotArtifacts: "workspace.listLegacyScreenshotArtifacts",
   workspaceReadTurnItemAsset: "workspace.readTurnItemAsset",
   workspaceReadAttachmentFile: "workspace.readAttachmentFile",
   projectsCreateFile: "projects.createFile",
@@ -1884,14 +1881,6 @@ const WsProjectsCreateFileRpc = Rpc.make(WS_METHODS.projectsCreateFile, {
   error: ProjectWriteFileError,
 });
 
-const WsWorkspaceListLegacyScreenshotArtifactsRpc = Rpc.make(
-  WS_METHODS.workspaceListLegacyScreenshotArtifacts,
-  {
-    payload: LegacyScreenshotArtifactsInput,
-    success: LegacyScreenshotArtifactsResult,
-  },
-);
-
 const WsSubscribeVcsRefStatusRpc = Rpc.make(WS_METHODS.subscribeVcsRefStatus, {
   payload: VcsStatusInput,
   success: VcsRefStatusStreamEvent,
@@ -1996,7 +1985,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceReadTurnItemAssetRpc,
   WsWorkspaceReadAttachmentFileRpc,
   WsProjectsCreateFileRpc,
-  WsWorkspaceListLegacyScreenshotArtifactsRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsServerDiscoverSourceControlRpc,

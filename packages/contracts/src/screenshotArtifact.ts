@@ -1,7 +1,6 @@
 import * as Schema from "effect/Schema";
 
 import {
-  MessageId,
   NonNegativeInt,
   PositiveInt,
   ThreadId,
@@ -52,32 +51,12 @@ export const ScreenshotArtifactReference = Schema.Struct({
   id: ScreenshotArtifactId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   mimeType: ScreenshotArtifactMimeType,
-  dimensions: Schema.optional(ScreenshotArtifactDimensions),
-  /** Legacy capture metadata. New image previews do not use path associations. */
-  sourcePathKeys: Schema.optional(
-    Schema.Array(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))).check(
-      Schema.isMaxLength(100),
-    ),
-  ),
   sizeBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_BYTES)),
 });
 export type ScreenshotArtifactReference = typeof ScreenshotArtifactReference.Type;
 
-/** Screenshots a pre-v2 conversation saved on tool activities after one imported message. */
-export const MAX_LEGACY_SCREENSHOT_ARTIFACTS_PER_MESSAGE = 100;
-export const LegacyScreenshotArtifactsInput = Schema.Struct({ messageId: MessageId });
-export type LegacyScreenshotArtifactsInput = typeof LegacyScreenshotArtifactsInput.Type;
-
-export const LegacyScreenshotArtifactsResult = Schema.Struct({
-  artifacts: Schema.Array(ScreenshotArtifactReference).check(
-    Schema.isMaxLength(MAX_LEGACY_SCREENSHOT_ARTIFACTS_PER_MESSAGE),
-  ),
-});
-export type LegacyScreenshotArtifactsResult = typeof LegacyScreenshotArtifactsResult.Type;
-
 export const ScreenshotArtifactReadInput = Schema.Struct({
   artifactId: ScreenshotArtifactId,
-  source: Schema.optional(Schema.Literals(["artifact", "attachment"])),
   offset: NonNegativeInt,
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES)),
 });
