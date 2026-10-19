@@ -644,7 +644,10 @@ listed here is drift to remove rather than fork behavior to keep.
   - Thread-title and branch-name generation use only Codex, Claude, or Pi models (Pi through
     upstream's ephemeral `pi --mode rpc --no-session` process). Text generation is
     upstream's except that Codex reads branch-name and title images through
-    `PastedImageAttachments.ts`, skipping an unreadable image as upstream does.
+    `PastedImageAttachments.ts`, skipping an unreadable image as upstream does, and Pi's
+    process (`provider-pi/src/server/textGeneration.ts`) loads the workspace's Pi extensions
+    instead of passing `--no-extensions`, because an extension may register the only model
+    providers the workspace can reach. It still passes `--no-tools`.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
     session stores through the helper. `coderServer.ts` provides the scanner beside the helper RPC
     layer, as upstream does beside its WebSocket layer. Upstream offers the import in its welcome
