@@ -27,6 +27,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { PiDriver, type PiDriverEnv } from "@t3tools/provider-pi/server";
 import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
+import * as ClaudeCli from "./Drivers/ClaudeCli.ts";
 import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
@@ -35,6 +36,8 @@ import * as ProviderOrchestrationAdapterInfrastructure from "./ProviderOrchestra
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
+// Coder: the Claude probe runs through the workspace CLI transport.
+vi.mock("./Drivers/ClaudeCli.ts", { spy: true });
 
 const layerTestHttpClient = Layer.succeed(
   HttpClient.HttpClient,
@@ -330,6 +333,112 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         version: "2.1.219",
         auth: { status: "authenticated" },
       });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  // Coder: upstream's organization-scoped fallback test, without the organization change the
+  // fork does not read, against the CLI transport.
+  it.effect("reuses the last good Claude capabilities once after a failed probe", () =>
+    Effect.gen(function* () {
+      if (yield* HostProcess.isWindows) return;
+
+      const fixtures = yield* makeTildeProviderFixtures();
+      const claudeId = ProviderInstanceId.make("claude_probe_recovery");
+      let probeCount = 0;
+      let successfulProbeCount = 0;
+      let failProbe = false;
+      const query = vi.spyOn(ClaudeCli, "query").mockImplementation(
+        () =>
+          ({
+            initializationResult: () => {
+              probeCount++;
+              if (failProbe) return Promise.reject(new Error("initialization failed"));
+              successfulProbeCount++;
+              return Promise.resolve({
+                commands: [
+                  {
+                    name: successfulProbeCount === 1 ? "last-good" : "recovered",
+                    description: "",
+                    argumentHint: "",
+                  },
+                ],
+                account: {
+                  email: "account@example.com",
+                  subscriptionType: "pro",
+                  tokenSource: "oauth",
+                },
+              });
+            },
+            getUsage: async () => ({
+              rate_limits_available: true,
+              rate_limits: {
+                five_hour: { utilization: 12, resets_at: "2026-07-18T14:39:00Z" },
+              },
+            }),
+          }) as unknown as ReturnType<typeof ClaudeCli.query>,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+
+      const { registry } = yield* makeProviderInstanceRegistry<ClaudeDriverEnv>({
+        drivers: [ClaudeDriver],
+        configMap: {
+          [claudeId]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
+            config: makeClaudeConfig({
+              enabled: true,
+              binaryPath: fixtures.claudeBinaryPath,
+              homePath: fixtures.claudeHomePath,
+            }),
+          },
+        },
+      });
+      const claude = yield* registry.getInstance(claudeId);
+      expect(claude).toBeDefined();
+
+      const first = yield* claude!.snapshot.refresh;
+      expect(first).toMatchObject({
+        status: "ready",
+        auth: { status: "authenticated", email: "account@example.com" },
+        slashCommands: expect.arrayContaining([expect.objectContaining({ name: "last-good" })]),
+      });
+      expect(first.usageLimits?.unavailable).toBeUndefined();
+      expect(probeCount).toBe(1);
+
+      // One failed probe reuses the last good capabilities, without their usage windows. The
+      // clock stays put: advancing it runs the background status refresh, which would spend
+      // the one fallback before this refresh.
+      yield* claude!.invalidateCaches ?? Effect.void;
+      failProbe = true;
+      const fallback = yield* claude!.snapshot.refresh;
+      expect(fallback).toMatchObject({
+        status: "ready",
+        auth: { status: "authenticated", email: "account@example.com" },
+        slashCommands: expect.arrayContaining([expect.objectContaining({ name: "last-good" })]),
+      });
+      expect(fallback.usageLimits?.checkedAt).toBe(first.usageLimits?.checkedAt);
+      const fallbackProbeCount = probeCount;
+      expect(fallbackProbeCount).toBeGreaterThan(1);
+
+      // The fallback earns no TTL and is spent: the next failure shows.
+      const repeatedFailure = yield* claude!.snapshot.refresh;
+      expect(repeatedFailure).toMatchObject({
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Claude Agent CLI failed while checking account status.",
+      });
+      expect(repeatedFailure.slashCommands).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: "last-good" })]),
+      );
+      expect(probeCount).toBeGreaterThan(fallbackProbeCount);
+
+      failProbe = false;
+      const recovered = yield* claude!.snapshot.refresh;
+      expect(recovered).toMatchObject({
+        status: "ready",
+        slashCommands: expect.arrayContaining([expect.objectContaining({ name: "recovered" })]),
+      });
+      expect(recovered.usageLimits?.unavailable).toBeUndefined();
     }).pipe(Effect.provide(layerTest)),
   );
 

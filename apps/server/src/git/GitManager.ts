@@ -1500,9 +1500,8 @@ export const make = Effect.gen(function* () {
       remoteName,
     );
 
-    // With no origin to compare against, the only remote is the repository gh targets
-    // unless GH_REPO or `gh repo set-default` (gh-resolved) names another, so a branch on it
-    // is not a fork. With several remotes, or with that other target, it may still be a fork.
+    // With no origin to compare against, the only remote is the repository merge requests
+    // target, so a branch on it is not a fork. With several remotes, it may still be a fork.
     // Coder: GitLab is the only host and `glab` targets the only remote, so upstream's
     // `targetsOnlyRemote` check of gh's GH_REPO and gh-resolved mark is not carried.
     const isOnlyRemote =

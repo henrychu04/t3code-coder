@@ -1,13 +1,17 @@
 import { pullRequestHostOf, type RepositoryIdentity } from "@t3tools/contracts";
-import { parseChangeRequestUrl as parseHostedChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import {
+  parseChangeRequestUrl as parseHostedChangeRequestUrl,
+  type ChangeRequestLink,
+} from "@t3tools/shared/changeRequestUrl";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 
 /**
  * Coder: only a URL a shipped host definition claims is a change request, so with GitLab the only
- * host, other hosts' pull request URLs are not references (as web's `lib/openPullRequestLink.ts`).
+ * host, other hosts' pull request URLs stay ordinary links. The web's `lib/openPullRequestLink.ts`
+ * reuses this.
  */
-function parseChangeRequestUrl(url: string) {
+export function parseChangeRequestUrl(url: string): ChangeRequestLink | null {
   return sourceControlClients.findByChangeRequestUrl(url) === undefined
     ? null
     : parseHostedChangeRequestUrl(url);

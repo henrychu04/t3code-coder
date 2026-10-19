@@ -65,8 +65,9 @@ export function LinkPullRequestDialogHost() {
 
 /** Coder: bare numbers become MR URLs that keep a self-hosted install's origin and path prefix. */
 export function resolveLinkPullRequestProject(identity: RepositoryIdentity | null | undefined) {
+  if (!identity) return null;
   const project = pullRequestLinkProject(identity);
-  if (!project || !identity) return project;
+  if (!project) return null;
   return {
     ...project,
     webUrl: (number: number) => gitLabMergeRequestBrowserUrl(identity, project.repository, number),
