@@ -2,6 +2,8 @@
  * Coder: workspace images have no signed asset URLs. Each atom reads its image through the
  * helper's bounded chunk reads into the shared image store, and the store's object URL stands in
  * for upstream's asset URL. Mounting the atom starts the read; unmounting it releases the bytes.
+ * Upstream's asset URL also carries the image's header size, kept after the bytes are gone; here a
+ * separate size atom reads the start of the file and keeps what the browser decodes.
  */
 import type { ToolOutputImageResource } from "@t3tools/client-runtime/work-log/item-detail";
 import {
@@ -9,7 +11,12 @@ import {
   runAtomCommand,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { type EnvironmentId, ScreenshotArtifactId } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  ScreenshotArtifactId,
+  type ScreenshotArtifactDimensions,
+} from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 
 import type { AttachmentImageResource } from "../assets/attachmentImageResource";
@@ -125,6 +132,45 @@ const createUrlFamily = Atom.family((key: string) => {
   }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`environment-data:assets:create-url:${key}`));
 });
 
+// Coder: matches upstream's asset URL idle TTL, so a size outlives scrolling its row away.
+const IMAGE_SIZE_IDLE_TTL_MS = 60 * 60_000;
+/** Covers PNG, GIF, and WebP headers and a JPEG frame header after typical EXIF segments. */
+const IMAGE_SIZE_PROBE_BYTES = 64 * 1024;
+
+// The helper reads a size from a workspace image's header; formats it cannot parse, and other
+// resources, wait for the browser's decoded size, which callers write back.
+const imageSizeFamily = Atom.family((key: string) => {
+  const [environmentId, resource] = JSON.parse(key) as [EnvironmentId, ImageAssetResource];
+  return Atom.writable(
+    (get): ScreenshotArtifactDimensions | null => {
+      if (resource._tag === "project-image") {
+        const read = commandReader(get.registry, projectEnvironment.readImage);
+        let active = true;
+        get.addFinalizer(() => {
+          active = false;
+        });
+        void read({
+          environmentId,
+          input: { ...resource.target, offset: 0, limit: IMAGE_SIZE_PROBE_BYTES },
+        }).then(
+          (chunk) => {
+            if (!active || !chunk.dimensions) return;
+            // A size the browser decoded first is already the image's.
+            if (Option.getOrNull(get.self<ScreenshotArtifactDimensions | null>()) !== null) return;
+            get.setSelf(chunk.dimensions);
+          },
+          () => undefined,
+        );
+      }
+      return null;
+    },
+    (ctx, size: ScreenshotArtifactDimensions) => ctx.setSelf(size),
+  ).pipe(
+    Atom.setIdleTTL(IMAGE_SIZE_IDLE_TTL_MS),
+    Atom.withLabel(`environment-data:assets:image-size:${key}`),
+  );
+});
+
 const createUrlsFamily = Atom.family((key: string) => {
   const [environmentId, resources] = JSON.parse(key) as [
     EnvironmentId,
@@ -150,4 +196,8 @@ export const assetEnvironment = {
     readonly environmentId: EnvironmentId;
     readonly resources: ReadonlyArray<ImageAssetResource>;
   }) => createUrlsFamily(JSON.stringify([target.environmentId, target.resources])),
+  imageSize: (target: {
+    readonly environmentId: EnvironmentId;
+    readonly resource: ImageAssetResource;
+  }) => imageSizeFamily(JSON.stringify([target.environmentId, target.resource])),
 };
