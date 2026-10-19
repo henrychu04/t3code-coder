@@ -41,6 +41,14 @@ export class ThreadTitleRegenerationService extends Context.Service<
   }
 >()("t3/orchestration-v2/ThreadTitleRegenerationService") {}
 
+function describeTitleFailure(error: unknown): string {
+  const record = (error ?? {}) as { detail?: unknown; message?: unknown; cause?: unknown };
+  const detail =
+    typeof record.detail === "string" ? record.detail : String(record.message ?? error);
+  const inner = record.cause === undefined ? "" : ` | cause: ${String(record.cause)}`;
+  return `${detail}${inner}`.replace(/\s+/g, " ").slice(0, 400);
+}
+
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const projects = yield* ProjectStore.ProjectStoreV2;
@@ -134,7 +142,13 @@ const make = Effect.gen(function* () {
               threadId: input.threadId,
               requestId: input.requestId,
               cause,
-            }).pipe(Effect.as({ type: "complete" as const })),
+            }).pipe(
+              // DIAGNOSTIC ONLY (not for merge): show the failure as the thread title.
+              Effect.as({
+                type: "complete" as const,
+                title: `Title error: ${describeTitleFailure(Cause.squash(cause))}`,
+              }),
+            ),
       ),
     );
 

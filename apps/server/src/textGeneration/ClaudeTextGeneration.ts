@@ -306,7 +306,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           Effect.fail(
             new TextGenerationError({
               operation,
-              detail: "Claude CLI returned unexpected output format.",
+              // DIAGNOSTIC ONLY (not for merge): include what stdout started with.
+              detail: `Claude CLI returned unexpected output format. stdout starts: ${rawStdout.slice(0, 160)} ... ends: ${rawStdout.slice(-80)}`,
               cause,
             }),
           ),
