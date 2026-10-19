@@ -87,6 +87,10 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   comment blocks whole: removing upstream's lines one at a time can drop a `/**` or `*/` the
   fork's text still needs (typecheck catches the orphaned lines). Afterwards, list comment lines
   upstream deleted that the result still has, since an auto-merged hunk can keep them too.
+- When upstream moves web logic into a shared package (07d38b8d17: `LinkPullRequestDialog`'s
+  parsing moved to client-runtime's `pullRequestLinkInput.ts`), move the fork's test adaptations
+  with it, keep the moved module upstream's apart from wording, and keep a seam that needs web
+  code (`gitLabMergeRequestBrowserUrl`) as a wrapper at the web caller.
 - Upstream code the fork carries can start importing a module the fork deleted (in 2a7bd1673c,
   `ThreadManagementService.ts` imports `environment/ServerEnvironment.ts` for
   `ServerEnvironmentIdentity`). Declare the piece it needs in the matching Coder module
@@ -234,6 +238,8 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   shells alias `grep` to tools that reject `\b`), and include the source-control packages and
   `#${` references, which the `!123` seam replaces:
   `git diff "$MB" "$SHA" -- apps/web/src packages/client-runtime/src packages/shared/src apps/server/src docs/user packages/source-control-core/src packages/source-control-gitlab/src ':!*.test.*' | rg '^\+.*([Pp]ull [Rr]equest|\bPRs?\b|T3 Code\b|#\$\{)'`.
+  Upstream tests that assert merge-request summaries (`runtimeLayer.test.ts`'s watch tests) spell
+  them `#N`; the fork's text is `!N`.
   New text that describes a mechanism the fork cut (in dd5c7bd09e, provider update checks
   "fetch model catalog updates", where the catalog is bundled) keeps describing what T3 Coder does.
 - **Source-control host definitions.** client-runtime's `sourceControlClients.ts` and the server's

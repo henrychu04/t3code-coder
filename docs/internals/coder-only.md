@@ -548,13 +548,15 @@ listed here is drift to remove rather than fork behavior to keep.
       its inline budget into `bridge-job:` tasks. `coderServer.ts` binds it once the orchestrator runs.
     - `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of upstream's
       `ServerEnvironment`.
-    - `mcp/bridge/T3ToolInstructions.ts` reuses upstream's orchestration guidance without its MCP
-      and ACP transport paragraphs or its `html_preview` step; its test fails if upstream rewords
-      them.
+    - provider-core's `server/t3ToolBridgeInstructions.ts` reuses upstream's orchestration
+      sections without their MCP and ACP transport paragraphs or the `html_preview` step; its
+      test fails if upstream rewords them.
     - `CodexAdapterV2.ts` configures no `mcp_servers`, attaches T3 context only when the bridge
       exists, and never advertises preview or device tools; `CodexDeveloperInstructions.ts` and
-      `ClaudeAdapterV2.ts` describe the bridge command (`mcp/bridge/T3ToolInstructions.ts`) in
-      place of upstream's MCP orchestration text. Claude pre-approves the command as a Bash
+      `ClaudeAdapterV2.ts` describe the bridge command (`t3ToolBridgeInstructions.ts`) in
+      place of upstream's MCP orchestration text. Codex takes it as `t3ToolBridgeSections`, one
+      additional-context entry per section like upstream's, so each stays under Codex's
+      `CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES`. Claude pre-approves the command as a Bash
       prefix, limited to read-only tools in a read-only sandbox, as upstream pre-approves its MCP
       tools. provider-core's `runtimeInstructions.ts` keeps upstream's `link_pull_request` block,
       worded for T3 tools.
@@ -612,9 +614,11 @@ listed here is drift to remove rather than fork behavior to keep.
       `auth.ts`, `authenticationState.ts`, or management requests in `probe.ts`. The probe
       offers no terminal login and declines URL elicitation, and real sessions set
       `authenticateOnAuthRequired: false`, so an unauthenticated Kilo Code fails the session
-      instead of T3 calling ACP `authenticate`. Because no sign-in ever reports `authenticated`,
-      `ProviderRegistry.ts` also treats a ready snapshot that lists a discovered model beyond the
-      `default` placeholder as a completed probe, so removed models leave the picker. A probe
+      instead of T3 calling ACP `authenticate`. Upstream marks a completed probe by the
+      `nativeSessions` it reports, which this driver does not (session management is not
+      carried), so `ProviderRegistry.ts` also treats a ready snapshot that lists a discovered
+      model beyond the `default` placeholder as a completed probe, so removed models leave the
+      picker. A probe
       that discovers no models at all cannot be told apart from a readiness snapshot, so it keeps
       the previous list; Kilo Code always lists its models, and upstream keeps the list in the
       same case for an instance never signed in through T3.
@@ -652,7 +656,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - Provider drivers, snapshots, and the registry are upstream's. Coder deltas: `CodexDriver`
     offers no T3-managed Codex install (`setupMode: "managed"`), neither driver redeems
     rate-limit reset credits, and `ClaudeDriver` does not read the Claude organization id that
-    keys upstream's usage accounts. `ModelManifest.layerBundled` serves the bundled manifest without
+    keys upstream's usage accounts, so its one-probe capability fallback skips upstream's
+    same-organization check (API-key logins have no organization either way). `ModelManifest.layerBundled` serves the bundled manifest without
     upstream's hourly fetch or disk cache. Both providers attach
     per-model `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
@@ -837,7 +842,8 @@ listed here is drift to remove rather than fork behavior to keep.
   has no `quiet` option or returned runs and `ProviderUpdateRun` no environment id. `index.css` is
   upstream's minus the `wco` window-controls variant, drag regions, and desktop resize inset.
   Without the desktop window-controls overlay (`lib/windowControlsOverlay.ts`), `ui/tooltip.tsx`
-  reads a native titlebar height of zero and the sidebar sheet gets no window-controls inset.
+  reads a native titlebar height of zero, `chat/ZoomableImage.tsx` sizes the viewer to the whole
+  window, and the sidebar sheet gets no window-controls inset.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
@@ -903,12 +909,14 @@ listed here is drift to remove rather than fork behavior to keep.
   names a GitLab or self-hosted upload's host; the `!123` autolinks stay in the web's
   `pullRequestMarkdown.logic.ts`). Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
-  upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl` accepts only a URL a shipped
-  host definition claims (GitLab's `/-/merge_requests/`), and project matching uses upstream's host
+  upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl`, and the same filter in
+  client-runtime's `pullRequestLinkInput.ts`, accept only a URL a shipped host definition claims
+  (GitLab's `/-/merge_requests/`), and project matching uses upstream's host
   resolvers but skips checkouts whose provider is neither GitLab nor unknown (the registry reads
   other kinds as the generic host, which would still match by host and path). A linked MR's
   snapshot status needs a GitLab URL, with no fallback host. `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL (and GitLab's
-  definition URL in `LinkPullRequestDialog`) and keeps a self-hosted install's origin and path
+  definition URL in `LinkPullRequestDialog`'s `resolveLinkPullRequestProject`, which wraps
+  client-runtime's `pullRequestLinkProject`) and keeps a self-hosted install's origin and path
   prefix. A plain click opens the panel or page, and a
   modifier or middle click or an MR no workspace project can read goes to the system browser.
   Upstream's "Open pull requests in T3 Code" client setting lives on the Integrations page, which
@@ -957,7 +965,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    cfafb4bb54):
+    07d38b8d17):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
@@ -995,7 +1003,9 @@ listed here is drift to remove rather than fork behavior to keep.
     Checkpoint commits use the "T3 Coder" identity.
   - `VcsProcess` has no GitHub CLI semaphore and classifies only `glab` failures.
   - `GitManager` reads merge-request templates for GitLab and fetches merge-request heads from
-    `refs/merge-requests/<n>/head`.
+    `refs/merge-requests/<n>/head`. It has no `targetsOnlyRemote`: with no origin, the only
+    remote is the repository `glab` targets, so upstream's check of gh's `GH_REPO` and
+    `gh-resolved` mark (and its `source-control-github` import) is not carried.
     Upstream's GitHub and Forgejo branches stay verbatim but are unreachable with the GitLab-only
     registry.
   - `GitWorkflowService` adds `moveWorktree` and `localRefStatus` pass-throughs.
@@ -1078,7 +1088,9 @@ listed here is drift to remove rather than fork behavior to keep.
     client-runtime's `connection/driver.ts`, `connection/index.ts`, `connection/wakeups.ts`, and
     `platform/persistence.ts` drop upstream's multi-route checks, credential and profile stores,
     saved targets, onboarding, GitHub routing, host updates, and the mobile `network-changed`
-    wakeup. `state/shell.ts` treats every workspace as remote (no primary local target).
+    wakeup. `connection/registry.ts` starts every registered workspace's supervisor desired
+    (upstream starts only enabled ones), since the Coder config owns registration.
+    `state/shell.ts` treats every workspace as remote (no primary local target).
   - `lib/runtime.ts` has no primary-environment HTTP client, relay, DPoP, or tracer, and
     `branding.ts` fixes the "T3 Coder" name without a desktop bridge or hosted channel.
   - Upstream's desktop IPC contract (`contracts/ipc.ts`) is not carried; `localApiTypes.ts` keeps
@@ -1134,7 +1146,13 @@ listed here is drift to remove rather than fork behavior to keep.
   Agent SDK's. `ProviderSessionManager.test.ts`'s parallel shutdown test waits briefly in real time
   after moving the test clock, because each release closes a T3 tool bridge on the real file
   system. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
-  tests use GitLab projects.
+  tests use GitLab projects; GitManager's `GH_REPO` and `gh-resolved` only-remote cases are not
+  carried. `ProviderInstanceRegistry.test.ts` omits the Claude organization-scoped probe
+  fallback test, which stubs the Agent SDK's `query`. `SourceControlRepositoryService.test.ts`
+  and `RepositoryIdentityResolver.test.ts` carry upstream's new publish-push, local-remote, and
+  display-casing cases on GitLab remotes with the fork's mocks. `CommandPalette.focus.browser.test.tsx`
+  mocks `useCoder` and sends `mod+p` with the platform's modifier (upstream's Ctrl+P matches only
+  off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
   `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's
   unavailable-URL and near-expiry fresh-URL tests and the frame's `sandbox` attribute check (the
   document shell's CSP applies the sandbox). `SourceControlProviderRegistry.test.ts` runs
