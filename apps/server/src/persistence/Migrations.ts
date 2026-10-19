@@ -60,12 +60,12 @@ import Migration0060 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
 import Migration0061 from "./Migrations/061_PullRequestReviewGuides.ts";
 import Migration0062 from "./Migrations/062_ThreadFailureLookupIndex.ts";
 import Migration0063 from "./Migrations/063_DropUnusedV1Projections.ts";
+import Migration0064 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
 import { reconcileCoderMigrationHistory } from "./CoderMigrationHistory.ts";
 
 // Coder: T3 Coder has no auth sessions or pairing. Upstream's auth migrations keep
 // their IDs so later upstream migrations stay aligned, but they create nothing.
 const omittedAuthMigration = Effect.void;
-import Migration0064 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],

@@ -909,9 +909,9 @@ listed here is drift to remove rather than fork behavior to keep.
   names a GitLab or self-hosted upload's host; the `!123` autolinks stay in the web's
   `pullRequestMarkdown.logic.ts`). Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
-  upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl`, and the same filter in
-  client-runtime's `pullRequestLinkInput.ts`, accept only a URL a shipped host definition claims
-  (GitLab's `/-/merge_requests/`), and project matching uses upstream's host
+  upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl` (client-runtime's
+  `pullRequestLinkInput.ts` filter, re-exported) accepts only a URL a shipped host definition
+  claims (GitLab's `/-/merge_requests/`), and project matching uses upstream's host
   resolvers but skips checkouts whose provider is neither GitLab nor unknown (the registry reads
   other kinds as the generic host, which would still match by host and path). A linked MR's
   snapshot status needs a GitLab URL, with no fallback host. `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL (and GitLab's
@@ -1147,10 +1147,11 @@ listed here is drift to remove rather than fork behavior to keep.
   after moving the test clock, because each release closes a T3 tool bridge on the real file
   system. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
   tests use GitLab projects; GitManager's `GH_REPO` and `gh-resolved` only-remote cases are not
-  carried. `ProviderInstanceRegistry.test.ts` omits the Claude organization-scoped probe
-  fallback test, which stubs the Agent SDK's `query`. `SourceControlRepositoryService.test.ts`
-  and `RepositoryIdentityResolver.test.ts` carry upstream's new publish-push, local-remote, and
-  display-casing cases on GitLab remotes with the fork's mocks. `CommandPalette.focus.browser.test.tsx`
+  carried. `ProviderInstanceRegistry.test.ts` runs upstream's Claude one-probe fallback test
+  against the CLI transport's `query`, without the organization change the fork does not read.
+  `SourceControlRepositoryService.test.ts` and `RepositoryIdentityResolver.test.ts` carry
+  upstream's new publish-push, local-remote, and display-casing cases on GitLab remotes with the
+  fork's mocks. `CommandPalette.focus.browser.test.tsx`
   mocks `useCoder` and sends `mod+p` with the platform's modifier (upstream's Ctrl+P matches only
   off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
   `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's

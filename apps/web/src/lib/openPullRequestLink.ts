@@ -9,10 +9,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent } from "react";
 
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import {
-  parseChangeRequestUrl as parseHostedChangeRequestUrl,
-  type ChangeRequestLink,
-} from "@t3tools/shared/changeRequestUrl";
+import { parseChangeRequestUrl } from "@t3tools/client-runtime/pull-request-link-input";
+import type { ChangeRequestLink } from "@t3tools/shared/changeRequestUrl";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 
 import { useOpenLink } from "../browser/useOpenLink";
@@ -34,15 +32,8 @@ export {
   changeRequestRepositoryUrl,
 } from "@t3tools/shared/changeRequestUrl";
 
-/**
- * Coder: only a URL a shipped host definition claims is a change request here, so with GitLab the
- * only host, other hosts' pull request links stay ordinary links.
- */
-export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | null {
-  return sourceControlClients.findByChangeRequestUrl(targetUrl) === undefined
-    ? null
-    : parseHostedChangeRequestUrl(targetUrl);
-}
+// Coder: client-runtime's GitLab-only filter over upstream's parser.
+export { parseChangeRequestUrl } from "@t3tools/client-runtime/pull-request-link-input";
 
 /**
  * Coder: merge requests are read through the workspace's GitLab CLI, so only GitLab checkouts
