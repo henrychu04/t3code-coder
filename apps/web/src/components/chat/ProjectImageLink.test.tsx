@@ -6,13 +6,19 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import ChatMarkdown from "../ChatMarkdown";
 import { ProjectImageLink } from "./ProjectImageLink";
 const { load, retry } = vi.hoisted(() => ({ load: vi.fn(), retry: vi.fn() }));
-vi.mock("./useProjectImages", () => ({ useProjectImages: load }));
+vi.mock("../../assets/assetUrls", () => ({
+  useAssetUrlState: load,
+  useAssetUrlRefresh: () => async () => {
+    retry();
+    return null;
+  },
+}));
 const threadRef = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("IntersectionObserver", undefined);
-  load.mockImplementation((_env, target, enabled) =>
-    enabled && target ? { status: "loaded", url: `blob:${target.filePath}`, retry } : undefined,
+  load.mockImplementation((_env, resource) =>
+    resource ? { _tag: "Success", url: `blob:${resource.target.filePath}` } : { _tag: "Loading" },
   );
 });
 afterEach(() => {
@@ -35,12 +41,12 @@ it("reads workspace images by their resolved path and navigates the gallery", as
     );
     expect(host.querySelectorAll("img")).toHaveLength(2);
     // Relative sources resolve against the project root, as upstream's media-file assets do.
-    expect(load.mock.calls.some(([, target]) => target?.filePath === "/project/copied.png")).toBe(
-      true,
-    );
-    expect(load.mock.calls.some(([, target]) => target?.filePath === "/project/renamed.png")).toBe(
-      true,
-    );
+    expect(
+      load.mock.calls.some(([, resource]) => resource?.target.filePath === "/project/copied.png"),
+    ).toBe(true);
+    expect(
+      load.mock.calls.some(([, resource]) => resource?.target.filePath === "/project/renamed.png"),
+    ).toBe(true);
     await act(async () => {
       for (const image of host.querySelectorAll("img")) image.dispatchEvent(new Event("load"));
     });
@@ -72,13 +78,13 @@ it("opens outside-project media links in the gallery and loads external images d
       ),
     );
     // External images load from their own host, never through the helper.
-    expect(load.mock.calls.some(([, target]) => target?.filePath.includes("example.com"))).toBe(
-      false,
-    );
+    expect(
+      load.mock.calls.some(([, resource]) => resource?.target.filePath.includes("example.com")),
+    ).toBe(false);
     expect(host.querySelector('img[alt="Remote"]')?.getAttribute("src")).toBe(
       "https://example.com/a.png",
     );
-    expect(load.mock.calls.some(([, , enabled]) => enabled)).toBe(false);
+    expect(load.mock.calls.some(([, resource]) => resource !== null)).toBe(false);
     await act(async () =>
       host.querySelector<HTMLAnchorElement>("a.chat-markdown-file-link")!.click(),
     );
@@ -92,7 +98,7 @@ it("opens outside-project media links in the gallery and loads external images d
   }
 });
 it("shows a retry action for a missing file and preserves authored anchor IDs", async () => {
-  load.mockReturnValue({ status: "error", retry });
+  load.mockReturnValue({ _tag: "Failure" });
   const host = document.createElement("div");
   const root = createRoot(host);
   try {
@@ -128,7 +134,7 @@ it.each([true, false])(
         disconnect() {}
       },
     );
-    load.mockReturnValue({ status: "loading" });
+    load.mockReturnValue({ _tag: "Loading" });
     const host = document.createElement("div");
     const root = createRoot(host);
     // The mocked store cannot notify, so each render changes a prop to reread it.
@@ -158,10 +164,9 @@ it.each([true, false])(
         "aspect-video",
       );
       load.mockReturnValue({
-        status: "loaded",
+        _tag: "Success",
         url: "blob:copy.png",
-        dimensions: hasHeader ? { width: 64, height: 64 } : undefined,
-        retry,
+        imageDimensions: hasHeader ? { width: 64, height: 64 } : undefined,
       });
       await act(async () => render());
       await act(async () => {
@@ -202,7 +207,7 @@ it("explains unsupported formats without fetching or offering a futile retry", a
     );
     expect(host.textContent).toContain("Unsupported image format.");
     expect(host.textContent).not.toContain("Retry image");
-    expect(load).not.toHaveBeenCalled();
+    expect(load.mock.calls.every(([, resource]) => resource === null)).toBe(true);
     expect(host.querySelector("a, img, button")).toBeNull();
   } finally {
     await act(async () => root.unmount());
@@ -231,7 +236,7 @@ it("keeps unloaded images in gallery navigation and loads the selected image on 
       ),
     );
     expect(host.querySelectorAll("img")).toHaveLength(0);
-    expect(load.mock.calls.every(([, , enabled]) => !enabled)).toBe(true);
+    expect(load.mock.calls.every(([, resource]) => resource === null)).toBe(true);
     await act(async () => host.querySelector<HTMLElement>('[aria-label="Preview First"]')!.click());
     expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
       "blob:/project/first.png",

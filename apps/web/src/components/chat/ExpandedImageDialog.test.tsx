@@ -8,7 +8,10 @@ import { ExpandedImageDialog } from "./ExpandedImageDialog";
 const menu = vi.hoisted(() => ({ open: false }));
 vi.mock("../../contextMenuFallback", () => ({ isContextMenuOpen: () => menu.open }));
 const loadProjectImage = vi.hoisted(() => vi.fn());
-vi.mock("./useProjectImages", () => ({ useProjectImages: loadProjectImage }));
+vi.mock("../../assets/assetUrls", () => ({
+  useAssetUrlState: loadProjectImage,
+  useAssetUrlRefresh: () => async () => null,
+}));
 let root: Root;
 let host: HTMLDivElement;
 const retry = vi.fn();
@@ -148,8 +151,8 @@ it("reads the selected workspace image through the helper with priority", async 
     environmentId: EnvironmentId.make("env"),
     target: { threadId: ThreadId.make("thread"), cwd: "/repo", filePath: "/repo/shot.svg" },
   };
-  loadProjectImage.mockImplementation((_env, target, enabled) =>
-    enabled && target ? { status: "loaded", url: "blob:shot", retry } : undefined,
+  loadProjectImage.mockImplementation((_env, resource) =>
+    resource ? { _tag: "Success", url: "blob:shot" } : { _tag: "Loading" },
   );
   await act(async () =>
     root.render(
@@ -162,6 +165,10 @@ it("reads the selected workspace image through the helper with priority", async 
       />,
     ),
   );
-  expect(loadProjectImage).toHaveBeenCalledWith("env", projectImage.target, true, true);
+  expect(loadProjectImage).toHaveBeenCalledWith(
+    "env",
+    { _tag: "project-image", target: projectImage.target },
+    { priority: true },
+  );
   expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe("blob:shot#mark");
 });

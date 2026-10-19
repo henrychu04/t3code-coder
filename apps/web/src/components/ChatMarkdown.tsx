@@ -75,8 +75,9 @@ import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
 } from "@t3tools/client-runtime/markdown-images";
-import { mediaUrlReference } from "@t3tools/client-runtime/media-reference";
+import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import type { MediaSourceResource } from "@t3tools/client-runtime/media-source";
+import type { ToolOutputImageResource } from "@t3tools/client-runtime/work-log/item-detail";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 import React, {
   Children,
@@ -128,9 +129,7 @@ import { WorkspaceEntryTooltip } from "./chat/WorkspaceEntryIcon";
 import { FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { ProjectMarkdownVideo } from "./chat/ProjectVideo";
-import { projectMediaActionFields } from "./chat/projectMediaReference";
 import { useImagePreviewVisibility } from "./chat/useImagePreviewVisibility";
-import { useProjectImages } from "./chat/useProjectImages";
 import type { ProjectMediaSource } from "./chat/useProjectVideo";
 import {
   resolveExternalWebLinkHost,
@@ -172,7 +171,9 @@ import {
 import { isMarkdownFileLinkLabel } from "@t3tools/shared/markdownLinks";
 import { readLocalApi } from "../localApi";
 import { cn } from "../lib/utils";
+import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
 import { useRightPanelStore } from "../rightPanelStore";
+import type { ImageAssetResource } from "../state/assets";
 import { readThreadShell, useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { readEnvironmentScope } from "../state/session";
@@ -1534,13 +1535,15 @@ export function isImageFilePath(path: string): boolean {
 }
 
 /**
- * Environment-hosted media. Coder: there is no signed asset URL; images read through the
- * helper's bounded stdio chunks near the viewport, and videos show a play card that reads the
- * file when pressed, because a whole-file read is not a cheap metadata preload.
+ * Coder: there is no signed asset URL. Images read through the helper's bounded stdio chunks into
+ * the shared image store. A workspace file reads near the viewport only, from the thread root the
+ * helper verifies, and keeps its gallery entry while its bytes are released; videos show a play
+ * card that reads the file when pressed, because a whole-file read is not a cheap metadata preload.
  */
 export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props: {
   readonly environmentId: EnvironmentId;
-  readonly resource: MediaSourceResource;
+  // Coder: the helper reads workspace files and tool output images.
+  readonly resource: MediaSourceResource | ToolOutputImageResource;
   readonly kind?: "image" | "video";
   readonly alt: string;
   readonly copyMarkdown?: string;
@@ -1553,86 +1556,96 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     | Omit<ComponentProps<"img">, "src" | "alt" | "className" | "style">
     | undefined;
   readonly framed?: boolean | undefined;
-  /** Coder: the thread root the helper verifies before reading; required for a read. */
+  /** Coder: the thread root the helper verifies before reading a workspace file. */
   readonly workspaceRoot?: string | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
-  const kind = props.kind ?? "image";
-  // Coder: the helper reads only these signature-checked formats, so others are named, not read.
-  if (kind === "image" && !isImageFilePath(props.resource.path)) {
-    return (
-      <span
-        id={props.imageProps?.id}
-        data-markdown-copy={props.copyMarkdown}
-        className="inline-flex max-w-full flex-wrap gap-1 text-xs text-muted-foreground"
-        title="Supported image formats: PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO"
-      >
-        {props.alt || props.resource.path.split("/").at(-1)} · Unsupported image format.
-      </span>
-    );
-  }
-  if (!props.workspaceRoot) {
-    return (
-      <ChatMarkdownImageFallback alt={props.alt} copyMarkdown={props.copyMarkdown} kind={kind} />
-    );
-  }
-  const source: ProjectMediaSource = {
-    environmentId: props.environmentId,
-    target: {
-      threadId: props.resource.threadId,
-      cwd: props.workspaceRoot,
-      filePath: props.resource.path,
-    },
-  };
-  if (kind === "video") {
-    return (
-      <ProjectMarkdownVideo
-        source={source}
-        alt={props.alt}
-        copyMarkdown={props.copyMarkdown}
-        style={props.style}
-        className={cn(
-          CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
-          CHAT_MARKDOWN_MEDIA_MAX_WIDTH_CLASS_NAME,
-          "w-full",
-        )}
-        videoClassName={cn(
-          CHAT_MARKDOWN_MEDIA_BOUNDS_CLASS_NAME,
-          CHAT_MARKDOWN_MEDIA_FRAME_CLASS_NAME,
-        )}
-      />
-    );
-  }
-  return (
-    <ProjectMarkdownImage
-      key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
-      {...props}
-      source={source}
-    />
-  );
-});
-
-/**
- * Coder: a workspace image read through the shared helper-backed image store. The wrapper keeps
- * its gallery entry while offscreen bytes are released, and a deferred or loading image can
- * still open the gallery, which reads the selected image with priority.
- */
-function ProjectMarkdownImage(
-  props: ComponentProps<typeof ChatMarkdownAssetImage> & { readonly source: ProjectMediaSource },
-) {
+  const resource = props.resource;
+  // Coder: the helper reads a workspace file by thread and root, in a format it validates.
+  const projectImage: ProjectMediaSource | undefined =
+    resource._tag === "media-file" && props.workspaceRoot
+      ? {
+          environmentId: props.environmentId,
+          target: {
+            threadId: resource.threadId,
+            cwd: props.workspaceRoot,
+            filePath: resource.path,
+          },
+        }
+      : undefined;
+  const imageResource: ImageAssetResource | null =
+    props.kind === "video"
+      ? null
+      : resource._tag === "tool-output-image"
+        ? resource
+        : projectImage && isImageFilePath(resource.path)
+          ? { _tag: "project-image", target: projectImage.target }
+          : null;
   const { previewRef, visible } = useImagePreviewVisibility();
-  const image = useProjectImages(props.source.environmentId, props.source.target, visible);
-  const expand = props.onImageExpand;
-  // The last decoded size keeps the box while evicted bytes are read again.
-  const [decodedSize, setDecodedSize] = useState<{ width: number; height: number }>();
-  const rememberDecodedSize = (decoded: HTMLImageElement) => {
-    const { naturalWidth: width, naturalHeight: height } = decoded;
+  const assetUrl = useAssetUrlState(
+    props.environmentId,
+    projectImage && !visible ? null : imageResource,
+  );
+  const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, imageResource);
+  // Coder: the last decoded size keeps the box while evicted bytes are read again.
+  const sizeKey = JSON.stringify([props.environmentId, resource]);
+  const [decoded, setDecoded] = useState<{ key: string; width: number; height: number }>();
+  const rememberDecodedSize = (image: HTMLImageElement) => {
+    const { naturalWidth: width, naturalHeight: height } = image;
     if (width > 0 && height > 0)
-      setDecodedSize((previous) =>
-        previous?.width === width && previous.height === height ? previous : { width, height },
+      setDecoded((previous) =>
+        previous?.key === sizeKey && previous.width === width && previous.height === height
+          ? previous
+          : { key: sizeKey, width, height },
       );
   };
-  const knownSize = (image?.status === "loaded" ? image.dimensions : undefined) ?? decodedSize;
+  const kind = props.kind ?? "image";
+  if (resource._tag === "media-file") {
+    // Coder: the helper reads only these signature-checked formats, so others are named, not read.
+    if (kind === "image" && !isImageFilePath(resource.path)) {
+      return (
+        <span
+          id={props.imageProps?.id}
+          data-markdown-copy={props.copyMarkdown}
+          className="inline-flex max-w-full flex-wrap gap-1 text-xs text-muted-foreground"
+          title="Supported image formats: PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO"
+        >
+          {props.alt || resource.path.split("/").at(-1)} · Unsupported image format.
+        </span>
+      );
+    }
+    if (!projectImage) {
+      return (
+        <ChatMarkdownImageFallback alt={props.alt} copyMarkdown={props.copyMarkdown} kind={kind} />
+      );
+    }
+    if (kind === "video") {
+      return (
+        <ProjectMarkdownVideo
+          source={projectImage}
+          alt={props.alt}
+          copyMarkdown={props.copyMarkdown}
+          style={props.style}
+          className={cn(
+            CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
+            CHAT_MARKDOWN_MEDIA_MAX_WIDTH_CLASS_NAME,
+            "w-full",
+          )}
+          videoClassName={cn(
+            CHAT_MARKDOWN_MEDIA_BOUNDS_CLASS_NAME,
+            CHAT_MARKDOWN_MEDIA_FRAME_CLASS_NAME,
+          )}
+        />
+      );
+    }
+  }
+  const path = resource._tag === "media-file" ? resource.path : undefined;
+  const reference = path ? mediaFileReference(path, props.workspaceRoot) : undefined;
+  const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
+  const src = assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null;
+  const knownSize =
+    (assetUrl._tag === "Success" ? assetUrl.imageDimensions : undefined) ??
+    (decoded?.key === sizeKey ? decoded : undefined);
   const maxHeightRem = props.maxHeightRem ?? 30;
   const style =
     props.style ??
@@ -1641,27 +1654,68 @@ function ProjectMarkdownImage(
       : maxHeightRem !== 30
         ? { maxHeight: `${maxHeightRem}rem` }
         : undefined);
-  const src = image?.status === "loaded" ? image.url + (props.srcFragment ?? "") : null;
-  const name = props.alt.trim() || "image";
   const actionsSource: MediaActionSource = {
-    kind: "image",
-    name,
+    kind,
+    name: props.alt || kind,
     src,
-    ...projectMediaActionFields(props.source.environmentId, props.source.target),
+    ...(reference ? { reference } : {}),
+    ...(relativePath && resource._tag === "media-file"
+      ? {
+          onOpenFile: () =>
+            useRightPanelStore
+              .getState()
+              .openFile(
+                { environmentId: props.environmentId, threadId: resource.threadId },
+                relativePath,
+              ),
+        }
+      : {}),
   };
+  // Coder: a workspace image's wrapper carries its authored `id`.
+  const { id, ...wrappedImageProps } = props.imageProps ?? {};
+
+  const image = (
+    <ChatMarkdownImage
+      key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+      src={src}
+      sourceFailed={assetUrl._tag === "Failure"}
+      alt={props.alt}
+      copyMarkdown={props.copyMarkdown}
+      standalone={props.standalone ?? true}
+      className={cn(
+        props.framed === false ? undefined : CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME,
+        props.className,
+      )}
+      style={style}
+      imageProps={projectImage ? wrappedImageProps : props.imageProps}
+      actionsSource={actionsSource}
+      onImageExpand={props.onImageExpand}
+      // Coder: helper reads retry in place.
+      retry={() => void refreshAssetUrl().catch(() => undefined)}
+      onDecoded={
+        assetUrl._tag === "Success" && assetUrl.imageDimensions ? undefined : rememberDecodedSize
+      }
+      helperSource={projectImage ? { projectImage } : undefined}
+    />
+  );
+  if (!projectImage) return image;
+
+  // Coder: the wrapper keeps a workspace image's gallery entry while offscreen bytes are released,
+  // and a deferred or loading image can still open the gallery, which reads it with priority.
+  const expand = props.onImageExpand;
+  const name = props.alt.trim() || "image";
   const item: ExpandedImageItem = {
     src,
     name,
     actionsSource,
-    projectImage: props.source,
+    projectImage,
     ...(props.srcFragment ? { srcFragment: props.srcFragment } : {}),
   };
   const registerPreview = (element: HTMLSpanElement | null) => {
     previewRef(element);
     if (element) markdownImageItems.set(element, item);
   };
-  const { id, ...imageProps } = props.imageProps ?? {};
-  const pending = !visible || !image || image.status === "deferred" || image.status === "loading";
+  const pending = !visible || assetUrl._tag === "Loading";
   return (
     <span
       id={id}
@@ -1683,7 +1737,7 @@ function ProjectMarkdownImage(
             expand && "cursor-zoom-in",
           )}
           style={style}
-          title={imageProps.title ?? props.alt}
+          title={wrappedImageProps.title ?? props.alt}
           {...(expand
             ? {
                 role: "button" as const,
@@ -1705,34 +1759,17 @@ function ProjectMarkdownImage(
               }
             : { role: "status" as const })}
         >
-          {visible && (!image || image.status === "loading") ? "Loading image" : "Open image"}
+          {visible && assetUrl._tag === "Loading" && !assetUrl.deferred
+            ? "Loading image"
+            : "Open image"}
           {props.alt ? ` · ${props.alt}` : ""}
         </span>
       ) : (
-        <ChatMarkdownImage
-          src={src}
-          sourceFailed={image.status === "error"}
-          alt={props.alt}
-          copyMarkdown={props.copyMarkdown}
-          standalone={props.standalone ?? true}
-          className={cn(
-            props.framed === false ? undefined : CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME,
-            props.className,
-          )}
-          style={style}
-          imageProps={imageProps}
-          actionsSource={actionsSource}
-          onImageExpand={expand}
-          retry={"retry" in image ? image.retry : undefined}
-          onDecoded={
-            image.status === "loaded" && image.dimensions ? undefined : rememberDecodedSize
-          }
-          helperSource={{ projectImage: props.source }}
-        />
+        image
       )}
     </span>
   );
-}
+});
 
 function leadingExternalLinkTextLength(text: string): number {
   const protocol = /^(?:https?:\/\/)/i.exec(text)?.[0];
