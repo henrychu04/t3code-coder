@@ -725,10 +725,10 @@ listed here is drift to remove rather than fork behavior to keep.
     upstream's `FilePreviewPanel` does, and with no in-app browser `browser/useOpenLink.ts`
     sends every other link to the system browser.
   - Pages are kept like other attachments; deleting a thread does not delete them.
-- **Tool output images.** `turnItemOutputImages` lists a fetched item's images as upstream does.
-  The inspector reads each image by index from the stored item through `workspace.readTurnItemAsset`
-  into the shared bounded image store, in place of upstream's signed `tool-output-image` asset
-  URL.
+- **Tool output images.** `turnItemOutputImages` lists a fetched item's images, and the inspector
+  renders each with `ChatMarkdownAssetImage`, as upstream does. The image is read by index from the
+  stored item through `workspace.readTurnItemAsset` into the shared bounded image store, in place
+  of upstream's signed `tool-output-image` asset URL.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
@@ -800,8 +800,14 @@ listed here is drift to remove rather than fork behavior to keep.
   [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
   the helper's advertised attachment capabilities, as upstream does. Upstream's `assetEnvironment` (`state/assets.ts`) is replaced by atom families
   that read each image through the helper into the bounded image store and release it when the
-  atom unmounts; `assets/assetUrls.ts` keeps upstream's `useAssetUrls` body over them, and
-  `ToolOutputImages` and `useProjectImages` read the same atoms. Submitted images are read by id
+  atom unmounts. `assets/assetUrls.ts` keeps upstream's `useAssetUrlState`, `useAssetUrlRefresh`,
+  and `useAssetUrls` over them: a URL is the store's object URL, a refresh rereads the store
+  entry, a read waiting for room in the store is `Loading` with `deferred`, and
+  `useAssetUrlState` takes a `priority` option for the image the user opened. Only images use
+  this layer. Workspace video and audio, Files PDFs and HTML, HTML renders, and MCP App documents
+  keep their own reads (`useProjectMedia`, `readTurnItemAsset`), where upstream uses the same
+  hooks, because each needs the whole file or the document text and a size an image store entry
+  does not hold. Submitted images are read by id
   (`AttachmentImageResource` carries the media type and size the read verifies). Reads start only once the workspace is connected, because cached
   threads render before the helper is reachable. Rewind re-stages a message's images through the
   same reads.
@@ -869,11 +875,14 @@ listed here is drift to remove rather than fork behavior to keep.
   `ProviderInstanceRow` passes no ACP sign-in, managed Codex runtime, or provider setup section.
 - **Markdown.** `ChatMarkdown.tsx` is upstream's, with these differences (each marked `Coder:` in
   the file):
-  - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's props
-    (minus `fallbackSrc`) but reads images through the shared helper-backed image store and shows
-    videos as a play card that reads the file when pressed. It needs the thread root (`cwd`), which
-    the helper verifies. Images in formats the helper does not read show "Unsupported image
-    format" without a read, and authored `id`s stay on workspace images.
+  - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's body over
+    `useAssetUrlState` and `useAssetUrlRefresh` for `media-file` and `tool-output-image`
+    resources, without `fallbackSrc`, `originalUrl`, or `workspaceMutationId`. A workspace file
+    needs the thread root (`cwd`), which the helper verifies, and reads only near the viewport;
+    until it loads, a placeholder keeps its box (the last decoded size) and opens the gallery.
+    Failed reads offer **Retry image**. Videos show a play card that reads the file when pressed.
+    Images in formats the helper does not read show "Unsupported image format" without a read,
+    and authored `id`s stay on workspace images.
   - The gallery item (`ExpandedImagePreview.tsx`) is upstream's shape plus `projectImage`,
     `projectVideo`, legacy `artifact`, `loading`, and `retry`. `resolveMarkdownMediaPreview`
     returns helper sources rather than asset URLs. The dialog reads the selected image with
@@ -895,7 +904,8 @@ listed here is drift to remove rather than fork behavior to keep.
   revision that each write must match, and a rejected save offers **Reload and discard edits**;
   content search uses the helper's time-budgeted search (`projects.searchText`), showing its first
   page; image, video, and audio previews read through the helper instead of signed asset URLs
-  (a workspace mutation rereads an open image, but video and audio reread only on retry or
+  (the image preview through `useAssetUrlState` with priority; a workspace mutation rereads an
+  open image, but video and audio reread only on retry or
   reopen because each read moves the whole file); a draft names its project rather than a thread;
   PDF and HTML previews read through the same helper media chunks, project files only (see
   [Network and transfer constraints](#network-and-transfer-constraints)); there is no

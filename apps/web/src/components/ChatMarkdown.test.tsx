@@ -47,6 +47,10 @@ vi.mock("./ui/tooltip", async () => {
     TooltipPopup: () => null,
   };
 });
+vi.mock("../assets/assetUrls", () => ({
+  useAssetUrlState: () => ({ _tag: "Loading" }),
+  useAssetUrlRefresh: () => async () => null,
+}));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../state/entities", () => ({

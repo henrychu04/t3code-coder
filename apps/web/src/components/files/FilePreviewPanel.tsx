@@ -36,8 +36,8 @@ import { Code2, Eye, Table2 } from "lucide";
 import * as Schema from "effect/Schema";
 import { useEffect, useRef, useState } from "react";
 
+import { useAssetUrlState } from "~/assets/assetUrls";
 import { projectMediaReference } from "~/components/chat/projectMediaReference";
-import { useProjectImages } from "~/components/chat/useProjectImages";
 import { useProjectMedia, type ProjectVideoSource } from "~/components/chat/useProjectVideo";
 import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
@@ -148,9 +148,13 @@ function WorkspaceImagePreview(props: {
   readonly source: ProjectVideoSource;
   readonly alt: string;
 }) {
-  const image = useProjectImages(props.source.environmentId, props.source.target, true, true);
+  const assetUrl = useAssetUrlState(
+    props.source.environmentId,
+    { _tag: "project-image", target: props.source.target },
+    { priority: true },
+  );
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const imageUrl = image?.status === "loaded" ? image.url : null;
+  const imageUrl = assetUrl._tag === "Success" ? assetUrl.url : null;
   const actionsSource: MediaActionSource = {
     kind: "image",
     name: props.alt,
@@ -158,7 +162,7 @@ function WorkspaceImagePreview(props: {
     reference: projectMediaReference(props.source.target),
   };
 
-  if (image?.status === "error" || (imageUrl !== null && failedUrl === imageUrl)) {
+  if (assetUrl._tag === "Failure" || (imageUrl !== null && failedUrl === imageUrl)) {
     return (
       <MediaActions source={actionsSource}>
         <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
@@ -168,7 +172,7 @@ function WorkspaceImagePreview(props: {
     );
   }
 
-  return imageUrl !== null ? (
+  return assetUrl._tag === "Success" && imageUrl !== null ? (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
       <MediaActions source={actionsSource}>
         <img

@@ -12,13 +12,13 @@ import {
   type ExpandedImagePreview,
 } from "./ExpandedImagePreview";
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
+import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import { OpenMediaLink } from "../media/OpenMediaLink";
 import { MediaActions, type MediaActionSource } from "../media/MediaActions";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { isContextMenuOpen } from "../../contextMenuFallback";
 import { ZoomableImage, type ZoomableImageHandle } from "./ZoomableImage";
 import { composerFloatingLayerProps } from "./composerEventScope";
-import { useProjectImages } from "./useProjectImages";
 import { useProjectVideo } from "./useProjectVideo";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
@@ -86,25 +86,29 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     imageCount,
   );
   const listedItem = preview.images[index];
-  const projectImage = useProjectImages(
-    listedItem?.projectImage?.environmentId,
-    listedItem?.projectImage?.target,
-    listedItem?.type !== "video" && listedItem?.projectImage !== undefined,
-    true,
+  const projectImage = listedItem?.type === "video" ? undefined : listedItem?.projectImage;
+  const projectImageResource = projectImage
+    ? { _tag: "project-image" as const, target: projectImage.target }
+    : null;
+  const projectImageUrl = useAssetUrlState(
+    projectImage?.environmentId ?? null,
+    projectImageResource,
+    { priority: true },
+  );
+  const refreshProjectImage = useAssetUrlRefresh(
+    projectImage?.environmentId ?? null,
+    projectImageResource,
   );
   const item: ExpandedImageItem | undefined =
-    listedItem?.projectImage && listedItem.type !== "video"
+    listedItem && projectImage
       ? {
           ...listedItem,
           src:
-            projectImage?.status === "loaded"
-              ? projectImage.url + (listedItem.srcFragment ?? "")
+            projectImageUrl._tag === "Success"
+              ? projectImageUrl.url + (listedItem.srcFragment ?? "")
               : null,
-          loading:
-            !projectImage ||
-            projectImage.status === "loading" ||
-            projectImage.status === "deferred",
-          retry: projectImage && "retry" in projectImage ? projectImage.retry : undefined,
+          loading: projectImageUrl._tag === "Loading",
+          retry: () => void refreshProjectImage().catch(() => undefined),
         }
       : listedItem;
   const source: MediaActionSource = item?.actionsSource ?? {
