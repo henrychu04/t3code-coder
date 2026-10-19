@@ -649,7 +649,10 @@ listed here is drift to remove rather than fork behavior to keep.
     `PastedImageAttachments.ts`, skipping an unreadable image as upstream does, and Pi's
     process (`provider-pi/src/server/textGeneration.ts`) loads the workspace's Pi extensions
     instead of passing `--no-extensions`, because an extension may register the only model
-    providers the workspace can reach. It still passes `--no-tools`.
+    providers the workspace can reach. It still passes `--no-tools`. Claude's runner
+    (`textGeneration/ClaudeTextGeneration.ts`) drops plain-text stdout lines before the first
+    JSON line, because a managed workspace launcher prints a banner there first, as
+    `ClaudeCli.ts` allows for stream-json.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
     session stores through the helper. `coderServer.ts` provides the scanner beside the helper RPC
     layer, as upstream does beside its WebSocket layer. Upstream offers the import in its welcome
