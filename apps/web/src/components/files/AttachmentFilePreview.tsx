@@ -10,7 +10,7 @@ import ChatMarkdown from "~/components/ChatMarkdown";
 import { MorphIcon } from "~/components/MorphIcon";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
+import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
 import { formatAttachmentSize } from "~/lib/attachmentDisplay";
 import { saveBlob } from "~/lib/readAttachmentFile";
 import { cn } from "~/lib/utils";
@@ -117,7 +117,6 @@ export function AttachmentFilePreview(props: {
   }, [url, needsText, revision, props.file]);
   const failure = error ?? (needsText ? contentError : null);
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
-  const updateClientSettings = useUpdateClientSettings();
   const showsRawText =
     failure === null &&
     needsText &&

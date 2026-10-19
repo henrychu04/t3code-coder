@@ -1437,6 +1437,7 @@ export const make = Effect.gen(function* () {
   ) {
     if (!remoteName) {
       return {
+        remoteUrl: null,
         remoteUrlKey: null,
         repositoryNameWithOwner: null,
         ownerLogin: null,
@@ -1460,6 +1461,7 @@ export const make = Effect.gen(function* () {
       repositoryNameWithOwner = parseRepositoryNameWithOwnerFromRemoteUrl(remoteUrl, provider);
     }
     return {
+      remoteUrl,
       remoteUrlKey: remoteUrl ? normalizeGitRemoteUrl(remoteUrl) : null,
       repositoryNameWithOwner,
       ownerLogin: parseRepositoryOwnerLogin(repositoryNameWithOwner),
@@ -1498,14 +1500,36 @@ export const make = Effect.gen(function* () {
       remoteName,
     );
 
+    // With no origin to compare against, the only remote is the repository gh targets
+    // unless GH_REPO or `gh repo set-default` (gh-resolved) names another, so a branch on it
+    // is not a fork. With several remotes, or with that other target, it may still be a fork.
+    // Coder: GitLab is the only host and `glab` targets the only remote, so upstream's
+    // `targetsOnlyRemote` check of gh's GH_REPO and gh-resolved mark is not carried.
+    const isOnlyRemote =
+      remoteName !== null &&
+      remoteName !== "origin" &&
+      originRepository.remoteUrlKey === null &&
+      (yield* gitCore
+        .execute({
+          operation: "GitManager.resolveBranchHeadContext.remotes",
+          cwd,
+          args: ["remote"],
+          timeoutMs: 5_000,
+        })
+        .pipe(
+          Effect.map(
+            (result) => result.stdout.split("\n").filter((name) => name.trim().length > 0).length,
+          ),
+          Effect.orElseSucceed(() => 0),
+        )) === 1;
+    const isForeignRemote = remoteName !== null && remoteName !== "origin" && !isOnlyRemote;
+
     const isCrossRepository =
       remoteRepository.repositoryNameWithOwner !== null &&
       originRepository.repositoryNameWithOwner !== null
         ? remoteRepository.repositoryNameWithOwner.toLowerCase() !==
           originRepository.repositoryNameWithOwner.toLowerCase()
-        : remoteName !== null &&
-          remoteName !== "origin" &&
-          remoteRepository.repositoryNameWithOwner !== null;
+        : isForeignRemote && remoteRepository.repositoryNameWithOwner !== null;
 
     const ownerHeadSelector =
       remoteRepository.ownerLogin && headBranch.length > 0
@@ -1513,8 +1537,7 @@ export const make = Effect.gen(function* () {
         : null;
     const remoteAliasHeadSelector =
       remoteName && headBranch.length > 0 ? `${remoteName}:${headBranch}` : null;
-    const shouldProbeRemoteOwnedSelectors =
-      isCrossRepository || (remoteName !== null && remoteName !== "origin");
+    const shouldProbeRemoteOwnedSelectors = isCrossRepository || isForeignRemote;
 
     const headSelectors: string[] = [];
     if (isCrossRepository && shouldProbeRemoteOwnedSelectors) {
@@ -2004,12 +2027,14 @@ export const make = Effect.gen(function* () {
       filePaths?: readonly string[];
       settings: SourceControlTextGenerationSettings;
     }) {
-      const context = yield* gitCore.prepareCommitContext(input.cwd, input.filePaths);
+      const customCommit = parseCustomCommitMessage(input.commitMessage ?? "");
+      const context = yield* gitCore.prepareCommitContext(input.cwd, input.filePaths, {
+        includePatch: customCommit === null,
+      });
       if (!context) {
         return null;
       }
 
-      const customCommit = parseCustomCommitMessage(input.commitMessage ?? "");
       if (customCommit) {
         return {
           subject: customCommit.subject,
@@ -2697,7 +2722,6 @@ export const make = Effect.gen(function* () {
           // findLocalHeadBranch also accepts a branch that merely shares the head's bare name —
           // a fork PR opened from "main" matches the user's own local main. That checkout is
           // somebody else's work, so it keeps its tracking config and nothing else.
-          yield* ensureExistingWorktreeUpstream(worktreePath);
           return {
             pullRequest,
             branch: localPullRequestBranch,
@@ -2782,26 +2806,34 @@ export const make = Effect.gen(function* () {
       });
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
-        const result = yield* gitCore.listRefs({ cwd, refresh: true });
-        const localBranch = result.refs.find(
-          (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
-        );
-        if (localBranch) {
-          return localBranch;
-        }
-        if (localPullRequestBranch === pullRequest.headBranch) {
-          return null;
-        }
-
-        for (const branch of result.refs) {
-          if (branch.isRemote || branch.name !== pullRequest.headBranch || !branch.worktreePath) {
-            continue;
-          }
-
-          const worktreePath = yield* canonicalizeExistingPath(branch.worktreePath);
-          if (worktreePath !== rootWorktreePath) {
-            return branch;
-          }
+        for (const [index, name] of [
+          ...new Set([localPullRequestBranch, pullRequest.headBranch]),
+        ].entries()) {
+          let cursor: number | undefined;
+          do {
+            const result = yield* gitCore.listRefs({
+              cwd,
+              refKind: "local",
+              query: name,
+              cursor,
+              refresh: index === 0 && cursor === undefined,
+            });
+            for (const branch of result.refs) {
+              if (branch.name !== name) {
+                continue;
+              }
+              if (name === localPullRequestBranch) {
+                return branch;
+              }
+              if (branch.worktreePath) {
+                const worktreePath = yield* canonicalizeExistingPath(branch.worktreePath);
+                if (worktreePath !== rootWorktreePath) {
+                  return branch;
+                }
+              }
+            }
+            cursor = result.nextCursor ?? undefined;
+          } while (cursor !== undefined);
         }
 
         return null;

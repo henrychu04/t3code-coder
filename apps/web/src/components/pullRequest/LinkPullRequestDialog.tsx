@@ -1,16 +1,14 @@
 // Coder: GitLab-only merge request URLs (`gitLabMergeRequestBrowserUrl`).
+import type { RepositoryIdentity, ScopedThreadRef } from "@t3tools/contracts";
 import {
-  pullRequestHostOf,
-  type RepositoryIdentity,
-  type ScopedThreadRef,
-  type SourceControlProviderKind,
-} from "@t3tools/contracts";
+  pullRequestLinkProject,
+  resolveLinkPullRequestInput,
+} from "@t3tools/client-runtime/pull-request-link-input";
 import { useAtomValue } from "@effect/atom-react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useEffect, useRef, useState } from "react";
 
-import { gitLabMergeRequestBrowserUrl, parseChangeRequestUrl } from "~/lib/openPullRequestLink";
-import { parsePullRequestReference } from "~/pullRequestReference";
+import { gitLabMergeRequestBrowserUrl } from "~/lib/openPullRequestLink";
 import { useProjects, useThreadShell } from "~/state/entities";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -65,72 +63,14 @@ export function LinkPullRequestDialogHost() {
   );
 }
 
-interface ResolvedLink {
-  readonly host: string;
-  readonly repository: string;
-  readonly number: number;
-  readonly url: string;
-}
-
-export function resolveLinkPullRequestInput(input: {
-  readonly reference: string;
-  readonly project: {
-    readonly host: string;
-    readonly repository: string;
-    readonly webUrl: (number: number) => string | null;
-  } | null;
-  readonly hasProject: (reference: ResolvedLink) => boolean;
-}): { link: ResolvedLink } | { error: string } | null {
-  const parsed =
-    parseChangeRequestUrl(input.reference.trim()) !== null
-      ? input.reference.trim()
-      : parsePullRequestReference(input.reference);
-  if (parsed === null) return null;
-  const url = parseChangeRequestUrl(parsed);
-  if (url !== null) {
-    if (!input.hasProject({ ...url, url: parsed })) {
-      return { error: `No project in this environment can read ${url.host}/${url.repository}.` };
-    }
-    return {
-      link: { host: url.host, repository: url.repository, number: url.number, url: parsed },
-    };
-  }
-  const number = Number(parsed);
-  if (!Number.isSafeInteger(number) || number < 1) return null;
-  if (input.project === null) {
-    return { error: "Paste a full URL to link a merge request from another repository." };
-  }
-  const webUrl = input.project.webUrl(number);
-  const webReference = webUrl === null ? null : parseChangeRequestUrl(webUrl);
-  if (webUrl === null || webReference === null) {
-    return { error: "Paste a full URL; this project's host has no known merge request URL." };
-  }
-  return {
-    link: { ...webReference, url: webUrl },
-  };
-}
-
+/** Coder: bare numbers become MR URLs that keep a self-hosted install's origin and path prefix. */
 export function resolveLinkPullRequestProject(identity: RepositoryIdentity | null | undefined) {
-  if (!identity) return null;
-  const repository =
-    identity.displayName ??
-    (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
-  if (repository === null) return null;
-  const host = pullRequestHostOf(identity, identity.provider as SourceControlProviderKind);
+  const project = pullRequestLinkProject(identity);
+  if (!project || !identity) return project;
   return {
-    host,
-    repository,
-    webUrl: (number: number) => gitLabMergeRequestBrowserUrl(identity, repository, number),
+    ...project,
+    webUrl: (number: number) => gitLabMergeRequestBrowserUrl(identity, project.repository, number),
   };
-}
-
-function resolveOwnProject(
-  environmentProjects: ReturnType<typeof useProjects>,
-  projectId: LinkPullRequestDialogProps["projectId"],
-) {
-  return resolveLinkPullRequestProject(
-    environmentProjects.find((candidate) => candidate.id === projectId)?.repositoryIdentity,
-  );
 }
 
 function LinkPullRequestDialog({
@@ -144,9 +84,10 @@ function LinkPullRequestDialog({
   const [dirty, setDirty] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const projects = useProjects();
-  const ownProject = resolveOwnProject(
-    projects.filter((project) => project.environmentId === threadRef.environmentId),
-    projectId,
+  const ownProject = resolveLinkPullRequestProject(
+    projects.find(
+      (project) => project.environmentId === threadRef.environmentId && project.id === projectId,
+    )?.repositoryIdentity,
   );
   const linking = usePullRequestLinking(threadRef.environmentId);
   const [pending, setPending] = useState(false);

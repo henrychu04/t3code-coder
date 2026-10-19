@@ -6,6 +6,7 @@ import * as Request from "effect/Request";
 import * as RequestResolver from "effect/RequestResolver";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import { VcsProcessExitError } from "@t3tools/contracts";
 import type {
   PullRequestAction,
   PullRequestComment,
@@ -35,6 +36,7 @@ import {
   decodeMergeRequestDetailJson,
   decodeMergeRequestSummariesJson,
   decodeMergeRequestDiffsJson,
+  decodeMergeRequestChangesJson,
   decodeMergeRequestListJson,
   decodeNotesJson,
   decodeOwnAwardIdJson,
@@ -191,6 +193,7 @@ const CONVERSATION_PAGES = 10;
 // Coder: leave room for the RPC envelope beneath the gateway's 8 MiB message ceiling.
 const DIFF_MAX_OUTPUT_BYTES = 6 * 1024 * 1024;
 const DIFF_TIMEOUT_MS = 60_000;
+const isVcsProcessExitError = Schema.is(VcsProcessExitError);
 const DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export interface GitLabMergeRequestListBatch {
@@ -657,7 +660,27 @@ export const make = Effect.gen(function* () {
       maxOutputBytes: DIFF_MAX_OUTPUT_BYTES,
       timeoutMs: DIFF_TIMEOUT_MS,
     }).pipe(
-      Effect.flatMap((result) => {
+      Effect.map((result) => ({ result, legacy: false })),
+      Effect.catchTags({
+        GitLabCliCommandError: (error) => {
+          if (
+            input.commit !== undefined ||
+            input.page !== 1 ||
+            !isVcsProcessExitError(error.cause) ||
+            error.cause.failureKind !== "not-found"
+          ) {
+            return Effect.fail(error);
+          }
+          // GitLab before 15.7 has no /diffs endpoint. /changes returns one complete slice.
+          return api({
+            cwd: input.cwd,
+            path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/changes?access_raw_diffs=true`,
+            maxOutputBytes: DIFF_MAX_OUTPUT_BYTES,
+            timeoutMs: DIFF_TIMEOUT_MS,
+          }).pipe(Effect.map((result) => ({ result, legacy: true })));
+        },
+      }),
+      Effect.flatMap(({ result, legacy }) => {
         // A byte-truncated response is a JSON prefix, so this page cannot be read at all.
         // Answering with no cursor would call the diff whole while silently dropping this page
         // and every one after it, so the read fails and says which page could not be had.
@@ -673,7 +696,9 @@ export const make = Effect.gen(function* () {
             }),
           );
         }
-        const decoded = decodeMergeRequestDiffsJson(result.stdout.trim());
+        const decoded = (legacy ? decodeMergeRequestChangesJson : decodeMergeRequestDiffsJson)(
+          result.stdout.trim(),
+        );
         if (!Result.isSuccess(decoded)) {
           return Effect.fail(
             new GitLabMergeRequestReadError({
@@ -687,7 +712,7 @@ export const make = Effect.gen(function* () {
         const patch = decoded.success.patch;
         // Counted before decoding, so a page whose files all failed to decode still moves on
         // rather than pointing the reader back at the page it just read.
-        const morePages = decoded.success.rawCount >= MAX_PAGE_SIZE;
+        const morePages = !legacy && decoded.success.rawCount >= MAX_PAGE_SIZE;
         return Effect.succeed({
           // The slice ends on a newline, so a file GitLab gave a header and no hunks for does
           // not run into the first line of the next slice.

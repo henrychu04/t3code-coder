@@ -3,8 +3,10 @@ import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
@@ -26,6 +28,7 @@ import {
   makePendingClaudeProvider,
   probeClaudeCapabilities,
   probeClaudeWorkspaceSnapshot,
+  type ClaudeCapabilitiesProbe,
 } from "../ClaudeProvider.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
@@ -55,6 +58,12 @@ const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CAPABILITIES_PROBE_TTL = Duration.minutes(5);
+
+const withoutUsage = (capabilities: ClaudeCapabilitiesProbe): ClaudeCapabilitiesProbe => {
+  const result = { ...capabilities };
+  delete result.usage;
+  return result;
+};
 
 function isClaudeNativeCommandPath(commandPath: string): boolean {
   const normalized = normalizeCommandPath(commandPath);
@@ -171,19 +180,45 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
 
       // Per-instance capabilities cache: keyed on binary + resolved HOME so
       // account-specific probes never share auth metadata across instances.
-      const capabilitiesProbeCache = yield* Cache.make({
-        capacity: 1,
-        timeToLive: CAPABILITIES_PROBE_TTL,
-        // Coder: no organization id; it only keys usage accounts, which are not carried.
-        lookup: () =>
+      // A transient miss may reuse the last account once, but its usage windows keep their age.
+      // Coder: no organization id, so the fallback skips upstream's same-account check; it only
+      // keys usage accounts, which are not carried, and API-key logins have none.
+      const lastGoodCapabilities = yield* Ref.make<ClaudeCapabilitiesProbe | undefined>(undefined);
+      const capabilitiesProbeCache = yield* Cache.makeWith(
+        () =>
           probeClaudeCapabilities(effectiveConfig, processEnv, stateDir).pipe(
+            Effect.map((capabilities) => ({ _tag: "fresh" as const, capabilities })),
+            Effect.tap(({ capabilities }) => Ref.set(lastGoodCapabilities, capabilities)),
+            Effect.catch((error) =>
+              Ref.getAndSet(lastGoodCapabilities, undefined).pipe(
+                Effect.flatMap((capabilities) =>
+                  capabilities === undefined
+                    ? Effect.fail(error)
+                    : Effect.succeed({
+                        _tag: "fallback" as const,
+                        capabilities: withoutUsage(capabilities),
+                      }),
+                ),
+              ),
+            ),
             Effect.provideService(Path.Path, path),
           ),
-      });
+        {
+          capacity: 1,
+          timeToLive: (exit) =>
+            // Only a fresh probe earns the TTL; a failure or its fallback retries on the next check.
+            Exit.isSuccess(exit) && exit.value._tag === "fresh"
+              ? CAPABILITIES_PROBE_TTL
+              : Duration.zero,
+        },
+      );
       const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(
         effectiveConfig,
         stateDir,
         processEnv,
+      );
+      const resolveCapabilities = Cache.get(capabilitiesProbeCache, capabilitiesCacheKey).pipe(
+        Effect.map((result) => result.capabilities),
       );
 
       const checkProvider = catalogService.refreshInBackground.pipe(
@@ -192,7 +227,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
             Effect.flatMap((catalog) =>
               checkClaudeProviderStatus(
                 effectiveConfig,
-                () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
+                () => resolveCapabilities,
                 processEnv,
                 stateDir,
                 catalog,

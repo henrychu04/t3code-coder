@@ -24,6 +24,7 @@ import type {
 // Coder: exercise the fork settings policy and lightweight ref-stream contract.
 import {
   DEFAULT_SERVER_SETTINGS,
+  GitCommandError,
   GitManagerError,
   ProjectId,
   type ServerSettings as ServerSettingsValue,
@@ -91,7 +92,7 @@ function makeTestLayer(state: {
 }) {
   return VcsStatusBroadcaster.layer.pipe(
     Layer.provideMerge(NodeServices.layer),
-    Layer.provide(makeBackgroundPolicyLayer(() => state.backgroundWorkEnabled !== false)),
+    Layer.provide(layerBackgroundPolicy(() => state.backgroundWorkEnabled !== false)),
     Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService)({
         localStatus: () =>
@@ -123,7 +124,7 @@ function makeTestLayer(state: {
   );
 }
 
-function makeBackgroundPolicyLayer(shouldRunScopeWork: (scope: BackgroundScope) => boolean) {
+function layerBackgroundPolicy(shouldRunScopeWork: (scope: BackgroundScope) => boolean) {
   return Layer.mock(BackgroundPolicy.BackgroundPolicy)({
     // Coder: omit client leases and host-power members absent from the fork policy.
     shouldRunScopeWork: (scope) => Effect.sync(() => shouldRunScopeWork(scope)),
@@ -144,7 +145,7 @@ describe("VcsStatusBroadcaster", () => {
       };
       const testLayer = VcsStatusBroadcaster.layer.pipe(
         Layer.provideMerge(NodeServices.layer),
-        Layer.provide(makeBackgroundPolicyLayer(() => true)),
+        Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.succeed(VcsStatusBroadcaster.VcsAutoPullPolicy, {
             isEnabled: (cwd) => Effect.succeed(cwd === configuredWorkspaceRoot),
@@ -189,6 +190,134 @@ describe("VcsStatusBroadcaster", () => {
         assert.equal(pullCalls, 1);
         assert.equal(status.behindCount, 0);
       }).pipe(Effect.provide(testLayer));
+    },
+  );
+
+  it.effect.each([
+    { refresh: "explicit", failure: "pull" },
+    { refresh: "explicit", failure: "post-pull remote read" },
+    { refresh: "explicit", failure: "recovery scan" },
+    { refresh: "background", failure: "pull" },
+    { refresh: "background", failure: "post-pull remote read" },
+    { refresh: "background", failure: "recovery scan" },
+  ] as const)(
+    "$refresh refresh reconciles local status after failure at $failure",
+    ({ refresh, failure }) => {
+      let local = { ...baseLocalStatus, isDefaultRef: true, refName: "main" };
+      const afterPull = { ...local, hasWorkingTreeChanges: true };
+      let pullCalls = 0;
+      let seeded = false;
+      const subscribed = Deferred.makeUnsafe<void>();
+      const outcome = Deferred.makeUnsafe<"updated" | "failed">();
+      const recoveryError = new GitManagerError({
+        operation: "test",
+        cwd: "/repo",
+        detail: "recovery scan failed",
+      });
+      const logger = Logger.make(({ message }) => {
+        if (Array.isArray(message) && message[0] === "VCS remote status refresh failed") {
+          Deferred.doneUnsafe(outcome, Effect.succeed("failed"));
+        }
+      });
+      const layerTest = VcsStatusBroadcaster.layer.pipe(
+        Layer.provideMerge(NodeServices.layer),
+        Layer.provide(layerBackgroundPolicy(() => true)),
+        Layer.provide(
+          Layer.succeed(VcsStatusBroadcaster.VcsAutoPullPolicy, {
+            isEnabled: () => Effect.succeed(true),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(GitWorkflowService.GitWorkflowService)({
+            localStatus: () =>
+              Effect.suspend(() =>
+                failure === "recovery scan" && pullCalls > 0
+                  ? Effect.fail(recoveryError)
+                  : Effect.succeed(local),
+              ),
+            remoteStatus: () =>
+              Effect.suspend(() =>
+                failure === "post-pull remote read" && pullCalls > 0
+                  ? Effect.fail(
+                      new GitManagerError({
+                        operation: "test",
+                        cwd: "/repo",
+                        detail: "post-pull read failed",
+                      }),
+                    )
+                  : Effect.succeed({
+                      ...baseRemoteStatus,
+                      behindCount: 2,
+                      pr: seeded ? remoteStatusWithPr.pr : null,
+                    }),
+              ),
+            invalidateLocalStatus: () => Effect.void,
+            invalidateRemoteStatus: () => Effect.void,
+            invalidateStatus: () => Effect.void,
+            pullCurrentBranch: () =>
+              Effect.suspend(() => {
+                pullCalls += 1;
+                local = afterPull;
+                return failure !== "post-pull remote read"
+                  ? Effect.fail(
+                      new GitCommandError({
+                        operation: "test",
+                        command: "pull",
+                        cwd: "/repo",
+                        detail: "pull failed",
+                      }),
+                    )
+                  : Effect.succeed({
+                      status: "pulled" as const,
+                      refName: "main",
+                      upstreamRef: "origin/main",
+                    });
+              }),
+          }),
+        ),
+      );
+      return Effect.gen(function* () {
+        const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+        // Seed the same divergence so background recovery cannot rely on a moved remote ref.
+        yield* broadcaster.getStatus({ cwd: "/repo" });
+        seeded = true;
+        if (refresh === "explicit") {
+          const result = yield* Effect.result(broadcaster.refreshStatus("/repo"));
+          if (failure === "recovery scan") {
+            assert.isTrue(result._tag === "Failure");
+            if (result._tag === "Failure") assert.strictEqual(result.failure, recoveryError);
+            return;
+          }
+          assert.isTrue(result._tag === "Success");
+          if (result._tag === "Success") assert.isTrue(result.success.hasWorkingTreeChanges);
+        } else {
+          yield* Stream.runForEach(broadcaster.streamStatus({ cwd: "/repo" }), (event) => {
+            if (event._tag === "snapshot" && !event.local.hasWorkingTreeChanges) {
+              return Deferred.succeed(subscribed, undefined).pipe(Effect.asVoid);
+            }
+            return Deferred.succeed(outcome, "updated").pipe(Effect.asVoid);
+          }).pipe(Effect.forkScoped);
+          yield* Deferred.await(subscribed);
+          yield* TestClock.adjust(Duration.seconds(30));
+          assert.equal(
+            yield* Deferred.await(outcome),
+            failure === "recovery scan" ? "failed" : "updated",
+          );
+        }
+        assert.equal(pullCalls, 1);
+        if (failure !== "recovery scan") {
+          assert.isTrue((yield* broadcaster.getStatus({ cwd: "/repo" })).hasWorkingTreeChanges);
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            layerTest,
+            TestClock.layer(),
+            Logger.layer([logger], { mergeWithExisting: true }),
+          ),
+        ),
+      );
     },
   );
 
@@ -257,7 +386,7 @@ describe("VcsStatusBroadcaster", () => {
     let remoteReads = 0;
     const layer = VcsStatusBroadcaster.layer.pipe(
       Layer.provideMerge(NodeServices.layer),
-      Layer.provide(makeBackgroundPolicyLayer(() => true)),
+      Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           localStatus: () => Effect.succeed(baseLocalStatus),
@@ -302,7 +431,7 @@ describe("VcsStatusBroadcaster", () => {
     const layer = VcsStatusBroadcaster.layer.pipe(
       Layer.provide(FileSystem.layerNoop({ realPath: (path) => Effect.succeed(path) })),
       Layer.provideMerge(NodeServices.layer),
-      Layer.provide(makeBackgroundPolicyLayer(() => true)),
+      Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           localStatus: () => Effect.succeed(baseLocalStatus),
@@ -408,7 +537,7 @@ describe("VcsStatusBroadcaster", () => {
     };
     const testLayer = VcsStatusBroadcaster.layer.pipe(
       Layer.provideMerge(NodeServices.layer),
-      Layer.provide(makeBackgroundPolicyLayer(() => true)),
+      Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           localStatus: () =>
@@ -518,7 +647,7 @@ describe("VcsStatusBroadcaster", () => {
       };
       const testLayer = VcsStatusBroadcaster.layer.pipe(
         Layer.provideMerge(NodeServices.layer),
-        Layer.provide(makeBackgroundPolicyLayer(() => true)),
+        Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.mock(GitWorkflowService.GitWorkflowService)({
             localStatus: (input) =>
@@ -683,7 +812,7 @@ describe("VcsStatusBroadcaster", () => {
     let firstRemoteAttemptDeferred: Deferred.Deferred<void> | null = null;
     const testLayer = VcsStatusBroadcaster.layer.pipe(
       Layer.provideMerge(NodeServices.layer),
-      Layer.provide(makeBackgroundPolicyLayer(() => true)),
+      Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           localStatus: () =>
@@ -883,7 +1012,7 @@ describe("VcsStatusBroadcaster", () => {
     };
     const testLayer = VcsStatusBroadcaster.layer.pipe(
       Layer.provideMerge(NodeServices.layer),
-      Layer.provide(makeBackgroundPolicyLayer(() => false)),
+      Layer.provide(layerBackgroundPolicy(() => false)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           localStatus: () =>
@@ -936,7 +1065,7 @@ describe("VcsStatusBroadcaster", () => {
     let remoteStartedDeferred: Deferred.Deferred<void, never> | null = null;
     const testLayer = VcsStatusBroadcaster.layer.pipe(
       Layer.provideMerge(NodeServices.layer),
-      Layer.provide(makeBackgroundPolicyLayer(() => true)),
+      Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           localStatus: () =>

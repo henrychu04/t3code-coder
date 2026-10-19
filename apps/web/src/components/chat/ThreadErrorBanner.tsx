@@ -3,7 +3,7 @@ import { memo } from "react";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { CircleAlertIcon, XIcon } from "lucide-react";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ExpandableText } from "../settings/ExpandableText";
 
 export function getThreadErrorBannerKey(threadKey: string, error: string | null): string | null {
   return error === null ? null : `${threadKey}\u0000${error}`;
@@ -45,12 +45,7 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
       <Alert variant={variant} surface="glass" controlAlignment="first-line" data-variant={variant}>
         <CircleAlertIcon />
         <AlertDescription>
-          <Tooltip>
-            <TooltipTrigger render={<div className="line-clamp-3" />}>{error}</TooltipTrigger>
-            <TooltipPopup side="top" className="whitespace-pre-wrap">
-              {error}
-            </TooltipPopup>
-          </Tooltip>
+          <ExpandableText text={error} />
         </AlertDescription>
         {onDismiss && (
           <AlertAction>

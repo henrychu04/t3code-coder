@@ -1,12 +1,19 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
-import { t3ToolBridgeInstructions } from "@t3tools/provider-core/server/t3ToolBridgeInstructions";
+import { t3ToolBridgeSections } from "@t3tools/provider-core/server/t3ToolBridgeInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 
 import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
-  T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+  T3_CODE_ORCHESTRATION_SECTIONS,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
+
+/**
+ * Codex cuts the middle out of any `additionalContext` value over 1,000 tokens,
+ * which it counts as UTF-8 bytes divided by four. It does this silently, so
+ * every value built here has to fit.
+ */
+export const CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES = 4_000;
 
 const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## T3 Code devices
 
@@ -205,15 +212,19 @@ export function buildCodexAdditionalContext(
   t3ToolCommand?: string,
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
   const tools = toolInstructions(toolsAvailable);
-  // Separate keys keep each value under Codex's per-entry token cap.
+  // Separate keys keep each value under Codex's per-entry cap. Codex emits
+  // entries in key order, so the numbering preserves the authored order.
   return {
-    t3_code_orchestration: {
-      kind: "application",
-      value:
-        t3ToolCommand === undefined
-          ? T3_CODE_ORCHESTRATION_INSTRUCTIONS
-          : t3ToolBridgeInstructions(t3ToolCommand),
-    },
+    // Coder: a session with the T3 tool bridge takes the bridge's sections instead.
+    ...Object.fromEntries(
+      (t3ToolCommand === undefined
+        ? T3_CODE_ORCHESTRATION_SECTIONS
+        : t3ToolBridgeSections(t3ToolCommand)
+      ).map((section, index) => [
+        `t3_code_orchestration_${String(index + 1).padStart(2, "0")}`,
+        { kind: "application" as const, value: section },
+      ]),
+    ),
     t3_code_runtime: {
       kind: "application",
       value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
