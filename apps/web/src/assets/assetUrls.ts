@@ -4,7 +4,7 @@
  * `useAssetUrlState`, `useAssetUrlRefresh`, and `useAssetUrls` shapes. A refresh rereads the
  * image store's entry, and a read waiting for room in the store is `Loading` with `deferred`.
  */
-import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtom, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ScreenshotArtifactDimensions } from "@t3tools/contracts";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 import { useContext } from "react";
@@ -74,6 +74,30 @@ export function useAssetUrlState(
         }),
   );
   return assetUrlStateFromImage(result);
+}
+
+const NO_IMAGE_SIZE = Atom.writable(
+  (): ScreenshotArtifactDimensions | null => null,
+  (_ctx, _size: ScreenshotArtifactDimensions) => undefined,
+).pipe(Atom.withLabel("asset-url:no-image-size"));
+
+/**
+ * Coder: an image's size before and after its bytes are held, as upstream's asset URL carries it.
+ * Callers write back the size the browser decodes, which covers formats without a header read.
+ */
+export function useAssetImageSize(
+  environmentId: EnvironmentId | null,
+  resource: ImageAssetResource | null,
+): readonly [
+  size: ScreenshotArtifactDimensions | null,
+  remember: (size: ScreenshotArtifactDimensions) => void,
+] {
+  const connectedIds = useConnectedEnvironmentIds();
+  return useAtom(
+    environmentId === null || resource === null || !connectedIds.includes(environmentId)
+      ? NO_IMAGE_SIZE
+      : assetEnvironment.imageSize({ environmentId, resource }),
+  );
 }
 
 export function useAssetUrlRefresh(

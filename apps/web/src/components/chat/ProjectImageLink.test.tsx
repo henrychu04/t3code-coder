@@ -6,13 +6,18 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import ChatMarkdown from "../ChatMarkdown";
 import { ProjectImageLink } from "./ProjectImageLink";
 const { load, retry } = vi.hoisted(() => ({ load: vi.fn(), retry: vi.fn() }));
-vi.mock("../../assets/assetUrls", () => ({
-  useAssetUrlState: load,
-  useAssetUrlRefresh: () => async () => {
-    retry();
-    return null;
-  },
-}));
+vi.mock("../../assets/assetUrls", async () => {
+  const { useState } = await import("react");
+  return {
+    useAssetUrlState: load,
+    useAssetUrlRefresh: () => async () => {
+      retry();
+      return null;
+    },
+    // The size atom outlives the bytes; component state stands in for it within one mount.
+    useAssetImageSize: () => useState<{ width: number; height: number } | null>(null),
+  };
+});
 const threadRef = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

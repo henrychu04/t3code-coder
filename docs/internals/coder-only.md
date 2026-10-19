@@ -808,7 +808,12 @@ listed here is drift to remove rather than fork behavior to keep.
   atom unmounts. `assets/assetUrls.ts` keeps upstream's `useAssetUrlState`, `useAssetUrlRefresh`,
   and `useAssetUrls` over them: a URL is the store's object URL, a refresh rereads the store
   entry, a read waiting for room in the store is `Loading` with `deferred`, and
-  `useAssetUrlState` takes a `priority` option for the image the user opened. Only images use
+  `useAssetUrlState` takes a `priority` option for the image the user opened. Upstream's asset
+  URL also carries an image's header size; `assetEnvironment.imageSize`, read through
+  `useAssetImageSize`, stands in for it. It reads the first `IMAGE_SIZE_PROBE_BYTES` of a workspace
+  image for the helper's header size, keeps the size the browser decodes for other formats and
+  resources, and outlives the bytes for `IMAGE_SIZE_IDLE_TTL_MS`, upstream's asset URL idle TTL.
+  Only images use
   this layer. Workspace video and audio, Files PDFs and HTML, HTML renders, and MCP App documents
   keep their own reads (`useProjectMedia`, `readTurnItemAsset`), where upstream uses the same
   hooks, because each needs the whole file or the document text and a size an image store entry
@@ -884,7 +889,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `useAssetUrlState` and `useAssetUrlRefresh` for `media-file` and `tool-output-image`
     resources, without `fallbackSrc`, `originalUrl`, or `workspaceMutationId`. A workspace file
     needs the thread root (`cwd`), which the helper verifies, and reads only near the viewport;
-    until it loads, a placeholder keeps its box (the last decoded size) and opens the gallery.
+    until it loads, a placeholder keeps its box (`useAssetImageSize`) and opens the gallery. Its
+    `inline-flex` wrapper is exactly its child's height, so once the size is known, the swap
+    never resizes its row.
     Failed reads offer **Retry image**. Videos show a play card that reads the file when pressed.
     Images in formats the helper does not read show "Unsupported image format" without a read,
     and authored `id`s stay on workspace images.

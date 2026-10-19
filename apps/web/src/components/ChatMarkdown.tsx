@@ -171,7 +171,7 @@ import {
 import { isMarkdownFileLinkLabel } from "@t3tools/shared/markdownLinks";
 import { readLocalApi } from "../localApi";
 import { cn } from "../lib/utils";
-import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
+import { useAssetImageSize, useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
 import { useRightPanelStore } from "../rightPanelStore";
 import type { ImageAssetResource } from "../state/assets";
 import { readThreadShell, useProjects } from "../state/entities";
@@ -1587,17 +1587,13 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     projectImage && !visible ? null : imageResource,
   );
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, imageResource);
-  // Coder: the last decoded size keeps the box while evicted bytes are read again.
-  const sizeKey = JSON.stringify([props.environmentId, resource]);
-  const [decoded, setDecoded] = useState<{ key: string; width: number; height: number }>();
+  // Coder: the image's header or decoded size keeps its box while its bytes are released.
+  const [imageSize, rememberImageSize] = useAssetImageSize(props.environmentId, imageResource);
   const rememberDecodedSize = (image: HTMLImageElement) => {
     const { naturalWidth: width, naturalHeight: height } = image;
-    if (width > 0 && height > 0)
-      setDecoded((previous) =>
-        previous?.key === sizeKey && previous.width === width && previous.height === height
-          ? previous
-          : { key: sizeKey, width, height },
-      );
+    if (width <= 0 || height <= 0) return;
+    if (imageSize?.width === width && imageSize.height === height) return;
+    rememberImageSize({ width, height });
   };
   const kind = props.kind ?? "image";
   if (resource._tag === "media-file") {
@@ -1643,9 +1639,9 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   const reference = path ? mediaFileReference(path, props.workspaceRoot) : undefined;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
   const src = assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null;
+  // Coder: one size for loaded and released states, so swapping them never resizes the row.
   const knownSize =
-    (assetUrl._tag === "Success" ? assetUrl.imageDimensions : undefined) ??
-    (decoded?.key === sizeKey ? decoded : undefined);
+    imageSize ?? (assetUrl._tag === "Success" ? assetUrl.imageDimensions : undefined);
   const maxHeightRem = props.maxHeightRem ?? 30;
   const style =
     props.style ??
@@ -1692,9 +1688,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       onImageExpand={props.onImageExpand}
       // Coder: helper reads retry in place.
       retry={() => void refreshAssetUrl().catch(() => undefined)}
-      onDecoded={
-        assetUrl._tag === "Success" && assetUrl.imageDimensions ? undefined : rememberDecodedSize
-      }
+      onDecoded={rememberDecodedSize}
       helperSource={projectImage ? { projectImage } : undefined}
     />
   );
@@ -1716,6 +1710,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     if (element) markdownImageItems.set(element, item);
   };
   const pending = !visible || assetUrl._tag === "Loading";
+  // A flex wrapper is exactly its child's height, so swapping the image for a placeholder of the
+  // same size never adds a text-baseline gap that would resize the row.
   return (
     <span
       id={id}
@@ -1723,7 +1719,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       data-project-image
       data-image-preview
       tabIndex={-1}
-      className="inline-block max-w-full"
+      className="inline-flex max-w-full align-middle"
     >
       {pending ? (
         <span
