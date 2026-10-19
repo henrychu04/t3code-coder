@@ -798,9 +798,11 @@ listed here is drift to remove rather than fork behavior to keep.
   handlers). Images
   and files move through the gateway's Coder CLI transfer (see
   [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
-  the helper's advertised attachment capabilities, as upstream does. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
-  submitted images by id through the helper (`AttachmentImageResource` carries the media type
-  and size the read verifies). Reads start only once the workspace is connected, because cached
+  the helper's advertised attachment capabilities, as upstream does. Upstream's `assetEnvironment` (`state/assets.ts`) is replaced by atom families
+  that read each image through the helper into the bounded image store and release it when the
+  atom unmounts; `assets/assetUrls.ts` keeps upstream's `useAssetUrls` body over them, and
+  `ToolOutputImages` and `useProjectImages` read the same atoms. Submitted images are read by id
+  (`AttachmentImageResource` carries the media type and size the read verifies). Reads start only once the workspace is connected, because cached
   threads render before the helper is reachable. Rewind re-stages a message's images through the
   same reads.
   Sent file attachments keep upstream's preview and download actions; the helper reads them by

@@ -1,10 +1,12 @@
-import { useEffect, useReducer } from "react";
+import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { projectEnvironment } from "../../state/projects";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { readProjectImageBlob, type ProjectImageTarget } from "../../lib/readProjectImageBlob";
-import { imageResources } from "./imageResources";
+import { Atom } from "effect/reactivity";
+
+import type { ProjectImageTarget } from "../../lib/readProjectImageBlob";
+import { assetEnvironment } from "../../state/assets";
+import type { ImageResourceState } from "./imageResources";
+
+const DISABLED_IMAGE_ATOM = Atom.make<ImageResourceState | undefined>(undefined);
 
 export function useProjectImages(
   environmentId: EnvironmentId | undefined,
@@ -12,29 +14,13 @@ export function useProjectImages(
   enabled: boolean,
   priority = false,
 ) {
-  "use no memo"; // Shared resource notifications must reread mutable entries.
-  const read = useAtomCommand(projectEnvironment.readImage, { reportFailure: false });
-  const [, rerender] = useReducer((value) => value + 1, 0);
-  const serialized = target ? JSON.stringify(target) : null;
-  const key = JSON.stringify([environmentId, "project-image", serialized]);
-  useEffect(() => {
-    if (!enabled || !environmentId || !serialized) return;
-    const resource = JSON.parse(serialized) as ProjectImageTarget;
-    return imageResources.subscribe(
-      key,
-      (signal) =>
-        readProjectImageBlob(
-          resource,
-          async (input) => {
-            const result = await read({ environmentId, input });
-            if (result._tag !== "Success") throw squashAtomCommandFailure(result);
-            return result.value;
-          },
-          signal,
-        ),
-      rerender,
-      priority,
-    );
-  }, [key, serialized, environmentId, enabled, priority, read]);
-  return enabled && environmentId && target ? imageResources.get(key) : undefined;
+  return useAtomValue(
+    enabled && environmentId && target
+      ? assetEnvironment.createUrl({
+          environmentId,
+          input: { resource: { _tag: "project-image", target } },
+          priority,
+        })
+      : DISABLED_IMAGE_ATOM,
+  );
 }

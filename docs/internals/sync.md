@@ -284,6 +284,8 @@ breakage faster. For one file, `pnpm exec vp test run --config vite.coder.config
 covers `apps/server` only; run web, client-runtime, and package tests from the package
 directory with `pnpm exec vp test run <file>`.
 
+Then start up a real instance with mocks and do a simple test.
+
 `pnpm test:coder` exits 0; a failure is real. It stops at the first failing package script, so
 fix and rerun until it completes. Known results:
 
