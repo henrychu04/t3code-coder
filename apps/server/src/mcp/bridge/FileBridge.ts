@@ -5,12 +5,15 @@
  * Each credential gets a private directory holding a standalone Node CLI and a read-only tool
  * catalog. The caller names the directory once per thread, so the command in an agent's history
  * keeps working when its session rotates. The CLI writes one request per call into its own
- * `calls/<id>/` directory; the helper polls, runs the tool, and publishes one reply. Workspace
- * processes run as the same OS user, so these directories are not an isolation boundary between
- * mutually untrusted agents.
+ * `calls/<id>/` directory; the helper polls, runs the tool, and publishes one reply. A second helper
+ * in the same workspace (one whose Coder connection dropped unnoticed) can recreate a thread's
+ * directory, so each bridge marks the directory as its own and stops serving or deleting it once
+ * that mark changes. Workspace processes run as the same OS user, so these directories are not an
+ * isolation boundary between mutually untrusted agents.
  *
  * @module mcp/bridge/FileBridge
  */
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -26,6 +29,8 @@ const MAX_BRIDGE_RESPONSE_BYTES = 256 * 1024;
 const MAX_CONCURRENT_CALLS = 8;
 const CALL_ID_PATTERN = /^[a-f0-9-]{36}$/u;
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
+/** The owner mark is one UUID. */
+const MAX_OWNER_BYTES = 64;
 
 export interface FileBridgeRequest {
   readonly id: string;
@@ -102,7 +107,10 @@ export async function createFileBridge(
   await mkdir(directory, { mode: 0o700 });
   const script = join(directory, "t3.mjs");
   const calls = join(directory, "calls");
+  const ownerFile = join(directory, "owner");
+  const owner = randomUUID();
   try {
+    await writeFile(ownerFile, owner, { mode: 0o600 });
     await writeFile(script, clientSource, { mode: 0o600 });
     await writeFile(join(directory, "tools.json"), JSON.stringify(options.catalog), {
       mode: 0o600,
@@ -113,6 +121,11 @@ export async function createFileBridge(
     throw error;
   }
   let closed = false;
+  const ownsDirectory = () =>
+    readBounded(ownerFile, MAX_OWNER_BYTES).then(
+      (text) => text === owner,
+      () => false,
+    );
   const controllers = new Set<AbortController>();
   const active = new Map<string, Promise<void>>();
 
@@ -189,6 +202,12 @@ export async function createFileBridge(
   };
 
   const tick = async () => {
+    if (!(await ownsDirectory())) {
+      // Another bridge took this directory over; its calls are not ours.
+      closed = true;
+      clearInterval(timer);
+      return;
+    }
     let entries: ReadonlyArray<string>;
     try {
       entries = await readdir(calls);
@@ -221,7 +240,9 @@ export async function createFileBridge(
       for (const controller of controllers) controller.abort();
       await ticking;
       await Promise.allSettled(active.values());
-      await rm(directory, { recursive: true, force: true }).catch(() => {});
+      if (await ownsDirectory()) {
+        await rm(directory, { recursive: true, force: true }).catch(() => {});
+      }
     },
   };
 }

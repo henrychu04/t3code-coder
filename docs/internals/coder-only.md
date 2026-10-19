@@ -108,7 +108,9 @@ on a provider's shell timeout; the number of such calls per thread and the reten
 results are bounded (`T3ToolBridge.ts`). Upstream's lifecycle owns the bridges: credentials are reused across turns and
 revoked, which deletes the directory, when the session is released, the thread is archived or
 deleted, or the helper stops. The thread's next credential recreates the same directory, so a
-command in the agent's history keeps working after its session rotates. If a bridge cannot be
+command in the agent's history keeps working after its session rotates. Each bridge marks the
+directory as its own and, once another helper in the workspace recreates it, stops serving and
+leaves it in place. If a bridge cannot be
 created, turns run without T3 tools. Workspace processes run as the same OS user; these
 directories are not an isolation boundary between mutually untrusted agents.
 
