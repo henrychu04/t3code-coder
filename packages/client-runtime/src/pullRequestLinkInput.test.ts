@@ -1,11 +1,9 @@
+// Coder: upstream's cases for the GitLab-only registry; other hosts' URLs are rejected.
 import { describe, expect, it } from "vite-plus/test";
 
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "./sourceControlClients.ts";
 
-import {
-  resolveLinkPullRequestInput,
-  resolveLinkPullRequestProject,
-} from "./LinkPullRequestDialog";
+import { parsePullRequestReference, resolveLinkPullRequestInput } from "./pullRequestLinkInput.ts";
 
 const changeRequestWebUrl = (kind: string, host: string, repository: string, number: number) =>
   sourceControlClients.get(kind).changeRequestUrl({ host, repository, number });
@@ -111,28 +109,28 @@ describe("changeRequestWebUrl", () => {
   });
 });
 
-it.each(["http://code.example:8080", "https://code.example:8443"])(
-  "preserves %s when linking a bare MR number",
-  (origin) => {
-    const ownProject = resolveLinkPullRequestProject({
-      provider: "gitlab",
-      canonicalKey: "code.example/team/frontend",
-      displayName: "team/frontend",
-      locator: {
-        source: "git-remote",
-        remoteName: "origin",
-        remoteUrl: `${origin}/team/frontend.git`,
-      },
-    });
-    expect(
-      resolveLinkPullRequestInput({ reference: "42", project: ownProject, hasProject: () => true }),
-    ).toEqual({
-      link: {
-        host: "code.example",
-        repository: "team/frontend",
-        number: 42,
-        url: `${origin}/team/frontend/-/merge_requests/42`,
-      },
-    });
-  },
-);
+describe("parsePullRequestReference", () => {
+  it("accepts GitLab merge request URLs", () => {
+    const reference = "https://gitlab.example.com/group/project/-/merge_requests/42";
+    expect(parsePullRequestReference(reference)).toBe(reference);
+    const selfHosted = "http://git.example.com/group/project/-/merge_requests/43";
+    expect(parsePullRequestReference(selfHosted)).toBe(selfHosted);
+  });
+
+  it("accepts raw numbers and #number references", () => {
+    expect(parsePullRequestReference("42")).toBe("42");
+    expect(parsePullRequestReference("#42")).toBe("42");
+  });
+
+  it("accepts glab mr checkout commands", () => {
+    expect(parsePullRequestReference("glab mr checkout 42")).toBe("42");
+    expect(parsePullRequestReference("glab mr checkout #42")).toBe("42");
+  });
+
+  it("rejects other providers and non-MR input", () => {
+    expect(parsePullRequestReference("gh pr checkout 42")).toBeNull();
+    expect(parsePullRequestReference("https://github.com/acme/project/pull/42")).toBeNull();
+    expect(parsePullRequestReference("az repos pr checkout --id 42")).toBeNull();
+    expect(parsePullRequestReference("feature/my-branch")).toBeNull();
+  });
+});

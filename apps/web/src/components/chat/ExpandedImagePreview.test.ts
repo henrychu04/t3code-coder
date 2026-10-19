@@ -106,3 +106,23 @@ it("builds a video preview for a local video attachment", () => {
   expect(preview?.images[0]?.src).toMatch(/^blob:/);
   URL.revokeObjectURL(preview?.images[0]?.src ?? "");
 });
+
+it("keeps MIME type for stored images without a filename extension", () => {
+  const preview = buildExpandedImagePreview(
+    [
+      {
+        type: "image",
+        id: "heic-1",
+        name: "photo",
+        mimeType: "image/heic",
+        previewUrl: "blob:heic",
+      },
+    ],
+    "heic-1",
+  );
+  expect(preview?.images[0]).toMatchObject({
+    name: "photo",
+    mimeType: "image/heic",
+    src: "blob:heic",
+  });
+});

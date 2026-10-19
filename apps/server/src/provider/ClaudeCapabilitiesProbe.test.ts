@@ -13,10 +13,12 @@ import {
 import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Result from "effect/Result";
 
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
@@ -368,6 +370,34 @@ it.effect("preserves initialized capabilities when optional usage times out", ()
     ]);
     assert.equal(capabilities?.usage, undefined);
     assert.equal(abortSignal?.aborted, true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("fails a hung initialization probe with a timeout", () =>
+  Effect.gen(function* () {
+    const initializationStarted = yield* Deferred.make<void>();
+    // Coder: the probe runs through the workspace CLI transport's `query`.
+    const query = vi.spyOn(ClaudeCli, "query").mockImplementation(
+      () =>
+        ({
+          initializationResult: () => {
+            Deferred.doneUnsafe(initializationStarted, Effect.void);
+            return new Promise(() => {});
+          },
+          getUsage: async () => ({ rate_limits_available: true, rate_limits: {} }),
+        }) as unknown as ReturnType<typeof ClaudeCli.query>,
+    );
+    yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+    const probe = yield* probeClaudeCapabilities(
+      decodeClaudeSettings({ binaryPath: "claude" }),
+    ).pipe(Effect.result, Effect.forkChild);
+
+    yield* Deferred.await(initializationStarted);
+    yield* TestClock.adjust("25 seconds");
+    const result = yield* Fiber.join(probe);
+
+    assert.isTrue(Result.isFailure(result));
+    if (Result.isFailure(result)) assert.isTrue(Cause.isTimeoutError(result.failure));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

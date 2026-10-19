@@ -14,6 +14,7 @@ export interface ExpandedImageItem {
   /** A loadable URL, or null when the dialog must read it through the helper first. */
   src: string | null;
   name: string;
+  mimeType?: string;
   type?: "video";
   /** The preview created this object URL and must revoke it; other blob URLs belong to the timeline. */
   ownsSrc?: boolean;
@@ -121,6 +122,7 @@ export function buildExpandedImagePreview(
         readonly id: string;
         readonly type: "image";
         readonly name: string;
+        readonly mimeType: string;
         readonly previewUrl?: string | undefined;
       }
     | ComposerFileAttachment
@@ -143,13 +145,17 @@ export function buildExpandedImagePreview(
   }
   const previewableImages = images.flatMap((image) =>
     image.type === "image" && image.previewUrl
-      ? [{ id: image.id, src: image.previewUrl, name: image.name }]
+      ? [{ id: image.id, src: image.previewUrl, name: image.name, mimeType: image.mimeType }]
       : [],
   );
   const selectedIndex = previewableImages.findIndex((image) => image.id === selectedImageId);
   if (selectedIndex < 0) return null;
   return {
-    images: previewableImages.map((image) => ({ src: image.src, name: image.name })),
+    images: previewableImages.map((image) => ({
+      src: image.src,
+      name: image.name,
+      mimeType: image.mimeType,
+    })),
     index: selectedIndex,
   };
 }

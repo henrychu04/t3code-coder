@@ -2364,6 +2364,13 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* initRepo(repoDir);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+        // Origin is the base repository; a lone remote would be the base itself.
+        yield* runGit(repoDir, [
+          "remote",
+          "add",
+          "origin",
+          "git@github.com:pingdotgg/codething-mvp.git",
+        ]);
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         NodeFS.writeFileSync(NodePath.join(repoDir, "fork-pr.txt"), "fork pr\n");
         yield* runGit(repoDir, ["add", "fork-pr.txt"]);
@@ -3501,6 +3508,13 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
+      // Patch generation would invoke this unavailable converter. A supplied
+      // message must commit without generating a patch it will not use.
+      NodeFS.writeFileSync(
+        NodePath.join(repoDir, ".git/info/attributes"),
+        "README.md diff=probe\n",
+      );
+      yield* runGit(repoDir, ["config", "diff.probe.textconv", "t3-missing-textconv-for-test"]);
       NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\ncustom\n");
       let generatedCount = 0;
 
@@ -4125,6 +4139,13 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+        // Origin is the base repository; a lone remote would be the base itself.
+        yield* runGit(repoDir, [
+          "remote",
+          "add",
+          "origin",
+          "git@github.com:pingdotgg/codething-mvp.git",
+        ]);
         yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
         yield* configureVisibleRemoteUrlWithLocalRewrite(
           repoDir,
@@ -4171,6 +4192,126 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
             call.includes("mr list --source-branch statemachine --state open --limit 1"),
           ),
         ).toBe(true);
+        expect(glabCalls.some((call) => call.startsWith("mr create "))).toBe(false);
+      }),
+    12_000,
+  );
+
+  // Coder: upstream's only-remote cases on a GitLab remote; the GH_REPO and gh-resolved cases
+  // exercise gh's own repository resolution, which is not carried.
+  it.effect(
+    "reuses the open same-repository MR when the only remote is not named origin",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        yield* initRepo(repoDir);
+        yield* runGit(repoDir, ["checkout", "-b", "dev"]);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "fork", remoteDir]);
+        yield* runGit(repoDir, ["push", "-u", "fork", "dev"]);
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "fork",
+          "git@gitlab.com:pingdotgg/codething-mvp.git",
+          remoteDir,
+        );
+        NodeFS.writeFileSync(NodePath.join(repoDir, "changes.txt"), "change\n");
+
+        const { manager, glabCalls } = yield* makeManager({
+          glabScenario: {
+            prListByHeadSelector: {
+              dev: encodeCliJson([
+                {
+                  number: 3,
+                  title: "Dev",
+                  url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/3",
+                  baseRefName: "main",
+                  headRefName: "dev",
+                  state: "OPEN",
+                  isCrossRepository: false,
+                  headRepository: { nameWithOwner: "pingdotgg/codething-mvp" },
+                  headRepositoryOwner: { login: "pingdotgg" },
+                },
+              ]),
+            },
+          },
+        });
+
+        const result = yield* runStackedAction(manager, {
+          cwd: repoDir,
+          action: "commit_push_pr",
+        });
+
+        expect(result.push.status).toBe("pushed");
+        expect(result.pr.status).toBe("opened_existing");
+        expect(result.pr.number).toBe(3);
+        expect(glabCalls.some((call) => call.startsWith("mr create "))).toBe(false);
+      }),
+    12_000,
+  );
+
+  it.effect(
+    "still treats a fork remote as cross-repository with an upstream remote but no origin",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        yield* initRepo(repoDir);
+        yield* runGit(repoDir, ["checkout", "-b", "dev"]);
+        const forkDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "fork", forkDir]);
+        yield* runGit(repoDir, ["push", "-u", "fork", "dev"]);
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "fork",
+          "https://gitlab.com/contributor/demo.git",
+          forkDir,
+        );
+        const upstreamDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "upstream", upstreamDir]);
+        yield* runGit(repoDir, ["push", "upstream", "main"]);
+        yield* configureVisibleRemoteUrlWithLocalRewrite(
+          repoDir,
+          "upstream",
+          "https://gitlab.com/acme/demo.git",
+          upstreamDir,
+        );
+        NodeFS.writeFileSync(NodePath.join(repoDir, "changes.txt"), "change\n");
+
+        const sameRepositoryPr = {
+          number: 3,
+          title: "Same-repository decoy",
+          url: "https://gitlab.com/contributor/demo/-/merge_requests/3",
+          baseRefName: "main",
+          headRefName: "dev",
+          state: "OPEN",
+          isCrossRepository: false,
+          headRepository: { nameWithOwner: "contributor/demo" },
+          headRepositoryOwner: { login: "contributor" },
+        };
+        const { manager, glabCalls } = yield* makeManager({
+          glabScenario: {
+            prListByHeadSelector: {
+              dev: encodeCliJson([
+                sameRepositoryPr,
+                {
+                  ...sameRepositoryPr,
+                  number: 4,
+                  title: "Fork PR",
+                  url: "https://gitlab.com/acme/demo/-/merge_requests/4",
+                  isCrossRepository: true,
+                },
+              ]),
+            },
+          },
+        });
+
+        const result = yield* runStackedAction(manager, {
+          cwd: repoDir,
+          action: "commit_push_pr",
+        });
+
+        expect(result.pr.status).toBe("opened_existing");
+        expect(result.pr.number).toBe(4);
         expect(glabCalls.some((call) => call.startsWith("mr create "))).toBe(false);
       }),
     12_000,
@@ -4261,6 +4402,13 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+        // Origin is the base repository; a lone remote would be the base itself.
+        yield* runGit(repoDir, [
+          "remote",
+          "add",
+          "origin",
+          "git@github.com:pingdotgg/codething-mvp.git",
+        ]);
         yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
         yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
         yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
@@ -4331,6 +4479,13 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+        // Origin is the base repository; a lone remote would be the base itself.
+        yield* runGit(repoDir, [
+          "remote",
+          "add",
+          "origin",
+          "git@github.com:pingdotgg/codething-mvp.git",
+        ]);
         yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
         yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
         yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
@@ -4394,6 +4549,13 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+        // Origin is the base repository; a lone remote would be the base itself.
+        yield* runGit(repoDir, [
+          "remote",
+          "add",
+          "origin",
+          "git@github.com:pingdotgg/codething-mvp.git",
+        ]);
         yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
         yield* runGit(repoDir, [
           "config",
@@ -4827,6 +4989,13 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* initRepo(repoDir);
       const forkDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+      // Origin is the base repository; a lone remote would be the base itself.
+      yield* runGit(repoDir, [
+        "remote",
+        "add",
+        "origin",
+        "git@github.com:pingdotgg/codething-mvp.git",
+      ]);
       yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
       NodeFS.writeFileSync(NodePath.join(repoDir, "changes.txt"), "change\n");
       yield* runGit(repoDir, ["add", "changes.txt"]);
@@ -5978,6 +6147,87 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  // Coder: upstream's case on a GitLab merge request ref.
+  it.effect.each([
+    { isCrossRepository: false, padding: 0 },
+    { isCrossRepository: false, padding: 110 },
+    { isCrossRepository: true, padding: 0 },
+    { isCrossRepository: true, padding: 110 },
+  ])(
+    "reuses an existing PR worktree with $padding preceding matching branches (fork: $isCrossRepository)",
+    ({ isCrossRepository, padding }) =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        yield* initRepo(repoDir);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+        const forkDir = isCrossRepository ? yield* createBareRemote() : null;
+        if (forkDir) {
+          yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+          yield* runGit(repoDir, ["push", "fork-seed", "main:pr-pagination"]);
+        }
+        const headBranch = "pr-pagination";
+        const localBranch = isCrossRepository ? "t3code/pr-78/pr-pagination" : headBranch;
+        yield* runGit(repoDir, ["branch", localBranch]);
+        yield* runGit(repoDir, ["push", "origin", `${localBranch}:refs/merge-requests/78/head`]);
+        const worktreePath = NodePath.join(repoDir, "existing-pr");
+        yield* runGit(repoDir, ["worktree", "add", worktreePath, localBranch]);
+        for (let index = 0; index < padding; index++) {
+          yield* runGit(repoDir, [
+            "branch",
+            `a-padding-${String(index).padStart(3, "0")}/${localBranch}`,
+          ]);
+        }
+        const git = yield* GitVcsDriver.GitVcsDriver;
+        const page = yield* git.listRefs({
+          cwd: repoDir,
+          refKind: "local",
+          query: localBranch,
+          refresh: true,
+        });
+        expect(page.nextCursor !== null).toBe(padding > 0);
+        expect(page.refs.some((ref) => ref.name === localBranch)).toBe(padding === 0);
+        const { manager } = yield* makeManager({
+          glabScenario: {
+            repositoryCloneUrls: forkDir
+              ? { "contributor/codething-mvp": { url: forkDir, sshUrl: forkDir } }
+              : {},
+            pullRequest: {
+              number: 78,
+              title: "Paginated PR worktree",
+              url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/78",
+              baseRefName: "main",
+              headRefName: headBranch,
+              state: "open",
+              isCrossRepository,
+              ...(isCrossRepository
+                ? {
+                    headRepositoryNameWithOwner: "contributor/codething-mvp",
+                    headRepositoryOwnerLogin: "contributor",
+                  }
+                : {}),
+            },
+          },
+        });
+
+        // Fetching directly into this checked-out branch would fail with git exit 128.
+        const result = yield* preparePullRequestThread(manager, {
+          cwd: repoDir,
+          reference: "78",
+          mode: "worktree",
+        });
+        expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
+          NodeFS.realpathSync.native(worktreePath),
+        );
+        expect(result.branch).toBe(localBranch);
+        expect(result.isOnPullRequestHead).toBe(true);
+        expect((yield* runGit(worktreePath, ["branch", "--show-current"])).stdout.trim()).toBe(
+          localBranch,
+        );
+      }),
+  );
+
   it.effect("refreshes a reused PR worktree that has no upstream from the pull request ref", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
@@ -6040,7 +6290,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
-  it.effect("never moves an unrelated local branch that shares the fork head branch name", () =>
+  it.effect("preserves an unrelated local branch and upstream that share the fork head name", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
@@ -6062,6 +6312,13 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       );
       yield* runGit(repoDir, ["worktree", "add", mainWorktreePath, "main"]);
       const localMainBefore = (yield* runGit(repoDir, ["rev-parse", "main"])).stdout.trim();
+      // Leave the fork tracking ref stale so an unnecessary fetch would change it.
+      yield* runGit(repoDir, ["update-ref", "refs/remotes/fork-seed/main", localMainBefore]);
+      const trackingRefsBefore = (yield* runGit(repoDir, [
+        "for-each-ref",
+        "--format=%(refname) %(objectname)",
+        "refs/remotes",
+      ])).stdout;
 
       const setupCalls: ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput[] = [];
       const { manager } = yield* makeManager({
@@ -6105,8 +6362,34 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         localMainBefore,
       );
       expect(NodeFS.existsSync(NodePath.join(mainWorktreePath, "contributor.txt"))).toBe(false);
+      expect(
+        (yield* runGit(mainWorktreePath, [
+          "rev-parse",
+          "--abbrev-ref",
+          "@{upstream}",
+        ])).stdout.trim(),
+      ).toBe("origin/main");
+      expect(result.branch).toBe("t3code/pr-94/main");
+      expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
+        NodeFS.realpathSync.native(mainWorktreePath),
+      );
+      expect(
+        (yield* runGit(repoDir, [
+          "for-each-ref",
+          "--format=%(refname) %(objectname)",
+          "refs/remotes",
+        ])).stdout,
+      ).toBe(trackingRefsBefore);
+      expect((yield* runGit(mainWorktreePath, ["branch", "--show-current"])).stdout.trim()).toBe(
+        "main",
+      );
       expect(result.isOnPullRequestHead).toBe(false);
       expect(setupCalls).toHaveLength(0);
+
+      yield* (yield* GitVcsDriver.GitVcsDriver).pullCurrentBranch(mainWorktreePath);
+      expect((yield* runGit(mainWorktreePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(
+        localMainBefore,
+      );
     }),
   );
 
@@ -6250,7 +6533,14 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         "..",
         `pr-reused-fork-${NodePath.basename(repoDir)}`,
       );
-      yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-reused-fork"]);
+      yield* runGit(repoDir, [
+        "worktree",
+        "add",
+        "-b",
+        "t3code/pr-83/feature/pr-reused-fork",
+        worktreePath,
+        "feature/pr-reused-fork",
+      ]);
       yield* runGit(worktreePath, ["branch", "--unset-upstream"], true);
 
       const { manager } = yield* makeManager({
@@ -6283,6 +6573,10 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
       expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
         NodeFS.realpathSync.native(worktreePath),
+      );
+      expect(result.branch).toBe("t3code/pr-83/feature/pr-reused-fork");
+      expect((yield* runGit(worktreePath, ["branch", "--show-current"])).stdout.trim()).toBe(
+        result.branch,
       );
       expect(
         (yield* runGit(worktreePath, ["rev-parse", "--abbrev-ref", "@{upstream}"])).stdout.trim(),

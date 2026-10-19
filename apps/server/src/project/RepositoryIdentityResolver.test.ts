@@ -103,4 +103,40 @@ describe("RepositoryIdentityResolver", () => {
       expect(rootAttempts).toBe(2);
     }),
   );
+
+  // Coder: upstream's local-remote and display-casing cases on GitLab remotes, mocked like the
+  // tests above.
+  it.effect("skips local-path remotes and keeps the remote's display casing", () =>
+    Effect.gen(function* () {
+      const process = ProcessRunner.ProcessRunner.of({
+        run: (input) =>
+          Effect.succeed(
+            input.args.includes("--show-toplevel")
+              ? output("/workspace/project\n")
+              : output(
+                  [
+                    "gb-local\t. (fetch)",
+                    "backup\t/srv/git/repo.git (fetch)",
+                    "archive\tfile:///srv/git/repo.git (fetch)",
+                    "mirror\tgit@gitlab.example.gs.com:Goldman/Platform/Smoke.git (fetch)",
+                    "",
+                  ].join("\n"),
+                ),
+          ),
+      });
+      const resolver = yield* make().pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, process),
+      );
+
+      const identity = yield* resolver.resolve("/workspace/project");
+
+      expect(identity?.locator.remoteName).toBe("mirror");
+      expect(identity).toMatchObject({
+        canonicalKey: "gitlab.example.gs.com/goldman/platform/smoke",
+        displayName: "Goldman/Platform/Smoke",
+        owner: "Goldman",
+        name: "Smoke",
+      });
+    }),
+  );
 });

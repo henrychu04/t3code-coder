@@ -149,3 +149,88 @@ for (const remoteUrl of [
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 }
+
+// Coder: upstream's publish push failure tests on GitLab, built like the clone tests above.
+function makePublishService(reason?: GitCommandError["reason"]) {
+  return SourceControlRepositoryService.make.pipe(
+    Effect.provide(
+      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => undefined,
+        get: () =>
+          SourceControlProvider.SourceControlProvider.pipe(
+            Effect.provide(
+              Layer.mock(SourceControlProvider.SourceControlProvider)({
+                kind: SourceControlProviderKind.make("gitlab"),
+                createRepository: () => Effect.succeed(cloneUrls),
+              }),
+            ),
+          ),
+      }),
+    ),
+    Effect.provide(
+      Layer.mock(GitVcsDriver.GitVcsDriver)({
+        execute: () =>
+          Effect.succeed({
+            stdout: "",
+            stderr: "",
+            exitCode: ChildProcessSpawner.ExitCode(0),
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          }),
+        ensureRemote: () => Effect.succeed("origin"),
+        pushCurrentBranch: (cwd: string) =>
+          Effect.fail(
+            new GitCommandError({
+              operation: "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
+              command: "git",
+              cwd,
+              ...(reason === undefined ? {} : { reason }),
+              detail: "Git command exited with a non-zero status.",
+            }),
+          ),
+      }),
+    ),
+  );
+}
+
+it.effect("explains a rejected SSH push after creating the repository", () =>
+  Effect.gen(function* () {
+    const service = yield* makePublishService("authentication_failed");
+    const error = yield* Effect.flip(
+      service.publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("gitlab"),
+        repository: cloneUrls.nameWithOwner,
+        visibility: "private",
+        protocol: "ssh",
+      }),
+    );
+
+    assert.strictEqual(error.operation, "publishRepository");
+    assert.match(
+      error.detail,
+      /^Created group\/subgroup\/project and added it as remote "origin", but the push failed because SSH authentication was rejected\./,
+    );
+    assert.instanceOf(error.cause, GitCommandError);
+  }).pipe(Effect.provide(TestLayer)),
+);
+
+it.effect("says the repository exists when an unclassified publish push fails", () =>
+  Effect.gen(function* () {
+    const service = yield* makePublishService();
+    const error = yield* Effect.flip(
+      service.publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("gitlab"),
+        repository: cloneUrls.nameWithOwner,
+        visibility: "private",
+        protocol: "https",
+      }),
+    );
+
+    assert.strictEqual(
+      error.detail,
+      'Created group/subgroup/project and added it as remote "origin", but the push failed. Fix the problem, then push again.',
+    );
+  }).pipe(Effect.provide(TestLayer)),
+);

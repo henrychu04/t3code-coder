@@ -5,9 +5,12 @@
  */
 const entries = new Map<string, string>();
 
-export const pullRequestSnapshotStorage: Pick<Storage, "getItem" | "setItem"> = {
+export const pullRequestSnapshotStorage: Pick<Storage, "getItem" | "setItem" | "removeItem"> = {
   getItem: (key) => entries.get(key) ?? null,
   setItem: (key, value) => {
     entries.set(key, value);
+  },
+  removeItem: (key) => {
+    entries.delete(key);
   },
 };

@@ -65,6 +65,7 @@ import { reconcileCoderMigrationHistory } from "./CoderMigrationHistory.ts";
 // Coder: T3 Coder has no auth sessions or pairing. Upstream's auth migrations keep
 // their IDs so later upstream migrations stay aligned, but they create nothing.
 const omittedAuthMigration = Effect.void;
+import Migration0064 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -131,6 +132,7 @@ export const migrationEntries = [
   [61, "PullRequestReviewGuides", Migration0061],
   [62, "ThreadFailureLookupIndex", Migration0062],
   [63, "DropUnusedV1Projections", Migration0063],
+  [64, "CanonicalizeThreadPullRequestLinks", Migration0064],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -42,6 +42,7 @@ import {
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import { useEnvironment, type EnvironmentPresentation } from "../../state/environments";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { useProjects } from "../../state/entities";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/query";
@@ -94,7 +95,6 @@ import {
   SettingsRow,
   SettingsSection,
   SETTINGS_PICKER_TRIGGER_CLASSNAME,
-  useRelativeTimeTick,
 } from "./settingsLayout";
 
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
@@ -188,11 +188,11 @@ export function scheduleLabel(schedule: ScheduledTaskSchedule): string {
  * instant — render "in 5m" style labels for upcoming runs instead of a
  * misleading "just now".
  */
-export function relativeLabel(value: string | null): string {
+function relativeLabel(value: string | null, nowMs: number): string {
   if (!value) return "Not scheduled";
-  const diffMs = new Date(value).getTime() - Date.now();
+  const diffMs = new Date(value).getTime() - nowMs;
   if (diffMs <= 0) {
-    const relative = formatRelativeTime(value);
+    const relative = formatRelativeTime(value, nowMs);
     if (!relative) return "Not scheduled";
     return relative.suffix ? `${relative.value} ${relative.suffix}` : relative.value;
   }
@@ -202,6 +202,13 @@ export function relativeLabel(value: string | null): string {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `in ${hours}h`;
   return `in ${Math.round(hours / 24)}d`;
+}
+
+// The clock is the label's own minute tick: the React Compiler caches a
+// `Date.now()` read in render on the timestamp alone.
+export function ScheduledRelativeLabel(props: { value: string | null }) {
+  const nowMinute = useNowMinute();
+  return relativeLabel(props.value, Date.parse(`${nowMinute}:00.000Z`));
 }
 
 function statusVariant(status: ScheduledTask["lastRunStatus"]) {
@@ -341,7 +348,6 @@ function ScheduledTaskEnvironmentList({
       onEdit(environmentId, linkedTask);
     }
   }, [environmentId, linkedTask, onEdit]);
-  useRelativeTimeTick(60_000);
 
   const loaded = states.filter((state) => state.connected && state.error === null && state.tasks);
   const populated = loaded.filter((state) => state.tasks && state.tasks.length > 0);
@@ -473,7 +479,6 @@ function ScheduledTaskEnvironmentSection({
       onEdit(environment.environmentId, linkedTask);
     }
   }, [environment.environmentId, linkedTask, onEdit]);
-  useRelativeTimeTick(60_000);
   return (
     <SettingsSection
       title={environment.label}
@@ -576,11 +581,15 @@ function ScheduledTaskRow({
           <span>
             {scheduleLabel(task.schedule)} ·{" "}
             {/* Coder: no "Listening" for webhook tasks; T3 Coder serves no webhook route. */}
-            {!task.enabled
-              ? "Paused"
-              : task.nextRunAt
-                ? `Next run ${relativeLabel(task.nextRunAt)}`
-                : "Not scheduled"}
+            {!task.enabled ? (
+              "Paused"
+            ) : task.nextRunAt ? (
+              <>
+                Next run <ScheduledRelativeLabel value={task.nextRunAt} />
+              </>
+            ) : (
+              "Not scheduled"
+            )}
           </span>
           {task.lastRunStatus !== "never" ? (
             <Badge variant={statusVariant(task.lastRunStatus)}>{task.lastRunStatus}</Badge>

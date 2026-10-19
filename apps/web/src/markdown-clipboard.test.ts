@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { serializeRenderedMarkdownFragment } from "./markdown-clipboard";
+import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import {
+  collectAssistantCitations,
+  serializeAssistantCitation,
+} from "@t3tools/shared/assistantCitations";
 
 const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
@@ -148,6 +153,97 @@ describe("serializeRenderedMarkdownFragment", () => {
     const container = new FakeElement("DIV").append(paragraph);
 
     expect(serializeRenderedMarkdownFragment(asNode(container))).toBe("run `git status` first");
+  });
+
+  describe.each([
+    { parentLayout: "tight", childLayout: "tight" },
+    { parentLayout: "tight", childLayout: "loose" },
+    { parentLayout: "loose", childLayout: "tight" },
+    { parentLayout: "loose", childLayout: "loose" },
+  ])("$parentLayout parent with $childLayout child", ({ parentLayout, childLayout }) => {
+    it.each([
+      { parentChecked: null, childChecked: true, parent: "- Parent", child: "  - [x] Child" },
+      {
+        parentChecked: false,
+        childChecked: true,
+        parent: "- [ ] Parent",
+        child: "  - [x] Child",
+      },
+      {
+        parentChecked: true,
+        childChecked: false,
+        parent: "- [x] Parent",
+        child: "  - [ ] Child",
+      },
+    ])("copies $parent with $child", ({ parentChecked, childChecked, parent, child }) => {
+      const parentContent = parentLayout === "loose" ? new FakeElement("P") : new FakeElement("LI");
+      if (parentChecked !== null) {
+        const checkbox = new FakeElement("INPUT", [], { type: "checkbox" });
+        checkbox.checked = parentChecked;
+        parentContent.append(checkbox, new FakeText(" "));
+      }
+      parentContent.append(new FakeText("Parent"));
+      const parentItem =
+        parentLayout === "loose" ? new FakeElement("LI").append(parentContent) : parentContent;
+      const checkbox = new FakeElement("INPUT", [], { type: "checkbox" });
+      checkbox.checked = childChecked;
+      const childContent = new FakeElement(childLayout === "loose" ? "P" : "LI").append(
+        checkbox,
+        new FakeText(" Child"),
+      );
+      const childItem =
+        childLayout === "loose" ? new FakeElement("LI").append(childContent) : childContent;
+      parentItem.append(new FakeText("\n"), new FakeElement("UL").append(childItem));
+      const container = new FakeElement("DIV").append(
+        new FakeElement("P").append(new FakeText("Before")),
+        new FakeElement("UL").append(parentItem),
+        new FakeElement("P").append(new FakeText("After")),
+      );
+
+      expect(serializeRenderedMarkdownFragment(asNode(container))).toBe(
+        `Before\n\n${parent}${parentLayout === "loose" ? "\n\n" : "\n"}${child}\n\nAfter`,
+      );
+    });
+  });
+
+  it("indents a code block under a numbered task item by the number width only", () => {
+    const checkbox = new FakeElement("INPUT", [], { type: "checkbox" });
+    checkbox.checked = true;
+    const item = new FakeElement("LI").append(
+      new FakeElement("P").append(checkbox, new FakeText(" Run the tests")),
+      renderedCodeBlock(["pnpm test"]),
+    );
+    const container = new FakeElement("DIV").append(new FakeElement("OL").append(item));
+
+    expect(serializeRenderedMarkdownFragment(asNode(container))).toBe(
+      "1. [x] Run the tests\n\n   ```\n   pnpm test\n   ```",
+    );
+  });
+
+  it("copies the complete quote, source, and comment instead of the comment-only chip label", () => {
+    const citation = {
+      version: 1 as const,
+      environmentId: EnvironmentId.make("environment-one"),
+      threadId: ThreadId.make("thread-one"),
+      messageId: MessageId.make("assistant-one"),
+      text: "A complete quote, including the part hidden by the chip preview.",
+      comment: "What does this mean?\nPlease expand on the hidden part.",
+      start: 0,
+      end: 66,
+      prefix: "",
+      suffix: "",
+    };
+    const anchor = new FakeElement("A", [], {
+      "data-markdown-copy": serializeAssistantCitation(citation),
+      href: "/environment-one/thread-one#citation",
+    }).append(new FakeText("What does this mean?…"));
+    const chip = new FakeElement("SPAN", [], {
+      "data-markdown-copy": serializeAssistantCitation(citation),
+    }).append(anchor, new FakeElement("BUTTON").append(new FakeText("Edit comment")));
+    const container = new FakeElement("DIV").append(new FakeText("Explain "), chip);
+    const copied = serializeRenderedMarkdownFragment(asNode(container));
+    expect(copied).toBe(`Explain ${serializeAssistantCitation(citation)}`);
+    expect(collectAssistantCitations(copied).map((entry) => entry.citation)).toEqual([citation]);
   });
 
   it("keeps a highlighted block code selection plain when its pre wrapper is outside the range", () => {

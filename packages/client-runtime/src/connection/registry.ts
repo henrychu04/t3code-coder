@@ -122,7 +122,11 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const scope = yield* Scope.make();
           const supervisor = yield* EnvironmentSupervisor.make(entry, {
-            initiallyDesired: false,
+            // An enabled environment starts out connecting. Starting it idle and
+            // then asking it to connect would first publish the state of an
+            // environment the user switched off.
+            // Coder: the Coder config owns registration, so every environment is enabled.
+            initiallyDesired: true,
           }).pipe(
             Effect.provideService(Connectivity.Connectivity, connectivity),
             Effect.provideService(ConnectionDriver.ConnectionDriver, driver),
@@ -130,7 +134,6 @@ export const make = Effect.gen(function* () {
             Scope.provide(scope),
             Effect.onError(() => Scope.close(scope, Exit.void)),
           );
-          yield* supervisor.connect;
           yield* SubscriptionRef.update(serviceScopes, (current) =>
             new Map(current).set(entry.target.environmentId, { entry, supervisor, scope }),
           );
