@@ -70,11 +70,22 @@ const isClaudeErrorResult = Schema.is(ClaudeErrorResult);
 const decodeJsonOption = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
 /**
+ * Coder: a workspace-managed `claude` launcher may print a plain-text banner on stdout before
+ * exec'ing the CLI, as `Drivers/ClaudeCli.ts` allows for stream-json. Drop the lines before the
+ * first JSON value.
+ */
+function withoutLauncherPreamble(stdout: string): string {
+  const lines = stdout.split("\n");
+  const start = lines.findIndex((line) => /^\s*[[{]/.test(line));
+  return start <= 0 ? stdout : lines.slice(start).join("\n");
+}
+
+/**
  * The error a failed `claude -p --output-format json` run reports on stdout. Stderr may only
  * hold notices from a wrapper around the binary, so the caller prefers this when present.
  */
 function claudeErrorResult(stdout: string): string | undefined {
-  const output = Option.getOrUndefined(decodeJsonOption(stdout));
+  const output = Option.getOrUndefined(decodeJsonOption(withoutLauncherPreamble(stdout)));
   const messages: ReadonlyArray<unknown> = Array.isArray(output) ? output : [output];
   return messages
     .filter(isClaudeErrorResult)
@@ -289,7 +300,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       ),
     );
 
-    const output = yield* decodeClaudeOutput(rawStdout).pipe(
+    const output = yield* decodeClaudeOutput(withoutLauncherPreamble(rawStdout)).pipe(
       Effect.catchTags({
         SchemaError: (cause) =>
           Effect.fail(
