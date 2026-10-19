@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
+import { useAtomValue } from "@effect/atom-react";
 import {
+  type EnvironmentId as EnvironmentIdType,
   EnvironmentId,
   ScreenshotArtifactId,
   type ScreenshotArtifactReference,
@@ -7,10 +9,37 @@ import {
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
+import type { ImageResourceState } from "../components/chat/imageResources";
+import { assetEnvironment } from "./assets";
 const read = vi.hoisted(() => vi.fn());
-vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => read }));
-vi.mock("../../state/projects", () => ({ projectEnvironment: { readScreenshotArtifact: {} } }));
+vi.mock("./projects", () => ({
+  projectEnvironment: {
+    readScreenshotArtifact: {
+      label: "read",
+      run: (_registry: unknown, value: unknown) => read(value),
+    },
+  },
+}));
+function useScreenshotArtifacts(
+  environmentId: EnvironmentIdType,
+  references: ReadonlyArray<
+    Omit<ScreenshotArtifactReference, "sizeBytes"> & { sizeBytes?: number }
+  >,
+  expanded: boolean,
+): Record<string, ImageResourceState> {
+  const resources = expanded
+    ? references.map((reference) => ({
+        _tag: "attachment" as const,
+        attachmentId: reference.id,
+        mimeType: reference.mimeType,
+        sizeBytes: reference.sizeBytes,
+      }))
+    : [];
+  const states = useAtomValue(assetEnvironment.createUrls({ environmentId, resources }));
+  return Object.fromEntries(
+    resources.map((resource, index) => [resource.attachmentId, states[index]!]),
+  );
+}
 const artifact: ScreenshotArtifactReference = {
   id: ScreenshotArtifactId.make("artifact"),
   name: "Screenshot",
@@ -149,7 +178,8 @@ it("isolates identical IDs across workspaces", async () => {
 });
 
 it("loads previews near the viewport and releases their bytes when they scroll away", async () => {
-  const { useImagePreviewVisibility } = await import("./useImagePreviewVisibility");
+  const { useImagePreviewVisibility } =
+    await import("../components/chat/useImagePreviewVisibility");
   let intersect!: IntersectionObserverCallback;
   const disconnect = vi.fn();
   vi.stubGlobal(

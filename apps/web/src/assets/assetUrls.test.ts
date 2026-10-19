@@ -3,27 +3,23 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   connected: [] as string[],
-  calls: [] as Array<{ expanded: boolean }>,
+  calls: [] as Array<{ resources: number }>,
 }));
 
 vi.mock("../state/environments", () => ({
   useConnectedEnvironmentIds: () => state.connected,
 }));
-vi.mock("../components/chat/useScreenshotArtifacts", () => ({
-  useScreenshotArtifacts: (
-    _environmentId: string,
-    artifacts: ReadonlyArray<{ id: string }>,
-    expanded: boolean,
-  ) => {
-    state.calls.push({ expanded });
-    return expanded
-      ? Object.fromEntries(
-          artifacts.map((artifact) => [
-            artifact.id,
-            { status: "loaded", url: `blob:${artifact.id}`, retry: () => {} },
-          ]),
-        )
-      : {};
+vi.mock("@effect/atom-react", () => ({ useAtomValue: <A>(atom: A) => atom }));
+vi.mock("../state/assets", () => ({
+  assetEnvironment: {
+    createUrls: (target: { resources: ReadonlyArray<{ attachmentId: string }> }) => {
+      state.calls.push({ resources: target.resources.length });
+      return target.resources.map((resource) => ({
+        status: "loaded",
+        url: `blob:${resource.attachmentId}`,
+        retry: () => {},
+      }));
+    },
   },
 }));
 
@@ -42,10 +38,10 @@ describe("useAssetUrls", () => {
 
   it("waits for the workspace connection before reading submitted images", () => {
     expect(useAssetUrls(environmentId, resources)).toEqual([null]);
-    expect(state.calls).toEqual([{ expanded: false }]);
+    expect(state.calls).toEqual([{ resources: 0 }]);
 
     state.connected = ["env"];
     expect(useAssetUrls(environmentId, resources)).toEqual(["blob:image"]);
-    expect(state.calls.at(-1)).toEqual({ expanded: true });
+    expect(state.calls.at(-1)).toEqual({ resources: 1 });
   });
 });
