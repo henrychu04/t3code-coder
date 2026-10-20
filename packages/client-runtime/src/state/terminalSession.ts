@@ -44,6 +44,8 @@ export interface TerminalBufferState {
   readonly lifecycleVersion: number;
   /** Coder: the last applied attach-event sequence, sent as `afterSequence` on reattach. */
   readonly sequence?: number | null;
+  /** Coder: the shell session that sequence belongs to, sent as `afterEpoch`. */
+  readonly epoch?: string | null;
 }
 
 export interface KnownTerminalSessionTarget {
@@ -152,9 +154,15 @@ export function applyTerminalAttachStreamEvent(
       : "sequence" in event && typeof event.sequence === "number"
         ? event.sequence
         : (current.sequence ?? null);
-  return next === current && sequence === (current.sequence ?? null)
+  const epoch =
+    event.type === "snapshot" || event.type === "restarted"
+      ? (event.snapshot.attachEpoch ?? null)
+      : (current.epoch ?? null);
+  return next === current &&
+    sequence === (current.sequence ?? null) &&
+    epoch === (current.epoch ?? null)
     ? current
-    : { ...next, sequence };
+    : { ...next, sequence, epoch };
 }
 
 function applyUpstreamTerminalAttachStreamEvent(

@@ -747,6 +747,7 @@ it.layer(
           threadId: "thread-1",
           terminalId: DEFAULT_TERMINAL_ID,
           afterSequence: initialSequence,
+          afterEpoch: initialSnapshot.snapshot.attachEpoch,
         },
         (event) => Ref.update(resumedEvents, (events) => [...events, event]),
       );
@@ -775,6 +776,7 @@ it.layer(
           threadId: "thread-1",
           terminalId: DEFAULT_TERMINAL_ID,
           afterSequence: opened.sequence,
+          afterEpoch: opened.attachEpoch,
         },
         (event) => Ref.update(attachEvents, (events) => [...events, event]),
       );
@@ -799,6 +801,7 @@ it.layer(
           threadId: "thread-1",
           terminalId: DEFAULT_TERMINAL_ID,
           afterSequence: opened.sequence + 1,
+          afterEpoch: opened.attachEpoch,
         },
         (event) => Ref.update(attachEvents, (events) => [...events, event]),
       );
@@ -835,6 +838,7 @@ it.layer(
           threadId: "thread-1",
           terminalId: DEFAULT_TERMINAL_ID,
           afterSequence: opened.sequence,
+          afterEpoch: opened.attachEpoch,
         },
         (event) => Ref.update(attachEvents, (events) => [...events, event]),
       );

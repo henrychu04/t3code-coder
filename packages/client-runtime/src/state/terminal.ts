@@ -69,9 +69,12 @@ export function createTerminalEnvironmentAtoms<R, E>(
               // Coder: each attempt resumes after the last sequence the cache applied.
               const current = terminalBufferCache.read(environmentId, input);
               const afterSequence = current.version === 0 ? null : (current.sequence ?? null);
+              const afterEpoch = current.epoch ?? null;
               return {
                 ...(replied ? { ...input, resume: true } : input),
-                ...(afterSequence === null ? {} : { afterSequence }),
+                ...(afterSequence === null || afterEpoch === null
+                  ? {}
+                  : { afterSequence, afterEpoch }),
               };
             }),
           ).pipe(
