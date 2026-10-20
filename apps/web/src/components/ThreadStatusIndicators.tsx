@@ -1027,7 +1027,7 @@ function ThreadPullRequestNumber({
 }: ComponentProps<"span"> & { number: number }) {
   return (
     <span {...props} className={cn("shrink-0 text-xs tabular-nums", className)}>
-      #{number}
+      !{number}
     </span>
   );
 }
