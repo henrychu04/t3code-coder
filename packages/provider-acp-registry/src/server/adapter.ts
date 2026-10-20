@@ -18,6 +18,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { normalizeAcpRegistryCommands, normalizeAcpRegistryLiveConfiguration } from "./probe.ts";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
@@ -56,6 +57,7 @@ export interface AcpRegistryAdapterV2Options {
     EffectAcpErrors.AcpError,
     ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | Scope.Scope
   >;
+  readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
   readonly assertComplete?: Effect.Effect<void, EffectAcpErrors.AcpError>;
 }
 
@@ -130,6 +132,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   const flavor: AcpAdapterV2Flavor = {
     driver: ACP_REGISTRY_PROVIDER,
     capabilities: AcpProviderCapabilitiesV2,
+    customModels: readCustomModelEntries(options.settings.customModels).map((entry) => entry.slug),
     promptFailure: acpRegistryPromptFailure,
     makeRuntime: options.makeRuntime ?? makeAcpRegistryRuntime(options, catalog),
     ...(runtimeCoordinator === undefined
@@ -140,10 +143,10 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
               options.instanceId,
               normalizeAcpRegistryCommands(commands),
             ),
-          onSessionConfigurationUpdate: (configOptions, modeState) =>
+          onSessionConfigurationUpdate: (configOptions, modeState, modelState) =>
             runtimeCoordinator.publishLiveConfiguration(
               options.instanceId,
-              normalizeAcpRegistryLiveConfiguration(configOptions, modeState),
+              normalizeAcpRegistryLiveConfiguration(configOptions, modeState, modelState),
             ),
           withRuntimeStartup: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
             runtimeCoordinator.withForegroundStartup(startupKey, effect),
@@ -153,6 +156,9 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   return yield* makeAcpAdapterV2({
     instanceId: options.instanceId,
     flavor,
+    ...(options.continuationRequests === undefined
+      ? {}
+      : { continuationRequests: options.continuationRequests }),
   });
 });
 
@@ -180,6 +186,7 @@ export const AcpRegistryAdapterV2Driver: ProviderAdapterDriver<
         instanceId: input.instanceId,
         settings: { ...input.config, enabled: input.enabled },
         environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
+        continuationRequests: yield* ProviderContinuationRequests.ProviderContinuationRequests,
       });
     },
     (effect, input) =>

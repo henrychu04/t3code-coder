@@ -11,9 +11,14 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as Socket from "effect/socket/Socket";
 
-import { ConnectionTarget, type PreparedConnection } from "../connection/model.ts";
+import {
+  ConnectionTarget,
+  ConnectionTransientError,
+  type PreparedConnection,
+} from "../connection/model.ts";
 import * as RpcSession from "./session.ts";
 
 type SocketEventType = "open" | "message" | "close" | "error";
@@ -111,6 +116,7 @@ const RpcRequest = Schema.TaggedStruct("Request", {
 });
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const isRpcRequest = Schema.is(RpcRequest);
+const isPing = Schema.is(Schema.TaggedStruct("Ping", {}));
 const encodeJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const encodeServerConfig = Schema.encodeSync(ServerConfig);
 const ENCODED_SERVER_CONFIG = encodeServerConfig(SERVER_CONFIG);
@@ -338,5 +344,36 @@ describe("RpcSessionFactory", () => {
         );
       }),
     ),
+  );
+  // Coder: the direct case only; there is no relay connection target.
+  it.effect("closes the session after 15 seconds without a frame from the server", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect(PREPARED);
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const closedFiber = yield* Effect.forkChild(Effect.flip(session.closed));
+      const socket = yield* awaitSocket(sockets);
+
+      socket.open();
+      yield* completeInitialConfig(socket);
+      yield* Fiber.join(readyFiber);
+
+      yield* TestClock.adjust("15 seconds");
+      expect(closedFiber.pollUnsafe()).toBeUndefined();
+      expect(socket.sent.map((message) => decodeJson(message)).filter(isPing)).toEqual([
+        { _tag: "Ping" },
+        { _tag: "Ping" },
+        { _tag: "Ping" },
+      ]);
+
+      yield* TestClock.adjust("5 seconds");
+      const error = yield* Fiber.join(closedFiber);
+      expect(error).toBeInstanceOf(ConnectionTransientError);
+      expect(error).toMatchObject({
+        reason: "transport",
+        detail:
+          "Test environment stopped responding for 15s. It may be overloaded, asleep, or off the network.",
+      });
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 });

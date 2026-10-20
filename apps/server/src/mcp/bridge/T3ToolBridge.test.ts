@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import {
   EnvironmentId,
   ProjectId,
@@ -141,6 +142,7 @@ const harness = (options: {
       Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
       Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+      McpProviderSessions.layer,
       T3ToolDispatch.layer,
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-tool-bridge-" }).pipe(
         Layer.provide(NodeServices.layer),

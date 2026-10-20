@@ -95,18 +95,14 @@ describe("TerminalOpenInput", () => {
     expect(parsed.worktreePath).toBe("/tmp/project/.t3/worktrees/feature-a");
   });
 
-  it("rejects invalid env keys", () => {
-    expect(
-      decodes(TerminalOpenInput, {
-        threadId: "thread-1",
-        cwd: "/tmp/project",
-        cols: 100,
-        rows: 24,
-        env: {
-          "bad-key": "1",
-        },
-      }),
-    ).toBe(false);
+  it("drops invalid env keys while retaining valid overrides", () => {
+    const parsed = decodeSync(TerminalOpenInput, {
+      threadId: "thread-1",
+      terminalId: DEFAULT_TERMINAL_ID,
+      cwd: "/tmp/project",
+      env: { "bad-key": "1", GOOD_KEY: "2" },
+    });
+    expect(parsed.env).toEqual({ GOOD_KEY: "2" });
   });
 });
 

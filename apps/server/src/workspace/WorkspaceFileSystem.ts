@@ -284,6 +284,7 @@ export const make = Effect.gen(function* () {
   const resolveExisting = Effect.fn("WorkspaceFileSystem.resolveExisting")(function* (input: {
     cwd: string;
     relativePath: string;
+    allowMissing?: boolean | undefined;
   }) {
     const target = yield* workspacePaths.resolveRelativePathWithinRoot({
       workspaceRoot: input.cwd,
@@ -302,8 +303,36 @@ export const make = Effect.gen(function* () {
           cause,
         }),
     });
-    const realTargetPath = yield* Effect.tryPromise({
-      try: () => NodeFSP.realpath(target.absolutePath),
+    const resolved = yield* Effect.tryPromise({
+      try: async () => {
+        let candidate = target.absolutePath;
+        for (;;) {
+          try {
+            return {
+              realTargetPath: path.join(
+                await NodeFSP.realpath(candidate),
+                path.relative(candidate, target.absolutePath),
+              ),
+              exists: candidate === target.absolutePath,
+            };
+          } catch (error) {
+            if (!input.allowMissing || (error as NodeJS.ErrnoException).code !== "ENOENT") {
+              throw error;
+            }
+            // Like writes, missing reads must check the nearest existing ancestor.
+            // An existing entry that cannot resolve is a dangling link, not absence.
+            const exists = await NodeFSP.lstat(candidate).then(
+              () => true,
+              (cause: NodeJS.ErrnoException) => {
+                if (cause.code !== "ENOENT") throw cause;
+                return false;
+              },
+            );
+            if (exists || path.dirname(candidate) === candidate) throw error;
+            candidate = path.dirname(candidate);
+          }
+        }
+      },
       catch: (cause) =>
         new WorkspaceFileSystemOperationError({
           workspaceRoot: input.cwd,
@@ -314,6 +343,7 @@ export const make = Effect.gen(function* () {
           cause,
         }),
     });
+    const realTargetPath = resolved.realTargetPath;
     if (!isInsideRealRoot(realWorkspaceRoot, realTargetPath)) {
       return yield* new WorkspaceFilePathEscapeError({
         workspaceRoot: input.cwd,
@@ -322,13 +352,24 @@ export const make = Effect.gen(function* () {
         resolvedPath: realTargetPath,
       });
     }
-    return { target, realWorkspaceRoot, realTargetPath };
+    return { target, realWorkspaceRoot, realTargetPath, exists: resolved.exists };
   });
 
   const readFile: WorkspaceFileSystem["Service"]["readFile"] = Effect.fn(
     "WorkspaceFileSystem.readFile",
   )(function* (input) {
-    const { target, realTargetPath } = yield* resolveExisting(input);
+    const { target, realTargetPath, exists } = yield* resolveExisting(input);
+    if (!exists) {
+      // Upstream's `allowMissing` read of an optional file (t3.json) that is absent.
+      return {
+        relativePath: target.relativePath,
+        contents: "",
+        byteLength: 0,
+        truncated: false,
+        revision: revisionOf(new Uint8Array()),
+        exists: false,
+      };
+    }
     const read = yield* Effect.tryPromise({
       try: async () => {
         const handle = await NodeFSP.open(realTargetPath, "r");

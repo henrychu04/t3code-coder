@@ -189,8 +189,8 @@ When the provider reports a reset time, choose **Resume at reset** to schedule a
 continuation. You can cancel it from the thread. Enable **Auto-resume limited
 threads** in **Settings → General** to schedule limit stops by default.
 The workspace helper must be running when the reset arrives; it resumes overdue
-continuations after it restarts. Sending a new message, archiving, or settling the
-thread prevents a pending continuation from starting.
+continuations after it restarts. Stopping the thread, sending a new message,
+archiving, or settling it prevents a pending continuation from starting.
 
 Choose **Snooze until reset** to hide the thread until its allowance returns.
 Snooze and auto-resume are independent: snooze alone wakes the thread without
@@ -215,3 +215,6 @@ finishes; the call's own result shows its status.
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
 local time zone, or a duration in minutes, hours, or days. Durations start when
 you confirm; one day means 24 hours. You can also snooze several selected threads together. Choose **Wake thread** to bring a thread back early.
+A snoozed thread keeps working and stays hidden until its wake time, even while
+its agent wakes itself for background work. It comes back early only when it needs
+an approval or answer from you, when a run fails, or when you send it a message.

@@ -3,6 +3,7 @@
 // editor and file-manager actions, and GitHub-authenticated media are omitted; file chips open
 // only project files in the Files surface; relative and non-web links stay inert; and merge
 // request links use GitLab-only matching. See docs/internals/coder-only.md.
+import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { MarkdownFindContext, findRevealRef } from "./chat/markdownFindContext";
 import {
   buildFileLinkParentSuffixByPath,
@@ -17,7 +18,7 @@ import {
   extractMarkdownLinkHrefs,
   inlineCodeFilePathCandidate,
 } from "@t3tools/shared/markdownLinks";
-import { isAbsolutePath, resolveWorkspaceFilePath } from "@t3tools/shared/path";
+import { isHostPath, resolveWorkspaceFilePath } from "@t3tools/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -157,7 +158,7 @@ import { createIncrementalHighlightedDocument } from "../lib/incrementalHighligh
 import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { MermaidDiagram } from "./chat/MermaidDiagram";
-import { useTheme } from "../hooks/useTheme";
+import { useRenderedAppearance } from "../hooks/useTheme";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import {
   chatMarkdownClipboardPayload,
@@ -172,6 +173,7 @@ import {
   shouldOpenMarkdownFileLinkInEditor,
   type MarkdownFileLinkMeta,
 } from "../markdown-links";
+import { markdownFileCopyPaths, resolveMarkdownFileHostPath } from "../markdownFileHostPath";
 import { isMarkdownFileLinkLabel } from "@t3tools/shared/markdownLinks";
 import { readLocalApi } from "../localApi";
 import { cn } from "../lib/utils";
@@ -590,30 +592,6 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
     return observeResize(table, measureClippedCells);
   }, [measureClippedCells]);
 
-  function toggleExpanded() {
-    const table = tableRef.current;
-    if (!table) return;
-
-    if (!expanded) {
-      const rows = [...table.rows];
-      const columnWidths = rows.reduce<number[]>((widths, row) => {
-        [...row.cells].forEach((cell, columnIndex) => {
-          widths[columnIndex] = Math.max(
-            widths[columnIndex] ?? 0,
-            cell.getBoundingClientRect().width,
-          );
-        });
-        return widths;
-      }, []);
-
-      [...(table.tHead?.rows[0]?.cells ?? [])].forEach((cell, columnIndex) => {
-        cell.style.minWidth = `${columnWidths[columnIndex] ?? cell.getBoundingClientRect().width}px`;
-      });
-    }
-
-    setExpanded((value) => !value);
-  }
-
   const handleCopy = (format: "markdown" | "csv") => {
     const table = containerRef.current?.querySelector("table");
     if (!table || typeof navigator === "undefined" || navigator.clipboard == null) {
@@ -671,7 +649,7 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
                   variant={expanded ? "secondary" : "ghost-muted"}
                   size="icon-xs"
                   aria-pressed={expanded}
-                  onClick={toggleExpanded}
+                  onClick={() => setExpanded((value) => !value)}
                   aria-label={expandLabel}
                 />
               }
@@ -1084,7 +1062,7 @@ function MarkdownMermaidCodeBlock({
             <MermaidDiagram source={code} theme={theme} onExpand={onExpand} />
           </Suspense>
           {searching ? (
-            <pre ref={sourceRevealRef} hidden>
+            <pre ref={sourceRevealRef} hidden aria-hidden>
               {code}
             </pre>
           ) : null}
@@ -1209,8 +1187,9 @@ interface MarkdownFileLinkProps {
   copyMarkdown: string;
   theme: "light" | "dark";
   threadRef?: ScopedThreadRef | undefined;
-  onOpen?: ((targetPath: string) => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
+  onOpen?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   onOpenInPanel: (panelPath: string, line: number | undefined) => void;
+  resolveCopyPaths: () => Promise<ReturnType<typeof markdownFileCopyPaths>>;
   /** Coder never passes `onOpen`, `onOpenInBrowser`, or `onReveal`: the local editor, in-app
       browser, and file manager do not exist, so their labels are optional. */
   openInEditorMenuLabel?: string | undefined;
@@ -2085,6 +2064,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   onOpenMedia,
   onReveal,
   revealLabel,
+  resolveCopyPaths,
 }: MarkdownFileLinkProps) {
   const handleOpenInEditor = () => {
     if (!onOpen) {
@@ -2092,7 +2072,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     }
     void (async () => {
       try {
-        const result = await onOpen(targetPath);
+        const result = await onOpen();
         if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
           return;
         }
@@ -2212,7 +2192,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     })();
   };
 
-  const handleCopy = (value: string, title: string) => {
+  const handleCopy = (resolveValue: () => Promise<string>, title: string) => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
       toastManager.add(
         stackedThreadToast({
@@ -2224,12 +2204,22 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
       return;
     }
 
-    void navigator.clipboard.writeText(value).then(
-      () => {
+    const value = resolveValue().then((text) => formatFilePathForClipboard(text, targetPath));
+    // Start the write before workspace lookup finishes so Safari retains the user gesture.
+    const write =
+      typeof navigator.clipboard.write === "function" && typeof ClipboardItem !== "undefined"
+        ? navigator.clipboard.write([
+            new ClipboardItem({
+              "text/plain": value.then((text) => new Blob([text], { type: "text/plain" })),
+            }),
+          ])
+        : value.then((text) => navigator.clipboard.writeText(text));
+    void Promise.all([write, value]).then(
+      ([, text]) => {
         toastManager.add({
           type: "success",
           title: `${title} copied`,
-          description: value,
+          description: text,
         });
       },
       (error) => {
@@ -2285,9 +2275,14 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         handleRevealInFileManager();
         return;
       }
-      const copyItem = copyItems.find(({ id }) => id === clicked);
-      if (copyItem) {
-        handleCopy(copyItem.value, copyItem.title);
+      if (clicked === "copy-relative" || clicked === "copy-full") {
+        handleCopy(
+          () =>
+            resolveCopyPaths().then((paths) =>
+              clicked === "copy-relative" ? paths.relativePath : paths.fullPath,
+            ),
+          clicked === "copy-relative" ? "Relative path" : "Full path",
+        );
       }
     } catch (cause) {
       reportMarkdownActionFailure(
@@ -2410,6 +2405,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.onOpenInBrowser === next.onOpenInBrowser &&
     previous.onOpenMedia === next.onOpenMedia &&
     previous.onReveal === next.onReveal &&
+    previous.resolveCopyPaths === next.resolveCopyPaths &&
     previous.revealLabel === next.revealLabel
   );
 }
@@ -2460,7 +2456,7 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
 }: ChatMarkdownProps) {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = useRenderedAppearance();
   const markdownRef = useRef<HTMLElement>(null);
   const mediaRequestId = useRef(0);
   // A preview opened from another thread or workspace never carries over.
@@ -2536,6 +2532,8 @@ function useChatMarkdownState({
       },
       (error: unknown) => {
         if (mediaRequestId.current !== requestId) return;
+        // Coder: media reads through the helper, so there is no signed-asset not-found error
+        // naming a remote host and checked path.
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -2699,6 +2697,12 @@ function useChatMarkdownState({
     copyMarkdown: string,
     mediaSource?: string,
   ) => {
+    const resolveHostPath = () =>
+      resolveMarkdownFileHostPath({
+        meta: fileLinkMeta,
+        cwd,
+        findWorkspaceMatch: () => findWorkspaceFileMatch(fileLinkMeta),
+      });
     const mediaPath = mediaSource ?? fileLinkMeta.filePath;
     const canPreviewMedia =
       mediaMimeTypeFromExtension(
@@ -2728,6 +2732,9 @@ function useChatMarkdownState({
         copyMarkdown={copyMarkdown}
         theme={resolvedTheme}
         threadRef={threadRef}
+        resolveCopyPaths={async () =>
+          markdownFileCopyPaths(fileLinkMeta, await resolveHostPath(), cwd)
+        }
         onOpenInPanel={(path) => openFileInPanel(fileLinkMeta, path)}
         onOpenMedia={
           threadRef && canPreviewMedia

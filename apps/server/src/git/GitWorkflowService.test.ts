@@ -1,4 +1,4 @@
-import { assert, describe, expect, it, vi } from "@effect/vitest";
+import { assert, expect, it, vi } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -30,7 +30,7 @@ function layer(input: {
   );
 }
 
-describe("GitWorkflowService", () => {
+it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
   it.effect("reports a non-Git VCS repository as not a Git repository", () =>
     Effect.gen(function* () {
       const workflow = yield* GitWorkflowService.GitWorkflowService;
@@ -319,6 +319,7 @@ it.effect("routes worktree moves and lightweight ref reads through the Git comma
           Layer.mock(GitVcsDriver.GitVcsDriver)({ moveWorktree: move, refStatusLocal: ref }),
         ),
         Layer.provide(Layer.mock(GitManager.GitManager)({})),
+        Layer.provide(NodeServices.layer),
       ),
     ),
   );

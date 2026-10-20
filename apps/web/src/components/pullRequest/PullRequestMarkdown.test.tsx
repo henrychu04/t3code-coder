@@ -16,9 +16,8 @@ vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
   useNavigate: () => navigate,
 }));
-vi.mock("../../state/entities", async (original) => ({
-  ...(await original<typeof import("../../state/entities")>()),
-  useProjects: () => [
+vi.mock("../../state/entities", async (original) => {
+  const projects = [
     {
       id: "project",
       environmentId: "workspace",
@@ -29,8 +28,14 @@ vi.mock("../../state/entities", async (original) => ({
         locator: { source: "git-remote", remoteUrl: "https://gitlab.example/group/project.git" },
       },
     },
-  ],
-}));
+  ];
+  // The link handler reads projects at click time, as upstream.
+  return {
+    ...(await original<typeof import("../../state/entities")>()),
+    useProjects: () => projects,
+    readProjects: () => projects,
+  };
+});
 // The link handler reads the server configs from the atom registry when clicked.
 vi.mock("../../state/server", async (original) => {
   const { Atom } = await import("effect/reactivity");

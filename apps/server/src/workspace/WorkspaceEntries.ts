@@ -426,6 +426,7 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  // Coder: no listIgnoredFiles; "Add to another machine" (#22180) is not carried.
   return WorkspaceEntries.of({ browse, search, searchText, list, listDirectories, refresh });
 });
 

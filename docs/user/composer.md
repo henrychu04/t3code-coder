@@ -160,8 +160,9 @@ messages; it does not keep a separate prompt-history store in the browser.
 ## Edit an earlier prompt
 
 Choose **Edit from here** beneath a sent message to rewind to before that message. Choose
-**Revert and keep changes** to leave workspace files as they are, or **Revert files too** to
-restore the checkpoint as well. File restore is only offered for threads running in a worktree, and
+**Revert and keep changes** to leave workspace files as they are, or **Revert files too** to put
+the workspace back to its checkpoint from before that message. That also undoes edits you made
+yourself. File restore is only offered for threads running in a worktree, and
 it is refused when another thread or agent session also uses that directory, a folder inside it,
 or a folder that contains it, since restoring would erase their changes. Project-directory threads
 rewind conversation history only. The selected prompt and its pasted images return to the composer
@@ -224,6 +225,12 @@ conversation even when it is the only activity in that turn.
 
 Compacting from the context meter preserves the current draft and its images. You can also send
 `/compact` in an existing conversation when the provider supports it.
+
+Enable **Compact idle Claude threads (beta)** in **Settings > General** to compact an idle Claude
+thread with at least 200,000 tokens of context shortly before its prompt cache expires, so coming
+back does not reprocess the whole conversation. The cache lasts 1 hour on Claude subscriptions and
+5 minutes with an API key. The compaction appears in the thread as a `/compact` turn sent by
+T3 Coder.
 
 ## Response streaming
 

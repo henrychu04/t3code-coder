@@ -167,7 +167,10 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   auth, preview, and telemetry layers): keep the deletion, and port a new service or provide the
   helper needs into `coderServer.ts`'s matching composition (`CoderRuntimeCoreLive`,
   `CoderRuntimeDependenciesLive`, `CoderRuntimeStartupLive`, or `makeCoderRuntimeLayer`). Export
-  a carried declaration only when `coderServer.ts` uses it.
+  a carried declaration only when `coderServer.ts` uses it. A service that gains a requirement
+  (758d773f57: `ProviderRegistry` reading `ProviderLatestVersions`) still typechecks in
+  `apps/server`, because only the helper entry point launches the composed layer; run
+  `pnpm typecheck:helper` to catch a requirement `coderServer.ts` does not provide.
 - `apps/server/src/ws.ts`: upstream's file minus the cut surfaces, with in-place `Coder:` changes;
   the fork-only methods live in `coderWs.ts`, merged in at the `return` hook. Keep upstream's
   handler and helper order and take upstream's handler edits. Its handler object is typed by
@@ -311,6 +314,12 @@ fix and rerun until it completes. Known results:
   directory" and "reloads when a dangling settings link gets its destination" can hit their
   2-second watcher timeout under full-suite load. Rerun it alone:
   `pnpm exec vp test run --config vite.coder.config.ts apps/server/src/serverSettings.test.ts`.
+- On macOS, upstream's `ClaudeSkills.test.ts` "merges plugin enablement and selects installs in
+  native registry order" fails because `TMPDIR` sits under the `/var` symlink (758d773f57). It
+  passes with a real-path temp directory: `TMPDIR=/private/tmp/<dir>`.
+- Upstream's `MessagesTimeline.browser.test.tsx` "restores a manual reading position after
+  reopening and switching threads" is order dependent and can fail in the full web run; it passes
+  alone.
 
 ## 8. Land
 

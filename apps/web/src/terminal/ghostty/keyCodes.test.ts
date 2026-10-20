@@ -8,6 +8,7 @@ import {
 } from "./keyCodes";
 
 describe("ghosttyKeyForCode", () => {
+  // Coder: no native/ directory, so the order is checked without upstream's pinned header.
   it("keeps the tail of the pinned Ghostty key enum in order", () => {
     expect(ghosttyKeyForCode("F25")).toBe(ghosttyKeyForCode("F24") + 1);
     expect(ghosttyKeyForCode("PrintScreen")).toBe(ghosttyKeyForCode("FnLock") + 1);

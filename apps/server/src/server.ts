@@ -35,6 +35,7 @@ import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
+import * as IdleCompactionService from "./orchestration-v2/IdleCompactionService.ts";
 import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestService.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 
@@ -145,6 +146,10 @@ const layerThreadSettlementWorker = Layer.effectDiscard(
   ThreadSettlementService.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(layerPullRequestService), Layer.provide(ProjectionStoreV2.layer));
 
+const layerIdleCompactionWorker = Layer.effectDiscard(
+  IdleCompactionService.make.pipe(Effect.flatMap((service) => service.start())),
+).pipe(Layer.provide(ProjectionStoreV2.layer));
+
 const layerThreadPullRequestWorker = Layer.effectDiscard(
   ThreadPullRequestService.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(layerPullRequestService));
@@ -154,6 +159,7 @@ const layerThreadPullRequestWorker = Layer.effectDiscard(
 export {
   layerCheckpointStore,
   layerGitWorkflow,
+  layerIdleCompactionWorker,
   layerPullRequestService,
   layerServerSettings,
   layerSourceControlProviderRegistry,

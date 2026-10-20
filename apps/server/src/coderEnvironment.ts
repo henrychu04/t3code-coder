@@ -87,6 +87,8 @@ export const CODER_OMITTED_CAPABILITIES = {
   desktopAppUpdate: "No desktop app.",
   serverBrowser: "No browser preview.",
   databaseStorage: "No `t3 doctor` in the workspace helper; it compacts and reclaims space itself.",
+  ignoredFileListing:
+    "No Add to another machine: ignored files such as .env would pass through the laptop browser.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 
 const platformArch = (): ExecutionEnvironmentDescriptor["platform"]["arch"] => {

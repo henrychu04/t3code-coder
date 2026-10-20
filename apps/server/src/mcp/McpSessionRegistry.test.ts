@@ -10,6 +10,7 @@ import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts"
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as CoderEnvironment from "../coderEnvironment.ts";
 import * as T3ToolDispatch from "./bridge/T3ToolDispatch.ts";
@@ -40,13 +41,13 @@ const services = Layer.mergeAll(
   NodeServices.layer,
 );
 
-const harness = Effect.gen(function* () {
+const harness = Effect.fn(function* (options: { readonly livenessWindowMs?: number } = {}) {
   const parent = yield* Effect.acquireRelease(
     Effect.promise(() => mkdtemp(join(tmpdir(), "t3-mcp-registry-"))),
     (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),
   );
   const registry = yield* McpSessionRegistry.__testing
-    .make({ bridgeParent: parent })
+    .make({ bridgeParent: parent, ...options })
     .pipe(Effect.provide(services));
   const issue = (threadId: ThreadId) =>
     registry.issue({ threadId, providerInstanceId: CODEX }).pipe(Effect.map((c) => c.config));
@@ -71,7 +72,7 @@ const exists = (path: string) =>
 it.live("keeps one hashed bridge directory per thread across session rotation", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { registry, issue } = yield* harness;
+      const { registry, issue } = yield* harness();
       const first = yield* issue(THREAD_ID);
       assert.match(first.endpoint, /\/t3-tools-[0-9a-f]{20}$/u);
       assert.strictEqual(yield* call(first.toolCommand!), THREAD_ID);
@@ -97,7 +98,7 @@ it.live("keeps one hashed bridge directory per thread across session rotation", 
 it.live("reissues a working bridge while an old session is still being revoked", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { registry, issue } = yield* harness;
+      const { registry, issue } = yield* harness();
       const first = yield* issue(THREAD_ID);
       // A session release revokes outside the manager's per-thread lock. The race is timing-bound,
       // so this checks the outcome rather than forcing the overlap.
@@ -112,4 +113,54 @@ it.live("reissues a working bridge while an old session is still being revoked",
       assert.strictEqual(yield* call(second.toolCommand!), THREAD_ID);
     }),
   ),
+);
+
+const tokenOf = (config: { readonly authorizationHeader: string }) =>
+  config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+it.effect("only a trusted touch restores an expired token with its original scope", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { registry, issue } = yield* harness({ livenessWindowMs: 100 });
+      const threadId = ThreadId.make("thread-idle");
+      const token = tokenOf(yield* issue(threadId));
+      const scope = yield* registry.resolve(token);
+      assert.isDefined(scope);
+
+      yield* TestClock.adjust("101 millis");
+      assert.isUndefined(yield* registry.resolve(token));
+      const otherThreadId = ThreadId.make("thread-active");
+      const other = yield* issue(otherThreadId);
+      yield* registry.touch(otherThreadId);
+      assert.strictEqual((yield* registry.resolve(tokenOf(other)))?.thread.threadId, otherThreadId);
+      assert.isUndefined(yield* registry.resolve("unknown-token"));
+      assert.isUndefined(yield* registry.resolve(token));
+
+      yield* registry.touch(threadId);
+      assert.deepStrictEqual(yield* registry.resolve(token), scope);
+      yield* TestClock.adjust("101 millis");
+      assert.isUndefined(yield* registry.resolve(token));
+    }),
+  ),
+);
+
+it.effect.each(["provider-session", "thread", "all"] as const)(
+  "never restores an expired token after %s revocation",
+  (revocation) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { registry, issue } = yield* harness({ livenessWindowMs: 100 });
+        const threadId = ThreadId.make("thread-revoked");
+        const config = yield* issue(threadId);
+
+        yield* TestClock.adjust("101 millis");
+        yield* {
+          "provider-session": registry.revokeProviderSession(config.providerSessionId),
+          thread: registry.revokeThread(threadId),
+          all: registry.revokeAll,
+        }[revocation];
+        yield* registry.touch(threadId);
+        assert.isUndefined(yield* registry.resolve(tokenOf(config)));
+      }),
+    ),
 );

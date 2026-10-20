@@ -1,3 +1,7 @@
+import { UNRESPONSIVE_HOST_HINT } from "./network.ts";
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const TRANSPORT_ERROR_PATTERNS = [
   /\bSocketCloseError\b/i,
   /\bSocketOpenError\b/i,
@@ -5,6 +9,7 @@ const TRANSPORT_ERROR_PATTERNS = [
   /Unable to connect to the T3 server WebSocket\./i,
   // Coder: no relay connections, so the session never appends the relay network hint.
   /\b(?:is not connected|disconnected|stopped responding|could not establish a WebSocket connection)\.$/i,
+  new RegExp(`\\bstopped responding for \\d+s\\. ${escapeRegExp(UNRESPONSIVE_HOST_HINT)}$`, "i"),
   /\bClientProtocolError\b/i,
   /\bRpcClientError\b/i,
   /\bping timeout\b/i,

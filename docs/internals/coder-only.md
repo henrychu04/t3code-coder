@@ -442,7 +442,9 @@ listed here is drift to remove rather than fork behavior to keep.
     reactor with the other workers. Lifecycle welcome/ready events
     are synthesized from workspace projections rather than a startup publisher.
   - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
-    remote open targets, telemetry, model-manifest refreshes, and usage-limit sources. A failed
+    remote open targets, telemetry, model-manifest refreshes, usage-limit sources, and upstream's
+    `lastEventLoopStall` (`observability/EventLoopMonitor.ts` is not carried, so neither is the
+    web's host-freeze toast). A failed
     keybinding-config load falls back to defaults instead of failing the config read. Config updates use upstream's full `providerStatuses` events and gated
     environment themes; subscriptions do not force a provider refresh.
   - `persistence/DatabaseStorage.ts` keeps upstream's background history compaction and
@@ -453,12 +455,16 @@ listed here is drift to remove rather than fork behavior to keep.
     (upstream's `DatabaseStorageNotice` and client-runtime's `databaseStorage` atom are not
     carried). Upstream's `persistence/DatabaseMaintenance.ts`, which only `t3 doctor` uses, is
     not carried either.
+  - Upstream's idle Claude compaction worker (`layerIdleCompactionWorker`) runs in
+    `CoderRuntimeCoreLive`. `coderServer.ts`'s `CoderProviderRegistryLive` gives
+    `ProviderRegistry` the provider support layer, which upstream's registry now reads for
+    `ProviderLatestVersions`.
   - Shell/thread streams, replay validation, live-event budgets and coalescing, and completion-marker
     negotiation follow upstream. `coderEnvironment.ts` advertises upstream's environment
     capabilities and orchestration protocol version except the cut surfaces listed with a reason
     in `CODER_OMITTED_CAPABILITIES` (usage dashboards, server self-update, desktop app update,
-    relay activity publishing, server browser, native stack actions, and the database storage
-    status). `coderEnvironment.test.ts`
+    relay activity publishing, server browser, native stack actions, the database storage
+    status, and ignored-file listing). `coderEnvironment.test.ts`
     fails when a key of `ExecutionEnvironmentCapabilities` is in neither list, so a sync that adds
     a capability must decide it. The worktree-location setting describes a workspace path. Coder replaces HTTP thread snapshot
     loading with `orchestration.getThreadSnapshot` over stdio. Initial snapshots and older pages
@@ -471,7 +477,9 @@ listed here is drift to remove rather than fork behavior to keep.
     project root; Files listings, reads, writes, and media reads from a draft verify its named
     project's root or a worktree one of that project's threads owns (`draftProjectId`). `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
     `WorkspaceSearchIndex.ts` implement the Files surface and file-search boundaries above in place
-    of upstream's absolute-path reads, create-anywhere writes, and `searchContents`.
+    of upstream's absolute-path and `~/` host reads (#20950), create-anywhere writes, and
+    `searchContents`. A read with upstream's `allowMissing` (#19949, the optional `t3.json`)
+    applies to project-relative paths and returns `exists: false` for an absent file.
     A folder listing stops at `MAX_PROJECT_DIRECTORY_ENTRIES` children and labels ignored ones
     with a single `git check-ignore` call, so upstream's wide-folder shortcut (asking whether the
     folder itself is ignored, #20062) has nothing to save and is not carried.
@@ -483,6 +491,12 @@ listed here is drift to remove rather than fork behavior to keep.
     refused, with new files checked before any folder is made. `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
     error mapping. `coderWs.ts` wraps `ws.ts`'s upstream Files list, read, and write handlers in
     the root verification, so those handlers stay upstream's code.
+  - Upstream's "Add to another machine" (#22180, #22254) is not carried, because it copies a
+    project's ignored files, such as `.env`, from one workspace to another through the laptop
+    browser. `WorkspaceEntries` has no `listIgnoredFiles`, `ws.ts` serves no
+    `projects.listIgnoredFiles` (`ignoredFileListing` is in `CODER_OMITTED_CAPABILITIES`),
+    client-runtime's `projectCommands.ts` has no matching command, `BranchToolbar.tsx` has no
+    menu entry, and `ChatView.tsx` shows no file-copy banner or send block.
   - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
     branch/worktree rename with `moveWorktree`, chunked review files,
     bounded text/content/media, sent-file (`workspace.readAttachmentFile`), and legacy-artifact
@@ -536,7 +550,8 @@ listed here is drift to remove rather than fork behavior to keep.
     allocates the fork's session id and stores the source session and message boundary as the
     provider thread's `claudeFork` native metadata. The fork's first query then runs
     `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather
-    than copying transcript files.
+    than copying transcript files. Upstream's fork-head capture (#21188, `forkHeadMessageId` from
+    `getSessionMessages`) is not carried, so rolling a fork back to its start behaves as before.
   - Workspace MCP servers, Codex app integrations, and Codex MCP elicitations follow upstream.
     T3's own MCP server is absent; upstream's T3 toolkits reach agents over the workspace file
     bridge instead (see [Runtime boundary](#runtime-boundary)):
@@ -544,7 +559,9 @@ listed here is drift to remove rather than fork behavior to keep.
       bridge (`mcp/bridge/FileBridge.ts`) whose `toolCommand` (a Coder field on provider-core's
       `McpProviderSessionConfig`) runs the tools; `endpoint` is the bridge directory, one hashed
       name per thread that the thread's next credential reuses after waiting for the old bridge
-      to close. Upstream's tools act only for a caller that owns a live run, as over MCP.
+      to close. Upstream's tools act only for a caller that owns a live run, as over MCP. As
+      upstream (#19491), records stay until revoked and an idle credential is refreshed by the
+      next turn rather than pruned.
     - `mcp/bridge/T3ToolBridge.ts` runs upstream's toolkit handlers by name with the credential's
       `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
       its inline budget into `bridge-job:` tasks. `coderServer.ts` binds it once the orchestrator runs.
@@ -571,8 +588,9 @@ listed here is drift to remove rather than fork behavior to keep.
     [Network and transfer constraints](#network-and-transfer-constraints): it reads each staged
     file once through a no-follow handle at exactly its declared size and type limit, rejects
     images whose signature does not match their media type, and writes the validated bytes
-    exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments,
-    so upstream's attachment-cleanup side effects are absent.
+    exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments:
+    upstream's `ResourceCleanupService.ts`, which upstream's `runtimeLayer.ts` provides, skips
+    attachment deletion and has no preview sessions to close.
   - `provider/builtInDrivers.ts` registers only Codex, Claude, Pi (upstream's
     `@t3tools/provider-pi` package), and Kilo Code (upstream's ACP Registry driver, below),
     `settingsSecrets.ts` reads secret settings fields from Pi's and the ACP Registry's client
@@ -670,7 +688,12 @@ listed here is drift to remove rather than fork behavior to keep.
     per-model `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
     closed; the same modes on every model, since the CLI itself drops a mode the model or policy
-    forbids) and Codex's `configRequirements/read`. The Claude signed-out message names API
+    forbids) and Codex's `configRequirements/read`, which runs in upstream's parallel probe step
+    and attaches after its custom-model and service-tier step. At session start,
+    `ClaudeAdapterV2.resolveBypassAvailability` reads the settings files (cached remote, user,
+    project, local, and managed) where upstream calls the SDK's runtime `resolveSettings`
+    (#21806); a mode any source disables is off. `CodexDriver` has no `CodexUsageHistory`
+    requirement, because Codex usage history (#21898) is not carried. The Claude signed-out message names API
     credentials rather than subscription login. Claude's usage read asks the CLI to skip its local
     transcript scan (`ClaudeCli.getUsage({ skipBehaviors })`), as upstream's SDK call does.
     provider-core's `maintenanceResolver.ts` and `providerStatusCache.ts` log the first cause tag
@@ -713,7 +736,9 @@ listed here is drift to remove rather than fork behavior to keep.
     inlining and storage but not `preview` or height measurement, because T3 Coder installs no
     headless browser; pages publish at the agent's height, the frame shrinks to a shorter page's
     reported height, and a page with its images inlined is capped at `MAX_TURN_ITEM_ASSET_BYTES`, the
-    bounded turn-item read.
+    bounded turn-item read. Publishing records the page through upstream's
+    `McpProviderSessions.recordHtmlRender` (#19796). The tool description omits `html_preview` and
+    the mobile-only scroll-cap sentence.
   - Over the bridge the call is a shell command, so `htmlRenderFromBridgeCommand` (shared
     `toolOutput.ts`) recognizes a completed `…/t3-tools-<id>/t3.mjs html_render` command whose
     output is the tool's JSON result. `WireProjection` keeps only that compact reference on the
@@ -757,7 +782,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `WsRpcGroup` stays dormant, unreferenced, with the RPCs only it uses, and `knip.jsonc`
     ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
-  - `ServerConfig` omits auth, editors, remote open targets, and observability.
+  - `ServerConfig` omits auth, editors, remote open targets, and observability, except
+    upstream's optional `lastEventLoopStall`, which stays in the schema but is never sent.
   - `VcsProcessExitError`'s not-found detail drops upstream's `gh`/`az` "Pull request" text.
     The rest of `vcs.ts` and `git.ts` keep upstream's shapes, plus the helper-only ref-status
     and thread-branch rename schemas.
@@ -798,7 +824,8 @@ listed here is drift to remove rather than fork behavior to keep.
   Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
-  element captures, SnapShot, upstream's large-paste-to-file folding, and remote icons. Draft file
+  element captures, SnapShot (with its open question-draft tracker in `questionAttachments.ts`),
+  upstream's large-paste-to-file folding, and remote icons. Draft file
   and video attachments preview from their in-memory bytes as on main: files open in
   `files/AttachmentFilePreview.tsx` (upstream's viewer, with Save writing the in-memory bytes
   instead of a signed-URL download) and videos in the gallery. A draft restored after a reload has no bytes, so it has no
@@ -899,7 +926,8 @@ listed here is drift to remove rather than fork behavior to keep.
     until it loads, a placeholder keeps its box (`useAssetImageSize`) and opens the gallery. Its
     `inline-flex` wrapper is exactly its child's height, so once the size is known, the swap
     never resizes its row.
-    Failed reads offer **Retry image**. Videos show a play card that reads the file when pressed.
+    Failed reads offer **Retry image**; with no signed asset there is no upstream "not found on
+    <host>" toast. Videos show a play card that reads the file when pressed.
     Images in formats the helper does not read show "Unsupported image format" without a read,
     and authored `id`s stay on workspace images.
   - The gallery item (`ExpandedImagePreview.tsx`) is upstream's shape plus `projectImage`,
@@ -933,6 +961,7 @@ listed here is drift to remove rather than fork behavior to keep.
   open-in-editor or reveal action, and the tree adds Copy path. Changed files in the Git actions
   dialog open in the Files surface, with repository-relative status paths mapped to the thread's
   folder; a file outside a subfolder project cannot be opened there.
+  `projectFilesQueryState.ts` has no `isFile`, which only the uncarried `OpenInPicker` reads.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
   come over the `pullRequests.diff` RPC without upstream's cross-environment GitHub routing,
@@ -1005,10 +1034,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
     branch names (options stay before upstream's `--`); `mr checkout` honours `branch` and `force`.
-  - GitLab implements upstream's `readChangeRequestTemplate` hook with
-    `gitLabChangeRequestTemplate.ts`, upstream's GitHub template reader plus
-    `.gitlab/merge_request_templates`, preferring `Default.md`.
-    `glab auth status` lines carrying a token label or a `glpat-` token are never surfaced. Clones
+  - `glab auth status` lines carrying a token label or a `glpat-` token are never surfaced. Clones
     accept only GitLab URLs without credentials, query, or fragment, and pass `--` before the URL.
   - `PullRequestService` omits upstream's cross-environment routing (routing identities,
     verified credentials, `expectedAccountId` refs) and Forgejo SSH-alias refinement. It keeps
@@ -1037,8 +1063,7 @@ listed here is drift to remove rather than fork behavior to keep.
     source. Worktree creation reads `t3.json` through the bounded `readProjectConfig`.
     Checkpoint commits use the "T3 Coder" identity.
   - `VcsProcess` has no GitHub CLI semaphore and classifies only `glab` failures.
-  - `GitManager` reads merge-request templates for GitLab and fetches merge-request heads from
-    `refs/merge-requests/<n>/head`. It has no `targetsOnlyRemote`: with no origin, the only
+  - `GitManager` fetches merge-request heads from `refs/merge-requests/<n>/head`. It has no `targetsOnlyRemote`: with no origin, the only
     remote is the repository `glab` targets, so upstream's check of gh's `GH_REPO` and
     `gh-resolved` mark (and its `source-control-github` import) is not carried.
     Upstream's GitHub and Forgejo branches stay verbatim but are unreachable with the GitLab-only
@@ -1135,13 +1160,16 @@ listed here is drift to remove rather than fork behavior to keep.
     `ThreadNotificationCoordinator.tsx` focuses the tab on a notification click without
     upstream's desktop window reveal.
   - client-runtime `errors/diagnostics.ts` is the `[t3-error]` DevTools reporting described in
-    [Authentication](#authentication).
+    [Authentication](#authentication). `errors/network.ts` keeps only `UNRESPONSIVE_HOST_HINT`
+    for upstream's "stopped responding" message (#22212); there is no relay network hint, T3
+    Connect connection diagnosis (#22172), or host-freeze toast.
   - The server's `config.ts` is paths under the workspace state directory only.
-  - A thread whose workspace is not connected shows `WorkspaceConnectionStatus`; the
-    `/projects/$projectKey` redirect has no auth gate.
+  - A thread whose workspace is not connected shows `WorkspaceConnectionStatus`, and so does
+    `_chat.index.tsx` after upstream's draft branch (#20183) while workspaces are pending or
+    unreachable; the `/projects/$projectKey` redirect has no auth gate.
   - Merge-request list preferences remember presentation controls only, never repository
-    identities or search text. Dropped folders are not uploaded (only files become composer
-    attachments). Project icons come from saved
+    identities or search text. Dropped or pasted folders are neither uploaded nor referenced
+    (only files become composer attachments). Project icons come from saved
     metadata or monograms, without favicon reads. The worktree setup card says "Use project
     checkout", because the checkout is in the workspace.
 - **Codex app-server package.** `packages/effect-codex-app-server` is upstream's, including
@@ -1163,7 +1191,9 @@ listed here is drift to remove rather than fork behavior to keep.
   language-service diagnostics (`@effect/tsgo`) either.
   `patches/@ff-labs__fff-node@0.11.0.patch` is upstream's plus the native grep struct's
   `fuzzy_score` read at its real u16 width; 0.11.0 still reads it as a u32, which shifts
-  `has_fuzzy_score`, `is_binary`, and `is_definition` one field late. `knip.jsonc` lists the upstream files whose exports are used only by surfaces the fork
+  `has_fuzzy_score`, `is_binary`, and `is_definition` one field late.
+  `patches/@legendapp__list@3.3.5.patch` is upstream's `react.js` and `react.mjs` sections only,
+  since the other sections patch React Native builds. `knip.jsonc` lists the upstream files whose exports are used only by surfaces the fork
   does not carry, so `pnpm knip:check` still catches fork-introduced dead exports elsewhere.
   The real-Coder live harness behind `pnpm coder:live:*` and `pnpm test:coder:live`
   (`scripts/coder-live-test.mjs` and `scripts/coder-live-template/`) is kept local and is not
@@ -1209,6 +1239,13 @@ listed here is drift to remove rather than fork behavior to keep.
   GitHub-credential branch deletion test; upstream's OTLP `config.test.ts` is not carried.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
   the Coder config owns registration and there is no per-environment switch.
+  `ws.test.ts` omits upstream's config-RPC buffering test, which builds upstream's session-scoped
+  `layerWsRpc`; `RunExecutionService.test.ts` gives `McpSessionRegistry` the Coder environment
+  and T3 tool dispatch it reads. Upstream's `composerContextUndo.test.ts` (preview annotations
+  only), `HtmlRenderFrame.browser.test.tsx`, and `BrowserDocumentFrame.browser.test.tsx` (signed
+  URLs) are not carried; `DiffPanel.browser.test.tsx` passes `onOpenFile` without an editor mock,
+  and `ProjectSettingsPanel.browser.test.tsx` keeps `projects.getConfig` pending as upstream
+  keeps its file read.
   `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
   worker, which needs a browser `self`. Upstream's `*.browser.test.*` files run in headless
   Chromium through Playwright as upstream's `browser` Vitest project, on the development machine

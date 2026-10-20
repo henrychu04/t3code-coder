@@ -1913,7 +1913,7 @@ export default function GitActionsControl({
                                 )}
                                 <button
                                   type="button"
-                                  className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                                  className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left enabled:cursor-pointer"
                                   onClick={() => {
                                     const openPath = changedFileOpenPath(file.path);
                                     if (openPath !== null) onOpenFile?.(openPath);

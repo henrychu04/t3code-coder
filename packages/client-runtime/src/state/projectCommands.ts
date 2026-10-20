@@ -147,6 +147,7 @@ export function createProjectEnvironmentAtoms<R, E>(
           (result, isCurrent) => fileMetadata.rememberEntries(input.cwd, result.entries, isCurrent),
         ),
     }),
+    // Coder: no projects.listIgnoredFiles; "Add to another machine" is not carried.
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",
       tag: WS_METHODS.projectsReadFile,
@@ -155,7 +156,10 @@ export function createProjectEnvironmentAtoms<R, E>(
       execute: (input) =>
         fileMetadata.seedAfterRead(
           request(WS_METHODS.projectsReadFile, input),
-          (result, isCurrent) => fileMetadata.rememberFile(input.cwd, result, isCurrent),
+          (result, isCurrent) =>
+            result.exists === false
+              ? Effect.void
+              : fileMetadata.rememberFile(input.cwd, result, isCurrent),
         ),
     }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>

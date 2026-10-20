@@ -52,7 +52,7 @@ import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
-import { isAbsolutePath } from "@t3tools/shared/path";
+import { isHostPath } from "@t3tools/shared/path";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { buildFileReviewComment } from "~/reviewCommentContext";
@@ -940,7 +940,7 @@ export default function FilePreviewPanel({
   // Coder: PDFs have no text to show; HTML has, and can toggle between page and source.
   const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);
   const isHtml = relativePath !== null && !isPdf && isHtmlPreviewFile(relativePath);
-  const isHostFile = relativePath !== null && isAbsolutePath(relativePath);
+  const isHostFile = relativePath !== null && isHostPath(relativePath);
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);

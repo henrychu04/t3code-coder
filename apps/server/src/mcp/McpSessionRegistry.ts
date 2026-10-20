@@ -61,7 +61,10 @@ interface CredentialRecord {
   readonly lastAliveAt: number;
 }
 
-/** Bounds credentials whose session died without a clean stop, as upstream does. */
+/**
+ * Idle credentials stop resolving. As upstream's, records stay until explicit revocation: a
+ * trusted provider turn can refresh the credential its subprocess still holds; tool calls cannot.
+ */
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 /** Plain paths stay unquoted so the command is also a usable permission-rule prefix. */
@@ -118,13 +121,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       Effect.asVoid,
     );
 
-  const pruneDead = (timestamp: number) =>
-    revokeWhere((record) => timestamp - record.lastAliveAt > livenessWindowMs);
-
   const issue: McpSessionRegistryShape["issue"] = Effect.fn("McpSessionRegistry.issue")(
     function* (request) {
       const issuedAt = yield* Clock.currentTimeMillis;
-      yield* pruneDead(issuedAt);
       const providerSessionId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
       const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
       const scope: McpInvocationContext.McpThreadInvocationScope = {
@@ -195,10 +194,11 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     function* (rawToken) {
       if (rawToken.length === 0) return undefined;
       const timestamp = yield* Clock.currentTimeMillis;
-      yield* pruneDead(timestamp);
       return yield* SynchronizedRef.modify(state, (records) => {
         const record = records.get(rawToken);
-        if (record === undefined) return [undefined, records] as const;
+        if (record === undefined || timestamp - record.lastAliveAt > livenessWindowMs) {
+          return [undefined, records] as const;
+        }
         return [
           record.scope,
           new Map(records).set(rawToken, { ...record, lastAliveAt: timestamp }),

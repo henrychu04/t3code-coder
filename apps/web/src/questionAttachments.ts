@@ -21,6 +21,7 @@ export function questionAttachmentDraftId(
   );
 }
 
+// Coder: no open question-draft tracker; only the cut SnapShot capture read it (#15538).
 export const useQuestionAttachmentPreparation = create<{ counts: Record<string, number> }>(() => ({
   counts: {},
 }));

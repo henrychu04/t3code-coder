@@ -23,6 +23,7 @@ import type {
   ServerProviderState,
   ModelCapabilities,
   ProviderOptionDescriptor,
+  RuntimeMode,
   ServerProviderModel,
   ServerProviderSkill,
 } from "@t3tools/contracts";
@@ -72,7 +73,8 @@ type CodexRateLimitsProbe =
   | { readonly failure: string };
 
 const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
-const CODEX_CATALOG_REFRESH_TIMEOUT = "3 seconds" as const;
+const CODEX_CATALOG_REFRESH_TIMEOUT_MS = 3_000;
+const CODEX_CONFIG_PROBE_TIMEOUT_MS = 3_000;
 const CODEX_CATALOG_REFRESH_POLL = "100 millis" as const;
 const CODEX_CLIENT_NAME = "T3 Code";
 // Codex's probe does a full handshake plus account, models, and skills requests, which can
@@ -80,6 +82,7 @@ const CODEX_CLIENT_NAME = "T3 Code";
 // (most often reported on Windows). Give Codex its own longer budget instead of raising the
 // timeout for every provider.
 const CODEX_AUTH_PROBE_TIMEOUT_MS = 20_000;
+const CODEX_DISCOVERY_MARGIN_MS = 250;
 
 const CODEX_PRESENTATION = {
   displayName: "Codex",
@@ -91,7 +94,10 @@ export interface CodexAppServerProviderSnapshot {
   readonly account: CodexSchema.V2GetAccountResponse;
   readonly rateLimits?: CodexRateLimitsProbe;
   readonly version: string | undefined;
-  readonly models: ReadonlyArray<ServerProviderModel>;
+  readonly models: ReadonlyArray<ServerProviderModel> | undefined;
+  readonly serviceTier?: string | undefined;
+  /** Coder: runtime modes the workspace's Codex approval and sandbox requirements allow. */
+  readonly supportedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
 }
 
@@ -274,6 +280,37 @@ export function applyPreferredCodexDefaultModel(
   });
 }
 
+function applyConfiguredCodexServiceTier(
+  models: ReadonlyArray<ServerProviderModel>,
+  serviceTier: string | undefined,
+): ReadonlyArray<ServerProviderModel> {
+  if (!serviceTier) return models;
+  return models.map((model) => {
+    if (!model.capabilities?.optionDescriptors) return model;
+    return {
+      ...model,
+      capabilities: {
+        ...model.capabilities,
+        optionDescriptors: model.capabilities.optionDescriptors.map((descriptor) => {
+          if (descriptor.id !== "serviceTier" || descriptor.type !== "select") return descriptor;
+          const value = descriptor.options.find(
+            (option) =>
+              option.id === serviceTier || (serviceTier === "fast" && option.id === "priority"),
+          )?.id;
+          if (!value) return descriptor;
+          return {
+            ...descriptor,
+            currentValue: value,
+            options: descriptor.options.map(({ isDefault: _isDefault, ...option }) =>
+              option.id === value ? { ...option, isDefault: true } : option,
+            ),
+          };
+        }),
+      },
+    };
+  });
+}
+
 /**
  * Codex has no static default capability set, so a bare custom slug borrows
  * the first built-in's descriptors; an entry with its own capabilities keeps
@@ -359,6 +396,19 @@ const readCodexModelsCacheFetchedAt = Effect.fn("readCodexModelsCacheFetchedAt")
   );
 });
 
+const withCodexDiscoveryDeadline = Effect.fnUntraced(function* <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  deadlineMs: number,
+  timeoutMs = Infinity,
+) {
+  const remainingMs = Math.min(timeoutMs, deadlineMs - DateTime.toEpochMillis(yield* DateTime.now));
+  if (remainingMs <= 0) return undefined;
+  return yield* effect.pipe(
+    Effect.timeoutOption(Duration.millis(remainingMs)),
+    Effect.map(Option.getOrUndefined),
+  );
+});
+
 /**
  * Every Codex client on the machine shares that file, and the backend tailors
  * the catalog to each client's originator: the plain CLI does not get Sol
@@ -369,22 +419,33 @@ const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(functio
   readonly client: CodexClient.CodexAppServerClient["Service"];
   readonly codexHome: string;
   readonly spawnedAtMs: number;
+  readonly deadlineMs: number;
 }) {
-  const models = yield* requestAllCodexModels(input.client);
-  const refreshed = yield* readCodexModelsCacheFetchedAt(input.codexHome).pipe(
-    Effect.repeat({
-      schedule: Schedule.spaced(CODEX_CATALOG_REFRESH_POLL),
-      until: (fetchedAtMs) => fetchedAtMs >= input.spawnedAtMs,
-    }),
-    Effect.timeoutOption(CODEX_CATALOG_REFRESH_TIMEOUT),
+  const models = yield* withCodexDiscoveryDeadline(
+    requestAllCodexModels(input.client),
+    input.deadlineMs,
   );
-  if (Option.isNone(refreshed)) {
+  if (models === undefined) return undefined;
+  const refreshed = yield* withCodexDiscoveryDeadline(
+    readCodexModelsCacheFetchedAt(input.codexHome).pipe(
+      Effect.repeat({
+        schedule: Schedule.spaced(CODEX_CATALOG_REFRESH_POLL),
+        until: (fetchedAtMs) => fetchedAtMs >= input.spawnedAtMs,
+      }),
+    ),
+    input.deadlineMs,
+    CODEX_CATALOG_REFRESH_TIMEOUT_MS,
+  );
+  if (refreshed === undefined) {
     yield* Effect.logWarning(
       "Codex did not refresh its model catalog in time; using the cached catalog.",
     );
     return models;
   }
-  return yield* requestAllCodexModels(input.client);
+  return (
+    (yield* withCodexDiscoveryDeadline(requestAllCodexModels(input.client), input.deadlineMs)) ??
+    models
+  );
 });
 
 /**
@@ -469,7 +530,6 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   readonly homePath?: string;
   readonly launchArgs?: string;
   readonly cwd: string;
-  readonly customModels?: ReadonlyArray<CustomModelSetting>;
   readonly environment?: NodeJS.ProcessEnv;
   readonly skipNativeUsage?: boolean;
 }) {
@@ -484,38 +544,59 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     return {
       account: accountResponse,
       version,
-      models: appendCustomCodexModels([], input.customModels ?? []),
+      models: [],
       skills: [],
     } satisfies CodexAppServerProviderSnapshot;
   }
 
-  const [skillsResponse, models, requirementsResponse, rateLimits] = yield* Effect.all(
+  // Optional discovery must finish before the outer timeout can discard the account result.
+  const deadlineMs = spawnedAtMs + CODEX_AUTH_PROBE_TIMEOUT_MS - CODEX_DISCOVERY_MARGIN_MS;
+  const [skillsResponse, models, serviceTier, requirementsResponse, rateLimits] = yield* Effect.all(
     [
-      client.request("skills/list", {
-        cwds: [input.cwd],
-      }),
+      withCodexDiscoveryDeadline(client.request("skills/list", { cwds: [input.cwd] }), deadlineMs),
       accountResponse.account?.type === "chatgpt"
-        ? requestCodexChatGptModels({ client, codexHome: initialize.codexHome, spawnedAtMs })
-        : requestAllCodexModels(client),
-      // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
-      client.raw.request("configRequirements/read").pipe(
-        Effect.flatMap(decodeCodexRuntimeRequirementsResponse),
-        Effect.catch(() => Effect.succeed(undefined)),
+        ? requestCodexChatGptModels({
+            client,
+            codexHome: initialize.codexHome,
+            spawnedAtMs,
+            deadlineMs,
+          })
+        : withCodexDiscoveryDeadline(requestAllCodexModels(client), deadlineMs),
+      // The shared catalog must exclude config from the server's launch project.
+      withCodexDiscoveryDeadline(
+        client.request("config/read", { includeLayers: false }),
+        deadlineMs,
+        CODEX_CONFIG_PROBE_TIMEOUT_MS,
+      ).pipe(
+        Effect.map((response) => response?.config.service_tier ?? undefined),
+        Effect.catch(() => Effect.logDebug("Codex config read failed.").pipe(Effect.as(undefined))),
       ),
+      // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
+      withCodexDiscoveryDeadline(
+        client.raw
+          .request("configRequirements/read")
+          .pipe(Effect.flatMap(decodeCodexRuntimeRequirementsResponse)),
+        deadlineMs,
+        CODEX_CONFIG_PROBE_TIMEOUT_MS,
+      ).pipe(Effect.catch(() => Effect.succeed(undefined))),
+      // Usage is an enrichment: a failure or a slow answer degrades to "no
+      // usage this probe" rather than costing the account and models.
       input.skipNativeUsage
         ? Effect.succeed(undefined)
-        : client.request("account/rateLimits/read", null).pipe(
-            Effect.map((response): CodexRateLimitsProbe => ({
-              snapshot: response.rateLimits,
-              rateLimitsByLimitId: response.rateLimitsByLimitId,
-              resetCredits: response.rateLimitResetCredits,
-              accountId: response.accountId,
-            })),
-            Effect.timeoutOption(Duration.millis(RATE_LIMITS_PROBE_TIMEOUT_MS)),
-            Effect.map(
-              Option.getOrElse((): CodexRateLimitsProbe => ({
-                failure: "Codex did not answer the usage request.",
-              })),
+        : withCodexDiscoveryDeadline(
+            client.request("account/rateLimits/read", null),
+            deadlineMs,
+            RATE_LIMITS_PROBE_TIMEOUT_MS,
+          ).pipe(
+            Effect.map((response): CodexRateLimitsProbe =>
+              response
+                ? {
+                    snapshot: response.rateLimits,
+                    rateLimitsByLimitId: response.rateLimitsByLimitId,
+                    resetCredits: response.rateLimitResetCredits,
+                    accountId: response.accountId,
+                  }
+                : { failure: "Codex did not answer the usage request." },
             ),
             Effect.catch((error) =>
               Effect.logDebug("Codex rate-limit read failed.", { cause: error }).pipe(
@@ -531,11 +612,10 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     account: accountResponse,
     ...(rateLimits ? { rateLimits } : {}),
     version,
-    models: attachSupportedRuntimeModes(
-      applyPreferredCodexDefaultModel(appendCustomCodexModels(models, input.customModels ?? [])),
-      resolveCodexSupportedRuntimeModes(requirementsResponse),
-    ),
-    skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
+    models,
+    serviceTier,
+    supportedRuntimeModes: resolveCodexSupportedRuntimeModes(requirementsResponse),
+    skills: skillsResponse ? parseCodexSkillsListResponse(skillsResponse, input.cwd) : [],
   } satisfies CodexAppServerProviderSnapshot;
 });
 
@@ -632,7 +712,6 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     readonly homePath?: string;
     readonly launchArgs?: string;
     readonly cwd: string;
-    readonly customModels: ReadonlyArray<CustomModelSetting>;
     readonly environment?: NodeJS.ProcessEnv;
     readonly skipNativeUsage?: boolean;
   }) => Effect.Effect<
@@ -673,12 +752,12 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     homePath: codexSettings.homePath,
     launchArgs: resolveCodexLaunchArgs(codexSettings.launchArgs, resolvedEnvironment),
     cwd: process.cwd(),
-    customModels: codexSettings.customModels,
     environment: resolvedEnvironment,
     ...(managedAuth ? { skipNativeUsage: true } : {}),
   }).pipe(
-    Effect.scoped,
+    // Process teardown can outlast the work budget without discarding a completed snapshot.
     Effect.timeoutOption(Duration.millis(CODEX_AUTH_PROBE_TIMEOUT_MS)),
+    Effect.scoped,
     Effect.result,
   );
 
@@ -743,11 +822,23 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
             checkedAt,
           });
 
+  const providerModels = applyConfiguredCodexServiceTier(
+    applyPreferredCodexDefaultModel(
+      appendCustomCodexModels(snapshot.models ?? [], codexSettings.customModels),
+    ),
+    snapshot.serviceTier,
+  );
+  // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
+  const models =
+    snapshot.supportedRuntimeModes === undefined
+      ? providerModels
+      : attachSupportedRuntimeModes(providerModels, snapshot.supportedRuntimeModes);
+
   return buildServerProvider({
     presentation: CODEX_PRESENTATION,
     enabled: codexSettings.enabled,
     checkedAt,
-    models: snapshot.models,
+    models,
     skills: snapshot.skills,
     slashCommands: [
       COMPACT_SLASH_COMMAND,
@@ -765,9 +856,13 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     probe: {
       installed: true,
       version: snapshot.version ?? null,
-      status: accountStatus.status,
+      status: snapshot.models === undefined ? "warning" : accountStatus.status,
       auth: accountStatus.auth,
-      ...(accountStatus.message ? { message: accountStatus.message } : {}),
+      ...(accountStatus.message
+        ? { message: accountStatus.message }
+        : snapshot.models === undefined
+          ? { message: "Codex did not return its model catalog in time." }
+          : {}),
       ...(managedAuth ? {} : { usageLimits }),
     },
   });
