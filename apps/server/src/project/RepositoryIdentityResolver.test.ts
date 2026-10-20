@@ -139,4 +139,33 @@ describe("RepositoryIdentityResolver", () => {
       });
     }),
   );
+
+  // Coder: upstream's partial-clone case on a GitLab remote, mocked like the tests above.
+  it.effect("resolves the fetch remote of a partial clone", () =>
+    Effect.gen(function* () {
+      const process = ProcessRunner.ProcessRunner.of({
+        run: (input) =>
+          Effect.succeed(
+            input.args.includes("--show-toplevel")
+              ? output("/workspace/project\n")
+              : output(
+                  [
+                    "origin\tgit@gitlab.com:T3Tools/t3code.git (fetch) [blob:none]",
+                    "origin\tgit@gitlab.com:T3Tools/push.git (push)",
+                    "",
+                  ].join("\n"),
+                ),
+          ),
+      });
+      const resolver = yield* make().pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, process),
+      );
+
+      const identity = yield* resolver.resolve("/workspace/project");
+
+      expect(identity?.canonicalKey).toBe("gitlab.com/t3tools/t3code");
+      expect(identity?.locator.remoteUrl).toBe("git@gitlab.com:T3Tools/t3code.git");
+      expect(identity?.locator.remoteName).toBe("origin");
+    }),
+  );
 });

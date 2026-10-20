@@ -112,6 +112,7 @@ const layerVcs = Layer.empty.pipe(
   Layer.provideMerge(
     VcsStatusBroadcaster.layer.pipe(
       Layer.provide(layerGitWorkflow),
+      Layer.provide(VcsStatusBroadcaster.layerAutomaticFetchInterval),
       // Coder: the demand-only background policy.
       Layer.provide(BackgroundPolicy.layer),
       // The orchestration runtime also consumes the broadcaster (run

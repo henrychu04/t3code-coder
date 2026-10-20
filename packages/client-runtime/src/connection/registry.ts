@@ -122,9 +122,8 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const scope = yield* Scope.make();
           const supervisor = yield* EnvironmentSupervisor.make(entry, {
-            // An enabled environment starts out connecting. Starting it idle and
-            // then asking it to connect would first publish the state of an
-            // environment the user switched off.
+            // Seed the intent to avoid publishing a false switched-off state
+            // before an enabled, compatible environment starts connecting.
             // Coder: the Coder config owns registration, so every environment is enabled.
             initiallyDesired: true,
           }).pipe(

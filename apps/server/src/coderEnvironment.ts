@@ -68,6 +68,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadPullRequestWatch: true,
   threadPullRequestLinking: true,
   serverResolvedCommandContext: true,
+  threadStop: true,
   environmentIcon: true,
   projectCloneTracking: true,
 } satisfies ExecutionEnvironmentCapabilities;

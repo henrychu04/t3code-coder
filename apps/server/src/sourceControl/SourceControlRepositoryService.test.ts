@@ -94,7 +94,9 @@ for (const [repository, protocol, expectedUrl] of [
         Effect.provide(
           Layer.mock(GitVcsDriver.GitVcsDriver)({
             execute: (input) =>
-              Effect.sync(() => {
+              Effect.gen(function* () {
+                // Upstream creates missing parent folders before cloning.
+                assert.isTrue(yield* fileSystem.exists(input.cwd).pipe(Effect.orDie));
                 calls.push(input.args);
                 return {
                   stdout: "",
@@ -111,7 +113,7 @@ for (const [repository, protocol, expectedUrl] of [
         provider: SourceControlProviderKind.make("gitlab"),
         ...source,
         ...(protocol === undefined ? {} : { protocol }),
-        destinationPath: path.join(root, "project"),
+        destinationPath: path.join(root, "missing", "nested", "project"),
       });
       assert.deepStrictEqual(calls, [["clone", "--progress", "--", expectedUrl, "project"]]);
       assert.strictEqual(result.remoteUrl, expectedUrl);

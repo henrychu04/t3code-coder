@@ -905,8 +905,8 @@ function SidebarProviderStack(props: {
       acpRegistryAgentId={currentEntry.acpRegistryAgentId}
       acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
       showBadge={showInstanceBadge}
-      iconClassName="size-3.5 opacity-60"
-      badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-5xs"
+      size="compact"
+      iconClassName="opacity-60"
     />
   );
   if (stack.length === 1) {
@@ -1006,7 +1006,7 @@ function SidebarThreadTooltip({
         {branchMismatch ? (
           <div className="flex min-w-0 items-start gap-2 text-warning">
             <CircleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0 stroke-current" />
-            <div className="min-w-0 flex-1 wrap-break-word leading-5">
+            <div className="min-w-0 flex-1 wrap-break-word">
               You're currently checked out on another branch.
             </div>
           </div>

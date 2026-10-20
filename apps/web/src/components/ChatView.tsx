@@ -487,7 +487,10 @@ import {
   isAttachmentImageMimeType,
   useAssetUrls,
 } from "../assets/assetUrls";
-import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
+import {
+  ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+  threadContextsOutsideEnvironment,
+} from "@t3tools/shared/composerContextReferences";
 import { recallableComposerPrompt } from "./chat/composerPromptHistory";
 import { observeResize } from "~/lib/observeResize";
 
@@ -2875,26 +2878,6 @@ export default function ChatView(props: ChatViewProps) {
     scheduleComposerFocus();
   };
   const insertArtifactTemplateStable = useStableCallback(insertArtifactTemplate);
-  const sendAppMessage = async (text: string) => {
-    if (!isServerThread || activeThreadId === null) {
-      throw new Error("Messages from apps need a started thread.");
-    }
-    const result = await startThreadTurn({
-      environmentId,
-      input: {
-        threadId: activeThreadId,
-        message: { messageId: newMessageId(), role: "user", text, attachments: [] },
-        runtimeMode,
-        interactionMode,
-        dispatchMode: "queue",
-      },
-    });
-    if (result._tag === "Failure") {
-      const error = squashAtomCommandFailure(result);
-      throw error instanceof Error ? error : new Error("Could not send the app's message.");
-    }
-  };
-  const sendAppMessageStable = useStableCallback(sendAppMessage);
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
   const addTerminalContextToDraft = (selection: TerminalContextSelection) => {
     composerRef.current?.addTerminalContext(selection);
@@ -3610,7 +3593,9 @@ export default function ChatView(props: ChatViewProps) {
     // The anchored end space must be gone before the scroll measures, or the
     // list lands short of the real end (#6519).
     requestAnimationFrame(() => {
-      void legendListRef.current?.scrollToEnd?.({ animated });
+      void legendListRef.current?.scrollToEnd?.({
+        animated: animated && !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      });
     });
   };
   const scrollToEndStable = useStableCallback(scrollToEnd);
@@ -3815,7 +3800,7 @@ export default function ChatView(props: ChatViewProps) {
         scrollNode.addEventListener("scrollend", finishAnimatedPositioning, { once: true });
         void list.scrollToIndex({
           index: anchorIndex,
-          animated: true,
+          animated: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
           viewPosition: 0,
           viewOffset: CHAT_LIST_ANCHOR_OFFSET,
         });
@@ -4085,8 +4070,6 @@ export default function ChatView(props: ChatViewProps) {
     requestedEnvMode: envMode,
     isGitRepo,
   });
-  // Coder: worktree threads also report a branch that moved under them; only a local checkout
-  // can be restored or follow the current branch on send.
   const checkoutBranchMismatch = isServerThread
     ? resolveCheckoutBranchMismatch({
         effectiveEnvMode: envMode,
@@ -4095,8 +4078,6 @@ export default function ChatView(props: ChatViewProps) {
         currentGitBranch: gitStatusQuery.data?.refName ?? null,
       })
     : null;
-  const localCheckoutBranchMismatch =
-    checkoutBranchMismatch?.checkoutKind === "local" ? checkoutBranchMismatch : null;
   const publishComposerOverlayHeight = (height: number) => {
     const nextHeight = Math.ceil(height);
     if (nextHeight <= 0) return;
@@ -4392,7 +4373,7 @@ export default function ChatView(props: ChatViewProps) {
     if (
       !activeProjectCwd ||
       !activeThread ||
-      !localCheckoutBranchMismatch ||
+      !checkoutBranchMismatch?.canRestoreThreadBranch ||
       isRestoringThreadBranch
     ) {
       return;
@@ -4402,7 +4383,7 @@ export default function ChatView(props: ChatViewProps) {
       environmentId,
       input: {
         cwd: activeProjectCwd,
-        refName: localCheckoutBranchMismatch.threadBranch,
+        refName: checkoutBranchMismatch.threadBranch,
       },
     });
     if (checkoutResult._tag === "Failure") {
@@ -4423,7 +4404,7 @@ export default function ChatView(props: ChatViewProps) {
       setIsRestoringThreadBranch(false);
       return;
     }
-    const nextBranch = checkoutResult.value.refName ?? localCheckoutBranchMismatch.threadBranch;
+    const nextBranch = checkoutResult.value.refName ?? checkoutBranchMismatch.threadBranch;
     if (nextBranch !== activeThread.branch) {
       const updateResult = await updateThreadMetadata({
         environmentId,
@@ -4518,6 +4499,37 @@ export default function ChatView(props: ChatViewProps) {
     };
   })() as ComposerBannerStackItem | null;
 
+  const sendAppMessage = async (text: string) => {
+    if (!isServerThread || activeThreadId === null) {
+      throw new Error("Messages from apps need a started thread.");
+    }
+    const settingsResult = await persistThreadSettingsForNextTurn({
+      threadId: activeThreadId,
+      createdAt: new Date().toISOString(),
+      ...(checkoutBranchMismatch ? { branch: checkoutBranchMismatch.currentBranch } : {}),
+      runtimeMode,
+      interactionMode,
+    });
+    const result =
+      settingsResult._tag === "Failure"
+        ? settingsResult
+        : await startThreadTurn({
+            environmentId,
+            input: {
+              threadId: activeThreadId,
+              message: { messageId: newMessageId(), role: "user", text, attachments: [] },
+              runtimeMode,
+              interactionMode,
+              dispatchMode: "queue",
+            },
+          });
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
+      throw error instanceof Error ? error : new Error("Could not send the app's message.");
+    }
+  };
+  const sendAppMessageStable = useStableCallback(sendAppMessage);
+
   const sendStandaloneCommand = async (text: string, failureMessage: string) => {
     if (!activeThread || !clientSettingsHydrated || sendInFlightRef.current) return;
     const context = composerRef.current?.getSendContext();
@@ -4546,7 +4558,7 @@ export default function ChatView(props: ChatViewProps) {
     const settingsResult = await persistThreadSettingsForNextTurn({
       threadId,
       createdAt,
-      ...(localCheckoutBranchMismatch ? { branch: localCheckoutBranchMismatch.currentBranch } : {}),
+      ...(checkoutBranchMismatch ? { branch: checkoutBranchMismatch.currentBranch } : {}),
       runtimeMode,
       interactionMode: context.interactionMode,
     });
@@ -4823,16 +4835,12 @@ export default function ChatView(props: ChatViewProps) {
       ...backgroundWorkItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
-        variant: checkoutBranchMismatch.checkoutKind === "worktree" ? "warning" : "info",
+        variant: "info",
         compact: true,
         icon: <GitBranchIcon />,
         title: (
           <span className="flex min-w-0 items-baseline gap-1.5">
-            <span className="shrink-0 font-normal text-muted-foreground">
-              {checkoutBranchMismatch.checkoutKind === "worktree"
-                ? "Worktree branch changed — was"
-                : "Branch changed — was"}
-            </span>
+            <span className="shrink-0 font-normal text-muted-foreground">Branch changed — was</span>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -4848,17 +4856,16 @@ export default function ChatView(props: ChatViewProps) {
             </Tooltip>
           </span>
         ),
-        actions:
-          checkoutBranchMismatch.checkoutKind === "local" ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              disabled={!canWriteSourceControl || isRestoringThreadBranch}
-              onClick={handleRestoreThreadBranchStable}
-            >
-              {isRestoringThreadBranch ? "Restoring..." : "Restore branch"}
-            </Button>
-          ) : null,
+        actions: checkoutBranchMismatch.canRestoreThreadBranch ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={!canWriteSourceControl || isRestoringThreadBranch}
+            onClick={handleRestoreThreadBranchStable}
+          >
+            {isRestoringThreadBranch ? "Restoring..." : "Restore branch"}
+          </Button>
+        ) : null,
         dismissLabel: "Dismiss branch change notice",
         onDismiss: () => {
           dismissBranchMismatchForSession(activeBranchMismatchKey);
@@ -5333,9 +5340,7 @@ export default function ChatView(props: ChatViewProps) {
       const settingsResult = await persistThreadSettingsForNextTurn({
         threadId,
         createdAt,
-        ...(localCheckoutBranchMismatch
-          ? { branch: localCheckoutBranchMismatch.currentBranch }
-          : {}),
+        ...(checkoutBranchMismatch ? { branch: checkoutBranchMismatch.currentBranch } : {}),
         runtimeMode,
         interactionMode,
       });
@@ -5463,6 +5468,22 @@ export default function ChatView(props: ChatViewProps) {
     } = sendCtx;
     // Coder: there are no browser preview annotations to attach.
     const promptForSend = promptRef.current;
+    const strandedThread = threadContextsOutsideEnvironment({
+      text: promptForSend,
+      records: composerThreadContexts,
+      environmentId,
+    })[0];
+    if (strandedThread) {
+      const owner = environmentById.get(strandedThread.environmentId)?.label ?? "its machine";
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Attached thread is on another machine",
+          description: `This machine's agent can't read "${strandedThread.title}". Remove it, or switch back to ${owner} to send.`,
+        }),
+      );
+      return;
+    }
     if (queuedRunEdit.isEditing) {
       // Edit mode repurposes the composer: sending saves the queued message
       // in place instead of dispatching a new turn.
@@ -6143,9 +6164,7 @@ export default function ChatView(props: ChatViewProps) {
       const settingsResult = await persistThreadSettingsForNextTurn({
         threadId: threadIdForSend,
         createdAt: messageCreatedAt,
-        ...(localCheckoutBranchMismatch
-          ? { branch: localCheckoutBranchMismatch.currentBranch }
-          : {}),
+        ...(checkoutBranchMismatch ? { branch: checkoutBranchMismatch.currentBranch } : {}),
         runtimeMode,
         interactionMode: sendInteractionMode,
       });
@@ -6498,7 +6517,7 @@ export default function ChatView(props: ChatViewProps) {
     const settingsResult = await persistThreadSettingsForNextTurn({
       threadId: threadIdForSend,
       createdAt: messageCreatedAt,
-      ...(localCheckoutBranchMismatch ? { branch: localCheckoutBranchMismatch.currentBranch } : {}),
+      ...(checkoutBranchMismatch ? { branch: checkoutBranchMismatch.currentBranch } : {}),
       runtimeMode,
       interactionMode: nextInteractionMode,
     });
@@ -6618,7 +6637,7 @@ export default function ChatView(props: ChatViewProps) {
         modelSelection: nextThreadModelSelection,
         runtimeMode: defaultRuntimeMode,
         interactionMode: "default",
-        branch: activeThreadBranch,
+        branch: checkoutBranchMismatch?.currentBranch ?? activeThreadBranch,
         worktreePath: activeThread.worktreePath,
         createdAt,
       },
@@ -7156,7 +7175,7 @@ export default function ChatView(props: ChatViewProps) {
                 </div>
               </div>
             ) : null}
-            <div className="chat-banner-lane pointer-events-none absolute top-0 z-20 flex flex-col">
+            <div className="chat-banner-lane pointer-events-none absolute top-0 z-30 flex flex-col">
               <ProviderStatusBanner
                 status={visibleProviderStatus}
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
@@ -7220,6 +7239,7 @@ export default function ChatView(props: ChatViewProps) {
                     <>
                       <div className="chat-content-lane">
                         <HandoffRow
+                          environmentId={environmentId}
                           endpoints={pendingHandoff}
                           providers={providerStatuses}
                           pending
@@ -7631,7 +7651,7 @@ export default function ChatView(props: ChatViewProps) {
 
             <BranchRestoreConfirmHost
               threadKey={activeThreadKey}
-              threadBranch={localCheckoutBranchMismatch?.threadBranch ?? ""}
+              threadBranch={checkoutBranchMismatch?.threadBranch ?? ""}
               canWriteSourceControl={canWriteSourceControl}
               onConfirm={handleSwitchCheckoutToThreadStable}
             />
