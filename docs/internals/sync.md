@@ -87,6 +87,13 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   comment blocks whole: removing upstream's lines one at a time can drop a `/**` or `*/` the
   fork's text still needs (typecheck catches the orphaned lines). Afterwards, list comment lines
   upstream deleted that the result still has, since an auto-merged hunk can keep them too.
+- A mechanical upstream refactor (e.g. e85539ab59's traced `Effect.fn` wrappers, #21989–#22000)
+  re-indents whole functions, so conflicts span the fork's rewrites. Merge it in its own stage. For a
+  file the refactor alone touched, take upstream's file and replay the fork's delta
+  (`git diff "$MB" "$PREV" -- <file>`) with `patch -p1 -l --fuzz=3`, which ignores the indentation
+  change, then `vp fmt`. Where the fork replaced a function wholesale (Kilo Code, Codex, and Claude
+  drivers' `create`), keep the fork's body and apply only upstream's wrapper. Effect.fn spans
+  export nothing here, but matching upstream's shape keeps later syncs small.
 - When upstream moves web logic into a shared package (07d38b8d17: `LinkPullRequestDialog`'s
   parsing moved to client-runtime's `pullRequestLinkInput.ts`), move the fork's test adaptations
   with it, keep the moved module upstream's apart from wording, and keep a seam that needs web
@@ -270,6 +277,10 @@ git diff --name-only --diff-filter=AM "$MB" "$SHA" -- apps packages ':!*.test.*'
     while IFS= read -r line; do grep -qF -- "$line" "$f" || printf '%s: %s\n' "$f" "$line"; done
 done
 ```
+
+Check that no `patch` backup or reject file was staged:
+`git ls-files | grep -E '\.(orig|rej)$'` must print nothing (a `BranchToolbar.tsx.orig` slipped
+into the fb990765a4 merge).
 
 Finish with `pnpm knip:check`.
 
