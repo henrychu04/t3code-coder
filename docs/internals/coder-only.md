@@ -1042,7 +1042,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
     auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
     Coder-owned stub that always allows work, because polling already stops when the last
-    status subscription ends. `ws.ts` resolves the remote refresh interval from the background-activity profile as upstream does.
+    status subscription ends. `server.ts` provides upstream's `layerAutomaticFetchInterval`, so the remote refresh interval follows the background-activity profile as upstream's does.
   - Startup auto-pull (`vcs/projectAutoPull.ts`) is upstream's `autoPullProjects` from
     `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,

@@ -46,6 +46,7 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import { ProviderMaintenanceRunner } from "./provider/providerMaintenanceRunner.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
+import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
@@ -164,6 +165,7 @@ const harness = (
       stub(ProviderRegistry.ProviderRegistry),
       stub(ProviderMaintenanceRunner),
       stub(ProviderInstanceRegistry.ProviderInstanceRegistry),
+      stub(ProviderLatestVersions.ProviderLatestVersions),
       ServerSettings.layerTest(),
       stub(Keybindings.Keybindings),
       stub(WorkspaceEntries.WorkspaceEntries, options.workspaceEntries),

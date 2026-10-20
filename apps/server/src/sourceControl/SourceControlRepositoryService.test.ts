@@ -124,6 +124,48 @@ for (const [repository, protocol, expectedUrl] of [
   );
 }
 
+// Coder: upstream's filesystem-root case on a GitLab URL, mocked like the tests above.
+it.effect("clones directly under an existing filesystem root without recreating it", () =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const root = path.parse(path.resolve(".")).root;
+    const cloneCwds: Array<string> = [];
+    const service = yield* SourceControlRepositoryService.make.pipe(
+      Effect.provide(
+        Layer.mock(GitVcsDriver.GitVcsDriver)({
+          execute: (input) =>
+            Effect.sync(() => {
+              cloneCwds.push(input.cwd);
+              return {
+                stdout: "",
+                stderr: "",
+                exitCode: ChildProcessSpawner.ExitCode(0),
+                stdoutTruncated: false,
+                stderrTruncated: false,
+              };
+            }),
+        }),
+      ),
+      Effect.provideService(
+        FileSystem.FileSystem,
+        FileSystem.makeNoop({
+          exists: (target) => Effect.succeed(target === root),
+          makeDirectory: (target) =>
+            Effect.sync(() => {
+              assert.notStrictEqual(target, root, "must not try to create the existing root");
+            }),
+        }),
+      ),
+    );
+    yield* service.cloneRepository({
+      provider: SourceControlProviderKind.make("gitlab"),
+      remoteUrl: cloneUrls.url,
+      destinationPath: path.join(root, "project"),
+    });
+    assert.deepStrictEqual(cloneCwds, [root]);
+  }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+);
+
 for (const remoteUrl of [
   "https://user:secret@gitlab.example/group/project.git",
   "file:///group/project",
