@@ -7285,6 +7285,8 @@ export default function ChatView(props: ChatViewProps) {
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: addDroppedFilesToComposer,
+    // Coder: dropped folders are not referenced (there is no local folder path); files attach.
+    addFolders: () => {},
   });
 
   const content = (

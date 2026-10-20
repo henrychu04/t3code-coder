@@ -57,6 +57,7 @@ import {
   wouldTextPasteExceedLimit,
 } from "@t3tools/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
   memo,
@@ -5474,19 +5475,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const insertComposerTextAtEndStable = useStableCallback(insertComposerTextAtEnd);
 
-  // Coder: pasted folders are not referenced (there is no local folder path); files attach.
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
-    const files = Array.from(event.clipboardData.files);
+    const { files, folders } = splitTransferredFiles(event.clipboardData);
     const plainText = event.clipboardData.getData("text/plain");
     const bypassAutoAttachment = consumePasteAsTextShortcut(pasteAsTextShortcutUntilRef);
     if (
-      files.length > 0 &&
-      activeThreadId &&
-      shouldHandleComposerAttachmentPaste({ files, plainText })
+      folders.length > 0 ||
+      (activeThreadId &&
+        files.length > 0 &&
+        shouldHandleComposerAttachmentPaste({ files, plainText }))
     ) {
       event.preventDefault();
       event.stopPropagation();
-      void addComposerAttachments(files, { skipImageInlineChip: bypassAutoAttachment });
+      // Coder: pasted folders are not referenced (there is no local folder path); files attach.
+      if (files.length > 0) {
+        void addComposerAttachments(files, { skipImageInlineChip: bypassAutoAttachment });
+      }
       return;
     }
 
