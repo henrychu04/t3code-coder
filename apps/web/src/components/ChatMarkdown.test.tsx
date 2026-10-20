@@ -52,6 +52,7 @@ vi.mock("../assets/assetUrls", () => ({
   useAssetUrlRefresh: () => async () => null,
   useAssetImageSize: () => [null, () => undefined],
 }));
+vi.mock("../state/environments", () => ({ useConnectedEnvironmentIds: () => [] }));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../state/entities", () => ({

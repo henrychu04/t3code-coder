@@ -81,6 +81,7 @@ import {
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
+  isPathSuggestionCurrent,
   replaceTextRange,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
@@ -189,7 +190,6 @@ import {
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../../lib/terminalContext";
-import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import {
   replaceComposerContextReferences,
   toKindScopedComposerContextId,
@@ -225,6 +225,7 @@ import {
 } from "~/lib/composerContextReferences";
 import {
   asKnownContextRecord,
+  attachmentContextRecord,
   composerContextImportLookupIds,
   isSameComposerContextPayload,
   uploadedAttachmentContextRecord,
@@ -240,6 +241,10 @@ import {
   threadContextRecord,
   threadContextReference,
 } from "~/lib/composerContextRecords";
+import {
+  copiedComposerAttachmentFile,
+  rememberCopiedComposerAttachments,
+} from "~/lib/copiedComposerAttachments";
 import { matchComposerThreadItems } from "@t3tools/client-runtime/composerThreadItems";
 import { useThreadContextDrop, threadContextDropTargetProps } from "./threadContextDrag";
 import { readThreadShell, useThreadShells } from "~/state/entities";
@@ -262,7 +267,7 @@ import {
   type EnvironmentQueryTarget,
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
-import { useDebouncedValue } from "~/state/queries";
+import { useComposerPathSearch, useDebouncedValue } from "~/state/queries";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import {
@@ -1009,6 +1014,7 @@ import {
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useDelayedStatus } from "../../hooks/useDelayedStatus";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useSoftwareKeyboardOpen } from "../../hooks/useSoftwareKeyboardOpen";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { usePanelAnimationSettings } from "../../panelAnimations";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -2242,6 +2248,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const isMobileViewport = useMediaQuery("max-sm");
+  const isSoftwareKeyboardOpen = useSoftwareKeyboardOpen();
   const {
     isComposerFocused,
     setIsComposerFocused,
@@ -2439,6 +2446,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           type: "path" as const,
           path: entry.path,
           pathKind: entry.kind,
+          searchTarget: workspaceEntries.searchedTarget,
           label: basenameOfPath(entry.path),
           description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
         })),
@@ -2780,6 +2788,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const setComposerDraftThreadContexts = useComposerDraftStore((store) => store.setThreadContexts);
   const buildContextClipboardFragment = (contextIds: ReadonlyArray<string>): string | null => {
     const wanted = new Set(contextIds);
+    const copiedFiles = new Map<string, File>();
     const records: ComposerContextRecord[] = [
       ...composerTerminalContexts
         .filter((c) => wanted.has(terminalContextReference(c).contextId))
@@ -2793,19 +2802,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           wanted.has(toKindScopedComposerContextId(attachment.type, attachment.id)),
         )
         .flatMap((attachment) => {
-          const record = uploadedAttachmentContextRecord(
-            attachment,
-            uploadsByImageId[attachment.id],
-          );
-          return record ? [record] : [];
+          const record =
+            uploadedAttachmentContextRecord(attachment, uploadsByImageId[attachment.id]) ??
+            (attachment.file
+              ? attachmentContextRecord({ attachment, attachmentId: attachment.id })
+              : null);
+          if (!record) return [];
+          if (attachment.file) copiedFiles.set(record.attachmentId, attachment.file);
+          return [record];
         }),
     ];
     if (records.length === 0) return null;
-    return encodeComposerContextFragment({
+    const fragment = encodeComposerContextFragment({
       version: 1,
       source: { environmentId, ...(activeThread ? { threadId: activeThread.id } : {}) },
       records,
     });
+    if (fragment) rememberCopiedComposerAttachments(environmentId, copiedFiles);
+    return fragment;
   };
   const buildContextClipboardFragmentStable = useStableCallback(buildContextClipboardFragment);
   const readSourceAttachment = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
@@ -2840,11 +2854,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const countReservedAttachmentsStable = useStableCallback(countReservedAttachments);
   /**
-   * Bytes for a pasted image come back through the source workspace helper's bounded
-   * attachment read (the client is the only party that can reach both) and re-enter this
-   * draft as a normal composer image under a fresh id, staged again through the gateway. The
-   * pasted chip is rewritten to that id and reads as unresolved until the bytes land; a failed
-   * transfer says so and leaves the chip to remove.
+   * Bytes for a pasted image or file come from the copy this browser kept when it was copied
+   * from an unsent draft. Otherwise an image comes back through the source workspace helper's
+   * bounded attachment read (the client is the only party that can reach both). Either way it
+   * re-enters this draft as a normal composer attachment under a fresh id, staged again through
+   * the gateway. The pasted chip is rewritten to that id and reads as unresolved until the bytes
+   * land; a failed transfer says so and leaves the chip to remove.
    */
   const runAttachmentImport = async (
     record: Extract<ComposerContextRecord, { kind: "image" | "file" }>,
@@ -2859,41 +2874,44 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         description: `${reason} Remove the chip or attach the file again.`,
       });
     };
-    // Coder: the helper's bounded attachment read returns only signature-checked images, so a
-    // pasted file chip cannot bring its bytes into another message.
-    if (
-      record.kind !== "image" ||
-      (record.mimeType !== "image/png" &&
-        record.mimeType !== "image/jpeg" &&
-        record.mimeType !== "image/webp")
-    ) {
-      fail("Only PNG, JPEG, and WebP images can be copied into another message.");
-      return;
+    let file = copiedComposerAttachmentFile(sourceEnvironmentId, record.attachmentId);
+    if (!file) {
+      // Coder: the helper's bounded attachment read returns only signature-checked images, so a
+      // pasted file chip brings its bytes only from this browser's own copy.
+      if (
+        record.kind !== "image" ||
+        (record.mimeType !== "image/png" &&
+          record.mimeType !== "image/jpeg" &&
+          record.mimeType !== "image/webp")
+      ) {
+        fail("Only PNG, JPEG, and WebP images can be copied into another message.");
+        return;
+      }
+      let blob: Blob;
+      try {
+        blob = await readScreenshotBlob(
+          {
+            id: ScreenshotArtifactId.make(record.attachmentId),
+            name: record.name,
+            mimeType: record.mimeType,
+            ...(record.sizeBytes > 0 ? { sizeBytes: record.sizeBytes } : {}),
+          },
+          async (input) => {
+            const result = await readSourceAttachment({
+              environmentId: sourceEnvironmentId,
+              input,
+            });
+            if (result._tag !== "Success") throw squashAtomCommandFailure(result);
+            return result.value;
+          },
+          AbortSignal.timeout(60_000),
+        );
+      } catch {
+        fail("The original attachment is no longer available.");
+        return;
+      }
+      file = new File([blob], record.name, { type: record.mimeType || blob.type });
     }
-    let blob: Blob;
-    try {
-      blob = await readScreenshotBlob(
-        {
-          id: ScreenshotArtifactId.make(record.attachmentId),
-          name: record.name,
-          mimeType: record.mimeType,
-          ...(record.sizeBytes > 0 ? { sizeBytes: record.sizeBytes } : {}),
-        },
-        async (input) => {
-          const result = await readSourceAttachment({
-            environmentId: sourceEnvironmentId,
-            input,
-          });
-          if (result._tag !== "Success") throw squashAtomCommandFailure(result);
-          return result.value;
-        },
-        AbortSignal.timeout(60_000),
-      );
-    } catch {
-      fail("The original attachment is no longer available.");
-      return;
-    }
-    const file = new File([blob], record.name, { type: record.mimeType || blob.type });
     // The draft these bytes belong to may have been sent or switched away from while they
     // downloaded. Dropping them here keeps them out of whatever draft is open now.
     if (attachmentTargetKeyRef.current !== importTargetKey) return;
@@ -2904,17 +2922,32 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       fail("The attachment limit has been reached.");
       return;
     }
-    const accepted = addComposerImage({
-      type: "image",
-      id: localId,
-      name: record.name,
-      mimeType: file.type,
-      sizeBytes: file.size,
-      previewUrl: URL.createObjectURL(file),
-      file,
-    });
-    if (!accepted.includes(localId))
-      fail("The draft rejected this attachment (duplicate or attachment limit reached).");
+    if (record.kind === "image") {
+      const accepted = addComposerImage({
+        type: "image",
+        id: localId,
+        name: record.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        previewUrl: URL.createObjectURL(file),
+        file,
+      });
+      if (!accepted.includes(localId))
+        fail("The draft rejected this attachment (duplicate or attachment limit reached).");
+    } else {
+      const accepted = addComposerFilesToDraft([
+        {
+          type: "file",
+          id: localId,
+          name: record.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          file,
+        },
+      ]);
+      if (!accepted.includes(localId))
+        fail("The draft rejected this attachment (duplicate or attachment limit reached).");
+    }
   };
   const importAttachmentRecord = async (
     record: Extract<ComposerContextRecord, { kind: "image" | "file" }>,
@@ -2945,6 +2978,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const found = composerContextRecords.get(contextId);
         return found ? [found] : [];
       })[0];
+      // Upload completion can change the server id since copy; the local bytes still match.
+      if (
+        sourceEnvironmentId !== null &&
+        (record.kind === "image" || record.kind === "file") &&
+        (existing?.kind === "image" || existing?.kind === "file") &&
+        existing.record.file !== null &&
+        existing.record.file ===
+          copiedComposerAttachmentFile(sourceEnvironmentId, record.attachmentId)
+      )
+        continue;
       const existingRecord =
         existing?.kind === "terminal"
           ? terminalContextRecord(existing.record)
@@ -3499,6 +3542,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const { snapshot, trigger } = resolveActiveComposerTrigger();
     if (!trigger) return;
     if (item.type === "path") {
+      if (!isPathSuggestionCurrent(item.searchTarget, trigger, environmentId, gitCwd)) return;
       const replacement = `${serializeComposerFileLink(item.path)} `;
       const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
         snapshot.value,
@@ -3637,7 +3681,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
 
   const blurMobileComposerAfterSend = () => {
-    if (!isMobileViewport) return;
+    if (!isSoftwareKeyboardOpen) return;
     if (composerBlurFrameRef.current !== null) {
       window.cancelAnimationFrame(composerBlurFrameRef.current);
       composerBlurFrameRef.current = null;
@@ -3650,7 +3694,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
 
   const shouldBlurMobileComposerOnSubmit = () => {
-    if (!isMobileViewport) return false;
+    if (!isSoftwareKeyboardOpen) return false;
     if (
       isSendBusy ||
       isSendDisabled ||
@@ -3866,7 +3910,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const submissionIntent = composerSubmissionIntentForKey({
       event,
       keybindings,
-      isMobileViewport,
+      isSoftwareKeyboardOpen,
       isDraftThread: routeKind === "draft",
       isRunning: phase === "running",
       sendShortcut: settings.sendShortcut,
@@ -3933,14 +3977,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             : listIndentForTab(snapshot.value, selection.start, selection.end);
         if (
           edit &&
-          applyPromptReplacement(
-            edit.start,
-            edit.end,
-            edit.replacement,
-            key === "Tab"
-              ? { expandedCursorAfterReplace: selection.start + edit.replacement.length }
-              : undefined,
-          )
+          applyPromptReplacement(edit.start, edit.end, edit.replacement, {
+            expandedCursorAfterReplace: edit.cursorAfter,
+          })
         ) {
           return true;
         }
@@ -4565,8 +4604,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {image.previewUrl ? (
               <ComposerImageThumbnail
                 file={image.file}
+                mode={image.source?.kind === "snap-shot" ? "snapshot" : "square"}
                 alt=""
-                className="size-full object-cover"
+                className="size-full"
                 fallback={
                   isHeicImageFile({ name: image.name, type: image.mimeType }) ? (
                     <AttachmentImage

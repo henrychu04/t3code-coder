@@ -96,6 +96,8 @@ function getTimestampFormatter(
   return formatter;
 }
 
+// Coder: upstream's `resolveHour12` serves only the usage page, which is not carried.
+
 export function parseTimestampDate(isoDate: string): Date | null {
   const date = new Date(isoDate);
   return Number.isNaN(date.getTime()) ? null : date;
