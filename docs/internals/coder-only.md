@@ -725,10 +725,8 @@ listed here is drift to remove rather than fork behavior to keep.
     writes it into the MCP App shell with the theme in the shell URL's fragment, as upstream's
     signed URL carries it. **Open full screen** shows the same in-memory page in upstream's
     `chat/HtmlRenderDialog.tsx`, which takes the page (`html`) where upstream mints a fresh
-    signed URL, so the frame has no "Page unavailable" toast. The frame keeps upstream's loading
-    skeleton until the written page loads; its outline comes from `htmlRenderOutlineBoxes`, which
-    is empty because the helper measures nothing. `BrowserDocumentFrame.tsx` keeps upstream's
-    image dialog and load handling. Links in a page open as
+    signed URL, so the frame has no "Page unavailable" toast. `BrowserDocumentFrame.tsx` keeps
+    upstream's image dialog and load handling. Links in a page open as
     upstream's chat links do; `SentAttachmentFilePreview` passes the thread for them where
     upstream's `FilePreviewPanel` does, and with no in-app browser `browser/useOpenLink.ts`
     sends every other link to the system browser.
@@ -784,7 +782,8 @@ listed here is drift to remove rather than fork behavior to keep.
   no managed ACP install directories on `PATH`. In the browser, the terminal session state, output model,
   drawer, and UI state store are upstream's; client-runtime adds `TerminalBufferCache`, a bounded
   in-memory cache that seeds a reattach and supplies its `afterSequence`, and tracks the last
-  applied sequence. `ThreadTerminalDrawer` never opens terminal links (there is no editor or
+  applied sequence. Each attach attempt reads `afterSequence` from that cache, beside upstream's
+  `resume` flag, and a resumed attach of a closed terminal gets upstream's `closed` event. `ThreadTerminalDrawer` never opens terminal links (there is no editor or
   preview surface).
 - **Command palette.** `CommandPalette.tsx` is upstream's, including its add-project browse,
   clone, and new-project flows over `filesystem.browse` and the clone RPCs. Coder deltas (marked
@@ -801,7 +800,9 @@ listed here is drift to remove rather than fork behavior to keep.
   `files/AttachmentFilePreview.tsx` (upstream's viewer, with Save writing the in-memory bytes
   instead of a signed-URL download) and videos in the gallery. A draft restored after a reload has no bytes, so it has no
   preview. A context fragment pasted from another workspace
-  brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks.
+  brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks,
+  unless this browser copied the fragment from an unsent draft: then upstream's
+  `copiedComposerAttachments.ts` supplies the draft's in-memory images and files.
   A thread dropped from another workspace attaches its saved transcript (see Transport and RPC
   handlers). Images
   and files move through the gateway's Coder CLI transfer (see
@@ -890,7 +891,10 @@ listed here is drift to remove rather than fork behavior to keep.
   the file):
   - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's body over
     `useAssetUrlState` and `useAssetUrlRefresh` for `media-file` and `tool-output-image`
-    resources, without `fallbackSrc`, `originalUrl`, or `workspaceMutationId`. A workspace file
+    resources, without `fallbackSrc` or `originalUrl`. Upstream's `workspaceMutationId` refresh
+    rereads a Markdown file preview's images after an edit, waiting on the workspace's helper
+    connection where upstream waits on its prepared HTTP connection, and on `Loading` alone, since
+    the image store has no refreshing state. A workspace file
     needs the thread root (`cwd`), which the helper verifies, and reads only near the viewport;
     until it loads, a placeholder keeps its box (`useAssetImageSize`) and opens the gallery. Its
     `inline-flex` wrapper is exactly its child's height, so once the size is known, the swap
@@ -923,7 +927,9 @@ listed here is drift to remove rather than fork behavior to keep.
   open image, but video and audio reread only on retry or
   reopen because each read moves the whole file); a draft names its project rather than a thread;
   PDF and HTML previews read through the same helper media chunks, project files only (see
-  [Network and transfer constraints](#network-and-transfer-constraints)); there is no
+  [Network and transfer constraints](#network-and-transfer-constraints)), and a PDF keeps the
+  built-in viewer's frame where upstream uses `<embed>`, which the gateway's `object-src 'none'`
+  blocks; there is no
   open-in-editor or reveal action, and the tree adds Copy path.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
@@ -1116,7 +1122,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `platform/persistence.ts` drop upstream's multi-route checks, credential and profile stores,
     saved targets, onboarding, GitHub routing, host updates, and the mobile `network-changed`
     wakeup. `connection/registry.ts` starts every registered workspace's supervisor desired
-    (upstream starts only enabled ones), since the Coder config owns registration.
+    (upstream starts only enabled ones), since the Coder config owns registration. Its entries
+    carry no cached unsupported-host rejection, so web `state/server.ts`'s shortcut-keybinding
+    fallback presents each workspace's connection state as is.
     `state/shell.ts` treats every workspace as remote (no primary local target).
   - `lib/runtime.ts` has no primary-environment HTTP client, relay, DPoP, or tracer, and
     `branding.ts` fixes the "T3 Coder" name without a desktop bridge or hosted channel.
@@ -1181,6 +1189,8 @@ listed here is drift to remove rather than fork behavior to keep.
   fork's mocks. `CommandPalette.focus.browser.test.tsx`
   mocks `useCoder` and sends `mod+p` with the platform's modifier (upstream's Ctrl+P matches only
   off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
+  `McpAppFrame.browser.test.tsx` reads its app through a mocked helper read into a stand-in for
+  the gateway's document shell, where upstream serves a data-URL asset.
   `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's
   unavailable-URL and near-expiry fresh-URL tests and the frame's `sandbox` attribute check (the
   document shell's CSP applies the sandbox). `SourceControlProviderRegistry.test.ts` runs
@@ -1209,7 +1219,8 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,
-  and the desktop default-browser handoff (`DesktopWebLinkCoordinator`) is not carried.
+  and the desktop default-browser handoff (`DesktopWebLinkCoordinator`) is not carried. Without
+  the usage page, `timestampFormat.ts` has no `resolveHour12`.
 
 ## Distribution
 
