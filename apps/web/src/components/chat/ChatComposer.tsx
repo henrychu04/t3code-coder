@@ -142,7 +142,7 @@ import {
 import { ComposerActivityRow } from "./ComposerActivityStatus";
 import {
   reconcileAttachmentContextReferences,
-  type RetainedAttachmentContextPayloads,
+  useRetainedContextPayloads,
 } from "./composerContextUndo";
 import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
@@ -2966,6 +2966,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const importContextRecords = (
     records: ReadonlyArray<ComposerContextRecord>,
     sourceEnvironmentId: EnvironmentId | null,
+    threadDraftTarget = attachmentDraftTarget,
   ): ReadonlyMap<string, string> => {
     const rewritten = new Map<string, string>();
     for (const candidate of records) {
@@ -2998,7 +2999,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               : existing
                 ? (uploadedContextRecordFromDraft(existing) ?? undefined)
                 : undefined;
-      if (existingRecord && isSameComposerContextPayload(existingRecord, record)) {
+      if (
+        existingRecord &&
+        isSameComposerContextPayload(existingRecord, record) &&
+        (record.kind !== "thread" || threadDraftTarget === attachmentDraftTarget)
+      ) {
         continue;
       }
       const conflicts = existing !== undefined;
@@ -3026,7 +3031,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         case "thread": {
           // The agent can only read threads on its own server; a pasted foreign one is dropped.
           if (record.environmentId !== environmentId) break;
-          addComposerDraftThreadContexts(attachmentDraftTarget, [record], {
+          addComposerDraftThreadContexts(threadDraftTarget, [record], {
             appendReference: false,
           });
           rewritten.set(record.contextId, record.contextId);
@@ -3295,19 +3300,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const expandComposerForEditorChangeStable = useStableCallback(expandComposerForEditorChange);
 
-  /**
-   * Payloads for chips the prompt no longer references. History undo restores the
-   * reference text but knows nothing about the draft records behind it, so a delete keeps its
-   * payload here and an undo puts it back rather than leaving a dangling chip.
-   */
-  const removedContextPayloadsRef = useRef<{
-    terminals: Map<string, TerminalContextDraft>;
-    reviewComments: Map<string, ReviewCommentContext>;
-    threads: Map<string, ThreadContextRecord>;
-  }>({ terminals: new Map(), reviewComments: new Map(), threads: new Map() });
-  const removedAttachmentContextPayloadsRef = useRef<RetainedAttachmentContextPayloads>({
-    files: new Map(),
-  });
+  const retainedContextPayloads = useRetainedContextPayloads(composerDraftTargetKey);
 
   const onPromptChange = (
     nextPrompt: string,
@@ -3342,7 +3335,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       promptHistoryPositionRef.current = null;
     }
     const referenced = new Set(contextIds);
-    const retained = removedContextPayloadsRef.current;
+    const retained = retainedContextPayloads;
 
     const liveTerminalIds = new Set<string>(
       composerTerminalContexts.map((context) => terminalContextReference(context).contextId),
@@ -3404,7 +3397,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const attachmentChanges = reconcileAttachmentContextReferences({
       referencedContextIds: referenced,
       files: composerFiles,
-      retained: removedAttachmentContextPayloadsRef.current,
+      retained: retainedContextPayloads,
     });
     for (const fileId of attachmentChanges.filesToRemove) {
       removeComposerDraftFile(attachmentDraftTarget, fileId);
@@ -4063,7 +4056,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
 
     const rewrittenContextIds = entry.records
-      ? importContextRecords(entry.records, null)
+      ? importContextRecords(entry.records, null, composerDraftTarget)
       : new Map<string, string>();
     const restoredPrompt = replaceComposerContextReferences(entry.prompt, (reference) => {
       const contextId = rewrittenContextIds.get(reference.contextId);
@@ -4316,6 +4309,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const images = [...composerImagesRef.current];
     const files = [...composerFilesRef.current];
     const stashedRecords: ComposerContextRecord[] = [
+      ...composerThreadContexts,
       ...composerTerminalContextsRef.current.map(terminalContextRecord),
       ...composerReviewComments.map(reviewCommentContextRecord),
     ];
@@ -4414,6 +4408,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       promptRef.current = "";
       clearComposerDraftPromptAndImages(stashTarget);
       clearComposerDraftTerminalContexts(stashTarget);
+      setComposerDraftThreadContexts(stashTarget, []);
       for (const comment of composerReviewComments) {
         removeComposerDraftReviewComment(stashTarget, comment.id);
       }
@@ -4604,9 +4599,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {image.previewUrl ? (
               <ComposerImageThumbnail
                 file={image.file}
-                mode={image.source?.kind === "snap-shot" ? "snapshot" : "square"}
                 alt=""
-                className="size-full"
+                className="size-full object-cover"
                 fallback={
                   isHeicImageFile({ name: image.name, type: image.mimeType }) ? (
                     <AttachmentImage
@@ -5415,32 +5409,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return true;
   };
 
-  const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
-    const files = Array.from(event.clipboardData.files);
-    const plainText = event.clipboardData.getData("text/plain");
-    const bypassAutoAttachment = consumePasteAsTextShortcut(pasteAsTextShortcutUntilRef);
-    if (
-      files.length > 0 &&
-      activeThreadId &&
-      shouldHandleComposerAttachmentPaste({ files, plainText })
-    ) {
-      event.preventDefault();
-      event.stopPropagation();
-      void addComposerAttachments(files, { skipImageInlineChip: bypassAutoAttachment });
-      return;
-    }
-
-    if ((readPastedComposerContext(event.clipboardData)?.records.length ?? 0) > 0) return;
-    if (!foldPastedText(plainText, bypassAutoAttachment)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-  };
-  // The editor is memoized; fresh closures here re-render it on every parent
-  // render, which during a stream is every delta.
-  const onComposerPasteStable = useStableCallback(onComposerPaste);
   const onComposerCommandKeyStable = useStableCallback(onComposerCommandKey);
   const isPathQueryActiveStable = useStableCallback(
     () => resolveActiveComposerTrigger().trigger?.kind === "path",
@@ -5459,7 +5427,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       text.length === 0 ||
       isConnecting ||
       isComposerApprovalState ||
-      pendingUserInputs.length > 0 ||
+      activePendingIsResponding ||
+      (pendingUserInputs.length > 0 && !activePendingProgress?.activeQuestion) ||
       projectSelectionRequired ||
       (options?.citationCommentAnchor && !composerEditorRef.current)
     ) {
@@ -5505,6 +5474,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const insertComposerTextAtEndStable = useStableCallback(insertComposerTextAtEnd);
 
+  // Coder: pasted folders are not referenced (there is no local folder path); files attach.
+  const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    const files = Array.from(event.clipboardData.files);
+    const plainText = event.clipboardData.getData("text/plain");
+    const bypassAutoAttachment = consumePasteAsTextShortcut(pasteAsTextShortcutUntilRef);
+    if (
+      files.length > 0 &&
+      activeThreadId &&
+      shouldHandleComposerAttachmentPaste({ files, plainText })
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      void addComposerAttachments(files, { skipImageInlineChip: bypassAutoAttachment });
+      return;
+    }
+
+    if ((readPastedComposerContext(event.clipboardData)?.records.length ?? 0) > 0) return;
+    if (!foldPastedText(plainText, bypassAutoAttachment)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  // The editor is memoized; fresh closures here re-render it on every parent
+  // render, which during a stream is every delta.
+  const onComposerPasteStable = useStableCallback(onComposerPaste);
   const insertContextReferencesAtCaret = (
     references: ReadonlyArray<ComposerContextReference>,
   ): boolean =>
@@ -6627,6 +6623,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ) : null}
                 <ComposerContextActionsContext value={composerContextActions}>
                   <ComposerPromptEditor
+                    draftKey={composerDraftTargetKey}
                     ariaLabel="Message"
                     suggestionListId={composerSuggestionListId}
                     activeSuggestionId={

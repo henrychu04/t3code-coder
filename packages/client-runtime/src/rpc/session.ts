@@ -7,6 +7,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
@@ -23,6 +24,7 @@ import * as RpcClientError from "effect/rpc/RpcClientError";
 import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Socket from "effect/socket/Socket";
 
+import { UNRESPONSIVE_HOST_HINT } from "../errors/network.ts";
 import type {
   ConnectionAttemptError,
   ConnectionTransientError,
@@ -99,6 +101,8 @@ function serverConfigReplayEvents(
   return [snapshot, ...(state.themesEvent === undefined ? [] : [state.themesEvent])];
 }
 
+const PING_TIMEOUT_SECONDS = Duration.toSeconds(PING_TIMEOUT);
+
 function mapSessionRpcError(
   error: InitialConfigError | ProbeError | ServerConfigSubscriptionError,
 ): ConnectionAttemptError {
@@ -147,7 +151,7 @@ const make = Effect.gen(function* () {
               detail: !wasConnected
                 ? `${connection.label} could not establish a WebSocket connection.`
                 : timedOut
-                  ? `${connection.label} stopped responding.`
+                  ? `${connection.label} stopped responding for ${PING_TIMEOUT_SECONDS}s. ${UNRESPONSIVE_HOST_HINT}`
                   : `${connection.label} disconnected.`,
             }),
           ),
@@ -177,6 +181,14 @@ const make = Effect.gen(function* () {
     );
     const protocolContext = yield* Layer.build(layerProtocol).pipe(
       Effect.withSpan("environment.websocket.connect"),
+    );
+    // Building the protocol only starts the socket; this span times the
+    // handshake up to the first open, without making `connect` wait for it.
+    yield* Deferred.await(connected).pipe(
+      Effect.raceFirst(Deferred.await(disconnected)),
+      Effect.withSpan("environment.websocket.open"),
+      Effect.ignore,
+      Effect.forkScoped,
     );
     const protocolClient = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
     const initialConfigDeferred = yield* Deferred.make<ServerConfig>();

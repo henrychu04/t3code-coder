@@ -10,8 +10,8 @@ const { navigate, openExternal } = vi.hoisted(() => ({
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("~/localApi", () => ({ readLocalApi: () => ({ shell: { openExternal } }) }));
-vi.mock("../state/entities", () => ({
-  useProjects: () => [
+vi.mock("../state/entities", () => {
+  const projects = [
     {
       id: "frontend",
       environmentId: "workspace",
@@ -22,8 +22,9 @@ vi.mock("../state/entities", () => ({
         locator: { source: "git-remote", remoteUrl: "https://code.example/team/frontend.git" },
       },
     },
-  ],
-}));
+  ];
+  return { useProjects: () => projects, readProjects: () => projects };
+});
 // The link handler reads the server configs from the atom registry when clicked.
 vi.mock("../state/server", async (original) => {
   const { Atom } = await import("effect/reactivity");

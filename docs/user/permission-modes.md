@@ -21,6 +21,9 @@ Provider policy decides the exact approval boundary.
 **Full access** allows commands and edits without approval prompts. The agent can still stop to ask
 a question.
 
+Claude can still ask in **Full access** when its settings disable bypass permissions or require
+approval for an action.
+
 Approvals appear inline in the conversation. Approve or reject one and the agent continues from
 there.
 

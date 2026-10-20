@@ -1,8 +1,47 @@
+import type { ThreadContextRecord } from "@t3tools/contracts";
+import { useEffect, useState } from "react";
+
 import type { ComposerFileAttachment } from "../../composerDraftStore";
 import { fileContextReference } from "../../lib/composerContextRecords";
+import type { TerminalContextDraft } from "../../lib/terminalContext";
+import type { ReviewCommentContext } from "../../reviewCommentContext";
 
 export interface RetainedAttachmentContextPayloads {
   files: Map<string, ComposerFileAttachment>;
+}
+
+export interface RetainedContextPayloads extends RetainedAttachmentContextPayloads {
+  terminals: Map<string, TerminalContextDraft>;
+  reviewComments: Map<string, ReviewCommentContext>;
+  threads: Map<string, ThreadContextRecord>;
+}
+
+function createRetainedContextPayloads(): RetainedContextPayloads {
+  return {
+    terminals: new Map(),
+    reviewComments: new Map(),
+    threads: new Map(),
+    files: new Map(),
+  };
+}
+
+// Deleted chips keep their payloads until their draft's undo history ends.
+export function useRetainedContextPayloads(draftTargetKey: string): RetainedContextPayloads {
+  const [draft, setDraft] = useState(() => ({
+    targetKey: draftTargetKey,
+    payloads: createRetainedContextPayloads(),
+  }));
+  if (draft.targetKey !== draftTargetKey) {
+    setDraft({ targetKey: draftTargetKey, payloads: createRetainedContextPayloads() });
+  }
+  const retained = draft.payloads;
+  useEffect(
+    () => () => {
+      for (const payloads of Object.values(retained)) payloads.clear();
+    },
+    [retained],
+  );
+  return retained;
 }
 
 export function reconcileAttachmentContextReferences(input: {

@@ -86,6 +86,7 @@ export type CodexDriverEnv =
   | ProviderEventLoggers.ProviderEventLoggers
   | ServerConfig.ServerConfig;
 
+// Coder: no CodexUsageHistory requirement; Codex usage history (#21898) is not carried.
 export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Path> = {
   driverKind: DRIVER_KIND,
   metadata: {

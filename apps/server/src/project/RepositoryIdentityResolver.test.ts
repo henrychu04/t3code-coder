@@ -168,4 +168,88 @@ describe("RepositoryIdentityResolver", () => {
       expect(identity?.locator.remoteName).toBe("origin");
     }),
   );
+
+  // Coder: upstream's bare-repository cases (#17340) on GitLab remotes, mocked like the tests
+  // above.
+  it.effect.each(["times out", "cannot start"] as const)(
+    "skips the bare repository probe when Git root discovery %s",
+    (failure) =>
+      Effect.gen(function* () {
+        let attempts = 0;
+        const process = ProcessRunner.ProcessRunner.of({
+          run: (input) =>
+            Effect.suspend(() => {
+              attempts++;
+              return failure === "times out"
+                ? Effect.succeed({ ...output(""), code: null, timedOut: true })
+                : Effect.fail(
+                    new ProcessRunner.ProcessSpawnError({
+                      command: input.command,
+                      argumentCount: input.args.length,
+                      cause: new Error("git is not installed"),
+                    }),
+                  );
+            }),
+        });
+        const resolver = yield* make().pipe(
+          Effect.provideService(ProcessRunner.ProcessRunner, process),
+        );
+
+        expect(yield* resolver.resolve("/workspace/project")).toBeNull();
+        expect(attempts).toBe(1);
+      }),
+  );
+
+  it.effect.each(["bare clone", "dot-bare"] as const)(
+    "resolves a %s to its Git directory and the same identity as a checkout",
+    (layout) =>
+      Effect.gen(function* () {
+        const gitDir = layout === "dot-bare" ? "/srv/smoke/.bare" : "/srv/smoke.git";
+        const calls: ReadonlyArray<string>[] = [];
+        const process = ProcessRunner.ProcessRunner.of({
+          run: (input) =>
+            Effect.sync(() => {
+              calls.push(input.args);
+              const notARepository = { ...output(""), code: ChildProcessSpawner.ExitCode(128) };
+              if (input.args.includes("--show-toplevel")) return notARepository;
+              if (input.args.includes("--is-bare-repository")) {
+                const probe = input.args.find((arg) => arg.startsWith("--git-dir="));
+                return probe === (layout === "dot-bare" ? "--git-dir=.git" : "--git-dir=.")
+                  ? output(`true\n${gitDir}\n`)
+                  : notARepository;
+              }
+              return output("origin\tgit@gitlab.example.gs.com:goldman/smoke.git (fetch)\n");
+            }),
+        });
+        const resolver = yield* make().pipe(
+          Effect.provideService(ProcessRunner.ProcessRunner, process),
+        );
+
+        const identity = yield* resolver.resolve(layout === "dot-bare" ? "/srv/smoke" : gitDir);
+
+        expect(identity?.canonicalKey).toBe("gitlab.example.gs.com/goldman/smoke");
+        expect(identity?.rootPath).toBe(gitDir);
+        expect(calls.at(-1)).toEqual(["-C", gitDir, "--git-dir=.", "remote", "-v"]);
+      }),
+  );
+
+  it.effect("does not treat a checkout's .git directory as a project root", () =>
+    Effect.gen(function* () {
+      const process = ProcessRunner.ProcessRunner.of({
+        run: (input) =>
+          Effect.succeed(
+            input.args.includes("--show-toplevel")
+              ? { ...output(""), code: ChildProcessSpawner.ExitCode(128) }
+              : input.args.includes("--is-bare-repository")
+                ? output("false\n/workspace/project/.git\n")
+                : output("origin\tgit@gitlab.example.gs.com:goldman/smoke.git (fetch)\n"),
+          ),
+      });
+      const resolver = yield* make().pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, process),
+      );
+
+      expect(yield* resolver.resolve("/workspace/project/.git")).toBeNull();
+    }),
+  );
 });

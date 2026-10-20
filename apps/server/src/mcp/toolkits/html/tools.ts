@@ -1,6 +1,7 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   HTML_RENDER_LAYOUT_GUIDE,
+  HTML_RENDER_MAX_FIT_HEIGHT,
   HTML_RENDER_MAX_HEIGHT,
   HTML_RENDER_MAX_TITLE_LENGTH,
   HTML_RENDER_MIN_HEIGHT,
@@ -19,14 +20,15 @@ const Html = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512_0
 });
 
 // Coder: `html_render` only. `html_preview` screenshots pages in a downloaded headless browser,
-// which T3 Coder does not install, so the render description does not point agents at it.
+// which T3 Coder does not install, so the render description does not point agents at it. The
+// height caps a frame only on upstream's mobile app, so the description omits that case.
 const PAGE_RULES =
   'Write one self-contained document with inline <style> and <script>. Local images written as absolute file paths (src="/abs/shot.png", CSS url(/abs/bg.webp), or a JS string) are inlined automatically; remote http(s) URLs, such as a CDN chart library, load as-is.';
 
 // Read-only in the MCP sense: it shows a page in the caller's own thread and
 // touches no workspace, so plan mode and read-only sandboxes can use it.
 const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
-  description: `Show a finished HTML page (chart, table, diagram, collage, mockup) inline in this thread, above your final text reply; call it before writing that reply. The reader already sees the page, so the reply should not announce it, say where it is, or restate it: add only what the page doesn't say. T3 fits the frame to the page's height at each reader's width. A height below the page's own height caps the frame there, and the rest scrolls inside it. ${PAGE_RULES} ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
+  description: `Show a finished HTML page (chart, table, diagram, collage, mockup) inline in this thread, above your final text reply; call it before writing that reply. The reader already sees the page, so the reply should not announce it, say where it is, or restate it: add only what the page doesn't say. T3 fits the frame to the page's height at each reader's width, up to ${HTML_RENDER_MAX_FIT_HEIGHT}px. ${PAGE_RULES} ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
   parameters: Schema.Struct({
     html: Html,
     title: Schema.String.check(
@@ -34,7 +36,7 @@ const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
       Schema.isMaxLength(HTML_RENDER_MAX_TITLE_LENGTH),
     ).annotate({ description: "Short name for the page." }),
     height: Schema.Int.annotate({
-      description: `The frame height in CSS pixels, ${HTML_RENDER_MIN_HEIGHT}-${HTML_RENDER_MAX_HEIGHT}. Use the page's full height, or less to make long content scroll inside the frame.`,
+      description: `The frame height in CSS pixels, ${HTML_RENDER_MIN_HEIGHT}-${HTML_RENDER_MAX_HEIGHT}. Use the page's full height.`,
     }),
   }),
   success: Schema.Struct({

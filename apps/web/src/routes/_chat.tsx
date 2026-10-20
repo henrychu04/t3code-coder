@@ -10,10 +10,7 @@ import { useProjects } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentScope } from "../state/session";
 import { selectProjectGroupingSettings } from "../logicalProject";
-import {
-  buildSidebarProjectSnapshots,
-  countSidebarProjectChoices,
-} from "../sidebarProjectGrouping";
+import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -42,14 +39,12 @@ function ChatRouteGlobalShortcuts() {
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
-  const projectChoiceCount = countSidebarProjectChoices(
-    buildSidebarProjectSnapshots({
-      projects,
-      settings: projectGroupingSettings,
-      primaryEnvironmentId,
-      resolveEnvironmentLabel: () => null,
-    }),
-  );
+  const projectGroupCount = buildSidebarProjectSnapshots({
+    projects,
+    settings: projectGroupingSettings,
+    primaryEnvironmentId,
+    resolveEnvironmentLabel: () => null,
+  }).length;
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -113,7 +108,7 @@ function ChatRouteGlobalShortcuts() {
         event.preventDefault();
         event.stopPropagation();
         // Coder: there is no legacy sidebar.
-        if (projectChoiceCount > 1) {
+        if (projectGroupCount > 1) {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
@@ -140,7 +135,7 @@ function ChatRouteGlobalShortcuts() {
     keybindings,
     defaultProjectRef,
     primaryEnvironmentId,
-    projectChoiceCount,
+    projectGroupCount,
     routeThreadRef,
     scratchEnvironmentId,
     selectedThreadKeysSize,

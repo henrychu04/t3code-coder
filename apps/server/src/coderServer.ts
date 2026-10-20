@@ -33,7 +33,6 @@ import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderL
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
-import * as TerminalManager from "./terminal/Manager.ts";
 import * as ProjectAutoPull from "./vcs/projectAutoPull.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
@@ -57,12 +56,12 @@ import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ProviderRuntimeRecovery from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
-import * as ResourceCleanupService from "./orchestration-v2/ResourceCleanupService.ts";
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import {
   layerCheckpointStore,
   layerGitWorkflow,
+  layerIdleCompactionWorker,
   layerPullRequestService,
   layerServerSettings,
   layerSourceControlProviderRegistry,
@@ -101,39 +100,19 @@ const CoderProviderInstancesLive = ProviderInstanceRegistryHydration.layer.pipe(
   Layer.provideMerge(ScreenshotArtifacts.layer),
 );
 
-const CoderSourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(
-  Layer.provideMerge(layerSourceControlProviderRegistry),
+// The registry reads provider latest versions to settle update state (#18723).
+const CoderProviderRegistryLive = ProviderRegistryLayer.layer.pipe(
+  Layer.provide(CoderProviderSupportLive),
 );
 
-// Coder: thread deletion closes terminals but never deletes attachments.
-const CoderResourceCleanupLive = Layer.effect(
-  ResourceCleanupService.ResourceCleanupService,
-  Effect.gen(function* () {
-    const terminals = yield* TerminalManager.TerminalManager;
-    return {
-      cleanupTerminals: (threadId: string) =>
-        terminals.close({ threadId, deleteHistory: true }).pipe(
-          Effect.mapError(
-            (cause) =>
-              new ResourceCleanupService.ResourceCleanupError({
-                operation: "terminal",
-                threadId,
-                cause,
-              }),
-          ),
-        ),
-      // Coder: there is no browser preview.
-      cleanupPreviews: () => Effect.void,
-      cleanupAttachments: () => Effect.void,
-    };
-  }),
+const CoderSourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(
+  Layer.provideMerge(layerSourceControlProviderRegistry),
 );
 
 // Coder: no provider turn analytics are recorded (`ProviderTurnAnalytics` keeps its no-op default).
 const CoderOrchestrationRuntimeLive = RuntimeLayer.layerProduction.pipe(
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
-  Layer.provide(CoderResourceCleanupLive),
   Layer.provide(
     RunFinalizationService.layerObserver.pipe(
       Layer.provide(ProjectionStoreV2.layer),
@@ -188,6 +167,7 @@ const PullRequestReviewGuideLive = PullRequestReviewGuideService.layer.pipe(
 
 const CoderRuntimeCoreLive = Layer.mergeAll(
   layerThreadSettlementWorker,
+  layerIdleCompactionWorker,
   layerThreadPullRequestWorker,
   PullRequestSyncWorkerLive,
   PullRequestWatchWorkerLive,
@@ -227,10 +207,10 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
     ProviderMaintenanceRunner.layer.pipe(
       Layer.provide(CoderProviderSupportLive),
       Layer.provide(FetchHttpClient.layer),
-      Layer.provide(ProviderRegistryLayer.layer),
+      Layer.provide(CoderProviderRegistryLive),
     ),
   ),
-  Layer.provideMerge(ProviderRegistryLayer.layer),
+  Layer.provideMerge(CoderProviderRegistryLive),
   Layer.provideMerge(CoderProviderInstancesLive),
   Layer.provideMerge(ModelManifest.layerBundled),
   Layer.provideMerge(SqlitePersistenceLayerLive),

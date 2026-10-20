@@ -59,9 +59,9 @@ import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayo
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
+  getProviderStatusKey,
   getProviderSummary,
   getProviderVersionLabel,
-  type ProviderStatusKey,
 } from "./providerStatus";
 
 function ProviderStatusDiagnostic({
@@ -396,13 +396,12 @@ export function ProviderInstanceCard({
   projectOverride,
 }: ProviderInstanceCardProps) {
   const enabled = projectOverride?.effectiveEnabled ?? resolveProviderInstanceEnabled(instance);
+  const effectiveProvider = liveProvider && { ...liveProvider, enabled };
   const compatibility = enabled ? liveProvider?.compatibilityAdvisory : undefined;
-  const statusKey: ProviderStatusKey = enabled
-    ? ((liveProvider?.status as ProviderStatusKey | undefined) ?? "warning")
-    : "disabled";
+  const statusKey = enabled ? getProviderStatusKey(effectiveProvider) : "disabled";
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
   const summary = enabled
-    ? getProviderSummary(liveProvider && { ...liveProvider, enabled: true })
+    ? getProviderSummary(effectiveProvider)
     : { headline: "Disabled", detail: null };
   const authEmail = liveProvider?.auth.email?.trim();
   const isAuthenticated = enabled && liveProvider?.auth.status === "authenticated";

@@ -223,6 +223,37 @@ it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
       }),
     );
 
+    // Coder: upstream's optional-file reads (#19949) on the fork's project-relative Files reads.
+    it.effect("returns an absent optional file and still rejects escapes and folders", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outside = yield* makeTempDir;
+        yield* fileSystem.makeDirectory(path.join(cwd, "src"));
+        yield* fileSystem.symlink(outside, path.join(cwd, "linked-dir"));
+
+        const absent = yield* files.readFile({ cwd, relativePath: "t3.json", allowMissing: true });
+        const escape = yield* files
+          .readFile({ cwd, relativePath: "linked-dir/missing/t3.json", allowMissing: true })
+          .pipe(Effect.flip);
+        const folder = yield* files
+          .readFile({ cwd, relativePath: "src", allowMissing: true })
+          .pipe(Effect.flip);
+
+        expect(absent).toMatchObject({
+          relativePath: "t3.json",
+          contents: "",
+          byteLength: 0,
+          truncated: false,
+          exists: false,
+        });
+        expect(escape).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+        expect(folder).toBeInstanceOf(WorkspaceFileSystem.WorkspacePathNotFileError);
+      }),
+    );
+
     it.effect("truncates files over 1 MiB", () =>
       Effect.gen(function* () {
         const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;

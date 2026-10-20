@@ -202,6 +202,8 @@ const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
 // Coder: `get_settings` is optional policy metadata. Older Claude Code versions may ignore it, so
 // it must not consume the probe budget and discard a valid initialization result.
 const CAPABILITIES_SETTINGS_TIMEOUT_MS = 1_000;
+// Native CLI startup on Windows can exceed the shared probe deadline.
+const CLAUDE_VERSION_CHECK_TIMEOUT_MS = 20_000;
 
 export const CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES = [
   "user",
@@ -274,6 +276,7 @@ export type ClaudeCapabilitiesProbe = {
    * otherwise successful response mean the account has none (API key).
    */
   readonly usage?: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
+  readonly usageCheckedAt?: string;
 };
 
 // Coder: runtime modes follow the workspace's effective Claude permission policy.
@@ -414,6 +417,7 @@ const probeClaudeCapabilities = (
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
         // `behaviors`: with a few GB of transcripts it outlasts the deadline.
+        const usageCheckedAt = DateTime.formatIso(yield* DateTime.now);
         const usageResult = includeUsage
           ? yield* Effect.tryPromise(
               // Coder: the workspace CLI transport answers the SDK's usage control request.
@@ -452,7 +456,7 @@ const probeClaudeCapabilities = (
             Option.isNone(settings) ||
             readClaudePermissionModeDisabled(settings.value, "disableBypassPermissionsMode"),
           slashCommands: parseClaudeInitializationCommands(init.commands),
-          ...(usage ? { usage } : {}),
+          ...(usage ? { usage, usageCheckedAt } : {}),
         } satisfies ClaudeCapabilitiesProbe;
       }),
     ),
@@ -555,7 +559,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     ["--version"],
     resolvedEnvironment,
     cwd,
-  ).pipe(Effect.timeoutOption(DEFAULT_TIMEOUT_MS), Effect.result);
+  ).pipe(Effect.timeoutOption(CLAUDE_VERSION_CHECK_TIMEOUT_MS), Effect.result);
 
   if (Result.isFailure(versionProbe)) {
     const error = versionProbe.failure;
@@ -668,7 +672,14 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  if (claudeAuthStatus(capabilities) === "unauthenticated") {
+  // First-party account fields cannot verify custom endpoint credentials.
+  const endpoint = URL.parse(resolvedEnvironment.ANTHROPIC_BASE_URL?.trim() ?? "");
+  const customApiEndpoint =
+    endpoint !== null &&
+    (endpoint.protocol === "http:" || endpoint.protocol === "https:") &&
+    endpoint.hostname !== "" &&
+    endpoint.hostname !== "api.anthropic.com";
+  if (!customApiEndpoint && claudeAuthStatus(capabilities) === "unauthenticated") {
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
@@ -692,15 +703,21 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     claudeAuthMetadata({
       subscriptionType: capabilities.subscriptionType,
       authMethod: capabilities.tokenSource,
-    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+    }) ??
+    apiProviderAuthMetadata(capabilities.apiProvider) ??
+    (customApiEndpoint ? { type: "customEndpoint", label: "Custom API endpoint" } : undefined);
+  const usageCheckedAt = capabilities.usageCheckedAt ?? checkedAt;
   const usageLimits = !capabilities.usage
     ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
     : scopedLimitNames
       ? yield* recordClaudeUsageResponse(scopedLimitNames, {
           response: capabilities.usage,
-          checkedAt,
+          checkedAt: usageCheckedAt,
         })
-      : claudeUsageResponseToLimits({ response: capabilities.usage, checkedAt }).limits;
+      : claudeUsageResponseToLimits({
+          response: capabilities.usage,
+          checkedAt: usageCheckedAt,
+        }).limits;
   const resetCredits =
     resolveResetCredits &&
     capabilities.subscriptionType &&

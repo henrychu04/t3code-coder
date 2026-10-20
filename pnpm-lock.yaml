@@ -86,7 +86,7 @@ packageExtensionsChecksum: sha256-uRNSOmZGMbxiey/el3j86YmdH2m8/ap2Y34J3dVkBNY=
 patchedDependencies:
   '@effect/vitest@4.0.5': 2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02
   '@ff-labs/fff-node@0.11.0': 765c192f75289d2a65d54011f65e3c9397603298eefb7203e7e05260352e47c8
-  '@legendapp/list@3.3.5': 455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67
+  '@legendapp/list@3.3.5': 2aea4fec9a45b83282f51abb75d85539cf26432fc82cbba46523ed9df4f917e4
   '@pierre/diffs@1.5.2': 6fcc8c203dd8f15afa2f138e8e22f59724c3ba07e7d38ca13e18e0bdc24d01ba
   mdast-util-math@3.0.0: afe6b2c89e1eaddfd3c90cf2723f12c9a17d513e65beff51653781486013251c
   micromark-extension-gfm-table@2.1.1: 9ad23a530e45d9f83cba1da8654fe16d5af8b59d5c73d5c7a7c91fd25b9be1d8
@@ -270,7 +270,7 @@ importers:
         version: 4.0.5(effect@4.0.5)(react@19.3.0)(scheduler@0.28.0)
       '@legendapp/list':
         specifier: 'catalog:'
-        version: 3.3.5(patch_hash=455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 3.3.5(patch_hash=2aea4fec9a45b83282f51abb75d85539cf26432fc82cbba46523ed9df4f917e4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/diffs':
         specifier: 'catalog:'
         version: 1.5.2(patch_hash=6fcc8c203dd8f15afa2f138e8e22f59724c3ba07e7d38ca13e18e0bdc24d01ba)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -319,6 +319,9 @@ importers:
       '@tiptap/extension-horizontal-rule':
         specifier: ^3.31.3
         version: 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
+      '@tiptap/extension-italic':
+        specifier: ^3.31.3
+        version: 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))
       '@tiptap/extension-list':
         specifier: ^3.31.3
         version: 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
@@ -388,12 +391,18 @@ importers:
       remark-math:
         specifier: 6.0.0
         version: 6.0.0
+      remark-parse:
+        specifier: 'catalog:'
+        version: 11.0.0
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.6.0
       unbash:
         specifier: ^5.0.0
         version: 5.0.0
+      unified:
+        specifier: 'catalog:'
+        version: 11.0.5
       use-sync-external-store:
         specifier: ^1.6.0
         version: 1.6.0(react@19.3.0)
@@ -452,9 +461,6 @@ importers:
       tailwindcss:
         specifier: ^4.0.0
         version: 4.3.0
-      unified:
-        specifier: 'catalog:'
-        version: 11.0.5
       vite:
         specifier: npm:@voidzero-dev/vite-plus-core@1.0.0
         version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.12.4)(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0)'
@@ -5770,7 +5776,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@legendapp/list@3.3.5(patch_hash=455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@legendapp/list@3.3.5(patch_hash=2aea4fec9a45b83282f51abb75d85539cf26432fc82cbba46523ed9df4f917e4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       react: 19.3.0
       use-sync-external-store: 1.6.0(react@19.3.0)

@@ -148,7 +148,10 @@ it("removes a whole group and clears only its drafts after confirmation", async 
     members.map((member) => ({ environmentId: member.environmentId, projectId: member.id })),
   );
   expect(mocks.releaseUploads).toHaveBeenCalledTimes(2);
-  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/", replace: true });
+  // Removing a project returns to the project overview (#20231).
+  expect(mocks.navigate).toHaveBeenCalledWith(
+    expect.objectContaining({ to: "/settings/projects", replace: true }),
+  );
 });
 it("stops on a partial removal failure without clearing the failed checkout draft", async () => {
   mocks.remove

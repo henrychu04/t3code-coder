@@ -1,7 +1,10 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   ProjectId,
   ThreadId,
+  WS_METHODS,
+  WsSubscribeServerConfigRpc,
   type OrchestrationV2StoredEvent,
   type OrchestrationProjectShell,
 } from "@t3tools/contracts";
@@ -153,6 +156,10 @@ it.live.each(["thread", "shell"] as const)(
       );
     }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
+
+// Coder: upstream's config-RPC buffering test builds upstream's session-scoped `layerWsRpc` with
+// mocks of the auth, preview, device, and usage services the helper does not serve; the helper's
+// `subscribeServerConfig` keeps upstream's subscribe-before-snapshot order.
 
 // Compaction keeps the oldest and newest event per message, so a cursor older
 // than the deleted rows still replays each message where the client would

@@ -5,6 +5,7 @@
  * its images inlined is capped at the helper's bounded turn-item read.
  */
 import { MAX_TURN_ITEM_ASSET_BYTES, type ThreadId } from "@t3tools/contracts";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import {
   clampHtmlRenderHeight,
   HTML_RENDER_MAX_TITLE_LENGTH,
@@ -56,6 +57,34 @@ export class HtmlRenderPageTooLargeError extends Schema.TaggedError<HtmlRenderPa
   }
 }
 
+export class HtmlRenderViewportHeightError extends Schema.TaggedError<HtmlRenderViewportHeightError>()(
+  "HtmlRenderViewportHeightError",
+  { found: Schema.String },
+) {
+  override get message(): string {
+    return `The page uses a viewport height unit (${this.found}). The frame grows to fit the page, so a size that follows the viewport makes it grow again and again. Let content set the height, or use fixed pixel heights.`;
+  }
+}
+
+// Only stylesheets and style attributes are checked, so page text that mentions
+// a unit passes; comments match first so their contents are skipped. Scripts
+// are still checked, since markup they insert applies. An unclosed comment,
+// tag, or quote runs to the end of the page, which keeps both patterns linear
+// on hostile input.
+const CSS_SOURCE =
+  /<!--[\s\S]*?(?:-->|$)|<style\b[^>]*(?:>|$)([\s\S]*?)(?:<\/style\s*>|$)|\sstyle\s*=\s*(?:"([^"]*)(?:"|$)|'([^']*)(?:'|$)|([^\s>]+))/gi;
+// The lookbehind skips base64 runs, such as an inlined image that happens to contain "1vh".
+const VIEWPORT_HEIGHT_UNIT = /(?<![\w.+/])(?:\d+(?:\.\d+)?|\.\d+)[sld]?vh(?![\w-])/i;
+
+const rejectViewportHeight = (html: string) => {
+  for (const [, sheet, doubleQuoted, singleQuoted, unquoted] of html.matchAll(CSS_SOURCE)) {
+    const css = sheet ?? doubleQuoted ?? singleQuoted ?? unquoted ?? "";
+    const found = VIEWPORT_HEIGHT_UNIT.exec(css)?.[0];
+    if (found !== undefined) return Effect.fail(new HtmlRenderViewportHeightError({ found }));
+  }
+  return Effect.void;
+};
+
 export class HtmlRenderStoreError extends Schema.TaggedError<HtmlRenderStoreError>()(
   "HtmlRenderStoreError",
   { cause: Schema.Defect() },
@@ -68,7 +97,8 @@ export class HtmlRenderStoreError extends Schema.TaggedError<HtmlRenderStoreErro
 export type HtmlRenderPrepareError =
   | HtmlRenderImagesNotFoundError
   | HtmlRenderImageTooLargeError
-  | HtmlRenderPageTooLargeError;
+  | HtmlRenderPageTooLargeError
+  | HtmlRenderViewportHeightError;
 
 export class HtmlRender extends Context.Service<
   HtmlRender,
@@ -267,6 +297,7 @@ const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (h
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig.ServerConfig;
+  const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const services = yield* Effect.context<FileSystem.FileSystem>();
 
   // The bootstrap goes in first so its head scan never runs over inlined image data.
@@ -274,6 +305,7 @@ const make = Effect.gen(function* () {
     inlineLocalImages(injectHtmlRenderBootstrap(html)).pipe(Effect.provideContext(services));
 
   const prepare = Effect.fn("HtmlRender.prepare")(function* (html: string) {
+    yield* rejectViewportHeight(html);
     const inlined = yield* inline(html);
     if (inlined.missing.length > 0) {
       return yield* new HtmlRenderImagesNotFoundError({ paths: inlined.missing });
@@ -300,17 +332,27 @@ const make = Effect.gen(function* () {
     if (attachmentId === null || filePath === null) {
       return yield* new HtmlRenderStoreError({ cause: new Error("Invalid thread id.") });
     }
-    yield* fileSystem.writeFileString(filePath, html).pipe(
-      Effect.mapError((cause) => new HtmlRenderStoreError({ cause })),
-      // Only the returned reference lets thread deletion find the page, so a
-      // publish that fails or is interrupted before returning removes it.
-      Effect.onError(() => fileSystem.remove(filePath, { force: true }).pipe(Effect.ignore)),
-    );
-    return {
+    const reference: HtmlRenderReference = {
       attachmentId,
       title: input.title.trim().slice(0, HTML_RENDER_MAX_TITLE_LENGTH) || "HTML",
       height: clampHtmlRenderHeight(input.height),
-    } satisfies HtmlRenderReference;
+    };
+    return yield* fileSystem.writeFileString(filePath, html).pipe(
+      Effect.mapError((cause) => new HtmlRenderStoreError({ cause })),
+      Effect.uninterruptible,
+      Effect.andThen(mcpSessions.recordHtmlRender(input.threadId, input, reference)),
+      Effect.as(reference),
+      // An interrupted publish must leave neither an attachment nor a recoverable reference.
+      Effect.onError(() =>
+        Effect.all(
+          [
+            fileSystem.remove(filePath, { force: true }).pipe(Effect.ignore),
+            mcpSessions.takeHtmlRender(input.threadId, input, reference).pipe(Effect.ignore),
+          ],
+          { discard: true },
+        ),
+      ),
+    );
   });
 
   return HtmlRender.of({ prepare, publish });

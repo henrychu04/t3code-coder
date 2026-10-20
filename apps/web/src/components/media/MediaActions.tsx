@@ -1,6 +1,9 @@
 // Main's media menu. Coder media has no signed asset URL to re-request, so byte actions read the
 // source the element already shows: a memory-only blob for workspace media, or the web URL.
-import type { MediaActionId } from "@t3tools/client-runtime/media-actions";
+import {
+  formatFilePathForClipboard,
+  type MediaActionId,
+} from "@t3tools/client-runtime/media-actions";
 import {
   mediaReferenceFileName,
   type MediaReference,
@@ -114,7 +117,9 @@ export function MediaActions({
               ? reference.url
               : undefined;
       if (text !== undefined) {
-        await writeTextToClipboard(text, reference?.kind === "file" ? "file path" : "URL");
+        const clipboardText =
+          reference?.kind === "file" ? formatFilePathForClipboard(text, reference.path) : text;
+        await writeTextToClipboard(clipboardText, reference?.kind === "file" ? "file path" : "URL");
         toastManager.add({
           type: "success",
           title: action === "copy-url" ? "URL copied" : "Path copied",
