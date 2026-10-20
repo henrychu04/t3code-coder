@@ -7168,6 +7168,10 @@ export default function ChatView(props: ChatViewProps) {
     (files: Parameters<ChatComposerHandle["addDroppedFiles"]>[0]) =>
       composerRef.current?.addDroppedFiles(files),
   );
+  const addDroppedFoldersToComposer = useStableCallback(
+    (folders: Parameters<ChatComposerHandle["addDroppedFolders"]>[0]) =>
+      composerRef.current?.addDroppedFolders(folders),
+  );
 
   if (!activeThread) {
     return <NoActiveThreadState />;
@@ -7285,8 +7289,7 @@ export default function ChatView(props: ChatViewProps) {
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: addDroppedFilesToComposer,
-    // Coder: dropped folders are not referenced (there is no local folder path); files attach.
-    addFolders: () => {},
+    addFolders: addDroppedFoldersToComposer,
   });
 
   const content = (

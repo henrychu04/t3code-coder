@@ -5475,6 +5475,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const insertComposerTextAtEndStable = useStableCallback(insertComposerTextAtEnd);
 
+  // Coder: every workspace is a remote environment, so a folder takes upstream's remote branch;
+  // the desktop path lookup for the local environment is not carried.
+  const addComposerFolders = (_folders: File[]) => {
+    toastManager.add({
+      type: "error",
+      title: "Folders can only be referenced in the local desktop environment",
+    });
+  };
+  const addComposerFoldersStable = useStableCallback(addComposerFolders);
+
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const { files, folders } = splitTransferredFiles(event.clipboardData);
     const plainText = event.clipboardData.getData("text/plain");
@@ -5487,7 +5497,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ) {
       event.preventDefault();
       event.stopPropagation();
-      // Coder: pasted folders are not referenced (there is no local folder path); files attach.
+      if (folders.length > 0) addComposerFoldersStable(folders);
       if (files.length > 0) {
         void addComposerAttachments(files, { skipImageInlineChip: bypassAutoAttachment });
       }
@@ -5776,13 +5786,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           if (!inserted) focusComposer();
         });
       },
-      // Coder workspaces are always remote; the browser has no workspace path for a dropped folder.
-      addDroppedFolders: () => {
-        toastManager.add({
-          type: "error",
-          title: "Folders can't be dropped into remote environments",
-        });
-      },
+      addDroppedFolders: addComposerFoldersStable,
       hasPendingAttachments: () =>
         (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0 ||
         pendingDraftWork.has(attachmentTargetKey),
@@ -5983,6 +5987,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       activeThread,
       addComposerAttachments,
+      addComposerFoldersStable,
       foldPastedText,
       composerDraftTarget,
       composerModelOptions,
