@@ -845,8 +845,7 @@ listed here is drift to remove rather than fork behavior to keep.
   surfaces in the store get a plain title and icon. Merge-request rows, tabs, and disabled reasons
   use GitLab wording and `!` references. The branch toolbar is upstream's; workspace options are never primary and use
   the server's machine kind, there is no "Auto balance" run target (upstream's load balancing is
-  not carried), and the branch notice also covers a managed worktree whose branch
-  moved (`resolveCheckoutBranchMismatch`). The branch picker adds "Rename current branch…" for a
+  not carried), and it has no server-update control (server self-update is not carried). The branch picker adds "Rename current branch…" for a
   thread's own branch (`vcs.renameThreadBranch`), which can also rename the T3 worktree folder
   through the driver's `moveWorktree`. Proposed-plan cards are upstream's; Save to workspace uses
   `projects.createFile`, so it fails on an existing path. The provider-update launch notification uses the active workspace as upstream's primary
@@ -871,9 +870,7 @@ listed here is drift to remove rather than fork behavior to keep.
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
   The active workspace stands in for upstream's primary environment, and drafts read their
   route workspace's config. The Files surface opens for drafts as on main; a draft's Files
-  requests name its project so the helper can verify the root. The checkout branch notice also covers a
-  worktree whose branch moved, but only a local checkout can be restored or follow the current
-  branch on send. `chatCanvasLayout.ts` has no preview obstacles (it accepts upstream's `findBar` and ignores it),
+  requests name its project so the helper can verify the root. `chatCanvasLayout.ts` has no preview obstacles (it accepts upstream's `findBar` and ignores it),
   and `ChatCanvas.test.tsx` covers only the details card inset below Find; the right panel keeps
   Coder's per-thread width storage instead of upstream's preview inline size. Pieces upstream
   moved out of `ChatView` carry the same cuts (each marked `Coder:`): `RightPanelSurfaceContent`
@@ -1130,6 +1127,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `branding.ts` fixes the "T3 Coder" name without a desktop bridge or hosted channel.
   - Upstream's desktop IPC contract (`contracts/ipc.ts`) is not carried; `localApiTypes.ts` keeps
     its context-menu and confirm-dialog types, and `localApi.ts` opens only HTTP(S) links.
+    `ThreadNotificationCoordinator.tsx` focuses the tab on a notification click without
+    upstream's desktop window reveal.
   - client-runtime `errors/diagnostics.ts` is the `[t3-error]` DevTools reporting described in
     [Authentication](#authentication).
   - The server's `config.ts` is paths under the workspace state directory only.
@@ -1178,15 +1177,17 @@ listed here is drift to remove rather than fork behavior to keep.
   and OpenCode settings schemas. `ClaudeAdapterV2.test.ts` drives upstream's MCP control-channel
   tests through a fake `claude` executable, since the CLI transport has no SDK spawn hook, and
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query` shim rather than the
-  Agent SDK's. `ProviderSessionManager.test.ts`'s parallel shutdown test waits briefly in real time
+  Agent SDK's, and omits upstream's SDK transcript-copy fork tests, since the CLI forks natively. `ProviderSessionManager.test.ts`'s parallel shutdown test waits briefly in real time
   after moving the test clock, because each release closes a T3 tool bridge on the real file
   system. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
-  tests use GitLab projects; GitManager's `GH_REPO` and `gh-resolved` only-remote cases are not
+  tests use GitLab projects, with GitLab merge request templates in place of GitHub's; GitManager's `GH_REPO` and `gh-resolved` only-remote cases are not
   carried. `ProviderInstanceRegistry.test.ts` runs upstream's Claude one-probe fallback test
   against the CLI transport's `query`, without the organization change the fork does not read.
   `SourceControlRepositoryService.test.ts` and `RepositoryIdentityResolver.test.ts` carry
-  upstream's new publish-push, local-remote, and display-casing cases on GitLab remotes with the
-  fork's mocks. `CommandPalette.focus.browser.test.tsx`
+  upstream's new publish-push, local-remote, display-casing, partial-clone, and missing-parent
+  clone cases on GitLab remotes with the fork's mocks. `ProviderRegistry.test.ts` runs upstream's
+  startup settings-change hydration tests without the uncarried Antigravity and OpenCode layers.
+  `ThreadDetailsPrRows.browser.test.tsx` checks the run context, not the editor picker. `CommandPalette.focus.browser.test.tsx`
   mocks `useCoder` and sends `mod+p` with the platform's modifier (upstream's Ctrl+P matches only
   off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
   `McpAppFrame.browser.test.tsx` reads its app through a mocked helper read into a stand-in for
