@@ -175,6 +175,7 @@ import { useAssetImageSize, useAssetUrlRefresh, useAssetUrlState } from "../asse
 import { useRightPanelStore } from "../rightPanelStore";
 import type { ImageAssetResource } from "../state/assets";
 import { readThreadShell, useProjects } from "../state/entities";
+import { useConnectedEnvironmentIds } from "../state/environments";
 import { serverEnvironment } from "../state/server";
 import { readEnvironmentScope } from "../state/session";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
@@ -210,6 +211,7 @@ interface ChatMarkdownProps {
   onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   onRunShellCommand?: ((command: string) => void) | undefined;
   imageBaseDir?: string | undefined;
+  workspaceMutationId?: string | null | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
   renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
@@ -1558,6 +1560,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly framed?: boolean | undefined;
   /** Coder: the thread root the helper verifies before reading a workspace file. */
   readonly workspaceRoot?: string | undefined;
+  readonly workspaceMutationId?: string | null | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const resource = props.resource;
@@ -1587,6 +1590,42 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     projectImage && !visible ? null : imageResource,
   );
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, imageResource);
+  // Coder: the workspace's helper connection stands in for upstream's prepared HTTP connection.
+  const connectionReady = useConnectedEnvironmentIds().includes(props.environmentId);
+  const refreshToken = JSON.stringify([props.environmentId, resource, props.workspaceMutationId]);
+  const handledRefreshToken = useRef<string | null | undefined>(undefined);
+  const assetLoading = assetUrl._tag === "Loading";
+  useEffect(() => {
+    if (!connectionReady) {
+      handledRefreshToken.current = null;
+      return;
+    }
+    if (
+      props.workspaceMutationId === undefined ||
+      props.kind === "video" ||
+      resource._tag !== "media-file" ||
+      handledRefreshToken.current === refreshToken
+    ) {
+      return;
+    }
+    if (assetLoading) {
+      // Only the initial mount shares a pending request; edits and reconnects need a new one.
+      if (handledRefreshToken.current === undefined) {
+        handledRefreshToken.current = refreshToken;
+      }
+      return;
+    }
+    handledRefreshToken.current = refreshToken;
+    void refreshAssetUrl().catch(() => undefined);
+  }, [
+    assetLoading,
+    connectionReady,
+    props.kind,
+    props.workspaceMutationId,
+    refreshAssetUrl,
+    refreshToken,
+    resource._tag,
+  ]);
   // Coder: the image's header or decoded size keeps its box while its bytes are released.
   const [imageSize, rememberImageSize] = useAssetImageSize(props.environmentId, imageResource);
   const rememberDecodedSize = (image: HTMLImageElement) => {
@@ -2383,6 +2422,7 @@ function useChatMarkdownState({
   onUseArtifactTemplate,
   onRunShellCommand,
   imageBaseDir,
+  workspaceMutationId,
   onImageExpand,
   renderContextReference,
   headingLevelOffset = 0,
@@ -2649,6 +2689,7 @@ function useChatMarkdownState({
     renderContextReference,
     headingLevelOffset,
     imageBaseDir,
+    workspaceMutationId,
     inlineCodeFileLinkMetaByText,
     isStreaming,
     markdownFileLinkMetaByHref,
@@ -3054,9 +3095,14 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   img: function MarkdownImage({ node, title, src, alt, ...props }) {
-    const { expandMedia, cwd, imageBaseDir, threadRef, renderContextReference } = use(
-      ChatMarkdownRendererContext,
-    );
+    const {
+      expandMedia,
+      cwd,
+      imageBaseDir,
+      threadRef,
+      workspaceMutationId,
+      renderContextReference,
+    } = use(ChatMarkdownRendererContext);
     const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
     const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
     if (contextReference) {
@@ -3141,6 +3187,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           // Coder: keeps authored `id`s for fragment links, as the fork's helper images did.
           imageProps={imageProps}
           workspaceRoot={cwd}
+          workspaceMutationId={workspaceMutationId}
           onImageExpand={imageExpand}
         />
       );

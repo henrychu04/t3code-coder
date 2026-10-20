@@ -10,7 +10,7 @@ import {
   createEnvironmentSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
+import { subscribe, subscribeDynamic, type EnvironmentRpcInput } from "../rpc/client.ts";
 import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
@@ -54,25 +54,39 @@ export function createTerminalEnvironmentAtoms<R, E>(
     }),
     attach: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:attach",
-      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>, environmentId) =>
-        Stream.suspend(() => {
+      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>, environmentId) => {
+        // Retry an unanswered first attach unchanged so it can still open the shell.
+        let replied = false;
+        return Stream.suspend(() => {
           const seed = nextTerminalAttachSeedState();
           const cached = terminalBufferCache.read(environmentId, input);
           const initial =
             cached.version === 0
               ? seed
               : { ...cached, output: { ...cached.output, generation: seed.output.generation } };
-          const afterSequence = cached.version === 0 ? null : (cached.sequence ?? null);
-          return subscribe(WS_METHODS.terminalAttach, {
-            ...input,
-            ...(afterSequence === null ? {} : { afterSequence }),
-          }).pipe(
+          return subscribeDynamic(WS_METHODS.terminalAttach, () =>
+            Effect.sync(() => {
+              // Coder: each attempt resumes after the last sequence the cache applied.
+              const current = terminalBufferCache.read(environmentId, input);
+              const afterSequence = current.version === 0 ? null : (current.sequence ?? null);
+              return {
+                ...(replied ? { ...input, resume: true } : input),
+                ...(afterSequence === null ? {} : { afterSequence }),
+              };
+            }),
+          ).pipe(
+            Stream.onFirst(() =>
+              Effect.sync(() => {
+                replied = true;
+              }),
+            ),
             Stream.scan(() => initial, applyTerminalAttachStreamEvent),
             Stream.tap((state) =>
               Effect.sync(() => terminalBufferCache.write(environmentId, input, state)),
             ),
           );
-        }),
+        });
+      },
     }),
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:events",

@@ -54,6 +54,8 @@ export const TerminalAttachInput = Schema.Struct({
   restartIfNotRunning: Schema.optional(Schema.Boolean),
   // Coder: the last event sequence the client applied, for replay-window resume.
   afterSequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  // Resubscriptions preserve stopped terminals; unknown IDs recover after a server restart.
+  resume: Schema.optional(Schema.Boolean),
 });
 export type TerminalAttachInput = typeof TerminalAttachInput.Type;
 

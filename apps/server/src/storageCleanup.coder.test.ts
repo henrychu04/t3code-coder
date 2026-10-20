@@ -43,6 +43,7 @@ function fixtures(snapshot: Snapshot = emptySnapshot) {
       getShellSnapshot: (options) =>
         Effect.succeed({
           threads: options?.location === "archive" ? [] : snapshot.threads,
+          archivedThreads: [],
         } as never),
       getThreadWorktreePaths: () =>
         Effect.succeed(

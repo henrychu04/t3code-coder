@@ -12,6 +12,7 @@ import {
   isWorkspaceImagePreviewPath,
   isWorkspaceVideoPreviewPath,
 } from "@t3tools/shared/filePreview";
+import { useAtomValue } from "@effect/atom-react";
 import {
   DEFAULT_TOKENIZE_MAX_LENGTH,
   VirtualizedFile,
@@ -829,6 +830,7 @@ function RenderedMarkdownSurface({
   relativePath,
   contents,
   threadRef,
+  workspaceMutationId,
   readOnly,
   onPendingChange,
   onSaveFailed,
@@ -843,6 +845,7 @@ function RenderedMarkdownSurface({
 > & {
   threadRef: ScopedThreadRef;
   readOnly: boolean;
+  workspaceMutationId: string | null;
 }) {
   const saveCoordinator = useFileSaveCoordinator({
     environmentId,
@@ -861,6 +864,7 @@ function RenderedMarkdownSurface({
         cwd={cwd}
         relativePath={relativePath}
         threadRef={threadRef}
+        workspaceMutationId={workspaceMutationId}
         onTaskListChange={
           readOnly
             ? undefined
@@ -1263,6 +1267,7 @@ export default function FilePreviewPanel({
                 relativePath={relativePath}
                 threadRef={threadRef}
                 contents={file.data.contents}
+                workspaceMutationId={workspaceMutationId}
                 readOnly={isHostFile || !canWriteFiles}
                 onPendingChange={handlePendingChange}
                 onSaveFailed={setSaveFailedPath}

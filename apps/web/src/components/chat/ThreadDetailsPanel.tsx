@@ -44,7 +44,7 @@ export interface ThreadDetailsPanelProps extends Pick<
   envLocked: boolean;
   availableEnvironments: readonly EnvironmentOption[];
   // Coder: no "Auto balance" run target; upstream's load balancing is not carried.
-  onEnvironmentChange: (environmentId: EnvironmentId) => void;
+  onEnvironmentChange?: (environmentId: EnvironmentId) => void;
   onEnvModeChange: (mode: EnvMode) => void;
   envMode: EnvMode;
   activeThreadBranchOverride?: string | null;
@@ -115,7 +115,9 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   layout="panel"
                   panelSection="workspace"
                   availableEnvironments={props.availableEnvironments}
-                  onEnvironmentChange={props.onEnvironmentChange}
+                  {...(props.onEnvironmentChange
+                    ? { onEnvironmentChange: props.onEnvironmentChange }
+                    : {})}
                   {...branchToolbarProps}
                 />
               ) : null}

@@ -18,6 +18,7 @@ export const ConnectionTransientReason = Schema.Literals([
   "timeout",
   "transport",
   "remote-unavailable",
+  "session-pending",
 ]);
 export type ConnectionTransientReason = typeof ConnectionTransientReason.Type;
 export const ConnectionBlockedReason = Schema.Literals(["configuration", "unsupported"]);

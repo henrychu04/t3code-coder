@@ -33,7 +33,9 @@ that created it running, so send a message in that thread first if the app says 
 An app that navigates away from its own page is stopped. An app can offer a file to save;
 T3 Coder asks you first.
 
-An app can open full screen; use the button in its top corner, or press Escape outside the app, to
-return it to the thread. Anything else that needs your attention, such as an approval, also returns
-it to the thread. An app can also keep the agent informed of what you did in it, such as a filter you
-picked; T3 Coder sends the latest note from each app with your next message.
+An app can open full screen right after you click in it; a click in the app within five seconds of a
+click or key press elsewhere in T3 Coder doesn't count, so click it again after that. Use the button
+in its top corner, or press Escape outside the app, to return it to the thread. Anything else that
+needs your attention, such as an approval, also returns it to the thread. An app can also keep the
+agent informed of what you did in it, such as a filter you picked; T3 Coder sends the latest note
+from each app with your next message.
