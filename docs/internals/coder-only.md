@@ -1169,7 +1169,10 @@ listed here is drift to remove rather than fork behavior to keep.
     unreachable; the `/projects/$projectKey` redirect has no auth gate.
   - Merge-request list preferences remember presentation controls only, never repository
     identities or search text. Dropped or pasted folders are neither uploaded nor referenced
-    (only files become composer attachments). Project icons come from saved
+    (only files become composer attachments). `ChatComposer.tsx`'s `addComposerFolders` always
+    takes upstream's remote-environment branch and shows its "local desktop environment" toast,
+    because every workspace is remote; upstream's desktop path lookup (`folderDrop.ts`) is not
+    carried. Project icons come from saved
     metadata or monograms, without favicon reads. The worktree setup card says "Use project
     checkout", because the checkout is in the workspace.
 - **Codex app-server package.** `packages/effect-codex-app-server` is upstream's, including

@@ -1816,6 +1816,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         addFiles: (files) => {
           onFileDropThreads(threadRef, files);
         },
+        addFolders: () => {},
       })
     : null;
   useEffect(() => {
@@ -2601,6 +2602,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     addFiles: (files) => {
       onFileDropThreads(threadRef, files);
     },
+    addFolders: () => {},
   });
   useEffect(() => {
     if (!isFileDragOver) return;
