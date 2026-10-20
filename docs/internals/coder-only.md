@@ -782,7 +782,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `WsRpcGroup` stays dormant, unreferenced, with the RPCs only it uses, and `knip.jsonc`
     ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
-  - `ServerConfig` omits auth, editors, remote open targets, and observability.
+  - `ServerConfig` omits auth, editors, remote open targets, and observability, except
+    upstream's optional `lastEventLoopStall`, which stays in the schema but is never sent.
   - `VcsProcessExitError`'s not-found detail drops upstream's `gh`/`az` "Pull request" text.
     The rest of `vcs.ts` and `git.ts` keep upstream's shapes, plus the helper-only ref-status
     and thread-branch rename schemas.
@@ -823,7 +824,8 @@ listed here is drift to remove rather than fork behavior to keep.
   Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
-  element captures, SnapShot, upstream's large-paste-to-file folding, and remote icons. Draft file
+  element captures, SnapShot (with its open question-draft tracker in `questionAttachments.ts`),
+  upstream's large-paste-to-file folding, and remote icons. Draft file
   and video attachments preview from their in-memory bytes as on main: files open in
   `files/AttachmentFilePreview.tsx` (upstream's viewer, with Save writing the in-memory bytes
   instead of a signed-URL download) and videos in the gallery. A draft restored after a reload has no bytes, so it has no

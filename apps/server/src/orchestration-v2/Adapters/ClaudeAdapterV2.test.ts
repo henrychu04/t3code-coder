@@ -2893,6 +2893,25 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   const makeWakeHarness = makeWakeHarnessWithOptions();
 
   describe("Claude settings restrictions", () => {
+    // Coder: each settings resolution reads remote-settings.json once, so counting those reads
+    // stands in for upstream's resolveSettings call count.
+    const countRemoteSettingsReads = () => {
+      const reads = { count: 0 };
+      const layer = Layer.effect(
+        FileSystem.FileSystem,
+        Effect.map(FileSystem.FileSystem, (fileSystem) =>
+          FileSystem.FileSystem.of({
+            ...fileSystem,
+            readFileString: (path, encoding) => {
+              if (path.endsWith("remote-settings.json")) reads.count += 1;
+              return fileSystem.readFileString(path, encoding);
+            },
+          }),
+        ),
+      ).pipe(Layer.provide(NodeServices.layer));
+      return { reads, layer };
+    };
+
     it.effect("resolves cached managed policy from the configured home through the real SDK", () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -2948,8 +2967,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
     );
 
-    it.effect("asks before restricted Full access tools and follows policy across turns", () =>
-      Effect.gen(function* () {
+    it.effect("asks before restricted Full access tools and follows policy across turns", () => {
+      const remoteSettings = countRemoteSettingsReads();
+      return Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-policy-" });
@@ -3022,7 +3042,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         assert.equal(harness.getOpenedOptions()?.permissionMode, "auto");
         yield* finish;
         assert.equal(notices().length, 0);
-        // Coder: no resolver call counts; the adapter reads the settings files directly.
+        assert.equal(remoteSettings.reads.count, 0);
 
         yield* start(restricted);
         const openedOptions = harness.getOpenedOptions()!;
@@ -3075,11 +3095,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* start(restricted);
         assert.strictEqual(harness.getOpenedOptions(), openedOptions);
         assert.deepEqual(harness.permissionModeChanges, ["auto"]);
+        assert.equal(remoteSettings.reads.count, 1);
         yield* finish;
 
         yield* start(restrictedWorktree);
         assert.equal(harness.getOpenedOptions()?.permissionMode, "default");
         assert.isUndefined(harness.getOpenedOptions()?.allowDangerouslySkipPermissions);
+        assert.equal(remoteSettings.reads.count, 2);
         yield* finish;
 
         yield* start(unrestricted);
@@ -3152,6 +3174,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ["auto"],
           "A CLI policy downgrade must not be restored to bypass on the next turn",
         );
+        assert.equal(remoteSettings.reads.count, 3);
         yield* harness.offerAndWait(
           claudeSdkFrame({
             type: "system",
@@ -3206,11 +3229,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }
         assert.equal(notices().length, 1);
       }).pipe(
+        Effect.provide(remoteSettings.layer),
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
         ),
-      ),
-    );
+      );
+    });
 
     it.effect(
       "combines a normalized custom home with project policy without reading the ambient user tier",
@@ -3272,8 +3296,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
     it.effect(
       "distinguishes missing custom settings from unreadable, malformed, or unresolved policy",
-      () =>
-        Effect.gen(function* () {
+      () => {
+        const remoteSettings = countRemoteSettingsReads();
+        return Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const home = yield* fileSystem.makeTempDirectoryScoped({
@@ -3315,6 +3340,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             close: Queue.shutdown,
             freshQueueOnReopen: true,
           });
+          const readsBeforeRecovery = remoteSettings.reads.count;
           for (const ordinal of [1, 2]) {
             yield* harness.runtime.startTurn(
               makeClaudeTestTurnInput({
@@ -3336,6 +3362,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             );
             if (ordinal === 1) assert.isUndefined(options.allowDangerouslySkipPermissions);
             else assert.equal(options.allowDangerouslySkipPermissions, true);
+            assert.equal(remoteSettings.reads.count - readsBeforeRecovery, ordinal);
             yield* harness.offerAndWait(
               makeResultFrame({ uuid: `settings-recovery-result-${ordinal}`, result: "Done." }),
             );
@@ -3343,10 +3370,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           }
           assert.equal(harness.offeredMessages.length, 2);
         }).pipe(
+          Effect.provide(remoteSettings.layer),
           Effect.provide(
             Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
           ),
-        ),
+        );
+      },
     );
   });
 

@@ -1,5 +1,4 @@
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { create } from "zustand";
 import { DraftId, useComposerDraftStore } from "./composerDraftStore";
 import { releaseDraftAttachments } from "./lib/attachmentUploadQueue";
@@ -22,37 +21,7 @@ export function questionAttachmentDraftId(
   );
 }
 
-type OpenQuestionAttachmentDraft = {
-  readonly draftId: DraftId;
-  readonly requestKeys: ReadonlyArray<DraftId>;
-};
-
-const openQuestionDrafts = new Map<string, OpenQuestionAttachmentDraft>();
-
-export function openQuestionAttachmentDraft(
-  threadRef: ScopedThreadRef,
-): OpenQuestionAttachmentDraft | null {
-  return openQuestionDrafts.get(scopedThreadKey(threadRef)) ?? null;
-}
-
-export function countQuestionRequestAttachments(draftId: DraftId): number | null {
-  for (const draft of openQuestionDrafts.values()) {
-    if (draft.draftId === draftId) return countQuestionAttachments(draft.requestKeys);
-  }
-  return null;
-}
-
-export function trackOpenQuestionAttachmentDraft(
-  threadRef: ScopedThreadRef,
-  draft: OpenQuestionAttachmentDraft,
-): () => void {
-  const key = scopedThreadKey(threadRef);
-  openQuestionDrafts.set(key, draft);
-  return () => {
-    if (openQuestionDrafts.get(key) === draft) openQuestionDrafts.delete(key);
-  };
-}
-
+// Coder: no open question-draft tracker; only the cut SnapShot capture read it (#15538).
 export const useQuestionAttachmentPreparation = create<{ counts: Record<string, number> }>(() => ({
   counts: {},
 }));

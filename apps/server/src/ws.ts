@@ -1462,6 +1462,7 @@ const layerWsRpc = () =>
                 }),
             ),
           ),
+        // Coder: no projects.listIgnoredFiles; "Add to another machine" is not carried.
         [WS_METHODS.projectsReadFile]: (input) =>
           workspaceFileSystem.readFile(input).pipe(
             Effect.mapError(
