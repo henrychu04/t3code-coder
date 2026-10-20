@@ -377,236 +377,244 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
   },
   configSchema: AcpRegistrySettings,
   defaultConfig: () => decodeSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
-    Effect.gen(function* () {
-      const catalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
-      const runtimeCoordinator = yield* Effect.serviceOption(
-        AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator,
+  create: Effect.fn("AcpRegistryDriver.create")(function* ({
+    instanceId,
+    displayName,
+    accentColor,
+    environment,
+    enabled,
+    config,
+  }) {
+    const catalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
+    const runtimeCoordinator = yield* Effect.serviceOption(
+      AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator,
+    );
+    if (Option.isSome(runtimeCoordinator)) {
+      yield* runtimeCoordinator.value.clearAvailableCommands(instanceId);
+      yield* runtimeCoordinator.value.clearLiveConfiguration(instanceId);
+      yield* Effect.addFinalizer(() =>
+        runtimeCoordinator.value
+          .clearAvailableCommands(instanceId)
+          .pipe(Effect.andThen(runtimeCoordinator.value.clearLiveConfiguration(instanceId))),
       );
-      if (Option.isSome(runtimeCoordinator)) {
-        yield* runtimeCoordinator.value.clearAvailableCommands(instanceId);
-        yield* runtimeCoordinator.value.clearLiveConfiguration(instanceId);
-        yield* Effect.addFinalizer(() =>
-          runtimeCoordinator.value
-            .clearAvailableCommands(instanceId)
-            .pipe(Effect.andThen(runtimeCoordinator.value.clearLiveConfiguration(instanceId))),
+    }
+    const crypto = yield* Crypto.Crypto;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const hostEnvironment = yield* HostProcess.Environment;
+    const host = yield* ProviderHost.ProviderHost;
+    const continuationIdentity = defaultProviderContinuationIdentity({
+      driverKind: DRIVER_KIND,
+      instanceId,
+    });
+    const identity = {
+      instanceId,
+      displayName,
+      accentColor,
+      continuationKey: continuationIdentity.continuationKey,
+    };
+    const effectiveConfig = { ...config, enabled } satisfies AcpRegistrySettings;
+    const processEnvironment = yield* mergeProviderInstanceEnvironment(
+      environment,
+      hostEnvironment,
+    );
+    const orchestrationAdapter = yield* AcpRegistryAdapterV2Driver.create({
+      instanceId,
+      displayName,
+      accentColor,
+      environment,
+      enabled,
+      config,
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderDriverError({
+            driver: DRIVER_KIND,
+            instanceId,
+            detail: "Failed to build the Kilo Code orchestration adapter.",
+            cause,
+          }),
+      ),
+    );
+    const readinessInput = {
+      ...identity,
+      settings: effectiveConfig,
+      environment: processEnvironment,
+    };
+    const withLiveRuntimeState = Effect.fn("AcpRegistryDriver.withLiveRuntimeState")(function* (
+      provider: ServerProvider,
+    ) {
+      return yield* Option.isNone(runtimeCoordinator)
+        ? Effect.succeed(provider)
+        : Effect.all({
+            commands: runtimeCoordinator.value.getAvailableCommands(instanceId),
+            configuration: runtimeCoordinator.value.getLiveConfiguration(instanceId),
+          }).pipe(
+            Effect.map(({ commands, configuration }) => {
+              const withCommands = applyAcpRegistryAvailableCommands(provider, commands);
+              return Option.match(configuration, {
+                onNone: () => withCommands,
+                onSome: (liveConfiguration) =>
+                  applyAcpRegistryLiveConfiguration(
+                    withCommands,
+                    liveConfiguration,
+                    effectiveConfig.customModels,
+                  ),
+              });
+            }),
+          );
+    });
+    const checkProvider = checkAcpRegistryProviderReadiness(readinessInput).pipe(
+      Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
+      Effect.flatMap(withLiveRuntimeState),
+    );
+    const enrichProvider = checkAcpRegistryProviderStatus(
+      {
+        ...readinessInput,
+        cwd: host.paths.cwd,
+      },
+      probeAcpRegistryConfiguration,
+    ).pipe(
+      Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.provideService(Crypto.Crypto, crypto),
+    );
+    const enrichmentCache = yield* Ref.make<{
+      readonly generation: number;
+      readonly entry: {
+        readonly provider: ServerProvider;
+        readonly expiresAt: number;
+      } | null;
+    }>({ generation: 0, entry: null });
+    const liveSnapshotSemaphore = yield* Semaphore.make(1);
+    const enrichProviderCached = Effect.fn("AcpRegistryDriver.enrichProviderCached")(function* (
+      baseSnapshot: ServerProvider,
+    ) {
+      const now = yield* Clock.currentTimeMillis;
+      const cacheState = yield* Ref.get(enrichmentCache);
+      const cached = cacheState.entry;
+      if (
+        cached !== null &&
+        cached.expiresAt > now &&
+        cached.provider.version === baseSnapshot.version
+      ) {
+        return {
+          provider: { ...cached.provider, checkedAt: baseSnapshot.checkedAt },
+          generation: cacheState.generation,
+        };
+      }
+      const enriched = yield* enrichProvider;
+      if (enriched.status === "ready") {
+        yield* Ref.update(enrichmentCache, (current) =>
+          current.generation === cacheState.generation
+            ? {
+                ...current,
+                entry: {
+                  provider: enriched,
+                  expiresAt: now + PROBE_SUCCESS_TTL_MS,
+                },
+              }
+            : current,
         );
       }
-      const crypto = yield* Crypto.Crypto;
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const hostEnvironment = yield* HostProcess.Environment;
-      const host = yield* ProviderHost.ProviderHost;
-      const continuationIdentity = defaultProviderContinuationIdentity({
-        driverKind: DRIVER_KIND,
-        instanceId,
-      });
-      const identity = {
-        instanceId,
-        displayName,
-        accentColor,
-        continuationKey: continuationIdentity.continuationKey,
-      };
-      const effectiveConfig = { ...config, enabled } satisfies AcpRegistrySettings;
-      const processEnvironment = yield* mergeProviderInstanceEnvironment(
-        environment,
-        hostEnvironment,
-      );
-      const orchestrationAdapter = yield* AcpRegistryAdapterV2Driver.create({
-        instanceId,
-        displayName,
-        accentColor,
-        environment,
-        enabled,
-        config,
-      }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: DRIVER_KIND,
-              instanceId,
-              detail: "Failed to build the Kilo Code orchestration adapter.",
-              cause,
+      return { provider: enriched, generation: cacheState.generation };
+    });
+    const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
+    const snapshot = yield* makeManagedServerProvider<
+      ProviderSnapshotSettings<AcpRegistrySettings>
+    >({
+      resolveMaintenance: () => Effect.succeed(MAINTENANCE),
+      getSettings: snapshotSettings.getSettings,
+      streamSettings: snapshotSettings.streamSettings,
+      haveSettingsChanged: haveProviderSnapshotSettingsChanged,
+      initialSnapshot: () => checkProvider,
+      checkProvider,
+      enrichSnapshot: ({ snapshot, getSnapshot, publishSnapshot }) => {
+        if (!snapshot.installed) return Effect.void;
+        const publishEnrichment = (
+          Option.isSome(runtimeCoordinator)
+            ? runtimeCoordinator.value.runBackgroundProbe(
+                `local:${instanceId}`,
+                enrichProviderCached(snapshot),
+              )
+            : enrichProviderCached(snapshot).pipe(Effect.map(Option.some))
+        ).pipe(
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.void,
+              onSome: ({ provider, generation }) =>
+                liveSnapshotSemaphore.withPermit(
+                  Ref.get(enrichmentCache).pipe(
+                    Effect.flatMap((current) =>
+                      current.generation === generation
+                        ? withLiveRuntimeState(provider).pipe(Effect.flatMap(publishSnapshot))
+                        : Effect.void,
+                    ),
+                  ),
+                ),
             }),
-        ),
-      );
-      const readinessInput = {
-        ...identity,
-        settings: effectiveConfig,
-        environment: processEnvironment,
-      };
-      const withLiveRuntimeState = (provider: ServerProvider) =>
-        Effect.gen(function* () {
-          return yield* Option.isNone(runtimeCoordinator)
-            ? Effect.succeed(provider)
-            : Effect.all({
-                commands: runtimeCoordinator.value.getAvailableCommands(instanceId),
-                configuration: runtimeCoordinator.value.getLiveConfiguration(instanceId),
-              }).pipe(
-                Effect.map(({ commands, configuration }) => {
-                  const withCommands = applyAcpRegistryAvailableCommands(provider, commands);
-                  return Option.match(configuration, {
-                    onNone: () => withCommands,
-                    onSome: (liveConfiguration) =>
-                      applyAcpRegistryLiveConfiguration(
-                        withCommands,
-                        liveConfiguration,
-                        effectiveConfig.customModels,
-                      ),
-                  });
-                }),
-              );
-        });
-      const checkProvider = checkAcpRegistryProviderReadiness(readinessInput).pipe(
-        Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
-        Effect.flatMap(withLiveRuntimeState),
-      );
-      const enrichProvider = checkAcpRegistryProviderStatus(
-        {
-          ...readinessInput,
-          cwd: host.paths.cwd,
-        },
-        probeAcpRegistryConfiguration,
-      ).pipe(
-        Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.provideService(Crypto.Crypto, crypto),
-      );
-      const enrichmentCache = yield* Ref.make<{
-        readonly generation: number;
-        readonly entry: {
-          readonly provider: ServerProvider;
-          readonly expiresAt: number;
-        } | null;
-      }>({ generation: 0, entry: null });
-      const liveSnapshotSemaphore = yield* Semaphore.make(1);
-      const enrichProviderCached = (baseSnapshot: ServerProvider) =>
-        Effect.gen(function* () {
-          const now = yield* Clock.currentTimeMillis;
-          const cacheState = yield* Ref.get(enrichmentCache);
-          const cached = cacheState.entry;
-          if (
-            cached !== null &&
-            cached.expiresAt > now &&
-            cached.provider.version === baseSnapshot.version
-          ) {
-            return {
-              provider: { ...cached.provider, checkedAt: baseSnapshot.checkedAt },
-              generation: cacheState.generation,
-            };
-          }
-          const enriched = yield* enrichProvider;
-          if (enriched.status === "ready") {
-            yield* Ref.update(enrichmentCache, (current) =>
-              current.generation === cacheState.generation
-                ? {
+          ),
+        );
+        if (Option.isNone(runtimeCoordinator)) return publishEnrichment;
+
+        const publishLiveCommands = runtimeCoordinator.value.watchAvailableCommands(
+          instanceId,
+          ({ slashCommands, skills }) =>
+            liveSnapshotSemaphore.withPermit(
+              getSnapshot.pipe(
+                Effect.flatMap((current) =>
+                  publishSnapshot({
                     ...current,
-                    entry: {
-                      provider: enriched,
-                      expiresAt: now + PROBE_SUCCESS_TTL_MS,
-                    },
-                  }
-                : current,
-            );
-          }
-          return { provider: enriched, generation: cacheState.generation };
-        });
-      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
-      const snapshot = yield* makeManagedServerProvider<
-        ProviderSnapshotSettings<AcpRegistrySettings>
-      >({
-        resolveMaintenance: () => Effect.succeed(MAINTENANCE),
-        getSettings: snapshotSettings.getSettings,
-        streamSettings: snapshotSettings.streamSettings,
-        haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: () => checkProvider,
-        checkProvider,
-        enrichSnapshot: ({ snapshot, getSnapshot, publishSnapshot }) => {
-          if (!snapshot.installed) return Effect.void;
-          const publishEnrichment = (
-            Option.isSome(runtimeCoordinator)
-              ? runtimeCoordinator.value.runBackgroundProbe(
-                  `local:${instanceId}`,
-                  enrichProviderCached(snapshot),
-                )
-              : enrichProviderCached(snapshot).pipe(Effect.map(Option.some))
-          ).pipe(
-            Effect.flatMap(
-              Option.match({
-                onNone: () => Effect.void,
-                onSome: ({ provider, generation }) =>
-                  liveSnapshotSemaphore.withPermit(
-                    Ref.get(enrichmentCache).pipe(
-                      Effect.flatMap((current) =>
-                        current.generation === generation
-                          ? withLiveRuntimeState(provider).pipe(Effect.flatMap(publishSnapshot))
-                          : Effect.void,
-                      ),
-                    ),
-                  ),
-              }),
+                    slashCommands,
+                    skills,
+                  }),
+                ),
+              ),
             ),
-          );
-          if (Option.isNone(runtimeCoordinator)) return publishEnrichment;
-
-          const publishLiveCommands = runtimeCoordinator.value.watchAvailableCommands(
-            instanceId,
-            ({ slashCommands, skills }) =>
-              liveSnapshotSemaphore.withPermit(
-                getSnapshot.pipe(
-                  Effect.flatMap((current) =>
-                    publishSnapshot({
-                      ...current,
-                      slashCommands,
-                      skills,
-                    }),
-                  ),
-                ),
-              ),
-          );
-          const publishLiveConfiguration = runtimeCoordinator.value.watchLiveConfiguration(
-            instanceId,
-            (configuration) =>
-              liveSnapshotSemaphore.withPermit(
-                getSnapshot.pipe(
-                  Effect.flatMap((current) =>
-                    publishSnapshot(
-                      applyAcpRegistryLiveConfiguration(
-                        current,
-                        configuration,
-                        effectiveConfig.customModels,
-                      ),
+        );
+        const publishLiveConfiguration = runtimeCoordinator.value.watchLiveConfiguration(
+          instanceId,
+          (configuration) =>
+            liveSnapshotSemaphore.withPermit(
+              getSnapshot.pipe(
+                Effect.flatMap((current) =>
+                  publishSnapshot(
+                    applyAcpRegistryLiveConfiguration(
+                      current,
+                      configuration,
+                      effectiveConfig.customModels,
                     ),
                   ),
                 ),
               ),
-          );
-          return Effect.all([publishEnrichment, publishLiveCommands, publishLiveConfiguration], {
-            concurrency: "unbounded",
-            discard: true,
-          });
-        },
-      }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: DRIVER_KIND,
-              instanceId,
-              detail: "Failed to build the Kilo Code provider snapshot.",
-              cause,
-            }),
-        ),
-      );
+            ),
+        );
+        return Effect.all([publishEnrichment, publishLiveCommands, publishLiveConfiguration], {
+          concurrency: "unbounded",
+          discard: true,
+        });
+      },
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderDriverError({
+            driver: DRIVER_KIND,
+            instanceId,
+            detail: "Failed to build the Kilo Code provider snapshot.",
+            cause,
+          }),
+      ),
+    );
 
-      return {
-        instanceId,
-        driverKind: DRIVER_KIND,
-        continuationIdentity,
-        displayName,
-        accentColor,
-        enabled,
-        snapshot,
-        orchestrationAdapter,
-        textGeneration: makeUnsupportedTextGeneration(),
-      } satisfies ProviderInstance;
-    }),
+    return {
+      instanceId,
+      driverKind: DRIVER_KIND,
+      continuationIdentity,
+      displayName,
+      accentColor,
+      enabled,
+      snapshot,
+      orchestrationAdapter,
+      textGeneration: makeUnsupportedTextGeneration(),
+    } satisfies ProviderInstance;
+  }),
 };

@@ -100,6 +100,8 @@ import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
+import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import { latestProviderVersionCacheKeys } from "@t3tools/provider-core/server/maintenanceResolver";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -840,6 +842,7 @@ const layerWsRpc = () =>
       const terminalManager = yield* TerminalManager.TerminalManager;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+      const providerLatestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
@@ -1211,8 +1214,35 @@ const layerWsRpc = () =>
         // Coder: the trimmed workspace config.
         [WS_METHODS.serverGetConfig]: (_input) => loadServerConfig,
         // Coder: refresh workspace providers without remote manifests or unsupported usage/model refreshes.
-        [WS_METHODS.serverRefreshProviders]: (input) =>
-          Effect.gen(function* () {
+        [WS_METHODS.serverRefreshProviders]:
+          /* Request instrumentation already owns the span; keep this helper in that context. */
+          Effect.fnUntraced(function* (input) {
+            // Coder: the model manifest is bundled, so a manual check only drops cached versions.
+            if (input.refreshModels) {
+              const instances = yield* providerInstances.listInstances;
+              yield* Effect.forEach(
+                instances.filter(
+                  (instance) =>
+                    input.instanceId === undefined || input.instanceId === instance.instanceId,
+                ),
+                (instance) =>
+                  Effect.gen(function* () {
+                    yield* instance.invalidateCaches ?? Effect.void;
+                    const maintenance = yield* instance.snapshot.resolveMaintenance({
+                      fresh:
+                        input.instanceId !== undefined &&
+                        input.cwd !== undefined &&
+                        input.fresh !== true,
+                    });
+                    yield* Effect.forEach(
+                      latestProviderVersionCacheKeys(maintenance),
+                      providerLatestVersions.invalidate,
+                      { discard: true },
+                    );
+                  }),
+                { concurrency: "unbounded", discard: true },
+              );
+            }
             const providers = yield* input.cwd !== undefined && input.instanceId !== undefined
               ? providerRegistry.refreshWorkspaceSnapshot({
                   instanceId: input.instanceId,
@@ -1230,13 +1260,15 @@ const layerWsRpc = () =>
         [WS_METHODS.mcpAppsReadResource]: (input) => mcpAppRequests.readResource(input),
         [WS_METHODS.serverUpdateProvider]: (input) =>
           providerMaintenanceRunner.updateProvider(input),
-        [WS_METHODS.serverUpsertKeybinding]: (rule) =>
-          Effect.gen(function* () {
+        [WS_METHODS.serverUpsertKeybinding]:
+          /* Request instrumentation already owns the span; keep this helper in that context. */
+          Effect.fnUntraced(function* (rule) {
             const keybindingsConfig = yield* keybindings.upsertKeybindingRule(rule);
             return { keybindings: keybindingsConfig, issues: [] };
           }),
-        [WS_METHODS.serverRemoveKeybinding]: (rule) =>
-          Effect.gen(function* () {
+        [WS_METHODS.serverRemoveKeybinding]:
+          /* Request instrumentation already owns the span; keep this helper in that context. */
+          Effect.fnUntraced(function* (rule) {
             const keybindingsConfig = yield* keybindings.removeKeybindingRule(rule);
             return { keybindings: keybindingsConfig, issues: [] };
           }),
@@ -1245,8 +1277,9 @@ const layerWsRpc = () =>
         [WS_METHODS.serverGetSettings]: (_input) =>
           serverSettings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
         // Coder: workspace settings have no device hosts to resolve.
-        [WS_METHODS.serverUpdateSettings]: ({ patch, providerInstanceMutation }) =>
-          Effect.gen(function* () {
+        [WS_METHODS.serverUpdateSettings]:
+          /* Request instrumentation already owns the span; keep this helper in that context. */
+          Effect.fnUntraced(function* ({ patch, providerInstanceMutation }) {
             const settings = yield* providerInstanceMutation === undefined
               ? serverSettings.updateSettings(patch)
               : serverSettings.updateProviderInstance(providerInstanceMutation, patch);

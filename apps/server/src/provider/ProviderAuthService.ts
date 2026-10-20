@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Function from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 

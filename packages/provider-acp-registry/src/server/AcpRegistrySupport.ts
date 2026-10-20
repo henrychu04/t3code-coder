@@ -83,8 +83,8 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
         )
       : Effect.void;
 
-  const inspect: AcpRegistryCatalog["Service"]["inspect"] = (settings, environment) =>
-    Effect.gen(function* () {
+  const inspect: AcpRegistryCatalog["Service"]["inspect"] = Effect.fn("AcpRegistryCatalog.inspect")(
+    function* (settings, environment) {
       const command = settings.commandPath.trim();
       if (!command) return { status: "unconfigured" } as const;
       const executable = resolveExecutable(command, platform, environment ?? hostEnvironment);
@@ -96,10 +96,11 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
             distribution: "local",
           } as const)
         : ({ status: "ready", agentId: command, version: null, distribution: "local" } as const);
-    });
+    },
+  );
 
-  const resolve: AcpRegistryCatalog["Service"]["resolve"] = (settings, cwd, environment) =>
-    Effect.gen(function* () {
+  const resolve: AcpRegistryCatalog["Service"]["resolve"] = Effect.fn("AcpRegistryCatalog.resolve")(
+    function* (settings, cwd, environment) {
       const executable = settings.commandPath.trim();
       if (!executable) {
         return yield* new AcpRegistryError({
@@ -120,7 +121,8 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
         distribution: "local",
         spawn: { command, args: settings.commandArgs, cwd, env, shell: false },
       } satisfies ResolvedAcpRegistryAgent;
-    });
+    },
+  );
 
   return AcpRegistryCatalog.of({ inspect, resolve });
 });
