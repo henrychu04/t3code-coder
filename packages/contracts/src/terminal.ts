@@ -53,8 +53,10 @@ export const TerminalAttachInput = Schema.Struct({
   env: Schema.optional(TerminalEnvSchema),
   providerInstanceId: Schema.optional(ProviderInstanceId),
   restartIfNotRunning: Schema.optional(Schema.Boolean),
-  // Coder: the last event sequence the client applied, for replay-window resume.
+  // Coder: the last event sequence the client applied, for replay-window resume, and the session
+  // epoch it was applied in; sequences restart with every new shell session.
   afterSequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  afterEpoch: Schema.optional(Schema.String),
   // Resubscriptions preserve stopped terminals; unknown IDs recover after a server restart.
   resume: Schema.optional(Schema.Boolean),
 });
@@ -113,6 +115,8 @@ export const TerminalSessionSnapshot = Schema.Struct({
   label: Schema.String.check(Schema.isMaxLength(128)),
   updatedAt: Schema.String,
   sequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  // Coder: identifies the shell session whose sequences a replay-window resume refers to.
+  attachEpoch: Schema.optional(Schema.String),
 });
 export type TerminalSessionSnapshot = typeof TerminalSessionSnapshot.Type;
 

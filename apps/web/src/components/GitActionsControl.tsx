@@ -1088,6 +1088,17 @@ export default function GitActionsControl({
   const changesTotals = gitStatusForActions?.branchChanges ?? gitStatusForActions?.workingTree;
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
+  // Coder: status paths are repository-relative, and the Files surface opens paths relative to
+  // the thread's folder, which can be a subfolder of the repository.
+  const changedFileOpenPath = (filePath: string): string | null => {
+    const rootPath = gitStatusForActions?.workingTree.rootPath;
+    if (!rootPath || !gitCwd) return filePath;
+    const root = rootPath.replace(/\/+$/, "");
+    const base = gitCwd.replace(/\/+$/, "");
+    if (!base.startsWith(`${root}/`)) return filePath;
+    const prefix = `${base.slice(root.length + 1)}/`;
+    return filePath.startsWith(prefix) ? filePath.slice(prefix.length) : null;
+  };
   const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));
   const allSelected = excludedFiles.size === 0;
   const noneSelected = selectedFiles.length === 0;
@@ -1903,8 +1914,11 @@ export default function GitActionsControl({
                                 <button
                                   type="button"
                                   className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
-                                  onClick={() => onOpenFile?.(file.path)}
-                                  disabled={!onOpenFile}
+                                  onClick={() => {
+                                    const openPath = changedFileOpenPath(file.path);
+                                    if (openPath !== null) onOpenFile?.(openPath);
+                                  }}
+                                  disabled={!onOpenFile || changedFileOpenPath(file.path) === null}
                                 >
                                   <StartTruncatedPath
                                     path={file.path}

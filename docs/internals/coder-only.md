@@ -764,7 +764,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
     `CustomModelCapabilities`, which cannot declare them.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
-  - Terminal attach input adds `afterSequence`, and the attach stream adds a `resumed` event.
+  - Terminal attach input adds `afterSequence` and `afterEpoch`, terminal snapshots add
+    `attachEpoch`, and the attach stream adds a `resumed` event.
   - Claude launch args reach the workspace CLI except the stream-json transport flags. `ClaudeAgentSdk.ts` passes
     `mcpServers` and `strictMcpConfig` as the SDK does and rejects in-process (`sdk`) MCP servers,
     which the CLI transport cannot host.
@@ -777,12 +778,14 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Terminals.** `terminal/Manager.ts` is upstream's. Coder deltas: it records each terminal's
   attach events in a bounded replay window (`DEFAULT_ATTACH_REPLAY_*` in `Manager.ts`) and answers an
   attach with `afterSequence` by replaying the missed events and a `resumed` event instead of a
-  snapshot when the window still covers the gap. Terminals poll the process table themselves
+  snapshot when the window still covers the gap. Each shell session restarts its sequences, so
+  it also has an `attachEpoch`, and a cursor whose `afterEpoch` names another session gets a
+  snapshot. Terminals poll the process table themselves
   (no resource telemetry), register no ports for preview discovery, record no metrics, and get
   no managed ACP install directories on `PATH`. In the browser, the terminal session state, output model,
   drawer, and UI state store are upstream's; client-runtime adds `TerminalBufferCache`, a bounded
-  in-memory cache that seeds a reattach and supplies its `afterSequence`, and tracks the last
-  applied sequence. Each attach attempt reads `afterSequence` from that cache, beside upstream's
+  in-memory cache that seeds a reattach and supplies its `afterSequence` and `afterEpoch`, and
+  tracks the last applied sequence and session epoch. Each attach attempt reads `afterSequence` from that cache, beside upstream's
   `resume` flag, and a resumed attach of a closed terminal gets upstream's `closed` event. `ThreadTerminalDrawer` never opens terminal links (there is no editor or
   preview surface).
 - **Command palette.** `CommandPalette.tsx` is upstream's, including its add-project browse,
@@ -927,7 +930,9 @@ listed here is drift to remove rather than fork behavior to keep.
   [Network and transfer constraints](#network-and-transfer-constraints)), and a PDF keeps the
   built-in viewer's frame where upstream uses `<embed>`, which the gateway's `object-src 'none'`
   blocks; there is no
-  open-in-editor or reveal action, and the tree adds Copy path.
+  open-in-editor or reveal action, and the tree adds Copy path. Changed files in the Git actions
+  dialog open in the Files surface, with repository-relative status paths mapped to the thread's
+  folder; a file outside a subfolder project cannot be opened there.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
   come over the `pullRequests.diff` RPC without upstream's cross-environment GitHub routing,

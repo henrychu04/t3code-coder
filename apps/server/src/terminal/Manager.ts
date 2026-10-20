@@ -254,6 +254,8 @@ interface TerminalSessionState {
   exitSignal: number | null;
   updatedAt: string;
   eventSequence: number;
+  /** Coder: a new value per shell session, because each session restarts its sequences. */
+  attachEpoch: string;
   inputCount: number;
   cols: number;
   rows: number;
@@ -346,6 +348,7 @@ function snapshot(session: TerminalSessionState): TerminalSessionSnapshot {
     label: terminalWireLabel(session),
     updatedAt: session.updatedAt,
     sequence: session.eventSequence,
+    attachEpoch: session.attachEpoch,
   };
 }
 
@@ -2660,6 +2663,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         exitSignal: null,
         updatedAt: yield* nowIso,
         eventSequence: 0,
+        attachEpoch: crypto.randomUUID(),
         inputCount: 0,
         cols,
         rows,
@@ -2863,6 +2867,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const afterSequence = input.afterSequence;
     const snapshotSequence = initialSnapshot.sequence;
     if (afterSequence === undefined || snapshotSequence === undefined) return null;
+    // A cursor from another shell session numbers different events.
+    if (input.afterEpoch === undefined || input.afterEpoch !== initialSnapshot.attachEpoch) {
+      return null;
+    }
     if (afterSequence > snapshotSequence) return null;
     if (afterSequence === snapshotSequence) return [];
     const replay = attachReplay.get(toSessionKey(input.threadId, input.terminalId));
@@ -3147,6 +3155,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         exitSignal: null,
         updatedAt: yield* nowIso,
         eventSequence: 0,
+        attachEpoch: crypto.randomUUID(),
         inputCount: 0,
         cols,
         rows,
