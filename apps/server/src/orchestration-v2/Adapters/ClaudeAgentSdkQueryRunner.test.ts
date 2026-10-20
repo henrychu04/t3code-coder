@@ -12,8 +12,8 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import { vi } from "vite-plus/test";
 
-import { ProviderEventLoggers } from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { ProviderEventLoggers } from "@t3tools/provider-core/server/ProviderEventLoggers";
 // Coder: the runner queries Claude through the CLI transport's SDK-typed shim, so the test
 // stubs the shim's query rather than the Agent SDK's.
 import * as ClaudeAgentSdk from "../../provider/Drivers/ClaudeAgentSdk.ts";
@@ -88,6 +88,8 @@ it.effect("logs successful task stops for replay and omits failed stops", () =>
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+// Coder: upstream's fork tests copy the transcript through the Agent SDK; the CLI transport
+// forks natively on the fork's first query (`ClaudeAdapterV2.forkThread`), so they are not carried.
 const realQueryRunner = layerQueryRunner.pipe(
   Layer.provide(
     Layer.succeed(ProviderEventLoggers, {

@@ -359,4 +359,18 @@ describe("thread notifications", () => {
       silent: true,
     });
   });
+
+  // Coder: there is no desktop window to reveal; the click focuses the tab and opens the thread.
+  it("opens the thread when a system alert is clicked", async () => {
+    state.mode = "notifications";
+    state.focused = false;
+    await render();
+    await complete();
+    const notification: EventTarget = state.notification.mock.results[0]?.value;
+    notification.dispatchEvent(new Event("click"));
+    expect(state.navigate).toHaveBeenCalledWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: "env-1", threadId: "thread-1" },
+    });
+  });
 });

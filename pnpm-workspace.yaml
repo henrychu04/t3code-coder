@@ -75,6 +75,9 @@ overrides:
   "@effect/vitest>vitest": "-"
   "@effect/platform-node>undici": "-"
   "@pierre/diffs>@shikijs/transformers": 4.2.0
+  # Resolve below remark-math so Vite, Metro and Node use the same tokenizer.
+  "remark-math>micromark-extension-math": npm:micromark-extension-llm-math@3.1.0
+  micromark-extension-gfm-table: 2.1.1
   "@types/node": "catalog:"
   effect: "catalog:"
   vite: "catalog:"
@@ -97,6 +100,9 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
+  mdast-util-math@3.0.0: patches/mdast-util-math@3.0.0.patch
+  micromark-extension-llm-math@3.1.0: patches/micromark-extension-llm-math@3.1.0.patch
+  micromark-extension-gfm-table@2.1.1: patches/micromark-extension-gfm-table@2.1.1.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
   "@effect/vitest@4.0.5": patches/@effect__vitest@4.0.5.patch
   "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch

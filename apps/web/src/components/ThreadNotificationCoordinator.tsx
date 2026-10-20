@@ -225,6 +225,7 @@ function EnvironmentNotifications({
         notification.addEventListener("click", () => {
           notification.close();
           window.focus();
+          // Coder: there is no desktop window to reveal; the browser tab takes focus.
           void navigate({
             to: "/$environmentId/$threadId",
             params: { environmentId, threadId: thread.id },

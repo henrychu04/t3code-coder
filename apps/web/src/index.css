@@ -1771,6 +1771,10 @@ code {
   margin: 0.65rem 0;
 }
 
+.chat-markdown-math-display .katex-display {
+  margin: 0;
+}
+
 :is(.chat-markdown, .composer-tiptap) h1,
 :is(.chat-markdown, .composer-tiptap) h2,
 :is(.chat-markdown, .composer-tiptap) h3,
@@ -2015,7 +2019,8 @@ code {
    shot, no layout change. */
 @media (prefers-reduced-motion: no-preference) {
   .chat-markdown[data-streaming] > *,
-  .chat-markdown[data-streaming] .chat-markdown-shiki {
+  .chat-markdown[data-streaming] .chat-markdown-shiki,
+  .chat-markdown[data-streaming] .chat-markdown-mermaid {
     transition: opacity 600ms ease-out;
 
     @starting-style {
@@ -2068,6 +2073,12 @@ code {
 .chat-markdown .chat-markdown-table-container[data-expanded="true"] td {
   max-width: 24rem;
   overflow-wrap: anywhere;
+}
+
+/* Formula cells keep their natural width and scroll with the table. */
+.chat-markdown .chat-markdown-table-container td:has([data-markdown-math]) {
+  max-width: none;
+  overflow: visible;
 }
 
 :root {

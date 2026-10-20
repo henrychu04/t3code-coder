@@ -88,8 +88,8 @@ export function initializeActiveEnvironmentId(environmentId: EnvironmentId): voi
   setActiveEnvironmentId(environmentId);
 }
 
-export function useThreadRefs(): ReadonlyArray<ScopedThreadRef> {
-  return useAtomValue(environmentThreadShells.threadRefsAtom);
+export function useThreadRefs(enabled = true): ReadonlyArray<ScopedThreadRef> {
+  return useAtomValue(enabled ? environmentThreadShells.threadRefsAtom : EMPTY_THREAD_REFS_ATOM);
 }
 
 export function useEnvironmentThreadRefs(
