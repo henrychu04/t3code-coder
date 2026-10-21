@@ -150,7 +150,9 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
 - Forgejo, GitHub, Azure DevOps, Bitbucket, and GitCafe (`packages/source-control-*` except core,
   gitlab, and testing).
 - Other provider packages (`packages/provider-{cursor,grok,muse,opencode}`,
-  `apps/server/src/provider/acp`).
+  `apps/server/src/provider/acp`) and their orchestrator replay fixtures (matched by pattern;
+  upstream's new entries for them in `testkit/fixtures/index.ts` still merge in, and typecheck
+  reports their imports of the deleted files).
 - ACP Registry surfaces Kilo Code does not use (provider-acp-registry's `auth.ts`,
   `authenticationState.ts`, `copilotAcp.ts`, `devinAcp.ts`, and `testing/`; provider-acp's
   `nativeLogging.ts`).
