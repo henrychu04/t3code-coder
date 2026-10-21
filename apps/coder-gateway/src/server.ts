@@ -47,16 +47,13 @@ import {
   type CoderInvocation,
 } from "@t3tools/coder-cli/command";
 import {
-  CoderHelperConnectionError,
   CoderHelperInstallRequiredError,
   connectCoderHelper,
   type CoderHelperConnection,
-  type CoderHelperExit,
 } from "@t3tools/coder-cli/helperConnection";
 import {
   connectCoderPortForward,
   type CoderPortForwardConnection,
-  type CoderPortForwardExit,
 } from "@t3tools/coder-cli/portForward";
 import {
   hashCoderHelperBundle,

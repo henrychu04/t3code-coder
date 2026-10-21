@@ -130,7 +130,7 @@ const environmentConnectionsAtom = Atom.make((get) => {
     EnvironmentId,
     Pick<EnvironmentPresentation, "connection" | "serverConfig">
   >();
-  for (const [environmentId, entry] of get(environmentCatalog.catalogValueAtom).entries) {
+  for (const [environmentId] of get(environmentCatalog.catalogValueAtom).entries) {
     const state = Option.getOrElse(
       AsyncResult.value(get(environmentCatalog.stateAtom(environmentId))),
       () => AVAILABLE_CONNECTION_STATE,

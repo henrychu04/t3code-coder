@@ -443,6 +443,7 @@ const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
 import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
 
+// Coder: no feedback uploads, so no messages anchor to the timeline.
 const EMPTY_ANCHORED_TIMELINE_MESSAGES: ReadonlyArray<ChatMessage> = [];
 const RELATED_THREAD_SHELL_WAIT_MS = 1_000;
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
@@ -528,6 +529,7 @@ export default function ChatView(props: ChatViewProps) {
   const resumeThreadQueue = useOrchestrationCommand(threadEnvironment.resumeThreadQueue, {
     reportFailure: false,
   });
+  // Coder: rewinding re-stages sent images from the helper's bounded reads.
   const readRewindImage = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
     reportFailure: false,
   });
@@ -2051,11 +2053,11 @@ export default function ChatView(props: ChatViewProps) {
     refresh: gitStatusQuery.refresh,
     resourceKey: `git-status:${activeThreadKey ?? ""}:${gitStatusCwd ?? ""}`,
   });
-  // Coder: there are no local editors to open.
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const scriptKeybindings =
     useAtomValue(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
     DEFAULT_RESOLVED_KEYBINDINGS;
+  // Coder: there are no local editors to open.
   const manualCompactionProviderAvailable = hasAvailableCompactionProvider({
     providers: providerInstanceEntries,
     driverKind: selectedProvider,
@@ -2104,7 +2106,6 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
-  const filesAvailable = activeProject !== null;
   useLayoutEffect(() => {
     if (
       threadDetailLoading ||
@@ -2541,7 +2542,7 @@ export default function ChatView(props: ChatViewProps) {
   };
   const openChangesFromThreadPanelStable = useStableCallback(openChangesFromThreadPanel);
   const addFilesSurface = () => {
-    if (!activeThreadRef || !filesAvailable) return;
+    if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
   };
   const addFilesSurfaceStable = useStableCallback(addFilesSurface);
@@ -2559,7 +2560,7 @@ export default function ChatView(props: ChatViewProps) {
   };
   const addPullRequestsSurfaceStable = useStableCallback(addPullRequestsSurface);
   const openFileSurface = (relativePath: string) => {
-    if (!activeThreadRef || !filesAvailable) return;
+    if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
   };
   const openFileSurfaceStable = useStableCallback(openFileSurface);
@@ -5161,7 +5162,6 @@ export default function ChatView(props: ChatViewProps) {
       } else {
         turnStartSucceeded = true;
         setKeepFullHistory(routeThreadKey, false);
-
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
@@ -6415,7 +6415,6 @@ export default function ChatView(props: ChatViewProps) {
                               scheduleComposerFocus={scheduleComposerFocusStable}
                               setThreadError={setThreadError}
                               onExpandImage={onExpandTimelineImageStable}
-
                               editingQueuedAttachments={queuedRunEdit.editingAttachments}
                               onRemoveEditingQueuedAttachment={
                                 queuedRunEdit.removeEditingAttachment
@@ -6608,7 +6607,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequests={addPullRequestsSurfaceStable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
           diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={filesAvailable}
+          filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={pullRequestsSurfaceAvailable}
         >

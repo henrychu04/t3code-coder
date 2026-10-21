@@ -1,9 +1,15 @@
 export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
 
-const MOBILE_DEFAULT_THEME_ID = "t3-code";
+export const MOBILE_DEFAULT_THEME_ID = "t3-code";
 
-const MOBILE_THEME_IDS = [MOBILE_DEFAULT_THEME_ID, ...BUILT_IN_THEME_IDS] as const;
+export const MOBILE_THEME_IDS = [MOBILE_DEFAULT_THEME_ID, ...BUILT_IN_THEME_IDS] as const;
 
+/**
+ * Ids a theme may not take: the appearance keywords a stored preference uses,
+ * every built-in, and the legacy aliases older saves still carry. Taking one
+ * would either be shadowed by the built-in or capture clients that never chose
+ * it, so the client library and the publish path both consult this set.
+ */
 export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "system",
   "light",
@@ -920,11 +926,7 @@ export const BUILT_IN_THEMES: ReadonlyArray<ThemeDefinition> = [
   IRIS_THEME,
 ];
 
-function getBuiltInTheme(id: string): ThemeDefinition | null {
-  return BUILT_IN_THEMES.find((theme) => theme.id === id) ?? null;
-}
-
-function getThemeColorsForAppearance(
+export function getThemeColorsForAppearance(
   theme: ThemeDefinition,
   appearance: ThemeAppearance,
 ): ThemeColors | null {

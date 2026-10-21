@@ -1,4 +1,3 @@
-import type { OrchestrationV2ShellSnapshot } from "@t3tools/contracts";
 import type { DeferredShellSnapshot } from "./shellPullRequests.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

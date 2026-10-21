@@ -256,6 +256,7 @@ export function restoreComposerDraft(
   store.addImages(draftTarget, images);
   store.addFiles(draftTarget, snapshot.files);
   store.setTerminalContexts(draftTarget, snapshot.terminalContexts);
+  // Coder: no browser preview, so there are no preview annotations to restore.
   store.setReviewComments(draftTarget, snapshot.reviewComments);
   store.setThreadContexts(draftTarget, snapshot.threadContexts);
   return images;
@@ -286,6 +287,7 @@ export function resolveMultipleModelTargets(input: {
     if (!provider?.enabled || !provider.isAvailable || provider.status !== "ready") {
       return { error: `Provider for ${selection.model} is unavailable.` };
     }
+    // Coder: Antigravity is not carried, so no provider blocks a send here.
     const providerState = getComposerProviderState({
       provider: provider.driverKind,
       model: selection.model,

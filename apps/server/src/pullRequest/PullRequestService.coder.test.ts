@@ -1,7 +1,7 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { PullRequestFilesViewedRepository } from "../persistence/PullRequestFilesViewed.ts";
 import * as PullRequestReadCache from "./PullRequestReadCache.ts";
-import { assert, expect, it, vi } from "@effect/vitest";
+import { expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";

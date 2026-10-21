@@ -24,7 +24,6 @@ import { runCachePersistence } from "./cachePersistence.ts";
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
-  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
   followStreamInEnvironment,
 } from "./runtime.ts";
@@ -35,14 +34,6 @@ import {
 } from "./serverConfigProjection.ts";
 
 export { type ServerConfigProjection };
-
-function projectServerConfig(
-  current: Option.Option<ServerConfigProjection>,
-  event: ServerConfigStreamEvent,
-): readonly [Option.Option<ServerConfigProjection>, ReadonlyArray<ServerConfigProjection>] {
-  const next = applyServerConfigProjection(current, event);
-  return [next, Option.toArray(next)];
-}
 
 const cachedConfigSnapshotEvent = (config: ServerConfig): ServerConfigStreamEvent => ({
   version: 1,

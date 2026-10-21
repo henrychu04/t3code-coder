@@ -841,7 +841,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
   a: function MarkdownAnchor({ node, href, children, title: _title, ...props }) {
     const {
       canOperateHost,
-      canOperatePreview,
       cwd,
       environmentId,
       imageBaseDir,

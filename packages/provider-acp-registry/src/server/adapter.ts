@@ -35,7 +35,6 @@ import {
 import {
   AcpProviderCapabilitiesV2,
   makeAcpAdapterV2,
-  type AcpAdapterV2ExtensionContext,
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
 } from "@t3tools/provider-acp/server/adapter";

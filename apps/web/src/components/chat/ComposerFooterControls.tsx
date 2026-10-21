@@ -34,7 +34,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
-  /** Coder offers only safe modes until the provider is ready. */
+  /** Coder: only safe modes are offered until the provider is ready. */
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   size?: "sm" | "xs";
   hidden?: boolean;

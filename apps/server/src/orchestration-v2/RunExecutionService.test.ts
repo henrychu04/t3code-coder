@@ -1,4 +1,3 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   CheckpointScopeId,
@@ -26,7 +25,6 @@ import {
   ServerSettingsError,
   ThreadId,
   TurnItemId,
-  EnvironmentId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
@@ -38,10 +36,6 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
-import * as CoderEnvironment from "../coderEnvironment.ts";
-import * as T3ToolDispatch from "../mcp/bridge/T3ToolDispatch.ts";
-
-import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import type { PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
@@ -1093,25 +1087,6 @@ it.effect(
         cases.map((testCase) => testCase.expected),
       );
     }).pipe(Effect.provide(layerRunExecutionTest)),
-);
-
-const layerMcpSessionRegistryTest = McpSessionRegistry.layer.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      NodeServices.layer,
-      // Coder: the registry reads the Coder environment and the T3 tool dispatch, not an HTTP
-      // server and upstream's ServerEnvironment.
-      Layer.succeed(
-        CoderEnvironment.CoderEnvironment,
-        CoderEnvironment.CoderEnvironment.of({
-          descriptor: {
-            environmentId: EnvironmentId.make("environment:mcp-liveness"),
-          } as CoderEnvironment.CoderEnvironment["Service"]["descriptor"],
-        }),
-      ),
-      T3ToolDispatch.layer,
-    ),
-  ),
 );
 
 it.effect("starts the provider when checkpoint baseline capture fails", () =>

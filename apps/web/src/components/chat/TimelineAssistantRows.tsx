@@ -250,6 +250,7 @@ export function HtmlRenderTimelineRow({
       <HtmlRenderFrame
         key={row.htmlRender.attachmentId}
         environmentId={ctx.activeThreadEnvironmentId}
+        // Coder: the frame reads its page through the helper by thread and item.
         threadId={row.sourceThreadId}
         itemId={row.itemId}
         htmlRender={row.htmlRender}

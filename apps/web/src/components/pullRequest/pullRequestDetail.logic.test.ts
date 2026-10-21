@@ -42,7 +42,6 @@ import {
   newestPullRequestCommitAt,
   mergePullRequestThreadComments,
   orderPullRequestComments,
-  pullRequestCheckoutCommand,
   checkoutFailureDescription,
   readPullRequestDetailSnapshot,
   resolveDisplayedPullRequestDetail,

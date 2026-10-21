@@ -7,7 +7,6 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
 import {
-  SourceControlProviderError,
   SourceControlRepositoryError,
   type GitCommandFailureReason,
   type SourceControlCloneRepositoryInput,
@@ -32,7 +31,6 @@ import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.
 import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
-const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,

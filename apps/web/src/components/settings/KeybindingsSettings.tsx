@@ -1,4 +1,3 @@
-import { useEnvironmentScope } from "../../state/session";
 import { useEnvironmentsWithScope, readEnvironmentScope } from "../../state/session";
 import {
   ChevronDownIcon,
@@ -20,7 +19,6 @@ import {
   useState,
 } from "react";
 import {
-  AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
   type KeybindingCommand,
   type KeybindingWhenNode,
@@ -1288,10 +1286,6 @@ function useKeybindingCatalog() {
 
 export function KeybindingsSettingsPanel() {
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
-  const canOpenKeybindingsFile = useEnvironmentScope(
-    primaryEnvironment?.environmentId ?? null,
-    AuthOrchestrationOperateScope,
-  );
   const writableIds = useEnvironmentsWithScope(connectedEnvironments, AuthSettingsWriteScope);
   const canWriteSettings =
     connectedEnvironments.length > 0 &&

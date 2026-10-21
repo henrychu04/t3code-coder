@@ -309,7 +309,8 @@ id through bounded helper chunks for previews, Save, and rewind.
 The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
 `message.context`) without preview annotations, element captures, or SnapShot frames.
 `ComposerAttachmentStrip.tsx`'s media row shows image tiles only; videos list with the other
-files, and a draft file previews only while its bytes are still in memory. The work log
+files (`composerOtherFilesForPresentation` keeps them, so a video attached to a question answer
+stays visible and removable), and a draft file previews only while its bytes are still in memory. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
 native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
 stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
@@ -866,7 +867,8 @@ listed here is drift to remove rather than fork behavior to keep.
   id (`workspace.readAttachmentFile`, bounded by the composer file limit) into memory, and the
   right panel shows them in `files/SentAttachmentFilePreview.tsx` where upstream's
   `FilePreviewPanel` loads a signed URL. Native app icons fall back to the tool glyph.
-  `WorkspaceEntryIcon.tsx` formats sizes with the web's `lib/attachmentDisplay.ts`, because
+  `WorkspaceEntryIcon.tsx`, `UserMessageContextChips.tsx`, the composer, and its attachment
+  strip format sizes and limits with the web's `lib/attachmentDisplay.ts`, because
   client-runtime's attachment upload module is not carried.
   Upstream's v1 importer carries only messages, and upstream migration 063 drops the v1
   `projection_thread_activities` rows, so screenshots that pre-v2 conversations saved as
@@ -1265,8 +1267,7 @@ listed here is drift to remove rather than fork behavior to keep.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
   the Coder config owns registration and there is no per-environment switch.
   `ws.test.ts` omits upstream's config-RPC buffering test, which builds upstream's session-scoped
-  `layerWsRpc`; `RunExecutionService.test.ts` gives `McpSessionRegistry` the Coder environment
-  and T3 tool dispatch it reads. Upstream's `composerContextUndo.test.ts` (preview annotations
+  `layerWsRpc`. Upstream's `composerContextUndo.test.ts` (preview annotations
   only), `HtmlRenderFrame.browser.test.tsx`, and `BrowserDocumentFrame.browser.test.tsx` (signed
   URLs) are not carried; `DiffPanel.browser.test.tsx` passes `onOpenFile` without an editor mock,
   and `ProjectSettingsPanel.browser.test.tsx` keeps `projects.getConfig` pending as upstream
@@ -1288,7 +1289,9 @@ listed here is drift to remove rather than fork behavior to keep.
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,
   and the desktop default-browser handoff (`DesktopWebLinkCoordinator`) is not carried. Without
-  the usage page, `timestampFormat.ts` has no `resolveHour12`.
+  the usage page, `timestampFormat.ts` has no `resolveHour12`. Prompt links (upstream's
+  `components/promptLinks/`, the "Copy prompt link" actions in the command palette and on user
+  messages) are not carried, because they open the hosted web app.
 
 ## Distribution
 
