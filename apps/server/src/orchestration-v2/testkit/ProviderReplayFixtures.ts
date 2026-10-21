@@ -25,18 +25,8 @@ import { materializeReplayTranscriptRuntimeInstructions } from "./ReplayRuntimeI
 // Each driver's fixtures run from its own <Provider>ReplayFixtures.integration.test.ts,
 // so a focused run loads one adapter. A fixture for a driver missing here would
 // silently never run, so loading this module fails instead.
-// Coder: fixtures for the cut drivers (cursor, grok, muse, opencode) stay listed here; the fork
-// carries no ReplayFixtures test file for them, so they never run.
-const DRIVERS_WITH_REPLAY_FIXTURE_FILES = new Set([
-  "acpRegistry",
-  "claudeAgent",
-  "codex",
-  "cursor",
-  "grok",
-  "muse",
-  "opencode",
-  "pi",
-]);
+// Coder: the cut drivers' fixtures (cursor, grok, muse, opencode) are not carried.
+const DRIVERS_WITH_REPLAY_FIXTURE_FILES = new Set(["acpRegistry", "claudeAgent", "codex", "pi"]);
 for (const fixture of ORCHESTRATOR_REPLAY_FIXTURES) {
   for (const provider of fixture.providers) {
     if (!DRIVERS_WITH_REPLAY_FIXTURE_FILES.has(provider.driver)) {
