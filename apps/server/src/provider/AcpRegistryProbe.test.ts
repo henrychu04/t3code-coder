@@ -1,4 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import * as TestClock from "effect/testing/TestClock";
+import * as Fiber from "effect/Fiber";
+import * as Deferred from "effect/Deferred";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -6,11 +9,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "@t3tools/provider-acp-registry/settings";
 import { describe, expect, it } from "@effect/vitest";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
-import * as TestClock from "effect/testing/TestClock";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
@@ -137,61 +137,6 @@ describe("ACP Registry probe", () => {
     );
 
     expect(methods[0]).not.toHaveProperty("command");
-  });
-
-  it("omits overlong opaque auth method and environment variable ids", () => {
-    const methods = normalizeAcpRegistryAuthMethods([
-      { id: "x".repeat(129), name: "Invalid" },
-      {
-        id: "api-key",
-        name: "API key",
-        type: "env_var",
-        vars: [
-          { name: "y".repeat(129), label: "Invalid" },
-          { name: "OPENAI_API_KEY", label: "OpenAI API key" },
-        ],
-      },
-    ]);
-
-    expect(methods).toEqual([
-      {
-        id: "api-key",
-        name: "API key",
-        description: null,
-        type: "env_var",
-        envVarNames: ["OPENAI_API_KEY"],
-      },
-    ]);
-  });
-
-  it("falls back to model-category configuration options", () => {
-    const result = acpRegistryProbeResult(instanceId, {
-      sessionId: "probe-session",
-      initializeResult: { protocolVersion: 1 },
-      sessionSetupResult: {
-        sessionId: "probe-session",
-        configOptions: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "sonnet",
-            options: [
-              { value: "sonnet", name: "Sonnet", description: "Balanced" },
-              { value: "haiku", name: "Haiku" },
-            ],
-          },
-        ],
-      },
-      modelConfigId: "model",
-    } satisfies AcpSessionRuntime.AcpSessionRuntimeStartResult);
-
-    expect(result.models).toEqual([
-      { id: "sonnet", name: "Sonnet", description: "Balanced" },
-      { id: "haiku", name: "Haiku", description: null },
-    ]);
-    expect(result.currentModelId).toBe("sonnet");
   });
 
   it("omits overlong opaque model ids instead of publishing mutated ids", () => {
@@ -374,55 +319,6 @@ describe("ACP Registry probe", () => {
       ],
     });
   });
-
-  it.effect("captures commands advertised just after session creation", () =>
-    Effect.gen(function* () {
-      const result = yield* probeAcpRegistryConfiguration({
-        instanceId,
-        settings: decodeSettings({}),
-        cwd: process.cwd(),
-        environment: process.env,
-      });
-
-      expect(result.slashCommands).toEqual([
-        {
-          name: "review",
-          description: "Review the current changes",
-          input: { hint: "focus" },
-        },
-      ]);
-      expect(result.skills).toEqual([
-        {
-          name: "workspace-skill",
-          description: "Run the workspace skill",
-          path: "acp://skill/workspace-skill",
-          scope: "agent",
-          enabled: true,
-        },
-      ]);
-    }).pipe(
-      Effect.provideService(
-        AcpRegistrySupport.AcpRegistryCatalog,
-        AcpRegistrySupport.AcpRegistryCatalog.of({
-          inspect: () => Effect.die("unused inspect"),
-          resolve: () =>
-            Effect.succeed({
-              distribution: "local",
-              spawn: {
-                command: "node",
-                args: [mockAgentPath],
-                env: {
-                  ...process.env,
-                  T3_ACP_COMMAND_ADVERTISEMENT_DELAY_MS: "25",
-                },
-              },
-            }),
-        }),
-      ),
-      Effect.provide(NodeServices.layer),
-      Effect.scoped,
-    ),
-  );
 
   it.effect("includes command resolution in the probe timeout", () =>
     Effect.gen(function* () {

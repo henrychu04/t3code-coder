@@ -23,7 +23,6 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
-  MAX_WEBHOOK_DELIVERY_AGE_MINUTES,
   MIN_SCHEDULED_TASK_INTERVAL_MS,
   ProviderInstanceId,
   resolveEnvironmentMachineKind,
@@ -32,6 +31,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { parseWebhookFilterDrafts } from "@t3tools/client-runtime/scheduled-task-webhook";
 
 import { formatRelativeTime } from "../../timestampFormat";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -59,6 +59,7 @@ import { SettingsGroup } from "./SettingsGroup";
 import { settingsScopeEnvironmentLabel, settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import {
   WEBHOOK_SIGNATURE_DEFAULTS,
+  webhookDraftErrors,
   matchesScheduledTaskScope,
   scheduleFromDraft,
   scheduledTaskDefaultModel,
@@ -130,6 +131,11 @@ const EMPTY_DRAFT: DraftState = {
   ...WEBHOOK_SIGNATURE_DEFAULTS,
   signatureSecret: "",
   maxDeliveryAgeMinutes: "",
+  replayKey: "",
+  coalesceKey: "",
+  coalesceWindowSeconds: "",
+  filters: [],
+  savedFilters: [],
 };
 
 function Field({
@@ -778,12 +784,14 @@ function ScheduledTaskEditorForm({
       reportFailure("Scheduled task is incomplete", "Add a title, prompt, project, and model.");
       return;
     }
+    const parsedFilters = parseWebhookFilterDrafts(draft.filters);
+    if (draft.scheduleMode === "webhook" && "error" in parsedFilters) {
+      reportFailure("Invalid filter", parsedFilters.error);
+      return;
+    }
     const schedule = scheduleFromDraft(draft);
     if (schedule === null) {
-      reportFailure(
-        "Invalid age limit",
-        `Enter whole minutes from 1 to ${MAX_WEBHOOK_DELIVERY_AGE_MINUTES}, or leave it blank.`,
-      );
+      for (const error of webhookDraftErrors(draft)) reportFailure(error.title, error.description);
       return;
     }
     if (
@@ -863,7 +871,8 @@ function ScheduledTaskEditorForm({
       </DialogHeader>
 
       <DialogPanel>
-        <fieldset disabled={saving} className="space-y-5">
+        {/* Fieldsets default to min-width: min-content, which lets one wide control widen the form past the dialog. */}
+        <fieldset disabled={saving} className="min-w-0 space-y-5">
           {!connected ? (
             <p className="text-sm text-destructive">Reconnect this environment before saving.</p>
           ) : null}
@@ -1072,7 +1081,8 @@ function ScheduledTaskEditorForm({
                 minute.
               </p>
             ) : null}
-            <div className="flex items-center justify-between gap-2">
+            {/* Wraps the toggle below the label when both don't fit, as on phones. */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <Label>Schedule</Label>
               <ToggleGroup
                 aria-label="Schedule type"

@@ -9,6 +9,7 @@ export {
   acpRegistryProbeResult,
   normalizeAcpRegistryAuthMethods,
   normalizeAcpRegistryCommands,
+  // Coder: the Kilo Code probe-timeout test in apps/server calls the probe directly.
   probeAcpRegistryConfiguration,
   type AcpRegistryAvailableCommands,
   type AcpRegistryLiveConfiguration,

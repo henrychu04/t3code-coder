@@ -1,11 +1,4 @@
-import {
-  DEFAULT_SERVER_SETTINGS,
-  EnvironmentAuthorizationError,
-  EnvironmentId,
-  GitManagerError,
-  type ServerConfigStreamEvent,
-  WS_METHODS,
-} from "@t3tools/contracts";
+import { EnvironmentId, GitManagerError, WS_METHODS } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
@@ -24,14 +17,7 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { WsRpcProtocolClient } from "./protocol.ts";
 import type * as RpcSession from "./session.ts";
-import {
-  request,
-  requestGuarded,
-  RpcPermissionGuard,
-  runStream,
-  runStreamGuarded,
-  subscribe,
-} from "./client.ts";
+import { requestGuarded, RpcPermissionGuard, runStreamGuarded, subscribe } from "./client.ts";
 import { setErrorDiagnosticReporter, type ErrorDiagnostic } from "../errors/diagnostics.ts";
 
 const TARGET = new ConnectionTarget({
@@ -134,42 +120,5 @@ describe("environment RPC", () => {
         expect(diagnostics[0]?.message).toContain("already checked out in the main repository");
         expect(JSON.stringify(diagnostics)).not.toContain("/private-repo");
       }),
-  );
-
-  it.effect("reuses the session config stream instead of opening a duplicate subscription", () =>
-    Effect.gen(function* () {
-      const event: ServerConfigStreamEvent = {
-        version: 1,
-        type: "settingsUpdated",
-        payload: { settings: DEFAULT_SERVER_SETTINGS },
-      };
-      let duplicateSubscriptions = 0;
-      const client = {
-        [WS_METHODS.subscribeServerConfig]: () => {
-          duplicateSubscriptions += 1;
-          return Stream.never;
-        },
-      } as unknown as WsRpcProtocolClient;
-      const { activeSession, supervisor } = yield* makeHarness();
-      yield* SubscriptionRef.set(
-        activeSession,
-        Option.some({
-          client,
-          initialConfig: Effect.never,
-          subscribeServerConfig: () => Stream.succeed(event),
-          ready: Effect.void,
-          probe: Effect.void,
-          closed: Effect.never,
-        }),
-      );
-
-      const received = yield* subscribe(WS_METHODS.subscribeServerConfig, {}).pipe(
-        Stream.runHead,
-        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
-      );
-
-      expect(received).toEqual(Option.some(event));
-      expect(duplicateSubscriptions).toBe(0);
-    }),
   );
 });

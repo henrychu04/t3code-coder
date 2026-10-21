@@ -112,6 +112,7 @@ function modelsFromDiscovery(
   return providerModelsFromSettings(builtInModels, customModels, capabilities);
 }
 
+// Coder: exported for the Kilo Code readiness test in driver.test.ts.
 export function acpRegistrySnapshotReadiness(
   inspection:
     | AcpRegistrySupport.AcpRegistryInspection

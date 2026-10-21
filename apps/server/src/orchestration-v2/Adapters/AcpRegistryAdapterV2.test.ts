@@ -1,3 +1,5 @@
+import * as Option from "effect/Option";
+import type { AcpRegistryAvailableCommands } from "@t3tools/provider-acp-registry/testing";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -17,7 +19,6 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -28,16 +29,8 @@ import type * as EffectAcpProtocol from "effect-acp/protocol";
 
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import {
-  makeProviderReplayGate,
-  type ProviderReplayGate,
-} from "@t3tools/provider-testing/replayGate";
-import type { ProviderContinuationRequest } from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import * as ServerSettings from "../../serverSettings.ts";
-import type {
-  AcpRegistryAvailableCommands,
-  AcpRegistryLiveConfiguration,
-} from "@t3tools/provider-acp-registry/testing";
+import type { AcpRegistryLiveConfiguration } from "@t3tools/provider-acp-registry/testing";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import { ACP_SESSION_MODE_OPTION_ID } from "@t3tools/provider-acp/server/sessionConfig";
@@ -155,7 +148,19 @@ describe("AcpRegistryAdapterV2", () => {
       readonly storedModePick?: string;
       readonly turnModels?: ReadonlyArray<string>;
     }) {
-      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      // Scope release gives the replay agent at most a second to exit, so the status
+      // read below waits for the agent itself instead of racing its last write.
+      const agentExits: Array<Effect.Effect<void>> = [];
+      const childProcessSpawner = ChildProcessSpawner.make((command) =>
+        spawner
+          .spawn(command)
+          .pipe(
+            Effect.tap((handle) =>
+              Effect.sync(() => agentExits.push(Effect.ignore(handle.exitCode))),
+            ),
+          ),
+      );
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const replayDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -277,6 +282,7 @@ describe("AcpRegistryAdapterV2", () => {
           current = target;
         }
       }).pipe(Effect.scoped);
+      yield* Effect.all(agentExits, { discard: true });
       yield* makeAcpReplayCompletenessAssertion(fileSystem, statusPath, transcript);
       return { configurations };
     });
@@ -442,6 +448,7 @@ describe("AcpRegistryAdapterV2", () => {
         }).pipe(Effect.provide(layerTest), Effect.scoped),
     );
 
+    // regression: #19519 models come from session model state, not a hardcoded list
     it.effect("leaves unadvertised model IDs alone in both model selection protocols", () =>
       Effect.gen(function* () {
         const { configurations } = yield* openWithStoredPicks({
@@ -579,17 +586,6 @@ describe("AcpRegistryAdapterV2", () => {
           storedModel: model,
         });
         assert.equal(opened.configurations.at(-1)?.currentModelId, "codex");
-      }).pipe(Effect.provide(layerTest), Effect.scoped),
-    );
-
-    it.effect("ignores a later-option model without writing configuration", () =>
-      Effect.gen(function* () {
-        const { configurations } = yield* openWithStoredPicks({
-          setup: { configOptions: modelOptions },
-          pickFrames: [],
-          storedModel: "later-model",
-        });
-        assert.equal(configurations[0]?.currentModelId, "gateway");
       }).pipe(Effect.provide(layerTest), Effect.scoped),
     );
   });

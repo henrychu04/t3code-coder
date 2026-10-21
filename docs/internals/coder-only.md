@@ -307,7 +307,9 @@ Images Coder stored before upstream's attachment ids (`<uuid>.<ext>`) decode as
 id through bounded helper chunks for previews, Save, and rewind.
 
 The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
-`message.context`) without preview annotations, element captures, or SnapShot frames. The work log
+`message.context`) without preview annotations, element captures, or SnapShot frames.
+`ComposerAttachmentStrip.tsx`'s media row shows image tiles only; videos list with the other
+files, and a draft file previews only while its bytes are still in memory. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
 native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
 stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
@@ -642,6 +644,9 @@ listed here is drift to remove rather than fork behavior to keep.
       that discovers no models at all cannot be told apart from a readiness snapshot, so it keeps
       the previous list; Kilo Code always lists its models, and upstream keeps the list in the
       same case for an instance never signed in through T3.
+    - `driver.ts` keeps `acpRegistrySnapshotReadiness` and `testing.ts` keeps
+      `probeAcpRegistryConfiguration` exported (upstream made them private) for the fork's Kilo
+      Code driver and probe tests.
     - `AcpRegistryRuntimeCoordinator.ts` has no URL authentication consent or session mutation
       permit. `adapter.ts` has no Devin, GitHub Copilot, or Mistral Vibe flavor (`copilotAcp.ts`
       and `devinAcp.ts` are not carried) and no native protocol logging.
@@ -692,7 +697,8 @@ listed here is drift to remove rather than fork behavior to keep.
     and attaches after its custom-model and service-tier step. At session start,
     `ClaudeAdapterV2.resolveBypassAvailability` reads the settings files (cached remote, user,
     project, local, and managed) where upstream calls the SDK's runtime `resolveSettings`
-    (#21806); a mode any source disables is off. `CodexDriver` has no `CodexUsageHistory`
+    (#21806); a mode any source disables is off, so `Drivers/ClaudeSkills.ts` keeps
+    `skillOverrideSettingsPaths` exported for it. `CodexDriver` has no `CodexUsageHistory`
     requirement, because Codex usage history (#21898) is not carried. The Claude signed-out message names API
     credentials rather than subscription login. Claude's usage read asks the CLI to skip its local
     transcript scan (`ClaudeCli.getUsage({ skipBehaviors })`), as upstream's SDK call does.
@@ -722,7 +728,7 @@ listed here is drift to remove rather than fork behavior to keep.
   that the message came from its parent and writes the document over itself.
   A blob, `srcdoc`, or `data:` frame would inherit the page's Content-Security-Policy and block the
   app's scripts. The shell's own policy is `sandbox allow-scripts allow-forms; frame-ancestors
-'self'`, so the shell and the app keep an opaque origin even when the shell is opened directly.
+  'self'`, so the shell and the app keep an opaque origin even when the shell is opened directly.
   The app's CSP comes with its stored document, as upstream injects it. Upstream's asset route
   adds its theme and cookie bootstraps (`injectMcpAppThemeBootstrap`,
   `injectMcpAppCookieBootstrap`) to the served document; here `McpAppFrame` adds them before
@@ -814,7 +820,8 @@ listed here is drift to remove rather than fork behavior to keep.
   tracks the last applied sequence and session epoch. Each attach attempt reads `afterSequence` from that cache, beside upstream's
   `resume` flag, and a resumed attach of a closed terminal gets upstream's `closed` event. `ThreadTerminalDrawer` never opens terminal links (there is no editor or
   preview surface).
-- **Command palette.** `CommandPalette.tsx` is upstream's, including its add-project browse,
+- **Command palette.** `CommandPalette.tsx` and the modules upstream split from it
+  (`CommandPaletteAddProject.tsx`, `CommandPaletteLookups.ts`, and the item files) are upstream's, including its add-project browse,
   clone, and new-project flows over `filesystem.browse` and the clone RPCs. Coder deltas (marked
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies
   keybindings; every workspace is remote; Add project always shows the workspace picker, which
@@ -908,14 +915,21 @@ listed here is drift to remove rather than fork behavior to keep.
   `SentAttachmentFilePreview`, passes the project id to `FilePreviewPanel`, and names merge
   requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
   confirmation; `useQueuedRunEdit` carries no preview annotations and previews only images the
-  helper reads; `useThreadLinkedPullRequest` names merge requests. Upstream's `useUsageLimitsPanel`,
-  `useAgentOpenedPreviews`, and `mergeDirectPreviewAnnotation` are not carried, and a rewind
-  reads the message's images back through the helper instead of `prepareRevertedMessageAttachments`.
+  helper reads; `useThreadLinkedPullRequest` names merge requests; `useSystemComposerBanners`
+  shows only the offline or reconnecting banner, with no connection diagnosis, disconnect action,
+  server-update notice, or auto-balanced machines; `useDraftEnvironmentRouting` keeps only the
+  manual machine switch; `ChatView.logic.ts`'s send snapshot and title fallbacks and
+  `chatViewSend.ts`'s draft restore carry no preview annotations, and a send that redirects
+  pending approvals has no direct annotation to allow for. Upstream's `useUsageLimitsPanel`,
+  `useAgentOpenedPreviews`, `mergeDirectPreviewAnnotation`, and the Antigravity send block are
+  not carried, and `chatViewSend.ts`'s rewind reads the message's images back through the helper
+  instead of `prepareRevertedMessageAttachments`.
   `RightPanelTabs.tsx` stays the fork's version without upstream's per-tab memoization (#20853);
   `ChatOverlayHosts.tsx` has no device setup dialog host, and `ProviderSettingsPanel`'s
   `ProviderInstanceRow` passes no ACP sign-in, managed Codex runtime, or provider setup section.
-- **Markdown.** `ChatMarkdown.tsx` is upstream's, with these differences (each marked `Coder:` in
-  the file):
+- **Markdown.** `ChatMarkdown.tsx` and the modules upstream split from it (`chat/ChatMarkdownMedia.tsx`
+  for images and videos, `chat/MarkdownFileLink.tsx` and its `.logic.ts` for file chips) are
+  upstream's, with these differences (each marked `Coder:` in the files):
   - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's body over
     `useAssetUrlState` and `useAssetUrlRefresh` for `media-file` and `tool-output-image`
     resources, without `fallbackSrc` or `originalUrl`. Upstream's `workspaceMutationId` refresh
@@ -934,7 +948,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `projectVideo`, legacy `artifact`, `loading`, and `retry`. `resolveMarkdownMediaPreview`
     returns helper sources rather than asset URLs. The dialog reads the selected image with
     priority, the gallery also collects `[data-project-image]` wrappers so unloaded images stay
-    navigable, and byte actions use the blob the dialog shows. Timeline galleries are hosted by
+    navigable, and byte actions use the blob the dialog shows. `wrapExpandedImageIndex` stays (upstream removed
+    it) because the fork's `ExpandedImageDialog` wraps gallery navigation with it. Timeline galleries are hosted by
     `ChatView`, as on main.
   - There is no in-app browser, local editor, or file manager: `MarkdownFileLink` never receives
     `onOpen`, `onOpenInBrowser`, or `onReveal`, and the link context menu never offers the
@@ -1099,7 +1114,8 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Scheduled tasks.** Settings → Scheduled tasks and its draft logic are upstream's, including
   interval and fixed-time schedules, run-now, and webhook draft round-tripping. T3 Coder serves no
   inbound webhook route, so the editor has no "On webhook" option, URL field, token rotation, or
-  signature and age-limit fields, and rows have no Deliveries dialog or "Listening" status.
+  signature, age-limit, filter, replay, and coalesce fields, and rows have no Deliveries dialog or
+  "Listening" status.
   Webhook tasks created another way (for example, through the agent `schedule_task` tool) keep
   their stored schedule when edited, but they never run and do not offer Run now.
 - **Migrations.** `persistence/Migrations.ts` is upstream's registry with the same IDs. Upstream's
@@ -1110,7 +1126,8 @@ listed here is drift to remove rather than fork behavior to keep.
   before upstream's migrator runs. A V2 preview ledger is reconciled before that rewrite, because
   the Coder legacy registry never recorded `OrchestrationV2`. Any other history is left to
   upstream's migrator and its V2 id-clash check, so `Migrations.test.ts` is upstream's. New
-  migrations take upstream's next ID; never add a Coder-only migration ID.
+  migrations take upstream's next ID; never add a Coder-only migration ID. `migrationEntries`
+  stays exported (upstream made it private) for the Coder legacy-history tests.
 - **Persistence.** Merge-request snapshots, right-panel tabs, diff-panel selections, closed-view
   history, the last merge method, and the last project grouping mode stay in memory where
   upstream uses browser storage. Upstream's offline query persistence, which only its mobile app
@@ -1189,6 +1206,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Build tooling.** `scripts/lib/third-party-licenses.ts` never fetches during a build: SPDX
   texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
   ones. It reads no device tool version pins, because device tools are not carried.
+  `pnpm-workspace.yaml` sets `supportedArchitectures` (Linux x64 glibc) on every host, because
+  the helper bundle ships those native modules to the workspace; upstream sets it only on Windows
+  in `.pnpmfile.cjs`, which is not carried.
   Packages typecheck with `tsc --noEmit` (TypeScript 7), not upstream's `tsc-rs`, so no extra
   native typecheck binary or install script is added; the fork never ran upstream's Effect
   language-service diagnostics (`@effect/tsgo`) either.
@@ -1230,9 +1250,7 @@ listed here is drift to remove rather than fork behavior to keep.
   off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
   `McpAppFrame.browser.test.tsx` reads its app through a mocked helper read into a stand-in for
   the gateway's document shell, where upstream serves a data-URL asset.
-  `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's
-  unavailable-URL and near-expiry fresh-URL tests and the frame's `sandbox` attribute check (the
-  document shell's CSP applies the sandbox). `SourceControlProviderRegistry.test.ts` runs
+  `SourceControlProviderRegistry.test.ts` runs
   upstream's registry tests (its `makeRegistry` with remotes, process, and server settings) for
   the GitLab-only registry, with the "asks once" and "asks again" auth-probe tests driving
   `glab`. `WorkspaceSearchIndex.native.test.ts` is upstream's native decoding test plus the
@@ -1240,6 +1258,8 @@ listed here is drift to remove rather than fork behavior to keep.
   Effect's). `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
   `storageCleanup.test.ts` its saved-usage-cache test, and `PullRequestService.test.ts` its
   GitHub-credential branch deletion test; upstream's OTLP `config.test.ts` is not carried.
+  `composerDraftStore.test.ts` keeps the draft-persistence test upstream pruned, because it
+  checks that draft image bytes never reach browser storage.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
   the Coder config owns registration and there is no per-environment switch.
   `ws.test.ts` omits upstream's config-RPC buffering test, which builds upstream's session-scoped
@@ -1257,10 +1277,10 @@ listed here is drift to remove rather than fork behavior to keep.
   dependencies for its own unit tests and for fork-adapted suites that stay unit tests in place
   of upstream's browser versions: `ChatMarkdown.test.tsx` (upstream's `ChatMarkdown.browser`,
   `.logic`, and `.assets` browser tests are not carried), `AttachmentFilePreview.test.tsx`,
-  `ProjectSettingsPanel.test.tsx`, `HtmlRenderDialog.test.tsx`, and `RightPanelTabs.test.tsx`
+  `ProjectSettingsPanel.test.tsx`, and `RightPanelTabs.test.tsx`
   (upstream's `RightPanelTabs.browser.test.tsx` is not carried). The carried browser tests omit
   cases for cut surfaces: grant checks in `ProjectSettingsPanel`, signed-URL renewal in
-  `AttachmentFilePreview`, SnapShot details in `MessagesTimeline`, uncarried providers in
+  `AttachmentFilePreview`, uncarried providers in
   `ProviderModelPicker`, and preview mocks in `ReopenClosedViewShortcut`.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without

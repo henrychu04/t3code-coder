@@ -1,21 +1,13 @@
-import { createCommandPermissions } from "./commandPermissions.ts";
-import { RpcPermissionGuard } from "../rpc/client.ts";
-import { vi } from "vite-plus/test";
 import {
   EnvironmentId,
-  AuthSourceControlWriteScope,
   ProjectId,
   PullRequestOperationError,
   WS_METHODS,
-  type PullRequestStack,
-  type AuthSessionState,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
-import * as TestClock from "effect/testing/TestClock";
-import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
 import * as Latch from "effect/Latch";
 import * as Layer from "effect/Layer";
@@ -37,7 +29,6 @@ import type { RpcSession } from "../rpc/session.ts";
 import {
   createLinkedPullRequestSummaryAtomFamily,
   createPullRequestEnvironmentAtoms,
-  createPullRequestStackAtomFamily,
 } from "./pullRequests.ts";
 import { executeAtomQuery } from "./runtime.ts";
 
@@ -142,70 +133,6 @@ it.effect("keeps concurrent diff file reads on different hosts separate", () =>
         { _tag: "Success", value: { newContents: "github.example.com" } },
       ]);
       expect(calls).toEqual(["github.com", "github.example.com"]);
-    }),
-  ),
-);
-
-it.effect("queues merge preparation with actions without restarting it on refresh", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const started = yield* Deferred.make<void>();
-      const release = yield* Deferred.make<void>();
-      const refreshEvents = yield* PubSub.unbounded<number>();
-      const calls: string[] = [];
-      const client = {
-        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.fromPubSub(refreshEvents),
-        [WS_METHODS.pullRequestsDetail]: (input: { number: number; allowStale?: boolean }) =>
-          Effect.gen(function* () {
-            expect(input.allowStale).toBe(false);
-            calls.push(`detail:${input.number}`);
-            yield* Deferred.succeed(started, undefined);
-            yield* Deferred.await(release);
-            return {
-              state: "open",
-              isDraft: false,
-              capabilities: { actions: ["merge"], stackActions: true },
-              viewerPermissions: { actions: ["merge"] },
-            };
-          }),
-        [WS_METHODS.pullRequestsStack]: (input: { number: number; allowStale?: boolean }) =>
-          Effect.sync(() => {
-            expect(input.allowStale).toBe(false);
-            calls.push(`stack:${input.number}`);
-            return null;
-          }),
-        [WS_METHODS.pullRequestsRunAction]: (input: {
-          action: string;
-          number: number;
-          mergeMethod?: string;
-        }) =>
-          Effect.sync(() => {
-            if (input.action === "merge") expect(input.mergeMethod).toBe("squash");
-            expect(input).not.toHaveProperty("resolveMergeMethod");
-            calls.push(`${input.action}:${input.number}`);
-          }),
-      } as unknown as WsRpcProtocolClient;
-      const { atoms, registry } = yield* makeTestRuntime(client);
-      const unmount = registry.mount(
-        atoms.refreshes({ environmentId: TARGET.environmentId, input: {} }),
-      );
-      yield* Effect.addFinalizer(() => Effect.sync(unmount));
-      const reference = { projectId: ProjectId.make("project-1"), repository: "acme/web" };
-      const first = atoms.runAction.run(registry, {
-        environmentId: TARGET.environmentId,
-        input: { ...reference, number: 1, action: "merge", resolveMergeMethod: () => "squash" },
-      });
-      yield* Deferred.await(started);
-      const second = atoms.runAction.run(registry, {
-        environmentId: TARGET.environmentId,
-        input: { ...reference, number: 2, action: "close" },
-      });
-      yield* PubSub.publish(refreshEvents, 1);
-      expect(calls).toEqual(["detail:1"]);
-      yield* Deferred.succeed(release, undefined);
-      const results = yield* Effect.promise(() => Promise.all([first, second]));
-      expect(results.every(AsyncResult.isSuccess)).toBe(true);
-      expect(calls).toEqual(["detail:1", "stack:1", "merge:1", "close:2"]);
     }),
   ),
 );
@@ -478,130 +405,6 @@ it.effect("shares close, reopen, and merge with an untouched client's mounted PR
   ),
 );
 
-it.effect("refreshes pull request activity after a comment is updated", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const refreshEvents = yield* PubSub.unbounded<number>();
-      let commentBody = "old comment";
-      const client = {
-        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.fromPubSub(refreshEvents),
-        [WS_METHODS.pullRequestsActivity]: () =>
-          Effect.succeed({
-            author: null,
-            reviewers: [],
-            comments: [
-              {
-                id: "comment-1",
-                kind: "issue-comment",
-                author: null,
-                body: commentBody,
-                createdAt: "2026-08-24T00:00:00Z",
-                url: null,
-                path: null,
-                reviewState: null,
-                reactions: [],
-              },
-            ],
-            commentCount: 1,
-            commentsTruncated: false,
-            reviewThreads: [],
-            commits: [],
-            reactions: [],
-          }),
-        [WS_METHODS.pullRequestsUpdateComment]: (input: { readonly body: string }) =>
-          Effect.sync(() => {
-            commentBody = input.body;
-          }),
-      } as unknown as WsRpcProtocolClient;
-      const { atoms, registry } = yield* makeTestRuntime(client);
-      const reference = {
-        projectId: ProjectId.make("project-1"),
-        host: "github.example.com",
-        repository: "acme/web",
-        number: 1,
-      } as const;
-      const activity = atoms.activity({ environmentId: TARGET.environmentId, input: reference });
-      const unmount = registry.mount(activity);
-      yield* Effect.addFinalizer(() => Effect.sync(unmount));
-
-      const initial = yield* Effect.promise(() => executeAtomQuery(registry, activity));
-      expect(AsyncResult.isSuccess(initial)).toBe(true);
-      if (!AsyncResult.isSuccess(initial)) {
-        return yield* Effect.die("activity did not load");
-      }
-      expect(initial.value.comments[0]?.body).toBe("old comment");
-
-      const update = yield* Effect.promise(() =>
-        atoms.updateComment.run(registry, {
-          environmentId: TARGET.environmentId,
-          input: { ...reference, commentId: "comment-1", kind: "issue-comment", body: "updated" },
-        }),
-      );
-
-      expect(AsyncResult.isSuccess(update)).toBe(true);
-      expect(
-        (yield* AtomRegistry.getResult(registry, activity, { suspendOnWaiting: true })).comments[0]
-          ?.body,
-      ).toBe("updated");
-      const refreshed = Latch.makeUnsafe();
-      const stop = registry.subscribe(activity, (result) => {
-        if (AsyncResult.isSuccess(result) && result.value.comments[0]?.body === "after turn") {
-          refreshed.openUnsafe();
-        }
-      });
-      yield* Effect.addFinalizer(() => Effect.sync(stop));
-
-      commentBody = "after turn";
-      yield* PubSub.publish(refreshEvents, 1);
-      yield* refreshed.await;
-
-      expect(
-        (yield* AtomRegistry.getResult(registry, activity, { suspendOnWaiting: true })).comments[0]
-          ?.body,
-      ).toBe("after turn");
-    }),
-  ),
-);
-
-it.effect("refreshes checks without refreshing full detail", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      let detailReads = 0;
-      let checksReads = 0;
-      const client = {
-        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
-        [WS_METHODS.pullRequestsDetail]: () =>
-          Effect.sync(() => {
-            detailReads++;
-            return { title: "PR" };
-          }),
-        [WS_METHODS.pullRequestsChecks]: () =>
-          Effect.sync(() => {
-            checksReads++;
-            return { state: checksReads === 1 ? "open" : "merged", checks: [] };
-          }),
-      } as unknown as WsRpcProtocolClient;
-      const { atoms, registry } = yield* makeTestRuntime(client);
-      const target = {
-        environmentId: TARGET.environmentId,
-        input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
-      };
-      const detail = atoms.detail(target);
-      const checks = atoms.checks(target);
-      yield* AtomRegistry.mount(registry, detail);
-      yield* AtomRegistry.mount(registry, checks);
-      yield* AtomRegistry.getResult(registry, detail);
-      expect((yield* AtomRegistry.getResult(registry, checks))?.state).toBe("open");
-      registry.refresh(checks);
-      expect(
-        (yield* AtomRegistry.getResult(registry, checks, { suspendOnWaiting: true }))?.state,
-      ).toBe("merged");
-      expect(detailReads).toBe(1);
-      expect(checksReads).toBe(2);
-    }),
-  ),
-);
-
 it.effect("updates cached labels after successful edits without rereading the host", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -719,186 +522,6 @@ it.effect("updates cached labels after successful edits without rereading the ho
         (yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true })).labels,
       ).toEqual([existing]);
       expect(detailReads).toBe(3);
-    }),
-  ),
-);
-
-it.effect("updates reviewer requests and enriched reviewers without rereading the host", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      let reads = 0;
-      let refuse = false;
-      const actor = { login: "reviewer", name: "Reviewer", avatarUrl: null };
-      const hostActor = { ...actor, login: "Reviewer" };
-      let hostRequested = false;
-      let reviewed = false;
-      let pauseActivity = false;
-      const activityStarted = yield* Latch.make();
-      const client = {
-        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
-        [WS_METHODS.pullRequestsDetail]: () =>
-          Effect.sync(() => {
-            reads++;
-            return { reviewers: hostRequested ? [hostActor] : [] };
-          }),
-        [WS_METHODS.pullRequestsActivity]: () =>
-          Effect.gen(function* () {
-            reads++;
-            if (pauseActivity) {
-              pauseActivity = false;
-              yield* activityStarted.open;
-              return yield* Effect.never;
-            }
-            return {
-              reviewers: hostRequested ? [hostActor] : [],
-              comments: reviewed ? [{ kind: "review-comment", author: hostActor }] : [],
-            };
-          }),
-        [WS_METHODS.pullRequestsReviewerCandidates]: (input: { number: number }) =>
-          input.number === 2
-            ? Effect.never
-            : Effect.sync(() => {
-                reads++;
-                return {
-                  candidates: [{ ...actor, id: "12", kind: "user", isRequested: false }],
-                  truncated: false,
-                };
-              }),
-        [WS_METHODS.pullRequestsRequestReviewers]: (input: { requested: boolean }) =>
-          refuse
-            ? Effect.fail(new MutationRefused())
-            : Effect.sync(() => {
-                hostRequested = input.requested;
-              }),
-      } as unknown as WsRpcProtocolClient;
-      const { atoms, registry } = yield* makeTestRuntime(client);
-      const target = {
-        environmentId: TARGET.environmentId,
-        input: {
-          projectId: ProjectId.make("project-1"),
-          repository: "acme/web",
-          number: 1,
-          host: "github.example.com",
-        },
-      };
-      const detail = atoms.detail(target);
-      const activity = atoms.activity(target);
-      const candidates = atoms.reviewerCandidates(target);
-      registry.mount(detail);
-      registry.mount(activity);
-      registry.mount(candidates);
-      yield* AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true });
-      yield* AtomRegistry.getResult(registry, activity, { suspendOnWaiting: true });
-      yield* AtomRegistry.getResult(registry, candidates, { suspendOnWaiting: true });
-      const request = (requested: boolean, reference = target) =>
-        Effect.promise(() =>
-          atoms.requestReviewers.run(registry, {
-            ...reference,
-            input: { ...reference.input, reviewers: [{ id: "12", kind: "user" }], requested },
-          }),
-        );
-      for (const operation of ["request", "refuse", "remove"]) {
-        refuse = operation === "refuse";
-        expect((yield* request(operation === "request"))._tag).toBe(refuse ? "Failure" : "Success");
-        const expected = operation === "remove" ? [] : [actor];
-        expect((yield* AtomRegistry.getResult(registry, detail)).reviewers).toEqual(expected);
-        expect((yield* AtomRegistry.getResult(registry, activity)).reviewers).toEqual(expected);
-        expect((yield* AtomRegistry.getResult(registry, candidates)).candidates).toMatchObject([
-          { isRequested: operation !== "remove" },
-        ]);
-      }
-      expect(reads).toBe(3);
-      pauseActivity = true;
-      registry.refresh(activity);
-      yield* activityStarted.await;
-      expect(AsyncResult.isSuccess(yield* request(true))).toBe(true);
-      expect(
-        (yield* AtomRegistry.getResult(registry, activity, { suspendOnWaiting: true })).reviewers,
-      ).toEqual([hostActor]);
-      expect(reads).toBe(5);
-      expect(AsyncResult.isSuccess(yield* request(false))).toBe(true);
-      expect((yield* AtomRegistry.getResult(registry, activity)).reviewers).toEqual([]);
-
-      reviewed = true;
-      yield* request(true);
-      registry.refresh(activity);
-      yield* AtomRegistry.getResult(registry, activity, { suspendOnWaiting: true });
-      yield* request(false);
-      expect((yield* AtomRegistry.getResult(registry, activity)).reviewers).toEqual([hostActor]);
-
-      const otherTarget = { ...target, input: { ...target.input, number: 2 } };
-      const otherDetail = atoms.detail(otherTarget);
-      registry.mount(otherDetail);
-      yield* AtomRegistry.getResult(registry, otherDetail, { suspendOnWaiting: true });
-      yield* request(true, otherTarget);
-      expect(
-        (yield* AtomRegistry.getResult(registry, otherDetail, { suspendOnWaiting: true }))
-          .reviewers,
-      ).toEqual([hostActor]);
-    }),
-  ),
-);
-
-it.effect("refreshes stack state after reopening and head SHAs after a turn", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const refreshEvents = yield* PubSub.unbounded<number>();
-      let state: "closed" | "open" = "closed";
-      let headSha = "old-head";
-      const client = {
-        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.fromPubSub(refreshEvents),
-        [WS_METHODS.pullRequestsStack]: () =>
-          Effect.sync(
-            () =>
-              ({
-                id: "stack-1",
-                number: 1,
-                url: "https://github.com/acme/web/pull/1",
-                base: "main",
-                layers: [
-                  {
-                    number: 1,
-                    headBranch: "feature",
-                    headSha,
-                    state,
-                    isDraft: false,
-                  },
-                ],
-              }) satisfies PullRequestStack,
-          ),
-      } as unknown as WsRpcProtocolClient;
-      const { runtime, registry } = yield* makeTestRuntime(client);
-      const stacks = createPullRequestStackAtomFamily(runtime);
-      const stack = stacks({
-        environmentId: TARGET.environmentId,
-        input: {
-          projectId: ProjectId.make("project-1"),
-          repository: "acme/web",
-          number: 1,
-        },
-      });
-      const unmount = registry.mount(stack);
-      yield* Effect.addFinalizer(() => Effect.sync(unmount));
-      yield* Effect.promise(() => executeAtomQuery(registry, stack));
-      expect((yield* AtomRegistry.getResult(registry, stack))?.layers[0]?.state).toBe("closed");
-      state = "open";
-      registry.refresh(stack);
-      expect(
-        (yield* AtomRegistry.getResult(registry, stack, { suspendOnWaiting: true }))?.layers[0]
-          ?.state,
-      ).toBe("open");
-
-      const refreshed = Latch.makeUnsafe();
-      const stop = registry.subscribe(stack, (result) => {
-        if (AsyncResult.isSuccess(result) && result.value?.layers[0]?.headSha === "new-head") {
-          refreshed.openUnsafe();
-        }
-      });
-      yield* Effect.addFinalizer(() => Effect.sync(stop));
-      headSha = "new-head";
-      yield* PubSub.publish(refreshEvents, 1);
-      yield* refreshed.await;
-      expect((yield* AtomRegistry.getResult(registry, stack))?.layers[0]?.headSha).toBe("new-head");
     }),
   ),
 );

@@ -3,7 +3,6 @@ import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "./localApi
 import { requestConfirmDialog } from "./confirmDialog";
 import { dismissContextMenu, showContextMenuFallback } from "./contextMenuFallback";
 import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientPersistenceStorage";
-import { resetRequestLatencyStateForTests } from "./rpc/requestLatencyState";
 
 let cachedApi: LocalApi | undefined;
 
@@ -76,5 +75,4 @@ export async function __resetLocalApiForTests() {
   cachedApi = undefined;
   const { __resetClientSettingsPersistenceForTests } = await import("./hooks/useSettings");
   __resetClientSettingsPersistenceForTests();
-  resetRequestLatencyStateForTests();
 }

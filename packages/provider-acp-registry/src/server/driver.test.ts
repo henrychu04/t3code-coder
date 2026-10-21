@@ -7,12 +7,12 @@ import * as Schema from "effect/Schema";
 
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import {
-  acpRegistrySnapshotReadiness,
   applyAcpRegistryAvailableCommands,
   applyAcpRegistryLiveConfiguration,
   buildCheckedAcpRegistrySnapshot,
   checkAcpRegistryProviderReadiness,
   checkAcpRegistryProviderStatus,
+  acpRegistrySnapshotReadiness,
 } from "./driver.ts";
 
 const decodeAcpRegistrySettings = Schema.decodeSync(AcpRegistrySettings);

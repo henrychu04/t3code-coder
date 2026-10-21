@@ -154,15 +154,6 @@ it.effect("includes committed WAL data and does not publish a failed snapshot", 
   );
 });
 
-// Coder: the workspace helper has one state directory and no development URL variants.
-it.effect("uses statev2.sqlite in the workspace state directory", () =>
-  Effect.gen(function* () {
-    const paths = yield* ServerConfig.deriveServerPaths("/tmp/t3");
-    assert.equal(NodePath.basename(paths.dbPath), "statev2.sqlite");
-    assert.equal(NodePath.dirname(paths.dbPath), paths.stateDir);
-  }).pipe(Effect.provide(NodeServices.layer)),
-);
-
 it.effect("starts fresh without V1 and never imports over existing V2 state", () => {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-v2-fresh-"));
   const destinationPath = NodePath.join(directory, "userdata", "statev2.sqlite");

@@ -50,7 +50,7 @@ Unpinning, settling, snoozing, and archiving a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
 state, including its pinned position, and reopens an archived thread you were
 viewing. Discarding an unsent draft from the sidebar works the same way: Undo brings
-back its text and attachments. `mod+z` triggers the most recent Undo when no text field is focused; see
+back its text and attachments. `mod+z` triggers the most recent Undo, even from the composer; see
 [Keybindings](./keybindings.md#commands-with-special-behavior).
 
 You can also drag files from your computer onto any thread row: the thread opens and the files

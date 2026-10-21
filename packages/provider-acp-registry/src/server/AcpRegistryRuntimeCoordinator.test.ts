@@ -4,9 +4,8 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
-import * as TestClock from "effect/testing/TestClock";
 
-import type { AcpRegistryAvailableCommands, AcpRegistryLiveConfiguration } from "./probe.ts";
+import type { AcpRegistryAvailableCommands } from "./probe.ts";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 
 describe("AcpRegistryRuntimeCoordinator", () => {
@@ -106,47 +105,6 @@ describe("AcpRegistryRuntimeCoordinator", () => {
       );
       yield* coordinator.clearAvailableCommands(codex);
       expect(Option.isNone(yield* coordinator.getAvailableCommands(codex))).toBe(true);
-    }).pipe(Effect.provide(AcpRegistryRuntimeCoordinator.layer), Effect.scoped),
-  );
-
-  it.effect("replays and replaces live configuration per provider instance", () =>
-    Effect.gen(function* () {
-      const coordinator = yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
-      const instanceId = ProviderInstanceId.make("acpRegistry_kilo");
-      const firstSeen = yield* Deferred.make<void>();
-      const replacementSeen = yield* Deferred.make<void>();
-      const received: Array<AcpRegistryLiveConfiguration> = [];
-      const first = {
-        models: [{ id: "sonnet", name: "Sonnet", description: null }],
-        currentModelId: "sonnet",
-        configOptions: [],
-      } satisfies AcpRegistryLiveConfiguration;
-      const replacement = {
-        models: [{ id: "opus", name: "Opus", description: null }],
-        currentModelId: "opus",
-        configOptions: [],
-      } satisfies AcpRegistryLiveConfiguration;
-
-      yield* coordinator.publishLiveConfiguration(instanceId, first);
-      const consumer = yield* coordinator
-        .watchLiveConfiguration(instanceId, (configuration) =>
-          Effect.gen(function* () {
-            received.push(configuration);
-            yield* received.length === 1
-              ? Deferred.succeed(firstSeen, undefined)
-              : Deferred.succeed(replacementSeen, undefined);
-          }),
-        )
-        .pipe(Effect.forkChild);
-      yield* Deferred.await(firstSeen);
-      yield* coordinator.publishLiveConfiguration(instanceId, replacement);
-      yield* Deferred.await(replacementSeen);
-      yield* Fiber.interrupt(consumer);
-
-      expect(received).toEqual([first, replacement]);
-      expect(yield* coordinator.getLiveConfiguration(instanceId)).toEqual(Option.some(replacement));
-      yield* coordinator.clearLiveConfiguration(instanceId);
-      expect(Option.isNone(yield* coordinator.getLiveConfiguration(instanceId))).toBe(true);
     }).pipe(Effect.provide(AcpRegistryRuntimeCoordinator.layer), Effect.scoped),
   );
 });

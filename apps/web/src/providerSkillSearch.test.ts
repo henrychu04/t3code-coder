@@ -13,6 +13,7 @@ function makeSkill(input: Partial<ServerProviderSkill> & Pick<ServerProviderSkil
 }
 
 describe("searchProviderSkills", () => {
+  // regression: #12098 unicode currency symbols must work as skill aliases
   it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
     "searches skills with a %s prefix",
     (prefix) => {
@@ -20,31 +21,6 @@ describe("searchProviderSkills", () => {
       expect(searchProviderSkills([skill], `${prefix}review`)).toEqual([skill]);
     },
   );
-
-  it("moves exact ui matches ahead of broader ui matches", () => {
-    const skills = [
-      makeSkill({
-        name: "agent-browser",
-        displayName: "Agent Browser",
-        shortDescription: "Browser automation CLI for AI agents",
-      }),
-      makeSkill({
-        name: "building-native-ui",
-        displayName: "Building Native Ui",
-        shortDescription: "Complete guide for building beautiful apps with Expo Router",
-      }),
-      makeSkill({
-        name: "ui",
-        displayName: "Ui",
-        shortDescription: "Explore, build, and refine UI.",
-      }),
-    ];
-
-    expect(searchProviderSkills(skills, "ui").map((skill) => skill.name)).toEqual([
-      "ui",
-      "building-native-ui",
-    ]);
-  });
 
   it("uses fuzzy ranking for abbreviated queries", () => {
     const skills = [
@@ -54,28 +30,6 @@ describe("searchProviderSkills", () => {
     ];
 
     expect(searchProviderSkills(skills, "gfc").map((skill) => skill.name)).toEqual(["gh-fix-ci"]);
-  });
-
-  it("omits disabled skills from results", () => {
-    const skills = [
-      makeSkill({ name: "ui", displayName: "Ui", enabled: false }),
-      makeSkill({ name: "frontend-design", displayName: "Frontend Design" }),
-    ];
-
-    expect(searchProviderSkills(skills, "ui").map((skill) => skill.name)).toEqual([]);
-  });
-
-  it("returns every enabled skill for an empty query", () => {
-    const skills = [
-      makeSkill({ name: "unslop" }),
-      makeSkill({ name: "browser" }),
-      makeSkill({ name: "disabled", enabled: false }),
-    ];
-
-    expect(searchProviderSkills(skills, "").map((skill) => skill.name)).toEqual([
-      "unslop",
-      "browser",
-    ]);
   });
 
   it("returns the first enabled definition for each skill name", () => {

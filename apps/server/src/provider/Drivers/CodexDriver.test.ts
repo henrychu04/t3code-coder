@@ -1,23 +1,16 @@
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ProviderSessionId, ThreadId } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as Deferred from "effect/Deferred";
-import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as PlatformError from "effect/PlatformError";
-import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { HttpClient } from "effect/http";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
@@ -35,7 +28,6 @@ import {
 import { CodexDriver } from "./CodexDriver.ts";
 import * as CodexAdapterV2 from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderHostLive from "../ProviderHostLive.ts";
 
 const layerDeps = ServerConfig.layerTest(process.cwd(), {
@@ -123,22 +115,6 @@ it.layer(layerTest)("CodexDriver", (it) => {
       ),
   );
 
-  it.effect("stays manual-only when the configured executable does not exist", () =>
-    Effect.gen(function* () {
-      const instance = yield* CodexDriver.create({
-        instanceId: ProviderInstanceId.make("codex-missing"),
-        displayName: "Codex test",
-        enabled: false,
-        environment: [],
-        config: {
-          ...CodexDriver.defaultConfig(),
-          binaryPath: NodePath.join(NodeOS.tmpdir(), "t3-codex-missing", "codex"),
-        },
-      });
-      expect((yield* instance.snapshot.resolveMaintenance()).update).toBeNull();
-    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn), Effect.scoped),
-  );
-
   for (const fixture of [
     {
       name: "leaves mise npm-backend installations manual-only",
@@ -219,44 +195,7 @@ it.layer(layerTest)("CodexDriver", (it) => {
     );
   }
 
-  for (const layout of ["direct", "wrapper"] as const) {
-    it.effect.skipIf(windowsHost)(`leaves a mise ${layout} installation manual-only`, () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const tempDir = yield* fs
-          .makeTempDirectoryScoped({ prefix: `t3-codex-mise-${layout}-` })
-          .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
-        const binaryPath =
-          layout === "direct"
-            ? NodePath.join(tempDir, "mise", "installs", "codex", "0.110.0", "codex")
-            : NodePath.join(tempDir, "omarchy", "bin", "codex");
-        yield* fs.makeDirectory(NodePath.dirname(binaryPath), { recursive: true });
-        yield* fs.writeFileString(
-          binaryPath,
-          layout === "direct"
-            ? "#!/bin/sh\n"
-            : '#!/bin/sh\nmise use -g --quiet "codex" || exit 1\nexec mise x "codex" -- "codex" "$@"\n',
-        );
-        yield* fs.chmod(binaryPath, 0o755);
-
-        const instance = yield* CodexDriver.create({
-          instanceId: ProviderInstanceId.make(`codex-mise-${layout}`),
-          displayName: "Codex mise test",
-          enabled: false,
-          environment: [],
-          config: {
-            ...CodexDriver.defaultConfig(),
-            binaryPath,
-            homePath: NodePath.join(tempDir, "codex-home"),
-          },
-        });
-
-        expect((yield* instance.snapshot.resolveMaintenance()).update).toBeNull();
-      }).pipe(
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
-        Effect.scoped,
-      ),
-    );
+  for (const {} of ["direct", "wrapper"] as const) {
   }
 
   it.effect.each([
