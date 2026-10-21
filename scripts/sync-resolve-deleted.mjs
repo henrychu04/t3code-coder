@@ -6,8 +6,8 @@
 // human to decide. Upstream files added under DELETED_PATHS are listed too, never removed.
 import { execFileSync } from "node:child_process";
 
-// A trailing `/` names a directory. Any other entry names one file and its siblings that share
-// the stem (`project/http.ts` also covers `project/http.test.ts`). Derived from
+// A trailing `/` names a directory. A RegExp matches whole paths. Any other entry names one file
+// and its siblings that share the stem (`project/http.ts` also covers `project/http.test.ts`). Derived from
 // `git diff --name-status <merge-base> origin/coder-only | grep ^D`.
 const DELETED_PATHS = {
   // Auth and pairing: Coder owns authentication; no sessions, pairing, OAuth, DPoP, or scopes.
@@ -89,6 +89,12 @@ const DELETED_PATHS = {
     "packages/provider-grok/",
     "packages/provider-muse/",
     "packages/provider-opencode/",
+    // Their orchestrator replay fixtures: whole fixture directories, transcripts and assertions
+    // in shared fixture directories (except the three the ACP Registry entries reuse), and
+    // per-driver test files.
+    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?:grok|muse|opencode|skill_invocation)[^/]*\//,
+    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?!message_steering\/grok_output\.ts$|todo_list\/grok_output\.ts$|tool_call_read_only\/cursor_output\.ts$)[^/]+\/(?:cursor|grok|muse|opencode)_[^/]+$/,
+    /^apps\/server\/src\/orchestration-v2\/testkit\/(?:Cursor|Grok|Muse|OpenCode)ReplayFixtures\./,
   ],
   // Kilo Code runs upstream's ACP Registry driver from its local command only: no registry
   // installs, agent sign-in, per-agent flavors, or native protocol logging.
@@ -170,7 +176,13 @@ const stem = (file) => file.slice(0, file.lastIndexOf("."));
 const categoryOf = (path) => {
   for (const [category, entries] of Object.entries(DELETED_PATHS)) {
     for (const entry of entries) {
-      if (entry.endsWith("/") ? path.startsWith(entry) : path.startsWith(`${stem(entry)}.`)) {
+      const matches =
+        entry instanceof RegExp
+          ? entry.test(path)
+          : entry.endsWith("/")
+            ? path.startsWith(entry)
+            : path.startsWith(`${stem(entry)}.`);
+      if (matches) {
         return category;
       }
     }
@@ -220,7 +232,15 @@ if (left.length > 0) {
   for (const line of left) console.log(`  ${line}`);
 }
 
-const added = git("diff", "--cached", "--no-renames", "--name-only", "--diff-filter=A", "HEAD", "-z")
+const added = git(
+  "diff",
+  "--cached",
+  "--no-renames",
+  "--name-only",
+  "--diff-filter=A",
+  "HEAD",
+  "-z",
+)
   .split("\0")
   .filter((path) => path && categoryOf(path));
 if (added.length > 0) {
