@@ -1260,6 +1260,8 @@ listed here is drift to remove rather than fork behavior to keep.
   GitHub-credential branch deletion test; upstream's OTLP `config.test.ts` is not carried.
   `composerDraftStore.test.ts` keeps the draft-persistence test upstream pruned, because it
   checks that draft image bytes never reach browser storage.
+  Replay fixtures (`orchestration-v2/testkit/fixtures`) carry only the Claude, Codex, Pi, and ACP
+  Registry providers; `ProviderReplayFixtures.ts` lists only those drivers.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
   the Coder config owns registration and there is no per-environment switch.
   `ws.test.ts` omits upstream's config-RPC buffering test, which builds upstream's session-scoped
