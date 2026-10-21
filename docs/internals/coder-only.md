@@ -644,6 +644,9 @@ listed here is drift to remove rather than fork behavior to keep.
       that discovers no models at all cannot be told apart from a readiness snapshot, so it keeps
       the previous list; Kilo Code always lists its models, and upstream keeps the list in the
       same case for an instance never signed in through T3.
+    - `driver.ts` keeps `acpRegistrySnapshotReadiness` and `testing.ts` keeps
+      `probeAcpRegistryConfiguration` exported (upstream made them private) for the fork's Kilo
+      Code driver and probe tests.
     - `AcpRegistryRuntimeCoordinator.ts` has no URL authentication consent or session mutation
       permit. `adapter.ts` has no Devin, GitHub Copilot, or Mistral Vibe flavor (`copilotAcp.ts`
       and `devinAcp.ts` are not carried) and no native protocol logging.
@@ -694,7 +697,8 @@ listed here is drift to remove rather than fork behavior to keep.
     and attaches after its custom-model and service-tier step. At session start,
     `ClaudeAdapterV2.resolveBypassAvailability` reads the settings files (cached remote, user,
     project, local, and managed) where upstream calls the SDK's runtime `resolveSettings`
-    (#21806); a mode any source disables is off. `CodexDriver` has no `CodexUsageHistory`
+    (#21806); a mode any source disables is off, so `Drivers/ClaudeSkills.ts` keeps
+    `skillOverrideSettingsPaths` exported for it. `CodexDriver` has no `CodexUsageHistory`
     requirement, because Codex usage history (#21898) is not carried. The Claude signed-out message names API
     credentials rather than subscription login. Claude's usage read asks the CLI to skip its local
     transcript scan (`ClaudeCli.getUsage({ skipBehaviors })`), as upstream's SDK call does.
@@ -724,7 +728,7 @@ listed here is drift to remove rather than fork behavior to keep.
   that the message came from its parent and writes the document over itself.
   A blob, `srcdoc`, or `data:` frame would inherit the page's Content-Security-Policy and block the
   app's scripts. The shell's own policy is `sandbox allow-scripts allow-forms; frame-ancestors
-'self'`, so the shell and the app keep an opaque origin even when the shell is opened directly.
+  'self'`, so the shell and the app keep an opaque origin even when the shell is opened directly.
   The app's CSP comes with its stored document, as upstream injects it. Upstream's asset route
   adds its theme and cookie bootstraps (`injectMcpAppThemeBootstrap`,
   `injectMcpAppCookieBootstrap`) to the served document; here `McpAppFrame` adds them before
@@ -944,7 +948,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `projectVideo`, legacy `artifact`, `loading`, and `retry`. `resolveMarkdownMediaPreview`
     returns helper sources rather than asset URLs. The dialog reads the selected image with
     priority, the gallery also collects `[data-project-image]` wrappers so unloaded images stay
-    navigable, and byte actions use the blob the dialog shows. Timeline galleries are hosted by
+    navigable, and byte actions use the blob the dialog shows. `wrapExpandedImageIndex` stays (upstream removed
+    it) because the fork's `ExpandedImageDialog` wraps gallery navigation with it. Timeline galleries are hosted by
     `ChatView`, as on main.
   - There is no in-app browser, local editor, or file manager: `MarkdownFileLink` never receives
     `onOpen`, `onOpenInBrowser`, or `onReveal`, and the link context menu never offers the
@@ -1121,7 +1126,8 @@ listed here is drift to remove rather than fork behavior to keep.
   before upstream's migrator runs. A V2 preview ledger is reconciled before that rewrite, because
   the Coder legacy registry never recorded `OrchestrationV2`. Any other history is left to
   upstream's migrator and its V2 id-clash check, so `Migrations.test.ts` is upstream's. New
-  migrations take upstream's next ID; never add a Coder-only migration ID.
+  migrations take upstream's next ID; never add a Coder-only migration ID. `migrationEntries`
+  stays exported (upstream made it private) for the Coder legacy-history tests.
 - **Persistence.** Merge-request snapshots, right-panel tabs, diff-panel selections, closed-view
   history, the last merge method, and the last project grouping mode stay in memory where
   upstream uses browser storage. Upstream's offline query persistence, which only its mobile app
@@ -1200,6 +1206,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Build tooling.** `scripts/lib/third-party-licenses.ts` never fetches during a build: SPDX
   texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
   ones. It reads no device tool version pins, because device tools are not carried.
+  `pnpm-workspace.yaml` sets `supportedArchitectures` (Linux x64 glibc) on every host, because
+  the helper bundle ships those native modules to the workspace; upstream sets it only on Windows
+  in `.pnpmfile.cjs`, which is not carried.
   Packages typecheck with `tsc --noEmit` (TypeScript 7), not upstream's `tsc-rs`, so no extra
   native typecheck binary or install script is added; the fork never ran upstream's Effect
   language-service diagnostics (`@effect/tsgo`) either.
@@ -1241,9 +1250,7 @@ listed here is drift to remove rather than fork behavior to keep.
   off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
   `McpAppFrame.browser.test.tsx` reads its app through a mocked helper read into a stand-in for
   the gateway's document shell, where upstream serves a data-URL asset.
-  `HtmlRenderDialog.test.tsx` feeds the frame a helper-read page and drops upstream's
-  unavailable-URL and near-expiry fresh-URL tests and the frame's `sandbox` attribute check (the
-  document shell's CSP applies the sandbox). `SourceControlProviderRegistry.test.ts` runs
+  `SourceControlProviderRegistry.test.ts` runs
   upstream's registry tests (its `makeRegistry` with remotes, process, and server settings) for
   the GitLab-only registry, with the "asks once" and "asks again" auth-probe tests driving
   `glab`. `WorkspaceSearchIndex.native.test.ts` is upstream's native decoding test plus the
@@ -1251,6 +1258,8 @@ listed here is drift to remove rather than fork behavior to keep.
   Effect's). `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
   `storageCleanup.test.ts` its saved-usage-cache test, and `PullRequestService.test.ts` its
   GitHub-credential branch deletion test; upstream's OTLP `config.test.ts` is not carried.
+  `composerDraftStore.test.ts` keeps the draft-persistence test upstream pruned, because it
+  checks that draft image bytes never reach browser storage.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
   the Coder config owns registration and there is no per-environment switch.
   `ws.test.ts` omits upstream's config-RPC buffering test, which builds upstream's session-scoped
@@ -1268,7 +1277,7 @@ listed here is drift to remove rather than fork behavior to keep.
   dependencies for its own unit tests and for fork-adapted suites that stay unit tests in place
   of upstream's browser versions: `ChatMarkdown.test.tsx` (upstream's `ChatMarkdown.browser`,
   `.logic`, and `.assets` browser tests are not carried), `AttachmentFilePreview.test.tsx`,
-  `ProjectSettingsPanel.test.tsx`, `HtmlRenderDialog.test.tsx`, and `RightPanelTabs.test.tsx`
+  `ProjectSettingsPanel.test.tsx`, and `RightPanelTabs.test.tsx`
   (upstream's `RightPanelTabs.browser.test.tsx` is not carried). The carried browser tests omit
   cases for cut surfaces: grant checks in `ProjectSettingsPanel`, signed-URL renewal in
   `AttachmentFilePreview`, uncarried providers in

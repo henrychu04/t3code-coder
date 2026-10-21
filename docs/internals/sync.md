@@ -75,6 +75,8 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
       if n > prev[l] and sha[l] and res[l] > max(sha[l] - (n - prev[l]), 0): print("fork cut back:", l)
   PY
   ```
+  macOS `patch` reverses a hunk it takes for "already applied" without failing; pass `-N` so
+  such hunks become rejects to apply by hand.
   Expect hook dependency-list entries and call sites the refactor rewrote; read every other line,
   since it is a lost or reverted seam (that sync's check caught a "pull request" wording
   regression this way).
@@ -94,6 +96,13 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   change, then `vp fmt`. Where the fork replaced a function wholesale (Kilo Code, Codex, and Claude
   drivers' `create`), keep the fork's body and apply only upstream's wrapper. Effect.fn spans
   export nothing here, but matching upstream's shape keeps later syncs small.
+- When upstream splits a file into new modules (688ee52f0e: ChatView, ChatMarkdown, ChatComposer,
+  MessagesTimeline, CommandPalette, SettingsPanels, the sidebar, and the pull requests page), the
+  new modules arrive as plain added files with none of the fork's delta, and can carry cut
+  surfaces again (`useSystemComposerBanners`' server-update notice). Replay the old file's delta
+  into whichever module now holds each block, strip cut surfaces there, and run the lost-line
+  check above against the old file plus its new modules together. Section 6's marker check then
+  shows the old file's drop and the new modules' gain; the totals should match.
 - When upstream moves web logic into a shared package (07d38b8d17: `LinkPullRequestDialog`'s
   parsing moved to client-runtime's `pullRequestLinkInput.ts`), move the fork's test adaptations
   with it, keep the moved module upstream's apart from wording, and keep a seam that needs web
@@ -285,7 +294,9 @@ Check that no `patch` backup or reject file was staged:
 `git ls-files | grep -E '\.(orig|rej)$'` must print nothing (a `BranchToolbar.tsx.orig` slipped
 into the fb990765a4 merge).
 
-Finish with `pnpm knip:check`.
+Finish with `pnpm knip:check`. Upstream's test pruning can leave an export used only by a cut
+surface (mobile, relay, other providers) once the test that imported it is gone; list that file
+in `knip.jsonc`'s `ignoreIssues`, and delete the export instead when it is in a fork-only file.
 
 ## 7. Verify
 

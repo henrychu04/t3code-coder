@@ -1872,6 +1872,7 @@ function createMockStorage() {
 }
 
 describe("composer draft persistence", () => {
+  // Coder: kept after upstream pruned it; it guards that draft image bytes never reach browser storage.
   it("defers serialization until typing stops and never persists draft image bytes", async () => {
     await useComposerDraftStore.persist.clearStorage();
     vi.useFakeTimers();
