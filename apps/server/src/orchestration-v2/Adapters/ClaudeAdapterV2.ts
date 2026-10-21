@@ -113,7 +113,6 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import {
@@ -130,7 +129,6 @@ import {
 } from "../../claudeModelOptions.ts";
 import * as ServerConfig from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 import {
   claudeSignedOutMessage,
@@ -809,61 +807,6 @@ function makeClaudeAgentSdkProtocolLogger(input: {
   };
 }
 
-const encodeClaudeHistoryOptions = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-const decodeClaudeHistoryFork = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(
-    Schema.Struct({ sessionId: Schema.String, headMessageId: Schema.optionalKey(Schema.String) }),
-  ),
-);
-
-const claudeConfigDirOf = (
-  path: Path.Path,
-  environment: NodeJS.ProcessEnv,
-  homeDirectory: string,
-) => path.resolve(environment.CLAUDE_CONFIG_DIR ?? path.join(homeDirectory, ".claude"));
-
-// The SDK reads CLAUDE_CONFIG_DIR from process.env. Isolate custom homes in a
-// worker so concurrent providers keep the server's environment.
-const forkClaudeSessionInWorker = Effect.fn("forkClaudeSessionInWorker")(function* (
-  input: ClaudeAgentSdkSessionForkInput,
-) {
-  const path = yield* Path.Path;
-  const fromSource = import.meta.url.endsWith(".ts");
-  // A single executable hosts the worker itself; it has no sibling script.
-  const workerArguments = (yield* HostProcess.IsExecutable)
-    ? ["__claude-history"]
-    : [
-        ...(fromSource ? ["--experimental-strip-types"] : []),
-        yield* path.fromFileUrl(
-          new URL(
-            fromSource ? "../../claude-history-worker.ts" : "./claude-history-worker.mjs",
-            import.meta.url,
-          ),
-        ),
-      ];
-  const executablePath = yield* HostProcess.ExecutablePath;
-  const result = yield* spawnAndCollect(
-    executablePath,
-    ChildProcess.make(
-      executablePath,
-      [
-        ...workerArguments,
-        "forkSession",
-        input.sessionId,
-        encodeClaudeHistoryOptions(input.options),
-      ],
-      { env: { ...input.environment, ELECTRON_RUN_AS_NODE: "1" } },
-    ),
-  ).pipe(Effect.timeout("30 seconds"));
-  if (result.code !== 0) {
-    return yield* new ClaudeAgentSdkQueryRunnerError({
-      method: "forkSession",
-      cause: result.stderr.trim() || `Claude history worker exited with code ${result.code}.`,
-    });
-  }
-  return yield* decodeClaudeHistoryFork(result.stdout);
-});
-
 export const layerQueryRunner: Layer.Layer<
   ClaudeAgentSdkQueryRunner,
   never,
@@ -875,8 +818,6 @@ export const layerQueryRunner: Layer.Layer<
   ClaudeAgentSdkQueryRunner,
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const path = yield* Path.Path;
     const { native: nativeEventLogger } = yield* ProviderEventLoggers.ProviderEventLoggers;
     const agentScope = yield* AgentScope;
     const platform = yield* HostProcess.Platform;

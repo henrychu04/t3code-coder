@@ -68,10 +68,6 @@ export const CODEX_RUNTIME_MODE_CONFIG = {
   },
 } as const satisfies Readonly<Record<RuntimeMode, CodexRuntimeModeConfig>>;
 
-function getCodexRuntimeModeConfig(runtimeMode: RuntimeMode): CodexRuntimeModeConfig {
-  return CODEX_RUNTIME_MODE_CONFIG[runtimeMode];
-}
-
 export function resolveCodexSupportedRuntimeModes(
   response: CodexRuntimeRequirementsResponse | undefined,
 ): ReadonlyArray<RuntimeMode> {

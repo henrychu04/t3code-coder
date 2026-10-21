@@ -1,5 +1,4 @@
 import {
-  type EnvironmentId,
   isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
 } from "@t3tools/contracts";
@@ -10,7 +9,6 @@ import {
   fileAttachmentTooLargeMessage,
 } from "../../lib/attachmentDisplay";
 import { isHeicImageFile } from "../../lib/imageCompression";
-import { isVideoAttachment } from "../../types";
 
 type ComposerAttachmentFileKind = "image" | "file" | "unsupported-image";
 
@@ -20,6 +18,7 @@ interface FileAttachmentCapabilityState {
   readonly maxFileAttachmentBytes: number | null;
 }
 
+// Coder: no gif; the gateway accepts PNG, JPEG, and WebP uploads only, so a GIF is a plain file.
 const IMAGE_MIME_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
   jpeg: "image/jpeg",
   jpg: "image/jpeg",
@@ -73,25 +72,13 @@ export function classifyComposerAttachmentFile(
   return isProviderSendTurnSupportedImageMimeType(file.type) ? "image" : "unsupported-image";
 }
 
-export function isPreviewableComposerVideo(
-  file: ComposerFileAttachment,
-  environmentId: EnvironmentId,
-): boolean {
-  return (
-    isVideoAttachment(file) &&
-    (file.file !== null ||
-      (file.uploadedAttachmentId !== undefined && file.uploadEnvironmentId === environmentId))
-  );
-}
-
+// Coder: the composer has no video tiles (a draft video plays from no signed asset URL), so
+// videos list with the other files instead of being left out.
 export function composerOtherFilesForPresentation(
   files: ReadonlyArray<ComposerFileAttachment>,
-  environmentId: EnvironmentId,
   inlineFileIds: ReadonlySet<string>,
 ): ComposerFileAttachment[] {
-  return files.filter(
-    (file) => !isPreviewableComposerVideo(file, environmentId) && !inlineFileIds.has(file.id),
-  );
+  return files.filter((file) => !inlineFileIds.has(file.id));
 }
 
 export function fileAttachmentStagingLimit(input: FileAttachmentCapabilityState): number | null {

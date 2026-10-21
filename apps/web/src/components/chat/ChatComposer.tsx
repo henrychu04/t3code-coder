@@ -1660,11 +1660,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         .map((file) => file.id),
     );
   })();
-  const composerOtherFiles = composerOtherFilesForPresentation(
-    composerFiles,
-    environmentId,
-    inlineFileIdSet,
-  );
+  const composerOtherFiles = composerOtherFilesForPresentation(composerFiles, inlineFileIdSet);
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerReviewComments = composerDraft.reviewComments;
   const composerThreadContexts = attachmentDraft.threadContexts;
@@ -1876,7 +1872,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry === undefined && multipleModelSelections === null;
   const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
   const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
-  // Coder has no provider setup flow; provider credentials live in the workspace.
+  // Coder: no provider setup flow; provider credentials live in the workspace.
   const providerSetupInstanceId = noProviderAvailable ? unavailableProviderInstanceId : undefined;
   const resolvedCompactDisabledReason =
     compactDisabledReason ?? (noProviderAvailable ? "Compacting is unavailable right now" : null);

@@ -1400,7 +1400,7 @@ export function optimisticMessageAttachments(
   );
 }
 
-/** Fallback title sources for a message with no text of its own. */
+/** Fallback title sources for a message with no text of its own. Coder: no preview annotations. */
 export function sendTitleFallbackLabels(snapshot: ComposerSendSnapshot) {
   const terminalContext = snapshot.terminalContexts[0];
   const reviewComment = snapshot.reviewComments[0];

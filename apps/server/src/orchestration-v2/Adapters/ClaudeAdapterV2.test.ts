@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off -- workflow fixtures use files and the fake Claude CLI uses Node streams
-import { OrchestrationV2UserInputQuestion } from "@t3tools/contracts";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
@@ -32,7 +31,6 @@ import {
   type OrchestrationV2ProviderThread,
   ProjectId,
   ProviderInstanceId,
-  type ProviderInstanceEnvironment,
   ProviderDriverKind,
   type ProviderReplayTranscript,
   type ProviderApprovalDecision,
@@ -65,7 +63,6 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
-import * as ServerConfig from "../../config.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
@@ -85,12 +82,6 @@ import {
   materializeFixtureInput,
   projectionFor,
 } from "../testkit/fixtures/shared.ts";
-
-// Coder: the Agent SDK is type-only, so the adapter reads Claude's settings files itself and
-// these tests write those files instead of mocking the SDK's `resolveSettings`.
-const decodeUserInputQuestions = Schema.decodeUnknownSync(
-  Schema.Array(OrchestrationV2UserInputQuestion),
-);
 
 const DEFAULT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({});
 const AUTO_COMPACT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
@@ -898,75 +889,6 @@ describe("ClaudeAdapterV2 approval cancellation", () => {
       assert.equal(result, "cancel");
     }),
   );
-});
-
-const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(function* (
-  binaryPath: string,
-  environment: ProviderInstanceEnvironment = [],
-) {
-  const executablePaths: Array<string | undefined> = [];
-  const taskToolEnvironment: Array<string | undefined> = [];
-  const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
-    {
-      instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
-      displayName: undefined,
-      environment,
-      enabled: true,
-      config: { ...DEFAULT_CLAUDE_SETTINGS, binaryPath },
-    },
-    {},
-  ).pipe(
-    Effect.provide(
-      ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3-claude-binary-path-",
-      }),
-    ),
-    Effect.provideService(ClaudeAdapterV2.ClaudeAgentSdkQueryRunner, {
-      allocateSessionId: Effect.succeed("native-thread-claude-binary-path"),
-      open: (input) =>
-        Effect.sync(() => {
-          executablePaths.push(input.options.pathToClaudeCodeExecutable);
-          taskToolEnvironment.push(input.options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS);
-          return {
-            messages: Stream.never,
-            offer: () => Effect.void,
-            setModel: () => Effect.void,
-            applyFlagSettings: () => Effect.void,
-            setPermissionMode: () => Effect.void,
-            backgroundTasks: () => Effect.succeed(false),
-            stopTask: () => Effect.void,
-            interrupt: Effect.void,
-            close: Effect.void,
-          };
-        }),
-      forkSession: () => Effect.die("unused"),
-      subagentLaunchToolUseId: () => Effect.succeed(null),
-      assertComplete: Effect.void,
-    }),
-  );
-  const threadId = ThreadId.make("thread-claude-binary-path");
-  const runtime = yield* adapter.openSession({
-    threadId,
-    providerSessionId: ProviderSessionId.make("provider-session-claude-binary-path"),
-    modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
-  });
-  const providerThread = yield* runtime.ensureThread({
-    threadId,
-    modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
-  });
-  yield* runtime.startTurn(
-    makeClaudeTestTurnInput({
-      threadId,
-      providerThread,
-      now: yield* DateTime.now,
-      attemptId: RunAttemptId.make("attempt-claude-binary-path"),
-      text: "hello",
-      attachments: [],
-    }),
-  );
-  return { executablePaths, taskToolEnvironment };
 });
 
 describe("ClaudeAdapterV2 resumeThread", () => {

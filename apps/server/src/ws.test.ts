@@ -1,10 +1,7 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   ProjectId,
   ThreadId,
-  WS_METHODS,
-  WsSubscribeServerConfigRpc,
   type OrchestrationV2StoredEvent,
   type OrchestrationProjectShell,
 } from "@t3tools/contracts";

@@ -2,7 +2,6 @@ import { vi } from "vite-plus/test";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert, expect } from "@effect/vitest";
-import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -84,7 +83,6 @@ const defaultCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({})
 process.env.T3CODE_CURSOR_ENABLED = "1";
 
 const encoder = new TextEncoder();
-const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 const withBundledCompatibility = (snapshot: ServerProvider) =>
   applyProviderCompatibility(
     snapshot,

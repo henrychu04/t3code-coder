@@ -35,7 +35,6 @@ import {
   Smartphone,
   TerminalSquare,
 } from "lucide-react";
-import { Volume2, VolumeOff } from "lucide";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
