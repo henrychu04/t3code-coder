@@ -50,7 +50,6 @@ const stagePendingUpload = Effect.fn("test.stagePendingUpload")(function* (input
 });
 
 describe("AttachmentClaims", () => {
-
   it.effect("rejects oversized image batches before copying a pending upload", () =>
     Effect.gen(function* () {
       const pending = yield* stagePendingUpload({
@@ -263,5 +262,4 @@ describe("AttachmentClaims", () => {
       expect(result._tag).toBe("Failure");
     }).pipe(Effect.provide(testLayer)),
   );
-
 });

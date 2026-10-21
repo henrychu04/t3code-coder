@@ -76,7 +76,6 @@ describe("resolveLinkPullRequestInput", () => {
     });
     expect(result).toMatchObject({ error: expect.stringContaining("gitlab.com") });
   });
-
 });
 
 describe("changeRequestWebUrl", () => {

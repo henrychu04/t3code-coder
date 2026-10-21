@@ -1455,7 +1455,6 @@ describe("ClaudeAdapterV2 attachments", () => {
         ),
       ),
   );
-
 });
 
 describe("ClaudeAdapterV2 native fork", () => {
@@ -1755,7 +1754,6 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );
-
 });
 
 describe("ClaudeAdapterV2 native session identity", () => {

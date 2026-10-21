@@ -18,7 +18,9 @@ import {
   acpRegistryProbeFailure,
   acpRegistryProbeResult,
   normalizeAcpRegistryAuthMethods,
-  normalizeAcpRegistryCommands, probeAcpRegistryConfiguration } from "@t3tools/provider-acp-registry/testing";
+  normalizeAcpRegistryCommands,
+  probeAcpRegistryConfiguration,
+} from "@t3tools/provider-acp-registry/testing";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 
 const instanceId = ProviderInstanceId.make("acpRegistry_codex");

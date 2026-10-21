@@ -14,10 +14,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { ProviderEventLoggers } from "@t3tools/provider-core/server/ProviderEventLoggers";
 // Coder: the runner queries Claude through the CLI transport's SDK-typed shim, so the test
 // stubs the shim's query rather than the Agent SDK's.
-import {
-  ClaudeAgentSdkQueryRunner,
-  layerQueryRunner,
-} from "./ClaudeAdapterV2.ts";
+import { ClaudeAgentSdkQueryRunner, layerQueryRunner } from "./ClaudeAdapterV2.ts";
 
 vi.mock("../../provider/Drivers/ClaudeAgentSdk.ts", { spy: true });
 

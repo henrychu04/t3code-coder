@@ -198,32 +198,3 @@ export const CursorProviderCapabilitiesV2 = {
     enforcement: "native",
   },
 } satisfies OrchestrationV2ProviderCapabilities;
-
-export const GrokProviderCapabilitiesV2 = {
-  ...AcpProviderCapabilitiesV2,
-  sessions: {
-    ...AcpProviderCapabilitiesV2.sessions,
-    supportsModelSwitchInSession: true,
-    supportsRuntimeModeSwitchInSession: false,
-  },
-  threads: {
-    ...AcpProviderCapabilitiesV2.threads,
-    canReadThreadSnapshot: true,
-    canForkThread: false,
-    canForkFromTurn: false,
-  },
-  subagents: {
-    ...AcpProviderCapabilitiesV2.subagents,
-    supportsSubagents: true,
-    exposesSubagentThreadIds: true,
-    emitsSubagentLifecycle: true,
-  },
-  tools: {
-    ...AcpProviderCapabilitiesV2.tools,
-    supportsMcpTools: true,
-  },
-  checkpointing: {
-    ...AcpProviderCapabilitiesV2.checkpointing,
-    providerCanReadConversationSnapshot: true,
-  },
-} satisfies OrchestrationV2ProviderCapabilities;

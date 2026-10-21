@@ -6,9 +6,7 @@ import * as NodePath from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  generateThirdPartyLicenseManifest,
-} from "./third-party-licenses.ts";
+import { generateThirdPartyLicenseManifest } from "./third-party-licenses.ts";
 
 const tempDirectories: string[] = [];
 

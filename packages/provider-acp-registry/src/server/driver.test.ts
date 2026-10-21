@@ -11,7 +11,9 @@ import {
   applyAcpRegistryLiveConfiguration,
   buildCheckedAcpRegistrySnapshot,
   checkAcpRegistryProviderReadiness,
-  checkAcpRegistryProviderStatus, acpRegistrySnapshotReadiness } from "./driver.ts";
+  checkAcpRegistryProviderStatus,
+  acpRegistrySnapshotReadiness,
+} from "./driver.ts";
 
 const decodeAcpRegistrySettings = Schema.decodeSync(AcpRegistrySettings);
 // Coder: the default instance starts disabled, so snapshots under test enable it.

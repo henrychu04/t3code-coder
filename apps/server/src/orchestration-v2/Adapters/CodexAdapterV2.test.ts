@@ -203,7 +203,6 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.isDefined(withT3.additionalContext?.["t3_code_runtime"]);
     }),
   );
-
 });
 
 describe("CodexAdapterV2 process spawning", () => {
@@ -242,7 +241,6 @@ describe("CodexAdapterV2 process spawning", () => {
       },
     );
   });
-
 });
 
 describe("CodexAdapterV2 native protocol logging", () => {

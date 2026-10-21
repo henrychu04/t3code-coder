@@ -44,9 +44,7 @@ import {
   CodexProviderCapabilitiesV2,
   canReuseCodexContextUsage,
 } from "../Adapters/CodexAdapterV2.ts";
-import {
-  AcpProviderCapabilitiesV2,
-} from "./DormantProviderCapabilities.ts";
+import { AcpProviderCapabilitiesV2 } from "./DormantProviderCapabilities.ts";
 import * as EventSink from "../EventSink.ts";
 import * as EventStore from "../EventStore.ts";
 import * as LegacyV1ThreadImporter from "../legacy/LegacyV1ThreadImporter.ts";

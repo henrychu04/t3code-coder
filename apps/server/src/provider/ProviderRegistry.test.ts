@@ -59,9 +59,7 @@ import type {
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import {
-  makeManualOnlyProviderMaintenanceCapabilities,
-} from "@t3tools/provider-core/server/maintenanceResolver";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
 vi.mock("./Drivers/ClaudeCli.ts", { spy: true });
 
 const decodeServerProvider = Schema.decodeSync(ServerProvider);
@@ -2140,11 +2138,9 @@ it.layer(
           assert.notInclude(unavailable, "ghost_stale");
         }),
     );
-
   });
 
   describe("checkClaudeProviderStatus", () => {
-
     it.effect("reports a logged-out CLI as unauthenticated", () =>
       Effect.gen(function* () {
         // The capability probe resolves for a logged-out CLI, so `tokenSource:
@@ -2334,6 +2330,5 @@ it.layer(
         ),
       ),
     );
-
   });
 });

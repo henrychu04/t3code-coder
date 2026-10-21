@@ -107,5 +107,4 @@ describe("AcpRegistryRuntimeCoordinator", () => {
       expect(Option.isNone(yield* coordinator.getAvailableCommands(codex))).toBe(true);
     }).pipe(Effect.provide(AcpRegistryRuntimeCoordinator.layer), Effect.scoped),
   );
-
 });

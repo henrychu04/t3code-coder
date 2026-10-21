@@ -98,7 +98,6 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("resolveWorkEntryToolPresentation", () => {
-
   it("shows returned MCP errors as failures even in the live activity row", () => {
     const entry: WorkLogPresentationEntry = {
       id: "clone",
