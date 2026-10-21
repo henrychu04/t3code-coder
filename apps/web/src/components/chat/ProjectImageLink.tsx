@@ -3,7 +3,7 @@
 // with helper stdio reads.
 import { useState, type ReactNode } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { ChatMarkdownAssetImage } from "../ChatMarkdown";
+import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
 import { ExpandedImageDialog } from "./ExpandedImageDialog";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 

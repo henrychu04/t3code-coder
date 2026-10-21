@@ -124,6 +124,7 @@ function claudeManagedSettingsPath(
   return "/etc/claude-code/managed-settings.json";
 }
 
+// Coder: exported for ClaudeAdapterV2, which reads bypass availability from the same settings files.
 export function skillOverrideSettingsPaths(
   path: Path.Path,
   configDirPath: string,

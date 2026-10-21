@@ -269,7 +269,7 @@ const SHELL_RESUME_MAX_GAP = 1_000;
 // payload bytes of the range in SQL and reset with a snapshot past this budget.
 const ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES = 8 * 1024 * 1024;
 
-export function shouldUseBoundedThreadSnapshot(input: {
+function shouldUseBoundedThreadSnapshot(input: {
   readonly acceptBoundedSnapshot?: boolean;
 }): boolean {
   return input.acceptBoundedSnapshot === true;

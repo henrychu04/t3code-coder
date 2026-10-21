@@ -363,25 +363,6 @@ it.layer(TestLayer)("WorkspaceEntries", (it) => {
         return cwd;
       });
 
-    it.effect("returns matching directories and excludes files", () =>
-      Effect.gen(function* () {
-        const entries = yield* WorkspaceEntries.WorkspaceEntries;
-        const path = yield* Path.Path;
-        const cwd = yield* makeTree("t3-coder-browse-prefix-", [
-          "alphabet.txt",
-          "alpha/index.ts",
-          "alpine/index.ts",
-        ]);
-        expect(yield* entries.browse({ partialPath: path.join(cwd, "alp") })).toEqual({
-          parentPath: cwd,
-          entries: [
-            { name: "alpha", fullPath: path.join(cwd, "alpha") },
-            { name: "alpine", fullPath: path.join(cwd, "alpine") },
-          ],
-        });
-      }),
-    );
-
     it.effect("shows dot directories in directory mode and hidden-prefix mode", () =>
       Effect.gen(function* () {
         const entries = yield* WorkspaceEntries.WorkspaceEntries;

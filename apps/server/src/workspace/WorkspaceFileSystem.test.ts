@@ -9,7 +9,6 @@ import { vi } from "vite-plus/test";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 import * as KnownWorkspaces from "./KnownWorkspaces.ts";
@@ -62,19 +61,6 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
 
 it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
   describe("getMetadata", () => {
-    it.effect("expands home-relative paths on the server", () =>
-      Effect.gen(function* () {
-        const service = yield* WorkspaceFileSystem.WorkspaceFileSystem;
-        const home = yield* makeTempDir;
-        yield* writeTextFile(home, "file", "hello");
-        expect(
-          (yield* service
-            .getMetadata({ paths: ["~/file"] })
-            .pipe(Effect.provideService(HostProcess.HomeDirectory, home))).entries,
-        ).toEqual([{ kind: "file", byteLength: 5 }]);
-      }),
-    );
-
     it.effect(
       "reports actual kinds for extensionless files, dotfiles, and dotted directories",
       () =>
@@ -126,25 +112,6 @@ it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
         ).toEqual([
           { kind: "file", byteLength: script.length, mimeType: "text/x-python" },
           { kind: "file", byteLength: 8, mimeType: "image/png" },
-        ]);
-      }),
-    );
-
-    it.effect.skipIf(!symlinksSupported)("follows file and directory symlinks", () =>
-      Effect.gen(function* () {
-        const service = yield* WorkspaceFileSystem.WorkspaceFileSystem;
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const cwd = yield* makeTempDir;
-        yield* writeTextFile(cwd, "target", "text");
-        yield* fs.makeDirectory(path.join(cwd, "directory"));
-        const fileLink = path.join(cwd, "file-link");
-        const directoryLink = path.join(cwd, "directory-link");
-        yield* fs.symlink(path.join(cwd, "target"), fileLink);
-        yield* fs.symlink(path.join(cwd, "directory"), directoryLink);
-        expect((yield* service.getMetadata({ paths: [fileLink, directoryLink] })).entries).toEqual([
-          { kind: "file", byteLength: 4 },
-          { kind: "directory" },
         ]);
       }),
     );

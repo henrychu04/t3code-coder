@@ -307,7 +307,9 @@ Images Coder stored before upstream's attachment ids (`<uuid>.<ext>`) decode as
 id through bounded helper chunks for previews, Save, and rewind.
 
 The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
-`message.context`) without preview annotations, element captures, or SnapShot frames. The work log
+`message.context`) without preview annotations, element captures, or SnapShot frames.
+`ComposerAttachmentStrip.tsx`'s media row shows image tiles only; videos list with the other
+files, and a draft file previews only while its bytes are still in memory. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
 native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
 stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
@@ -814,7 +816,8 @@ listed here is drift to remove rather than fork behavior to keep.
   tracks the last applied sequence and session epoch. Each attach attempt reads `afterSequence` from that cache, beside upstream's
   `resume` flag, and a resumed attach of a closed terminal gets upstream's `closed` event. `ThreadTerminalDrawer` never opens terminal links (there is no editor or
   preview surface).
-- **Command palette.** `CommandPalette.tsx` is upstream's, including its add-project browse,
+- **Command palette.** `CommandPalette.tsx` and the modules upstream split from it
+  (`CommandPaletteAddProject.tsx`, `CommandPaletteLookups.ts`, and the item files) are upstream's, including its add-project browse,
   clone, and new-project flows over `filesystem.browse` and the clone RPCs. Coder deltas (marked
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies
   keybindings; every workspace is remote; Add project always shows the workspace picker, which
@@ -908,14 +911,21 @@ listed here is drift to remove rather than fork behavior to keep.
   `SentAttachmentFilePreview`, passes the project id to `FilePreviewPanel`, and names merge
   requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
   confirmation; `useQueuedRunEdit` carries no preview annotations and previews only images the
-  helper reads; `useThreadLinkedPullRequest` names merge requests. Upstream's `useUsageLimitsPanel`,
-  `useAgentOpenedPreviews`, and `mergeDirectPreviewAnnotation` are not carried, and a rewind
-  reads the message's images back through the helper instead of `prepareRevertedMessageAttachments`.
+  helper reads; `useThreadLinkedPullRequest` names merge requests; `useSystemComposerBanners`
+  shows only the offline or reconnecting banner, with no connection diagnosis, disconnect action,
+  server-update notice, or auto-balanced machines; `useDraftEnvironmentRouting` keeps only the
+  manual machine switch; `ChatView.logic.ts`'s send snapshot and title fallbacks and
+  `chatViewSend.ts`'s draft restore carry no preview annotations, and a send that redirects
+  pending approvals has no direct annotation to allow for. Upstream's `useUsageLimitsPanel`,
+  `useAgentOpenedPreviews`, `mergeDirectPreviewAnnotation`, and the Antigravity send block are
+  not carried, and `chatViewSend.ts`'s rewind reads the message's images back through the helper
+  instead of `prepareRevertedMessageAttachments`.
   `RightPanelTabs.tsx` stays the fork's version without upstream's per-tab memoization (#20853);
   `ChatOverlayHosts.tsx` has no device setup dialog host, and `ProviderSettingsPanel`'s
   `ProviderInstanceRow` passes no ACP sign-in, managed Codex runtime, or provider setup section.
-- **Markdown.** `ChatMarkdown.tsx` is upstream's, with these differences (each marked `Coder:` in
-  the file):
+- **Markdown.** `ChatMarkdown.tsx` and the modules upstream split from it (`chat/ChatMarkdownMedia.tsx`
+  for images and videos, `chat/MarkdownFileLink.tsx` and its `.logic.ts` for file chips) are
+  upstream's, with these differences (each marked `Coder:` in the files):
   - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's body over
     `useAssetUrlState` and `useAssetUrlRefresh` for `media-file` and `tool-output-image`
     resources, without `fallbackSrc` or `originalUrl`. Upstream's `workspaceMutationId` refresh
@@ -1099,7 +1109,8 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Scheduled tasks.** Settings → Scheduled tasks and its draft logic are upstream's, including
   interval and fixed-time schedules, run-now, and webhook draft round-tripping. T3 Coder serves no
   inbound webhook route, so the editor has no "On webhook" option, URL field, token rotation, or
-  signature and age-limit fields, and rows have no Deliveries dialog or "Listening" status.
+  signature, age-limit, filter, replay, and coalesce fields, and rows have no Deliveries dialog or
+  "Listening" status.
   Webhook tasks created another way (for example, through the agent `schedule_task` tool) keep
   their stored schedule when edited, but they never run and do not offer Run now.
 - **Migrations.** `persistence/Migrations.ts` is upstream's registry with the same IDs. Upstream's
@@ -1260,7 +1271,7 @@ listed here is drift to remove rather than fork behavior to keep.
   `ProjectSettingsPanel.test.tsx`, `HtmlRenderDialog.test.tsx`, and `RightPanelTabs.test.tsx`
   (upstream's `RightPanelTabs.browser.test.tsx` is not carried). The carried browser tests omit
   cases for cut surfaces: grant checks in `ProjectSettingsPanel`, signed-URL renewal in
-  `AttachmentFilePreview`, SnapShot details in `MessagesTimeline`, uncarried providers in
+  `AttachmentFilePreview`, uncarried providers in
   `ProviderModelPicker`, and preview mocks in `ReopenClosedViewShortcut`.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without

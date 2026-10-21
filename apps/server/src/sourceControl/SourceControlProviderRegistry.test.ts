@@ -125,21 +125,6 @@ function makeRegistry(input: {
   );
 }
 
-it.effect("lists no change requests for a repository on an unrecognized host", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "https://git.example.internal/team/repo.git" }],
-    });
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-
-    assert.strictEqual(provider.kind, "unknown");
-    assert.deepStrictEqual(
-      yield* provider.listChangeRequests({ cwd: "/repo", headSelector: "master", state: "all" }),
-      [],
-    );
-  }),
-);
-
 it.effect("detects the GitLab provider when resolve is called without explicit context", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({

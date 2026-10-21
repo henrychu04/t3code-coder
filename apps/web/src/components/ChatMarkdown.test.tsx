@@ -75,10 +75,11 @@ vi.mock("~/lib/openPullRequestLink", () => ({
   useOpenChangeRequestLink: () => vi.fn(),
 }));
 
-import ChatMarkdown, {
+import ChatMarkdown from "./ChatMarkdown";
+import {
   hasMarkdownFilePrimaryAction,
   shouldUseMarkdownFileBrowserPrimaryAction,
-} from "./ChatMarkdown";
+} from "./chat/MarkdownFileLink.logic";
 
 import { MarkdownFindContext } from "./chat/markdownFindContext";
 import { countThreadSearchOccurrences } from "@t3tools/shared/threadSearch";

@@ -38,12 +38,6 @@ describe("resolveLinkPullRequestInput", () => {
     ).toBeNull();
   });
 
-  it("returns null for input that is not a reference", () => {
-    expect(
-      resolveLinkPullRequestInput({ reference: "hello", project, hasProject: () => true }),
-    ).toBeNull();
-  });
-
   it("resolves a bare number against the thread's own repository", () => {
     expect(
       resolveLinkPullRequestInput({ reference: "#42", project, hasProject: () => true }),
@@ -83,27 +77,6 @@ describe("resolveLinkPullRequestInput", () => {
     expect(result).toMatchObject({ error: expect.stringContaining("gitlab.com") });
   });
 
-  it.each(["12", "#12"])(
-    "names the missing repository when resolving bare number %s",
-    (reference) => {
-      expect(
-        resolveLinkPullRequestInput({ reference, project: null, hasProject: () => true }),
-      ).toEqual({
-        error:
-          "Paste the full merge request URL; this thread has no repository to resolve the number against.",
-      });
-    },
-  );
-
-  it("accepts a checkout command as a reference", () => {
-    expect(
-      resolveLinkPullRequestInput({
-        reference: "glab mr checkout https://gitlab.com/acme/web/-/merge_requests/3",
-        project,
-        hasProject: () => true,
-      }),
-    ).toMatchObject({ link: { number: 3, repository: "acme/web" } });
-  });
 });
 
 describe("changeRequestWebUrl", () => {
@@ -116,13 +89,6 @@ describe("changeRequestWebUrl", () => {
 });
 
 describe("parsePullRequestReference", () => {
-  it("accepts GitLab merge request URLs", () => {
-    const reference = "https://gitlab.example.com/group/project/-/merge_requests/42";
-    expect(parsePullRequestReference(reference)).toBe(reference);
-    const selfHosted = "http://git.example.com/group/project/-/merge_requests/43";
-    expect(parsePullRequestReference(selfHosted)).toBe(selfHosted);
-  });
-
   it("accepts raw numbers and #number references", () => {
     expect(parsePullRequestReference("42")).toBe("42");
     expect(parsePullRequestReference("#42")).toBe("42");

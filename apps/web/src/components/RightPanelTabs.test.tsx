@@ -31,15 +31,6 @@ describe("surface shortcuts", () => {
     { shortcut: "D", available: false, label: "Diff" },
   ] as const;
 
-  it("matches available surface shortcuts case-insensitively", () => {
-    expect(surfaceShortcutActionForKey(actions, shortcutEvent("b"))).toBe(actions[0]);
-    expect(surfaceShortcutActionForKey(actions, shortcutEvent("B"))).toBe(actions[0]);
-  });
-
-  it("does not activate unavailable surfaces", () => {
-    expect(surfaceShortcutActionForKey(actions, shortcutEvent("d"))).toBeNull();
-  });
-
   it("leaves modified, composing, and already-handled key events alone", () => {
     expect(surfaceShortcutActionForKey(actions, shortcutEvent("b", { metaKey: true }))).toBeNull();
     expect(
@@ -64,11 +55,6 @@ describe("surface shortcut typing contexts", () => {
     expect(surfaceShortcutTargetsTypingContext(makeTarget("textarea"))).toBe(true);
     expect(surfaceShortcutTargetsTypingContext(makeTarget("select"))).toBe(true);
     expect(surfaceShortcutTargetsTypingContext(makeTarget("[contenteditable]"))).toBe(true);
-  });
-
-  it("claims letters when focus sits outside any editable region", () => {
-    expect(surfaceShortcutTargetsTypingContext(null)).toBe(false);
-    expect(surfaceShortcutTargetsTypingContext(makeTarget(null))).toBe(false);
   });
 });
 

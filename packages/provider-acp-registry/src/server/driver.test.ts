@@ -7,13 +7,11 @@ import * as Schema from "effect/Schema";
 
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import {
-  acpRegistrySnapshotReadiness,
   applyAcpRegistryAvailableCommands,
   applyAcpRegistryLiveConfiguration,
   buildCheckedAcpRegistrySnapshot,
   checkAcpRegistryProviderReadiness,
-  checkAcpRegistryProviderStatus,
-} from "./driver.ts";
+  checkAcpRegistryProviderStatus, acpRegistrySnapshotReadiness } from "./driver.ts";
 
 const decodeAcpRegistrySettings = Schema.decodeSync(AcpRegistrySettings);
 // Coder: the default instance starts disabled, so snapshots under test enable it.

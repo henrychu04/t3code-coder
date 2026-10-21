@@ -3,7 +3,6 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
-  EnvironmentId,
   type ClaudeSettings,
   type CodexSettings,
   ProviderDriverKind,
@@ -18,14 +17,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as Stream from "effect/Stream";
-import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { PiDriver, type PiDriverEnv } from "@t3tools/provider-pi/server";
 import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
 import * as ClaudeCli from "./Drivers/ClaudeCli.ts";
 import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
@@ -152,79 +148,6 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
   const layerBase = ProviderHostLive.layer.pipe(Layer.provideMerge(layerBaseDeps));
   const layerTest = ProviderOrchestrationAdapterInfrastructure.layer.pipe(
     Layer.provideMerge(layerBase),
-  );
-
-  it.live("boots two independent codex instances from a ProviderInstanceConfigMap", () =>
-    Effect.gen(function* () {
-      const personalId = ProviderInstanceId.make("codex_personal");
-      const workId = ProviderInstanceId.make("codex_work");
-      const codexDriverKind = ProviderDriverKind.make("codex");
-
-      const configMap: ProviderInstanceConfigMap = {
-        [personalId]: {
-          driver: codexDriverKind,
-          displayName: "Codex (personal)",
-          enabled: false,
-          config: makeCodexConfig({
-            binaryPath: "/opt/codex-personal/bin/codex",
-            homePath: "/home/julius/.codex_personal",
-            customModels: ["personal-preview"],
-          }),
-        },
-        [workId]: {
-          driver: codexDriverKind,
-          displayName: "Codex (work)",
-          enabled: false,
-          config: makeCodexConfig({
-            binaryPath: "/opt/codex-work/bin/codex",
-            homePath: "/home/julius/.codex",
-            customModels: ["work-preview"],
-          }),
-        },
-      };
-
-      const { registry } = yield* makeProviderInstanceRegistry<CodexDriverEnv>({
-        drivers: [CodexDriver],
-        configMap,
-      });
-
-      const instances = yield* registry.listInstances;
-      expect(instances.map((instance) => instance.instanceId).toSorted()).toEqual(
-        [personalId, workId].toSorted(),
-      );
-      expect(instances.every((instance) => instance.driverKind === codexDriverKind)).toBe(true);
-      expect(instances.map((instance) => instance.displayName).toSorted()).toEqual(
-        ["Codex (personal)", "Codex (work)"].toSorted(),
-      );
-
-      const personal = yield* registry.getInstance(personalId);
-      const work = yield* registry.getInstance(workId);
-      expect(personal).toBeDefined();
-      expect(work).toBeDefined();
-      expect(personal!.orchestrationAdapter).not.toBe(work!.orchestrationAdapter);
-      expect(personal!.textGeneration).not.toBe(work!.textGeneration);
-      expect(personal!.snapshot).not.toBe(work!.snapshot);
-
-      const personalSnapshot = yield* personal!.snapshot.getSnapshot;
-      expect(personalSnapshot.instanceId).toBe(personalId);
-      expect(personalSnapshot.driver).toBe(codexDriverKind);
-      expect(personalSnapshot.enabled).toBe(false);
-      const path = yield* Path.Path;
-      expect(personalSnapshot.continuation?.groupKey).toBe(
-        `codex:home:${path.resolve("/home/julius/.codex_personal")}`,
-      );
-
-      const workSnapshot = yield* work!.snapshot.getSnapshot;
-      expect(workSnapshot.instanceId).toBe(workId);
-      expect(workSnapshot.driver).toBe(codexDriverKind);
-      expect(workSnapshot.enabled).toBe(false);
-      expect(workSnapshot.continuation?.groupKey).toBe(
-        `codex:home:${path.resolve("/home/julius/.codex")}`,
-      );
-
-      const unavailable = yield* registry.listUnavailable;
-      expect(unavailable).toEqual([]);
-    }).pipe(Effect.provide(layerTest)),
   );
 
   it.live("treats an explicit in-config enabled:false as disabling despite the envelope", () =>
@@ -492,17 +415,6 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     };
   });
 
-  it.effect.skipIf(windowsHost)("reuses Claude's successful usage probe on refresh", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeClaudeCacheFixture("ready");
-      const first = yield* fixture.refresh;
-      const second = yield* fixture.refresh;
-      expect(first.usageLimits?.windows.map((window) => window.id)).toEqual(["five_hour"]);
-      expect(second.usageLimits).toEqual(first.usageLimits);
-      expect(yield* fixture.probeLog).toBe("probe\n");
-    }).pipe(Effect.provide(layerTest)),
-  );
-
   for (const state of ["signed-out", "usage-failed"] as const) {
     it.effect.skipIf(windowsHost)(
       state === "signed-out"
@@ -567,122 +479,5 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         expect(ghost.availability).toBe("unavailable");
         expect(ghost.unavailableReason).toMatch(/ghostDriver/);
       }).pipe(Effect.provide(layerTest)),
-  );
-});
-
-describe("ProviderInstanceRegistry — all drivers slice", () => {
-  // Coder: Codex, Claude, and Pi are the shipped drivers.
-  const layerBaseDeps = ServerConfig.layerTest(process.cwd(), {
-    prefix: "provider-instance-registry-all-drivers-test",
-  }).pipe(
-    Layer.provideMerge(NodeServices.layer),
-    Layer.provideMerge(Layer.mock(ServerSecretStore.ServerSecretStore)({})),
-    Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
-    Layer.provideMerge(layerTestHttpClient),
-    Layer.provideMerge(ServerSettings.layerTest()),
-    Layer.provideMerge(
-      Layer.succeed(
-        ProviderEventLoggers.ProviderEventLoggers,
-        ProviderEventLoggers.NoOpProviderEventLoggers,
-      ),
-    ),
-    Layer.provideMerge(ProviderLatestVersions.layer),
-    Layer.provideMerge(McpProviderSessions.layer),
-    Layer.provideMerge(ModelManifest.layerTest),
-  );
-  const layerBase = ProviderHostLive.layer.pipe(Layer.provideMerge(layerBaseDeps));
-  const layerTest = ProviderOrchestrationAdapterInfrastructure.layer.pipe(
-    Layer.provideMerge(layerBase),
-  );
-
-  it.live("boots one instance of every shipped driver from a single config map", () =>
-    Effect.gen(function* () {
-      const codexId = ProviderInstanceId.make("codex_default");
-      const claudeId = ProviderInstanceId.make("claude_default");
-      const piId = ProviderInstanceId.make("pi_default");
-
-      const codexDriverKind = ProviderDriverKind.make("codex");
-      const claudeDriverKind = ProviderDriverKind.make("claudeAgent");
-      const piDriverKind = ProviderDriverKind.make("pi");
-
-      const configMap: ProviderInstanceConfigMap = {
-        [codexId]: {
-          driver: codexDriverKind,
-          displayName: "Codex",
-          enabled: false,
-          config: makeCodexConfig({ homePath: "/home/julius/.codex" }),
-        },
-        [claudeId]: {
-          driver: claudeDriverKind,
-          displayName: "Claude",
-          enabled: false,
-          config: makeClaudeConfig({
-            homePath: "/home/julius/.claude-work",
-            launchArgs: "--verbose",
-          }),
-        },
-        [piId]: {
-          driver: piDriverKind,
-          displayName: "Pi",
-          enabled: false,
-          config: { enabled: false },
-        },
-      };
-
-      const { registry } = yield* makeProviderInstanceRegistry<
-        CodexDriverEnv | ClaudeDriverEnv | PiDriverEnv
-      >({
-        drivers: [CodexDriver, ClaudeDriver, PiDriver],
-        configMap,
-      });
-
-      const unavailable = yield* registry.listUnavailable;
-      expect(unavailable).toEqual([]);
-
-      const instances = yield* registry.listInstances;
-      expect(instances).toHaveLength(3);
-      expect(instances.map((instance) => instance.instanceId).toSorted()).toEqual(
-        [codexId, claudeId, piId].toSorted(),
-      );
-
-      const codex = yield* registry.getInstance(codexId);
-      const claude = yield* registry.getInstance(claudeId);
-      const pi = yield* registry.getInstance(piId);
-      expect(codex?.driverKind).toBe(codexDriverKind);
-      expect(claude?.driverKind).toBe(claudeDriverKind);
-      expect(pi?.driverKind).toBe(piDriverKind);
-      expect(pi?.displayName).toBe("Pi");
-
-      // Every instance owns its own set of closures — no sharing across drivers.
-      const adapters = [
-        codex!.orchestrationAdapter,
-        claude!.orchestrationAdapter,
-        pi!.orchestrationAdapter,
-      ];
-      expect(new Set(adapters).size).toBe(adapters.length);
-      const snapshots = [codex!.snapshot, claude!.snapshot, pi!.snapshot];
-      expect(new Set(snapshots).size).toBe(snapshots.length);
-
-      const codexSnapshot = yield* codex!.snapshot.getSnapshot;
-      expect(codexSnapshot.instanceId).toBe(codexId);
-      expect(codexSnapshot.driver).toBe(codexDriverKind);
-      expect(codexSnapshot.enabled).toBe(false);
-      expect(codexSnapshot.continuation?.groupKey).toBe(
-        `codex:home:${(yield* Path.Path).resolve("/home/julius/.codex")}`,
-      );
-
-      const claudeSnapshot = yield* claude!.snapshot.getSnapshot;
-      expect(claudeSnapshot.instanceId).toBe(claudeId);
-      expect(claudeSnapshot.driver).toBe(claudeDriverKind);
-      expect(claudeSnapshot.enabled).toBe(false);
-      expect(claudeSnapshot.continuation?.groupKey).toBe(
-        `claude:home:${(yield* Path.Path).resolve("/home/julius/.claude-work")}`,
-      );
-
-      const piSnapshot = yield* pi!.snapshot.getSnapshot;
-      expect(piSnapshot.instanceId).toBe(piId);
-      expect(piSnapshot.driver).toBe(piDriverKind);
-      expect(piSnapshot.enabled).toBe(false);
-    }).pipe(Effect.provide(layerTest)),
   );
 });

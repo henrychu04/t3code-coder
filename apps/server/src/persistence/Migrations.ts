@@ -63,12 +63,14 @@ import Migration0063 from "./Migrations/063_DropUnusedV1Projections.ts";
 import Migration0064 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
 import Migration0065 from "./Migrations/065_CodexUsageNativeTurnIndex.ts";
 import Migration0066 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
+import Migration0067 from "./Migrations/067_WebhookDedupe.ts";
 import { reconcileCoderMigrationHistory } from "./CoderMigrationHistory.ts";
 
 // Coder: T3 Coder has no auth sessions or pairing. Upstream's auth migrations keep
 // their IDs so later upstream migrations stay aligned, but they create nothing.
 const omittedAuthMigration = Effect.void;
 
+// Coder: exported for the fork's legacy-history migration tests.
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
   [2, "OrchestrationCommandReceipts", Migration0002],
@@ -137,6 +139,7 @@ export const migrationEntries = [
   [64, "CanonicalizeThreadPullRequestLinks", Migration0064],
   [65, "CodexUsageNativeTurnIndex", Migration0065],
   [66, "RepairClientSettlementTimestamps", Migration0066],
+  [67, "WebhookDedupe", Migration0067],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

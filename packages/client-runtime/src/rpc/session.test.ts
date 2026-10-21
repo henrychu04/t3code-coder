@@ -115,8 +115,8 @@ const RpcRequest = Schema.TaggedStruct("Request", {
   tag: Schema.String,
 });
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
-const isRpcRequest = Schema.is(RpcRequest);
 const isPing = Schema.is(Schema.TaggedStruct("Ping", {}));
+const isRpcRequest = Schema.is(RpcRequest);
 const encodeJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const encodeServerConfig = Schema.encodeSync(ServerConfig);
 const ENCODED_SERVER_CONFIG = encodeServerConfig(SERVER_CONFIG);
