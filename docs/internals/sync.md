@@ -300,6 +300,33 @@ Finish with `pnpm knip:check`. Upstream's test pruning can leave an export used 
 surface (mobile, relay, other providers) once the test that imported it is gone; list that file
 in `knip.jsonc`'s `ignoreIssues`, and delete the export instead when it is in a fork-only file.
 
+Knip does not see unused imports and locals. Cutting a surface, or replaying the fork's delta into
+upstream's split modules, leaves them behind (688ee52f0e left about 50, including a dead Claude
+worker). List the ones the fork caused; an unused name that upstream's own file also has is
+upstream's, so leave it:
+
+```sh
+for p in apps/web apps/server apps/coder-gateway $(ls -d packages/*/ | sed 's#/$##'); do
+  [ -f "$p/tsconfig.json" ] && pnpm exec tsc --noEmit -p "$p/tsconfig.json" --noUnusedLocals 2>&1
+done | grep -E 'TS61(33|92|96)' | sort -u | python3 -c '
+import re, subprocess, sys
+sha = sys.argv[1]
+for line in sys.stdin:
+    m = re.match(r"(\S+)\((\d+),\d+\): error TS\d+: (?:.(\w+).|All imports)", line)
+    f, n, name = m.group(1), int(m.group(2)), m.group(3)
+    text = open(f).read()
+    if name is None:
+        name = re.findall(r"\w+", text.split("\n")[n - 1].split("{")[-1])[0]
+    up = subprocess.run(["git", "show", f"{sha}:{f}"], capture_output=True, text=True)
+    count = lambda s: len(re.findall(rf"\b{name}\b", s))
+    if up.returncode != 0 or count(up.stdout) != count(text):
+        print(line.strip())
+' "$SHA"
+```
+
+Remove each listed name, then rerun until it prints nothing: removing a declaration can leave
+its imports unused in turn.
+
 ## 7. Verify
 
 In this order, fixing each failure before the next: `pnpm test:coder`; every typecheck listed in
