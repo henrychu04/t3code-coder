@@ -239,6 +239,11 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   method in `ClaudeCli.ts` from the SDK's `sdk.mjs` request shape (find
   `async <method>(` in `node_modules/.pnpm/@anthropic-ai+claude-agent-sdk*/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs`)
   and add a `ClaudeCli.test.ts` case whose fake CLI answers only the exact shape.
+- **Node 24 runtime.** The laptop and the workspaces run Node 24, while upstream develops on
+  Node 26 (`engines.node` pinned to `26.12.1` since ed3f965e07). Keep root `engines.node` at the
+  fork's `^24.13.1` and the `@types/node` catalog entry on major 24 even when upstream bumps them,
+  so typecheck rejects a Node 25 or 26-only API in carried code. If upstream code needs one, stop
+  and tell the user. Bumps: `git diff "$MB" "$SHA" -- package.json pnpm-workspace.yaml | grep -E 'engines|"node"|@types/node'`.
 - **Capabilities.** `coderEnvironment.test.ts` fails when upstream adds an
   `ExecutionEnvironmentCapabilities` key; decide it (advertise, or add to
   `CODER_OMITTED_CAPABILITIES` with a reason).
@@ -343,7 +348,7 @@ Then start up a real instance with mocks and do a simple test.
 `pnpm test:coder` exits 0; a failure is real. It stops at the first failing package script, so
 fix and rerun until it completes. Known results:
 
-- The suite needs the Node version in upstream's `engines.node` (`^24.13.1` at 2a7bd1673c). On an
+- The suite needs a Node version in the root `engines.node` (the fork's `^24.13.1`). On an
   older Node, three upstream tests fail on unmodified upstream code: ProjectionRecovery's "selects
   unfinished recovery work without reading settled thread histories" (`ProjectionStoreSetupError`,
   "malformed JSON") and nodeSqliteClient's "keeps large text and blob parameters off cached
