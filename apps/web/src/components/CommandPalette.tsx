@@ -212,6 +212,8 @@ const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
 export function CommandPalette({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  // Coder: there is no usage page.
+  const usagePageOpen = false;
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
     open: false,
     mode: "command",
@@ -259,6 +261,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           previewFocus: false,
           previewOpen,
           modelPickerOpen: composerHandleRef.current?.isModelPickerOpen() ?? false,
+          usagePageOpen,
         },
       });
       if (command === "appearance.cycle") {
@@ -317,6 +320,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     theme,
     themeHalves,
     toggleMode,
+    usagePageOpen,
   ]);
 
   useEffect(

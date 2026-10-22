@@ -88,3 +88,6 @@ describe("environment summary subscriptions", () => {
     }
   });
 });
+
+// Coder: upstream's "presentations with providers" tests cover disabled and unsupported saved
+// connections; Coder workspaces have neither, so every catalog entry counts.

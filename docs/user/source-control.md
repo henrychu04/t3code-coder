@@ -160,6 +160,8 @@ Labels can be displayed and used to filter requests; GitLab label editing is not
 Cloning a GitLab repository opens the project while the workspace clone continues in the
 background. Its new-thread banner shows progress. You can cancel or retry a failed clone there;
 messages wait until cloning succeeds. Removing a failed project is also available from the banner.
+When GitLab refuses the workspace's SSH key, T3 Coder clones over HTTPS with Git's credentials for
+that host instead, and the project's remote uses the HTTPS URL.
 
 Mark files **Viewed** in a merge request's Code tab to track your review. Marks are saved in the
 Coder workspace and shared by connected clients. A later push marks changed files as stale so

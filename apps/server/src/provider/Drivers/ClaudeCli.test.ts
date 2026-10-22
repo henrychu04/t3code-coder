@@ -557,7 +557,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 }, 5000);
 
 it("applies flag settings with the Agent SDK's apply_flag_settings control request", async () => {
-  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-flag-settings-"));
+  const directory = await NodeFS.mkdtemp(
+    NodePath.join(NodeOS.tmpdir(), "t3-claude-flag-settings-"),
+  );
   const executable = NodePath.join(directory, "fake-claude");
   const settings = { effortLevel: "high", fastMode: null, ultracode: null };
   // Answers only the SDK 0.3.276 wire shape: `{ subtype: "apply_flag_settings", settings }`.
@@ -662,7 +664,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     ]);
     assert.equal(spawned.length, 1);
     assert.equal(spawned[0]?.command, executable);
-    assert.deepEqual(spawned[0]?.args.slice(0, 3), ["--wrapper-arg", "--output-format", "stream-json"]);
+    assert.deepEqual(spawned[0]?.args.slice(0, 3), [
+      "--wrapper-arg",
+      "--output-format",
+      "stream-json",
+    ]);
     assert.equal(spawned[0]?.cwd, directory);
     assert.equal(spawned[0]?.env.CLAUDE_CODE_ENTRYPOINT, "sdk-ts");
 
@@ -686,6 +692,82 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     live.close();
     finishPrompt();
     assert.equal(spawned[1]?.signal.aborted, true);
+  } finally {
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);
+
+it("hands can_use_tool's ask rule and standing-grant flag to canUseTool, as the Agent SDK does", async () => {
+  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-can-use-tool-"));
+  const executable = NodePath.join(directory, "fake-claude");
+  // Asks once with the SDK 0.3.276 can_use_tool wire shape, then reports the answer as a result.
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type === "control_request") {
+    process.stdout.write(JSON.stringify({
+      type: "control_response",
+      response: { subtype: "success", request_id: value.request_id, response: {} },
+    }) + "\\n");
+    return;
+  }
+  if (value.type === "user") {
+    process.stdout.write(JSON.stringify({
+      type: "control_request",
+      request_id: "ask-1",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        input: { command: "rm -rf build" },
+        tool_use_id: "tool-1",
+        decision_reason: "Matches an ask rule",
+        suppress_always_allow_rule: true,
+        matched_ask_rule: { source: "projectSettings", tool_name: "Bash", rule_content: "rm:*" },
+      },
+    }) + "\\n");
+    return;
+  }
+  if (value.type === "control_response") {
+    process.stdout.write(JSON.stringify({ type: "result", subtype: "success", answer: value.response.response }) + "\\n", () => process.exit(0));
+  }
+});
+`,
+    { mode: 0o700 },
+  );
+  const asked: Array<Parameters<Sdk.CanUseTool>[2]> = [];
+  try {
+    const runtime = query({
+      prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+        yield {
+          type: "user",
+          session_id: "",
+          parent_tool_use_id: null,
+          message: { role: "user", content: "hello" },
+        };
+      })(),
+      options: {
+        pathToClaudeCodeExecutable: executable,
+        env: process.env,
+        canUseTool: async (_toolName, _input, options) => {
+          asked.push(options);
+          return { behavior: "deny", message: "No." };
+        },
+      },
+    });
+    for await (const _message of runtime) {
+      // Drain until the fake CLI exits.
+    }
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0]?.decisionReason, "Matches an ask rule");
+    assert.equal(asked[0]?.suppressAlwaysAllowRule, true);
+    assert.deepEqual(asked[0]?.matchedAskRule, {
+      source: "projectSettings",
+      toolName: "Bash",
+      ruleContent: "rm:*",
+    });
   } finally {
     await NodeFS.rm(directory, { force: true, recursive: true });
   }

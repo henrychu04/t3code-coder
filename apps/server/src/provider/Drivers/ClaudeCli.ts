@@ -109,6 +109,12 @@ type ControlRequest = {
     readonly permission_suggestions?: ReadonlyArray<PermissionUpdate>;
     readonly blocked_path?: string;
     readonly decision_reason?: string;
+    readonly suppress_always_allow_rule?: boolean;
+    readonly matched_ask_rule?: {
+      readonly source: string;
+      readonly tool_name: string;
+      readonly rule_content?: string;
+    };
     readonly title?: string;
     readonly display_name?: string;
     readonly description?: string;
@@ -196,6 +202,14 @@ const ControlRequestSchema = Schema.Struct({
     permission_suggestions: Schema.optional(Schema.Array(PermissionUpdateSchema)),
     blocked_path: Schema.optional(Schema.String),
     decision_reason: Schema.optional(Schema.String),
+    suppress_always_allow_rule: Schema.optional(Schema.Boolean),
+    matched_ask_rule: Schema.optional(
+      Schema.Struct({
+        source: Schema.String,
+        tool_name: Schema.String,
+        rule_content: Schema.optional(Schema.String),
+      }),
+    ),
     title: Schema.optional(Schema.String),
     display_name: Schema.optional(Schema.String),
     description: Schema.optional(Schema.String),
@@ -725,6 +739,20 @@ class ClaudeCliQuery implements Query {
         ...(message.request.blocked_path ? { blockedPath: message.request.blocked_path } : {}),
         ...(message.request.decision_reason
           ? { decisionReason: message.request.decision_reason }
+          : {}),
+        ...(message.request.suppress_always_allow_rule === undefined
+          ? {}
+          : { suppressAlwaysAllowRule: message.request.suppress_always_allow_rule }),
+        ...(message.request.matched_ask_rule
+          ? {
+              matchedAskRule: {
+                source: message.request.matched_ask_rule.source,
+                toolName: message.request.matched_ask_rule.tool_name,
+                ...(message.request.matched_ask_rule.rule_content === undefined
+                  ? {}
+                  : { ruleContent: message.request.matched_ask_rule.rule_content }),
+              },
+            }
           : {}),
         ...(message.request.title ? { title: message.request.title } : {}),
         ...(message.request.display_name ? { displayName: message.request.display_name } : {}),

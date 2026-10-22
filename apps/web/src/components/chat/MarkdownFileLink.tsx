@@ -332,6 +332,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           hasPrimaryAction ? (
             <ContextChip
               kind="mention"
+              dir="ltr"
               render={<a href={href} />}
               className={MARKDOWN_FILE_LINK_CLASS_NAME}
               data-markdown-copy={copyMarkdown}
@@ -360,6 +361,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           ) : (
             <ContextChip
               kind="mention"
+              dir="ltr"
               render={<button type="button" />}
               aria-label={`File options for ${label}`}
               aria-haspopup="menu"

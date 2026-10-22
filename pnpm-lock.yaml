@@ -244,7 +244,7 @@ packageExtensionsChecksum: sha256-uRNSOmZGMbxiey/el3j86YmdH2m8/ap2Y34J3dVkBNY=
 patchedDependencies:
   '@effect/vitest@4.0.5': 2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02
   '@ff-labs/fff-node@0.11.0': 765c192f75289d2a65d54011f65e3c9397603298eefb7203e7e05260352e47c8
-  '@legendapp/list@3.3.5': 2aea4fec9a45b83282f51abb75d85539cf26432fc82cbba46523ed9df4f917e4
+  '@legendapp/list@3.3.5': dbfb6dbb29c64bf6a8d40e032f78dd6a14d235c6cc3efbd89da981de3869cca5
   '@pierre/diffs@1.5.2': 6fcc8c203dd8f15afa2f138e8e22f59724c3ba07e7d38ca13e18e0bdc24d01ba
   mdast-util-math@3.0.0: afe6b2c89e1eaddfd3c90cf2723f12c9a17d513e65beff51653781486013251c
   micromark-extension-gfm-table@2.1.1: 9ad23a530e45d9f83cba1da8654fe16d5af8b59d5c73d5c7a7c91fd25b9be1d8
@@ -428,7 +428,7 @@ importers:
         version: 4.0.5(effect@4.0.5)(react@19.3.0)(scheduler@0.28.0)
       '@legendapp/list':
         specifier: 'catalog:'
-        version: 3.3.5(patch_hash=2aea4fec9a45b83282f51abb75d85539cf26432fc82cbba46523ed9df4f917e4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 3.3.5(patch_hash=dbfb6dbb29c64bf6a8d40e032f78dd6a14d235c6cc3efbd89da981de3869cca5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/diffs':
         specifier: 'catalog:'
         version: 1.5.2(patch_hash=6fcc8c203dd8f15afa2f138e8e22f59724c3ba07e7d38ca13e18e0bdc24d01ba)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -5472,7 +5472,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@legendapp/list@3.3.5(patch_hash=2aea4fec9a45b83282f51abb75d85539cf26432fc82cbba46523ed9df4f917e4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@legendapp/list@3.3.5(patch_hash=dbfb6dbb29c64bf6a8d40e032f78dd6a14d235c6cc3efbd89da981de3869cca5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       react: 19.3.0
       use-sync-external-store: 1.6.0(react@19.3.0)

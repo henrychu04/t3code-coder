@@ -1,11 +1,11 @@
 // Coder: queued edits carry no browser preview annotations, and only images preview.
+import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type ChatAttachment,
   type EnvironmentId,
   type MessageId,
   type OrchestrationMessageContext,
-  type OrchestrationV2ThreadProjection,
   type RunId,
   type ScopedThreadRef,
   type ThreadContextRecord,
@@ -172,7 +172,7 @@ export function useQueuedRunEdit(input: {
   readonly threadDraftTarget: ComposerThreadTarget;
   // Null while the route has no thread yet; an edit needs one to target.
   readonly activeThreadId: ThreadId | null;
-  readonly serverProjection: OrchestrationV2ThreadProjection | null;
+  readonly serverProjection: ThreadStructure | null;
   readonly promptRef: { current: string };
   readonly composerRef: RefObject<ChatComposerHandle | null>;
 }) {

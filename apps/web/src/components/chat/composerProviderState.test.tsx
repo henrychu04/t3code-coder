@@ -13,6 +13,7 @@ import {
   resolveComposerRuntimeMode,
   withImplicitFastModeDefault,
 } from "./composerProviderState";
+import { readPromptUltrathink } from "./TraitsPicker";
 
 const PROVIDER: ProviderDriverKind = ProviderDriverKind.make("codex");
 const MODEL = "test-model";
@@ -296,6 +297,15 @@ describe("Coder runtime modes", () => {
       "approval-required",
       "auto-accept-edits",
     ]);
+  });
+});
+
+describe("readPromptUltrathink", () => {
+  it("tells the Ultrathink prefix apart from the word in the body", () => {
+    expect(readPromptUltrathink("Fix the bug")).toBe("none");
+    expect(readPromptUltrathink("Ultrathink: Fix the bug")).toBe("prefix");
+    expect(readPromptUltrathink("ultrathink about the bug")).toBe("body");
+    expect(readPromptUltrathink("Ultrathink: ultrathink harder")).toBe("body");
   });
 });
 

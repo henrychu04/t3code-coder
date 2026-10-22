@@ -243,6 +243,7 @@ const layerBase: Layer.Layer<
           );
         }
       });
+    // Coder: upstream's run outcome metrics (RunMetrics, #22094) are not carried; no metrics export.
     const publishStoredEvents = (events: ReadonlyArray<OrchestrationV2StoredEvent>) =>
       eventStore.publishCommitted(events).pipe(Effect.andThen(publishLiveEvents(events)));
 

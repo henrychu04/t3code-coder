@@ -237,3 +237,86 @@ it.effect("says the repository exists when an unclassified publish push fails", 
     );
   }).pipe(Effect.provide(TestLayer)),
 );
+
+// Coder: upstream's HTTPS clone fallback tests on GitLab, built like the clone tests above.
+function cloneRejectingSsh(urls: Array<string>, httpsFails: boolean, protocol?: "ssh") {
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fileSystem
+      .makeTempDirectoryScoped({ prefix: "t3-clone-fallback-" })
+      .pipe(Effect.orDie);
+    const service = yield* SourceControlRepositoryService.make.pipe(
+      Effect.provide(
+        Layer.mock(GitVcsDriver.GitVcsDriver)({
+          execute: (input) =>
+            Effect.gen(function* () {
+              const url = input.args.at(-2)!;
+              urls.push(url);
+              if (url.startsWith("https://") && !httpsFails) {
+                return {
+                  stdout: "",
+                  stderr: "",
+                  exitCode: ChildProcessSpawner.ExitCode(0),
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                };
+              }
+              yield* (
+                input.progress?.onStderrLine?.(
+                  url.startsWith("https://")
+                    ? "fatal: could not read Username for 'https://gitlab.example': terminal prompts disabled"
+                    : "git@gitlab.example: Permission denied (publickey).",
+                ) ?? Effect.void
+              );
+              return yield* new GitCommandError({
+                operation: input.operation,
+                command: "git",
+                cwd: input.cwd,
+                reason: "authentication_failed",
+                detail: "Git command exited with a non-zero status.",
+              });
+            }),
+        }),
+      ),
+    );
+    return yield* service.cloneRepository({
+      provider: SourceControlProviderKind.make("gitlab"),
+      remoteUrl: cloneUrls.sshUrl,
+      ...(protocol === undefined ? {} : { protocol }),
+      destinationPath: path.join(root, "project"),
+    });
+  }).pipe(Effect.scoped, Effect.provide(TestLayer.pipe(Layer.orDie)));
+}
+
+it.effect("retries a clone over HTTPS when the SSH login is refused", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    const result = yield* cloneRejectingSsh(urls, false);
+
+    assert.deepStrictEqual(urls, [cloneUrls.sshUrl, `${cloneUrls.url}.git`]);
+    assert.strictEqual(result.remoteUrl, `${cloneUrls.url}.git`);
+  }),
+);
+
+it.effect("reports both failures when the HTTPS retry fails too", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    const error = yield* Effect.flip(cloneRejectingSsh(urls, true));
+
+    assert.strictEqual(urls.length, 2);
+    assert.strictEqual(
+      error.detail,
+      "git@gitlab.example: Permission denied (publickey). Cloning over HTTPS instead also failed: fatal: could not read Username for 'https://gitlab.example': terminal prompts disabled",
+    );
+  }),
+);
+
+it.effect("does not retry over HTTPS when the caller asked for SSH", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    yield* Effect.flip(cloneRejectingSsh(urls, false, "ssh"));
+
+    assert.deepStrictEqual(urls, [cloneUrls.sshUrl]);
+  }),
+);
