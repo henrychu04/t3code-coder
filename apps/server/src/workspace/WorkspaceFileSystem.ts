@@ -25,6 +25,7 @@ import {
 } from "@t3tools/contracts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { isNetworkPath } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -171,7 +172,9 @@ export const make = Effect.gen(function* () {
 
   const metadataForPath = Effect.fnUntraced(function* (requestedPath: string) {
     const expandedPath = expandHomePath(requestedPath, yield* HostProcess.HomeDirectory);
-    if (!path.isAbsolute(expandedPath)) return null;
+    // Chips ask as soon as an agent's message renders, and touching a network
+    // path makes Windows sign in to its host with the user's NTLM credentials.
+    if (!path.isAbsolute(expandedPath) || isNetworkPath(expandedPath)) return null;
     const stat = yield* fileSystem.stat(expandedPath).pipe(Effect.option);
     if (stat._tag === "None") return null;
     if (stat.value.type === "Directory") return { kind: "directory" } as const;

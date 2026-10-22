@@ -62,10 +62,11 @@ shortcut.
 ## Queued messages
 
 The composer shows **Interrupt** while the agent is working and the draft is empty. Adding text or
-images replaces it with a steer arrow. Click it to send a message into the active turn, or press
-`Enter`. Hold `Cmd` on macOS or `Ctrl` on Windows and Linux to switch the button to a queue icon.
-Click while holding that key, or press `Cmd+Enter` or `Ctrl+Enter`, to queue the message for after
-the active turn.
+images replaces it with a send button that shows your
+[Follow-up behavior](#send-while-the-agent-is-working): a queue icon for Queue or a steer arrow for
+Steer. Click it or press your send shortcut to use that action. Hold `Cmd` on macOS or `Ctrl` on
+Windows and Linux to switch the button to the opposite action, then click, or use the opposite-action
+shortcut described above.
 
 Queued messages appear above the composer. Rows show a thumbnail of any attached image alongside
 the text. Drag a row by its handle to reorder it, use the handle's arrow keys, promote the message
@@ -226,11 +227,20 @@ conversation even when it is the only activity in that turn.
 Compacting from the context meter preserves the current draft and its images. You can also send
 `/compact` in an existing conversation when the provider supports it.
 
-Enable **Compact idle Claude threads (beta)** in **Settings > General** to compact an idle Claude
-thread with at least 200,000 tokens of context shortly before its prompt cache expires, so coming
-back does not reprocess the whole conversation. The cache lasts 1 hour on Claude subscriptions and
-5 minutes with an API key. The compaction appears in the thread as a `/compact` turn sent by
-T3 Coder.
+**Compact idle threads** in **Settings > General** controls idle Claude threads over 200,000
+tokens. Each Claude provider's settings can override it:
+
+- **When you return** is the default. When you return to a large thread after Claude's prompt cache
+  expires, a **Compact** chip with the thread's token count shows next to the send button. While it
+  is on, Enter summarizes the history first, then sends your message. Click the chip to switch it to
+  **Full** and keep the full history for that message.
+- **Before the cache expires (beta)** compacts an idle thread shortly before its prompt cache
+  expires, so coming back does not reprocess the whole conversation. The compaction appears in the
+  thread as a `/compact` turn sent by T3 Coder.
+- **Never** skips idle compaction and Claude's resume prompt. You can still compact by hand.
+
+The cache lasts about an hour on a Claude subscription and 5 minutes with an API key, Bedrock, or
+Vertex.
 
 ## Response streaming
 

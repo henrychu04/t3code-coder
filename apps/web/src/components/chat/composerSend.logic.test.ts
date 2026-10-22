@@ -1,0 +1,72 @@
+import { describe, expect, it } from "vite-plus/test";
+import { approvalRedirectNotice, multipleModelSendBlock } from "./composerSend.logic";
+
+// Coder: no load-balanced machine choice, so its attached-thread and warning tests are not carried.
+
+describe("multipleModelSendBlock", () => {
+  const ready = {
+    selectionCount: 2,
+    serverSupportsWorktreeBootstrap: true,
+    isLocalDraftThread: true,
+    isGitRepo: true,
+    branch: "main",
+  };
+
+  it("lets a new Git draft with a branch and models start", () => {
+    expect(multipleModelSendBlock(ready)).toBeNull();
+  });
+
+  it("asks for a server update before checking the draft", () => {
+    expect(
+      multipleModelSendBlock({
+        ...ready,
+        serverSupportsWorktreeBootstrap: false,
+        isGitRepo: false,
+      }),
+    ).toBe("server-outdated");
+  });
+
+  it.each([
+    { isLocalDraftThread: false },
+    { isGitRepo: false },
+    { branch: null },
+    { selectionCount: 0 },
+  ])("needs a new Git thread with a branch and models (%o)", (override) => {
+    expect(multipleModelSendBlock({ ...ready, ...override })).toBe("needs-new-git-thread");
+  });
+});
+
+describe("approvalRedirectNotice", () => {
+  const settled = {
+    draftChanged: false,
+    declined: true,
+    approvalResponding: false,
+    approvalArrived: false,
+  };
+
+  it("says the decline went through when the draft changed after it", () => {
+    expect(approvalRedirectNotice({ ...settled, draftChanged: true })).toBe(
+      "Approval declined. Your message changed, so it wasn't sent.",
+    );
+    expect(approvalRedirectNotice({ ...settled, draftChanged: true, declined: false })).toBe(
+      "Your message changed, so it wasn't sent.",
+    );
+  });
+
+  it("explains an approval already being answered", () => {
+    expect(
+      approvalRedirectNotice({ ...settled, declined: false, approvalResponding: true }),
+    ).toMatch(/already being answered/);
+  });
+
+  it("explains an approval that arrived during the decline", () => {
+    expect(approvalRedirectNotice({ ...settled, approvalArrived: true })).toMatch(
+      /Another approval arrived/,
+    );
+  });
+
+  it("stays quiet when the decline failed or the user left the thread", () => {
+    expect(approvalRedirectNotice({ ...settled, declined: false })).toBeNull();
+    expect(approvalRedirectNotice(settled)).toBeNull();
+  });
+});

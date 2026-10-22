@@ -95,7 +95,11 @@ const makeTest = Effect.fn(function* (
   const baseDir =
     typeof baseDirOrPrefix === "string"
       ? baseDirOrPrefix
-      : yield* fileSystem.makeTempDirectoryScoped({ prefix: baseDirOrPrefix.prefix });
+      : // macOS temp dirs live under the /var -> /private/var symlink; storage cleanup's
+        // symlink guards compare resolved paths, so generated test dirs must be real paths.
+        yield* fileSystem.realPath(
+          yield* fileSystem.makeTempDirectoryScoped({ prefix: baseDirOrPrefix.prefix }),
+        );
   const paths = yield* deriveServerPaths(baseDir);
   yield* ensureServerDirectories(paths);
   return ServerConfig.of({ cwd, baseDir, ...paths });

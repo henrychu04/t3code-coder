@@ -115,6 +115,35 @@ it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
         ]);
       }),
     );
+
+    // A file chip for `file://attacker.test/s/a.ts` in an agent's message sent
+    // the Windows user's NTLM credentials to attacker.test as it rendered.
+    it.effect("never stats a network path", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const statted: Array<string> = [];
+        const service = yield* WorkspaceFileSystem.make.pipe(
+          Effect.provideService(
+            FileSystem.FileSystem,
+            FileSystem.FileSystem.of({
+              ...fs,
+              stat: (requestedPath) => {
+                statted.push(requestedPath);
+                return fs.stat(requestedPath);
+              },
+            }),
+          ),
+          Effect.provide(layerKnownWorkspacesTest),
+        );
+        const paths = [
+          "\\\\attacker.test\\s\\a.ts",
+          "//attacker.test/s/a.ts",
+          "/\\attacker.test\\s",
+        ];
+        expect((yield* service.getMetadata({ paths })).entries).toEqual([null, null, null]);
+        expect(statted).toEqual([]);
+      }),
+    );
   });
 
   describe("readFile", () => {

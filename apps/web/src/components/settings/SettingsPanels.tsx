@@ -4,6 +4,8 @@ import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  IDLE_COMPACTION_MODES,
+  globalIdleCompaction,
   ProviderDriverKind,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
@@ -36,6 +38,7 @@ import {
 } from "./useScopedSettings";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import {
   getCustomModelOptionsByInstance,
@@ -529,7 +532,8 @@ export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { environment, connectedEnvironments, target } = useSettingsScope();
+  const { environment, connectedEnvironments, target, targets } = useSettingsScope();
+  const idleCompaction = scopedIdleCompaction(targets.length > 0 ? targets : [{ settings }]);
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
   const mixedResponseStreamingMode = useScopedSettingsMixed(["responseStreamingMode"]);
@@ -739,30 +743,51 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           serverScoped
-          settingKeys={["compactIdleThreads"]}
+          settingKeys={["idleCompaction", "compactIdleThreads"]}
+          mixed={idleCompaction.mixed}
           {...searchableSetting("compact-idle-threads")}
-          description="Compact long idle Claude threads just before their prompt cache expires, so coming back costs less."
+          description="When to compact an idle Claude thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider can override this."
           resetAction={
-            settings.compactIdleThreads !== DEFAULT_UNIFIED_SETTINGS.compactIdleThreads ? (
+            globalIdleCompaction(settings) !== globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS) ? (
               <SettingResetButton
-                label="compact idle Claude threads"
+                label="compact idle threads"
                 onClick={() =>
-                  updateSettings({
-                    compactIdleThreads: DEFAULT_UNIFIED_SETTINGS.compactIdleThreads,
-                  })
+                  updateSettings({ idleCompaction: globalIdleCompaction(DEFAULT_UNIFIED_SETTINGS) })
                 }
               />
             ) : null
           }
           control={
-            <ScopedSwitch
-              settingKeys={["compactIdleThreads"]}
-              checked={settings.compactIdleThreads}
-              onCheckedChange={(checked) =>
-                updateSettings({ compactIdleThreads: Boolean(checked) })
-              }
-              aria-label="Compact idle Claude threads (beta)"
-            />
+            <Select
+              value={idleCompaction.mixed ? null : globalIdleCompaction(settings)}
+              onValueChange={(value) => {
+                const mode = IDLE_COMPACTION_MODES.find((candidate) => candidate.value === value);
+                if (mode) updateSettings({ idleCompaction: mode.value });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Compact idle threads">
+                <SelectValue>
+                  {(value: string | null) =>
+                    value === null
+                      ? "Mixed"
+                      : IDLE_COMPACTION_MODES.find((mode) => mode.value === value)?.label
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {IDLE_COMPACTION_MODES.map((mode) => (
+                  <SelectItem
+                    hideIndicator
+                    key={mode.value}
+                    value={mode.value}
+                    // A server from before modes has only the on/off switch, so it cannot store "Never".
+                    disabled={mode.value === "off" && !idleCompaction.neverAvailable}
+                  >
+                    {mode.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
 
@@ -1558,8 +1583,6 @@ export function GeneralSettingsPanel() {
                     provider={textGenProvider}
                     models={textGenInstanceEntry?.models ?? []}
                     model={textGenModel}
-                    prompt=""
-                    onPromptChange={() => {}}
                     modelOptions={textGenModelOptions}
                     allowPromptInjectedEffort={false}
                     planModeEnabled={

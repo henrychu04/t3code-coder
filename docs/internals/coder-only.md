@@ -532,7 +532,9 @@ listed here is drift to remove rather than fork behavior to keep.
     by `ClaudeProvider.ts`), `getUsage`, `setMcpServers`, `backgroundTasks`,
     `initializationResult`, and `close` as CLI control requests. `backgroundTasks` sends the SDK's
     `{ subtype: "background_tasks", tool_use_id }` and resolves to the response's `backgrounded`
-    (true when absent), which upstream's steer backgrounding reads.
+    (true when absent), which upstream's steer backgrounding reads. A `can_use_tool` request hands
+    its `matched_ask_rule` and `suppress_always_allow_rule` to `canUseTool` as `matchedAskRule`
+    and `suppressAlwaysAllowRule`, as the SDK does, so full-access approvals say why Claude asked.
     `setMcpServers` sends the SDK's `{ subtype: "mcp_set_servers", servers }` with no deadline, as
     the SDK does; upstream's query runner bounds the wait and sends a session's `mcpServers` that
     way instead of as `--mcp-config`. T3 Coder's own sessions carry no MCP servers (T3 tools use
@@ -684,7 +686,10 @@ listed here is drift to remove rather than fork behavior to keep.
     **Settings → Providers → History** for the selected workspace.
   - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
     unavailable; providers authenticate through the workspace's API configuration.
-    `CodexManagedRuntime` keeps only upstream's resolution contract.
+    `CodexManagedRuntime` keeps only upstream's resolution contract. `CodexAdapterV2` does not
+    rewrite failures through `CodexManagedErrors` (ChatGPT Business admin request, #23361), and
+    the server's `threadErrorSummary` and client-runtime's `ThreadRuntimeSummary` carry no
+    `lastErrorCode`; the contract field stays.
   - Provider drivers, snapshots, and the registry are upstream's. Coder deltas: `CodexDriver`
     offers no T3-managed Codex install (`setupMode: "managed"`), neither driver redeems
     rate-limit reset credits, and `ClaudeDriver` does not read the Claude organization id that
@@ -699,14 +704,17 @@ listed here is drift to remove rather than fork behavior to keep.
     `ClaudeAdapterV2.resolveBypassAvailability` reads the settings files (cached remote, user,
     project, local, and managed) where upstream calls the SDK's runtime `resolveSettings`
     (#21806); a mode any source disables is off, so `Drivers/ClaudeSkills.ts` keeps
-    `skillOverrideSettingsPaths` exported for it. `CodexDriver` has no `CodexUsageHistory`
+    `skillOverrideSettingsPaths` exported for it. `resolveSubagentPromptCacheTtl` reads
+    `subagentPromptCacheTtl` from the same files (user, project, local, then managed; the last one
+    set wins) instead of the SDK's `resolveSettings` (#22841). `CodexDriver` has no `CodexUsageHistory`
     requirement, because Codex usage history (#21898) is not carried. The Claude signed-out message names API
     credentials rather than subscription login. Claude's usage read asks the CLI to skip its local
     transcript scan (`ClaudeCli.getUsage({ skipBehaviors })`), as upstream's SDK call does.
     provider-core's `maintenanceResolver.ts` and `providerStatusCache.ts` log the first cause tag
     in place of the omitted observability helper. `ProviderHostLive` gives drivers no credential
     store: reads find nothing and writes fail.
-  - Absent: client-origin attribution, orchestration and provider metrics, turn analytics, NDJSON
+  - Absent: client-origin attribution, orchestration and provider metrics (including the run
+    outcome metrics of `RunMetrics.ts`, #22094, so `EventSink.ts` records none), turn analytics, NDJSON
     event logs (`EventNdjsonLogger` and `ProviderEventLoggers` keep only the no-op service),
     provider sign-in commands and credential-change guards, Codex feedback upload, SnapShot
     sources, data-URL uploads, preview-tool metadata, and the agent device shim.
@@ -859,7 +867,9 @@ listed here is drift to remove rather than fork behavior to keep.
   this layer. Workspace video and audio, Files PDFs and HTML, HTML renders, and MCP App documents
   keep their own reads (`useProjectMedia`, `readTurnItemAsset`), where upstream uses the same
   hooks, because each needs the whole file or the document text and a size an image store entry
-  does not hold. Submitted images are read by id
+  does not hold. Those memory-only blobs never re-sign, so `FilePreviewPanel` passes no
+  `revision` to `MediaVideoPlayer` or `AudioPreview` (upstream's file-revision reload, #23106);
+  both components' revision handling is upstream's. Submitted images are read by id
   (`AttachmentImageResource` carries the media type and size the read verifies). Reads start only once the workspace is connected, because cached
   threads render before the helper is reachable. Rewind re-stages a message's images through the
   same reads.
@@ -904,6 +914,10 @@ listed here is drift to remove rather than fork behavior to keep.
   Without the desktop window-controls overlay (`lib/windowControlsOverlay.ts`), `ui/tooltip.tsx`
   reads a native titlebar height of zero, `chat/ZoomableImage.tsx` sizes the viewer to the whole
   window, and the sidebar sheet gets no window-controls inset.
+  `NavigationHistoryShortcuts` and `CommandPalette` read `usagePageOpen` as false, and
+  `NavigationHistoryShortcuts` stays unexported, since upstream exports it only for
+  `UsageToggleShortcut.browser.test.tsx`. `settings/AddEnvironmentDialog.tsx` is not carried
+  (there are no Connections settings).
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
@@ -924,8 +938,16 @@ listed here is drift to remove rather than fork behavior to keep.
   `chatViewSend.ts`'s draft restore carry no preview annotations, and a send that redirects
   pending approvals has no direct annotation to allow for. Upstream's `useUsageLimitsPanel`,
   `useAgentOpenedPreviews`, `mergeDirectPreviewAnnotation`, and the Antigravity send block are
-  not carried, and `chatViewSend.ts`'s rewind reads the message's images back through the helper
-  instead of `prepareRevertedMessageAttachments`.
+  not carried, and `useTimelineRewind`'s rewind reads the message's images back through the
+  helper instead of `chatViewSend.ts`'s `prepareRevertedMessageAttachments`. The hooks upstream
+  split out of `ChatView` (#23062–#23101) hold the matching cuts: `useComposerSend` has no
+  feedback upload, `/usage-limits` command, load balancing, or direct preview-annotation send
+  (so `composerSend.logic.ts` carries no load-balancing helpers); `useRightPanelActions` has no
+  browser or device surfaces; `useChatTerminalActions` opens no script preview;
+  `useProjectCloneBanner` shows no file-copy banner; and `usePullRequestDraftThread` names merge
+  requests. Upstream's ChatGPT Business admin request (#23361) is not carried, so
+  `ThreadErrorBanner` and `ChatBannerLane` take no error code. The automation message row
+  (#22638) has no prompt link.
   `RightPanelTabs.tsx` stays the fork's version without upstream's per-tab memoization (#20853);
   `ChatOverlayHosts.tsx` has no device setup dialog host, and `ProviderSettingsPanel`'s
   `ProviderInstanceRow` passes no ACP sign-in, managed Codex runtime, or provider setup section.
@@ -1211,9 +1233,15 @@ listed here is drift to remove rather than fork behavior to keep.
   `pnpm-workspace.yaml` sets `supportedArchitectures` (Linux x64 glibc) on every host, because
   the helper bundle ships those native modules to the workspace; upstream sets it only on Windows
   in `.pnpmfile.cjs`, which is not carried.
-  Packages typecheck with `tsc --noEmit` (TypeScript 7), not upstream's `tsc-rs`, so no extra
-  native typecheck binary or install script is added; the fork never ran upstream's Effect
-  language-service diagnostics (`@effect/tsgo`) either.
+  Packages typecheck with `tsc --noEmit` from Microsoft's TypeScript 7 (`typescript: 7.0.2` in
+  the catalog). Upstream's catalog makes `typescript` the `@tsc-rs/typescript` drop-in, whose
+  Windows `tsc.exe` is an unsigned third-party binary that the laptop's endpoint security may
+  block, while Microsoft's is Authenticode-signed; so the fork keeps TypeScript 7 and omits the
+  `@tsc-rs/typescript` build approval, upstream's `typescript` peer rule, and its
+  `.pnpmfile.cjs` peer-range hook. The fork never ran upstream's Effect language-service
+  diagnostics (`@effect/tsgo`) either.
+  Root `engines.node` stays `^24.13.1`; upstream pins `26.12.1` for its standalone executable
+  builds, which the fork does not carry.
   `patches/@ff-labs__fff-node@0.11.0.patch` is upstream's plus the native grep struct's
   `fuzzy_score` read at its real u16 width; 0.11.0 still reads it as a u32, which shifts
   `has_fuzzy_score`, `is_binary`, and `is_definition` one field late.
@@ -1260,6 +1288,9 @@ listed here is drift to remove rather than fork behavior to keep.
   Effect's). `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
   `storageCleanup.test.ts` its saved-usage-cache test, and `PullRequestService.test.ts` its
   GitHub-credential branch deletion test; upstream's OTLP `config.test.ts` is not carried.
+  `presentation.test.ts` omits upstream's disabled and unsupported connection tests, since Coder
+  catalog entries have neither state. `GitManager.test.ts`'s pull request draft-status test and
+  `SourceControlRepositoryService.test.ts`'s HTTPS clone-retry tests run on GitLab.
   `composerDraftStore.test.ts` keeps the draft-persistence test upstream pruned, because it
   checks that draft image bytes never reach browser storage.
   Replay fixtures (`orchestration-v2/testkit/fixtures`) carry only the Claude, Codex, Pi, and ACP
