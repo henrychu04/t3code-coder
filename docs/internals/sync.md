@@ -360,6 +360,13 @@ fix and rerun until it completes. Known results:
 - Upstream's `MessagesTimeline.browser.test.tsx` "restores a manual reading position after
   reopening and switching threads" is order dependent and can fail in the full web run; it passes
   alone.
+- In a fresh worktree, the first web runs can fail in browser test files that load no tests
+  ("There was an error when mocking a module") or time out, because Vite re-optimizes
+  dependencies mid-run and reloads ("optimized dependencies changed. reloading"). Rerun
+  `pnpm test:web:coder` until no reload is logged; failures that remain are real.
+- Fork-adapted unit tests that match rendered HTML as strings (`ChatMarkdown.test.tsx`) fail when
+  upstream adds an attribute its browser tests never assert (ed3f965e07: #22777's `dir`). Add
+  the attribute to the expected string.
 
 ## 8. Land
 
