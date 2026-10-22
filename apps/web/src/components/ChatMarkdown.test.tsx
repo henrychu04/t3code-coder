@@ -878,7 +878,9 @@ describe("ChatMarkdown heading levels", () => {
 
     expect(html).toContain('<h1 id="user-content-top" dir="ltr" aria-level="4">Top</h1>');
     expect(html).toContain('<h2 id="user-content-section" dir="ltr" aria-level="5">Section</h2>');
-    expect(html).toContain('<h6 id="user-content-fine-print" dir="ltr" aria-level="6">Fine print</h6>');
+    expect(html).toContain(
+      '<h6 id="user-content-fine-print" dir="ltr" aria-level="6">Fine print</h6>',
+    );
   });
 
   it("leaves heading levels alone when the markdown is not nested", () => {
