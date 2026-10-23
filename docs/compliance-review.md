@@ -63,10 +63,11 @@ connection and loopback WebSocket but is not durably cached by the gateway. A va
 attachment stays in gateway memory for one transfer and is never written to local disk.
 Native Codex image input accepts only bounded opaque ids for generated workspace attachment files;
 the helper rejects symlinks and revalidates file size and image signatures before reading bytes.
-Project image previews read current files through bounded helper stdio chunks after thread/root
-ownership, project containment, file revision, signature, and size checks. No new screenshot
-artifacts are created, and previously saved artifacts are no longer read.
-Image bytes exist in the browser only as revocable, memory-only object URLs.
+Media, document, and attachment previews load from upstream's signed asset URLs, which the
+gateway answers on loopback by streaming the helper's response over the same stdio connection; the
+helper opens no listener for them. The browser may cache those responses as upstream allows
+(`private`, up to an hour; never video or audio). No new screenshot artifacts are created, and
+previously saved artifacts are no longer read.
 
 Coder owns deployment credentials. With the supported Coder CLI 2.25.3, T3 selects a separate opaque
 `--global-config` directory per domain so two file-backed Coder sessions can coexist. Coder 2.25.3

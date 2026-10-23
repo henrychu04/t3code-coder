@@ -27,7 +27,7 @@ last merge method there, and session storage holds main's one-reload guard for s
 text in browser storage, but never image bytes or upload IDs. As on main, IndexedDB caches each
 environment's shell, settled thread snapshots, server config, and full branch lists so a reload
 renders before the workspace answers; the workspace remains the source of truth. Open Files tabs and
-editor state, provider sessions, and screenshot artifact object URLs are memory-only.
+editor state and provider sessions are memory-only.
 Each active workspace accepts one loopback WebSocket at a time. The workspace helper can outlive
 that browser connection, so the gateway treats every accepted WebSocket as a distinct RPC session:
 it translates browser-local request IDs to helper-lifetime unique IDs, restores the browser IDs on
