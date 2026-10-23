@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
-import {
-  buildExpandedImagePreview,
-  expandedImageKey,
-  resolveMarkdownMediaPreview,
-} from "./ExpandedImagePreview";
-
-const threadRef = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
+import { buildExpandedImagePreview, resolveMarkdownMediaPreview } from "./ExpandedImagePreview";
 
 describe("resolveMarkdownMediaPreview", () => {
   afterEach(() => {
@@ -15,6 +8,8 @@ describe("resolveMarkdownMediaPreview", () => {
   });
 
   it.each([
+    ["t3code:", "https:"],
+    ["t3code-dev:", "https:"],
     ["http:", "http:"],
     ["https:", "https:"],
   ])(
@@ -22,7 +17,12 @@ describe("resolveMarkdownMediaPreview", () => {
     async (pageProtocol, mediaProtocol) => {
       vi.stubGlobal("window", { location: { protocol: pageProtocol } });
       const source = "//cdn.example.com/recording.mp4?token=a%2FB&v=1#t=2";
-      const preview = await resolveMarkdownMediaPreview({ source });
+      const preview = await resolveMarkdownMediaPreview({
+        source,
+        createAssetUrl: async () => {
+          throw new Error("Remote media must not request a local asset URL.");
+        },
+      });
 
       expect(preview?.images[0]).toMatchObject({
         src: `${mediaProtocol}${source}`,
@@ -32,49 +32,8 @@ describe("resolveMarkdownMediaPreview", () => {
           reference: { kind: "url", url: source },
         },
       });
-      expect(preview?.images[0]?.projectVideo).toBeUndefined();
     },
   );
-
-  // Coder: workspace media becomes a helper read, never a signed asset URL.
-  it("resolves workspace media to helper sources rooted at the thread checkout", async () => {
-    const opened: string[] = [];
-    const image = await resolveMarkdownMediaPreview({
-      source: "screens/shot.png#frame",
-      cwd: "/repo",
-      threadRef,
-      onOpenFile: (path) => opened.push(path),
-    });
-    expect(image?.images[0]).toMatchObject({
-      src: null,
-      name: "shot.png",
-      srcFragment: "#frame",
-      projectImage: {
-        environmentId: "env",
-        target: { threadId: "thread", cwd: "/repo", filePath: "/repo/screens/shot.png" },
-      },
-    });
-    image?.images[0]?.actionsSource?.onOpenFile?.();
-    expect(opened).toEqual(["screens/shot.png"]);
-
-    const video = await resolveMarkdownMediaPreview({
-      source: "/elsewhere/clip.mp4",
-      cwd: "/repo",
-      threadRef,
-    });
-    expect(video?.images[0]).toMatchObject({
-      type: "video",
-      autoPlay: false,
-      projectVideo: { target: { filePath: "/elsewhere/clip.mp4" } },
-    });
-    expect(video && expandedImageKey(video)).toContain("/elsewhere/clip.mp4");
-  });
-
-  it("refuses workspace media without a thread root", async () => {
-    await expect(
-      resolveMarkdownMediaPreview({ source: "/repo/shot.png", threadRef }),
-    ).rejects.toThrow("Reconnect");
-  });
 });
 
 describe("buildExpandedImagePreview", () => {
@@ -86,6 +45,7 @@ describe("buildExpandedImagePreview", () => {
           id: "heic-1",
           name: "photo",
           mimeType: "image/heic",
+          sizeBytes: 3,
           previewUrl: "blob:heic",
         },
       ],

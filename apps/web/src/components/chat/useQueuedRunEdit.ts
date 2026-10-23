@@ -1,4 +1,4 @@
-// Coder: queued edits carry no browser preview annotations, and only images preview.
+// Coder: queued edits carry no browser preview annotations.
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -14,11 +14,7 @@ import {
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import {
-  type AttachmentImageResource,
-  isAttachmentImageMimeType,
-  useAssetUrls,
-} from "../../assets/assetUrls";
+import { useAssetUrls } from "../../assets/assetUrls";
 import {
   DraftId,
   useComposerDraftStore,
@@ -196,20 +192,9 @@ export function useQueuedRunEdit(input: {
   const draftTarget =
     editing === null ? threadDraftTarget : queuedEditDraftTarget(routeThreadRef, editing.runId);
 
-  // Coder: only images are previewed; the helper checks their declared media type.
-  const imageResources = (editing?.existingAttachments ?? []).flatMap(
-    (attachment): AttachmentImageResource[] =>
-      attachment.type === "image" && isAttachmentImageMimeType(attachment.mimeType)
-        ? [
-            {
-              _tag: "attachment",
-              attachmentId: attachment.id,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-            },
-          ]
-        : [],
-  );
+  const imageResources = (editing?.existingAttachments ?? [])
+    .filter((attachment) => attachment.type === "image")
+    .map((attachment) => ({ _tag: "attachment" as const, attachmentId: attachment.id }));
   const imageUrls = useAssetUrls(environmentId, imageResources);
   const urlByAttachmentId = new Map(
     imageResources.map((resource, index) => [resource.attachmentId, imageUrls[index] ?? null]),

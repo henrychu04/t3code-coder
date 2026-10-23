@@ -11,7 +11,12 @@ import {
   createMessageAttachmentPreviewProjector,
   selectMessageImageResources,
 } from "../../session-logic";
-import { isFileAttachment, isImageAttachment } from "../../types";
+import {
+  type ChatFileAttachment,
+  isFileAttachment,
+  isImageAttachment,
+  isVideoAttachment,
+} from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import {
   CalendarClockIcon,
@@ -24,9 +29,14 @@ import {
   Undo2Icon,
 } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
-import { useAssetUrls } from "../../assets/assetUrls";
+import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { AttachmentImage } from "../media/AttachmentImage";
-import { buildExpandedImagePreview } from "./ExpandedImagePreview";
+import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
+import {
+  buildAttachmentVideoAsset,
+  buildAttachmentVideoPreview,
+  buildExpandedImagePreview,
+} from "./ExpandedImagePreview";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { shouldCollapseUserMessage } from "./MessagesTimeline.logic";
@@ -55,6 +65,50 @@ import {
 } from "./TimelineRowParts";
 import { UserMessageContextReferenceChip } from "./UserMessageContextChips";
 import { resolvePreviewAnnotationImage } from "./TimelineUserMessageRow.logic";
+
+function UserVideoAttachment({ file }: { readonly file: ChatFileAttachment }) {
+  const ctx = use(TimelineRowCtx);
+  // Row updates rebuild attachment objects, so the asset follows only the
+  // fields it reads.
+  const { downloadable, id, mimeType, name } = file;
+  const environmentId = ctx.activeThreadEnvironmentId;
+  const asset =
+    downloadable === false
+      ? null
+      : buildAttachmentVideoAsset(environmentId, { id, mimeType, name });
+  const resource = asset?.resource ?? null;
+  const assetUrl = useAssetUrlState(ctx.activeThreadEnvironmentId, resource);
+  const refreshAssetUrl = useAssetUrlRefresh(ctx.activeThreadEnvironmentId, resource);
+  const src = assetUrl._tag === "Success" ? assetUrl.url : (file.previewUrl ?? null);
+
+  if (asset === null && src === null) {
+    return (
+      <div className="flex aspect-[4/3] w-full items-center justify-center rounded-lg border border-border/80 bg-black px-2 py-3 text-center text-2xs text-white/70">
+        {file.name}
+      </div>
+    );
+  }
+
+  return (
+    <MediaVideoPlayer
+      src={src}
+      sourceFailed={
+        file.previewUrl === undefined && resource !== null && assetUrl._tag === "Failure"
+      }
+      label={file.name}
+      preload="visible"
+      onOpen={() => {
+        const preview = buildAttachmentVideoPreview(ctx.activeThreadEnvironmentId, file);
+        if (preview) ctx.onImageExpand(preview);
+      }}
+      className="block aspect-[4/3] w-full"
+      videoClassName="aspect-auto size-full rounded-lg border border-border/80"
+      stateClassName="aspect-auto min-h-full rounded-lg border border-border/80 bg-black text-white"
+      onRetry={asset ? refreshAssetUrl : undefined}
+      actionsSource={asset ? { kind: "video", name: file.name, src, asset } : undefined}
+    />
+  );
+}
 
 export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -220,8 +274,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
   const userImages = (messageWithPreviews.attachments ?? []).filter(isImageAttachment);
   const userFiles = (row.message.attachments ?? []).filter(isFileAttachment);
-  // Coder: submitted files are workspace paths the browser cannot read, so videos list as files.
-  const otherUserFiles = userFiles;
+  const userVideos = userFiles.filter(isVideoAttachment);
+  const otherUserFiles = userFiles.filter((file) => !isVideoAttachment(file));
   const unknownAttachments = (row.message.attachments ?? []).filter(
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
@@ -336,8 +390,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             if (preview) onImageExpand(preview);
           }}
           onOpenFile={onFileOpen}
-          // Coder: video attachments have no browser player; they open like other files.
-          onExpandVideo={onFileOpen}
+          onExpandVideo={(file) => {
+            const preview = buildAttachmentVideoPreview(ctx.activeThreadEnvironmentId, file);
+            if (preview) onImageExpand(preview);
+          }}
         />
       </span>
     );
@@ -387,7 +443,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             )}
           >
             <MessageAuthorHeading>You</MessageAuthorHeading>
-            {regularImages.length > 0 && (
+            {(regularImages.length > 0 || userVideos.length > 0) && (
               <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
                 {regularImages.map((image) => (
                   <div
@@ -420,6 +476,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                       </div>
                     )}
                   </div>
+                ))}
+                {userVideos.map((file) => (
+                  <UserVideoAttachment key={file.id} file={file} />
                 ))}
               </div>
             )}

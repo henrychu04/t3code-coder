@@ -279,6 +279,7 @@ import {
   dismissBranchMismatchForSession,
   shouldShowPlanFollowUpPrompt,
   deriveLockedProvider,
+  resolveFileAttachmentUrl,
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
   resolveThreadMetadataUpdateForNextTurn,
@@ -292,10 +293,11 @@ import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
 import { clampFileAttachmentUploadBytes } from "../lib/attachmentDisplay";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { readEnvironmentScope } from "../state/session";
+import { assetEnvironment } from "../state/assets";
+import { readEnvironmentScope, readPreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
-import { saveBlob, useReadAttachmentFile } from "../lib/readAttachmentFile";
+import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
@@ -384,6 +386,10 @@ export default function ChatView(props: ChatViewProps) {
   });
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
+  });
+  const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+    reportFailure: false,
+    refresh: true,
   });
   const interruptThreadTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
@@ -1245,12 +1251,24 @@ export default function ChatView(props: ChatViewProps) {
   const sendQueuesBehindSetup =
     isServerThread && (activeRunPreparing || activeActivityRun?.status === "starting");
   const [setupQueueSendThreadKey, setSetupQueueSendThreadKey] = useState<string | null>(null);
-  // Coder: a sent file is read through the helper into memory, where upstream downloads it from a
-  // signed asset URL.
-  const readSentAttachment = useReadAttachmentFile(environmentId);
   const downloadFileAttachment = async (attachment: ChatFileAttachment) => {
+    const connection = readPreparedConnection(environmentId);
+    if (!connection) {
+      toastManager.add({ type: "error", title: "The environment is not connected." });
+      return;
+    }
+
     try {
-      saveBlob(await readSentAttachment(attachment), attachment.name);
+      const url = await resolveFileAttachmentUrl({
+        attachment,
+        environmentId,
+        httpBaseUrl: connection.httpBaseUrl,
+        createAssetUrl: createAttachmentAssetUrl,
+      });
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = attachment.name;
+      anchor.click();
     } catch (error) {
       toastManager.add({
         type: "error",

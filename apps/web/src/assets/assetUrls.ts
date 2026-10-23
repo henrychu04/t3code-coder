@@ -1,158 +1,101 @@
-/**
- * Coder: workspace images have no signed asset URLs. Each image is read through the helper's
- * bounded chunk reads and exposed as an in-memory object URL, so callers keep upstream's
- * `useAssetUrlState`, `useAssetUrlRefresh`, and `useAssetUrls` shapes. A refresh rereads the
- * image store's entry, and a read waiting for room in the store is `Loading` with `deferred`.
- */
-import { RegistryContext, useAtom, useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, ScreenshotArtifactDimensions } from "@t3tools/contracts";
-import { Atom, type AtomRegistry } from "effect/reactivity";
-import { useContext } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import {
+  type AssetUrlState as RuntimeAssetUrlState,
+  assetUrlStateFromResult,
+  blockedAssetUrlState,
+  EMPTY_ASSET_URL_ATOM,
+  resolveAssetUrl,
+} from "@t3tools/client-runtime/state/assets";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import { AsyncResult } from "effect/reactivity";
 
-import type { ImageResourceState } from "../components/chat/imageResources";
-import { assetEnvironment, type ImageAssetResource } from "../state/assets";
-import { useConnectedEnvironmentIds } from "../state/environments";
+import { assetEnvironment } from "~/state/assets";
+import { useFilesystemReadAccess } from "~/state/filesystem";
+import { usePreparedConnection } from "~/state/session";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
-export { type AttachmentImageResource, isAttachmentImageMimeType } from "./attachmentImageResource";
+export { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 
-export type AssetUrlState =
-  | { readonly _tag: "Loading"; readonly deferred?: true }
-  | { readonly _tag: "Failure" }
-  | {
-      readonly _tag: "Success";
-      readonly url: string;
-      readonly imageDimensions?: ScreenshotArtifactDimensions;
-    };
-
-const EMPTY_ASSET_URL_ATOM = Atom.make<ImageResourceState>({ status: "loading" }).pipe(
-  Atom.withLabel("asset-url:empty"),
-);
-const LOADING: AssetUrlState = { _tag: "Loading" };
-const DEFERRED: AssetUrlState = { _tag: "Loading", deferred: true };
-const FAILURE: AssetUrlState = { _tag: "Failure" };
-// Store states are replaced on every change, so each maps to one stable value.
-const loadedStates = new WeakMap<ImageResourceState, AssetUrlState>();
-
-function assetUrlStateFromImage(state: ImageResourceState): AssetUrlState {
-  switch (state.status) {
-    case "loading":
-      return LOADING;
-    case "deferred":
-      return DEFERRED;
-    case "error":
-      return FAILURE;
-    case "loaded": {
-      let loaded = loadedStates.get(state);
-      if (!loaded) {
-        loaded = {
-          _tag: "Success",
-          url: state.url,
-          ...(state.dimensions ? { imageDimensions: state.dimensions } : {}),
-        };
-        loadedStates.set(state, loaded);
-      }
-      return loaded;
-    }
-  }
-}
+export type AssetUrlState = RuntimeAssetUrlState & { readonly waiting?: boolean };
 
 export function useAssetUrlState(
   environmentId: EnvironmentId | null,
-  resource: ImageAssetResource | null,
-  // Coder: the image the user opened displaces retained previews in the bounded store.
-  options?: { readonly priority?: boolean },
+  resource: AssetResource | null,
 ): AssetUrlState {
-  // Cached threads render before the workspace connects, so reads wait for the connection.
-  const connectedIds = useConnectedEnvironmentIds();
+  const blocked = blockedAssetUrlState(resource, useFilesystemReadAccess(environmentId));
+  const preparedConnection = usePreparedConnection(environmentId);
   const result = useAtomValue(
-    environmentId === null || resource === null || !connectedIds.includes(environmentId)
+    blocked !== null || environmentId === null || resource === null
       ? EMPTY_ASSET_URL_ATOM
-      : assetEnvironment.createUrl({
-          environmentId,
-          input: { resource },
-          priority: options?.priority,
-        }),
+      : assetEnvironment.createUrl({ environmentId, input: { resource } }),
   );
-  return assetUrlStateFromImage(result);
-}
-
-const NO_IMAGE_SIZE = Atom.writable(
-  (): ScreenshotArtifactDimensions | null => null,
-  (_ctx, _size: ScreenshotArtifactDimensions) => undefined,
-).pipe(Atom.withLabel("asset-url:no-image-size"));
-
-/**
- * Coder: an image's size before and after its bytes are held, as upstream's asset URL carries it.
- * Callers write back the size the browser decodes, which covers formats without a header read.
- */
-export function useAssetImageSize(
-  environmentId: EnvironmentId | null,
-  resource: ImageAssetResource | null,
-): readonly [
-  size: ScreenshotArtifactDimensions | null,
-  remember: (size: ScreenshotArtifactDimensions) => void,
-] {
-  const connectedIds = useConnectedEnvironmentIds();
-  return useAtom(
-    environmentId === null || resource === null || !connectedIds.includes(environmentId)
-      ? NO_IMAGE_SIZE
-      : assetEnvironment.imageSize({ environmentId, resource }),
-  );
+  if (blocked !== null) return blocked;
+  return {
+    ...assetUrlStateFromResult(
+      result,
+      preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null,
+    ),
+    ...(result.waiting ? { waiting: true } : {}),
+  };
 }
 
 export function useAssetUrlRefresh(
   environmentId: EnvironmentId | null,
-  resource: ImageAssetResource | null,
+  resource: AssetResource | null,
 ): () => Promise<string | null> {
-  const registry = useContext(RegistryContext);
-  return async () => {
-    if (environmentId === null || resource === null) return null;
-    return rereadImage(
-      registry,
-      assetEnvironment.createUrl({ environmentId, input: { resource } }),
-    );
-  };
-}
-
-/**
- * Rereads a store entry and settles with its next object URL, which lives as long as the caller's
- * `useAssetUrlState` holds the image.
- */
-function rereadImage(
-  registry: AtomRegistry.AtomRegistry,
-  atom: Atom.Atom<ImageResourceState>,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const settle = (state: ImageResourceState) => {
-      if (settled || (state.status !== "loaded" && state.status !== "error")) return;
-      settled = true;
-      unsubscribe();
-      if (state.status === "loaded") resolve(state.url);
-      else reject(new Error("The image could not be read."));
-    };
-    const unsubscribe = registry.subscribe(atom, settle);
-    const current = registry.get(atom);
-    if ("retry" in current) current.retry();
-    settle(registry.get(atom));
+  const connection = usePreparedConnection(environmentId);
+  const httpBaseUrl = connection._tag === "Some" ? connection.value.httpBaseUrl : null;
+  const refresh = useAtomQueryRunner(assetEnvironment.createUrl, {
+    reportFailure: false,
+    refresh: true,
   });
+  return async () => {
+    if (environmentId === null || resource === null || httpBaseUrl === null) return null;
+    const result = await refresh({ environmentId, input: { resource } });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    return resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
+  };
 }
 
 export function useAssetUrls(
   environmentId: EnvironmentId,
-  resources: ReadonlyArray<ImageAssetResource>,
+  resources: ReadonlyArray<AssetResource>,
 ): ReadonlyArray<string | null> {
-  // Cached threads render before the workspace connects. Reads start once it is connected, and a
-  // disconnect releases them so the next connection reads again instead of keeping a failure.
-  const connected = useConnectedEnvironmentIds().includes(environmentId);
+  const preparedConnection = usePreparedConnection(environmentId);
+  const { canReadFiles } = useFilesystemReadAccess(environmentId);
+  const allowedResources = canReadFiles
+    ? resources
+    : resources.filter((resource) => !isFileResource(resource));
   const results = useAtomValue(
     assetEnvironment.createUrls({
       environmentId,
-      resources: connected ? resources : [],
+      resources: allowedResources,
     }),
   );
-  return resources.map((_resource, index) => {
-    const result = results[index];
-    return result?.status === "loaded" ? result.url : null;
-  });
+  if (preparedConnection._tag === "None") return resources.map(() => null);
+  const urls: Array<string | null> = [];
+  let resultIndex = 0;
+  for (const resource of resources) {
+    if (!canReadFiles && isFileResource(resource)) {
+      urls.push(null);
+      continue;
+    }
+    const result = results[resultIndex];
+    resultIndex += 1;
+    urls.push(
+      result && AsyncResult.isSuccess(result)
+        ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
+        : null,
+    );
+  }
+  return urls;
+}
+
+function isFileResource(resource: AssetResource): boolean {
+  return (
+    resource._tag === "workspace-file" ||
+    resource._tag === "media-file" ||
+    resource._tag === "draft-workspace-file"
+  );
 }

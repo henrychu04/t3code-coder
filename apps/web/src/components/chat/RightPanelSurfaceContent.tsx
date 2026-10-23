@@ -1,6 +1,6 @@
 // Upstream's RightPanelSurfaceContent. Coder: there are no browser or device surfaces, file
-// surfaces read through the helper (sent attachments preview in memory), and pull request copy
-// names GitLab merge requests. See docs/internals/coder-only.md.
+// surfaces name their owner for the helper's root check, and pull request copy names GitLab
+// merge requests. See docs/internals/coder-only.md.
 import type {
   EnvironmentId,
   ProjectId,
@@ -22,7 +22,6 @@ import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
-import { SentAttachmentFilePreview } from "../files/SentAttachmentFilePreview";
 
 const DiffPanel = lazy(() => import("../DiffPanel"));
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
@@ -152,32 +151,26 @@ export function RightPanelSurfaceContent(props: {
     case "file": {
       const files = props.files;
       const attachment = surface.kind === "file" ? surface.attachment : undefined;
-      if (attachment) {
-        // Coder: upstream's FilePreviewPanel shows only the attachment's preview in this mode;
-        // the helper reads it into memory in place of the signed asset URL.
-        return (
-          <SentAttachmentFilePreview
-            key={`${props.environmentId}:attachment:${attachment.id}`}
-            environmentId={props.environmentId}
-            attachment={attachment}
-            threadRef={threadRef}
-          />
-        );
-      }
-      if (files.projectId === null || files.projectName === null || !files.workspaceRoot) {
+      // Coder: Files requests name the project, so a surface needs one.
+      if (
+        files.projectId === null ||
+        (!attachment && (files.projectName === null || !files.workspaceRoot))
+      )
         return null;
-      }
       return (
         <Suspense fallback={null}>
           <FilePreviewPanel
-            key={`${props.environmentId}:${files.workspaceRoot}`}
+            key={`${props.environmentId}:${
+              attachment ? `attachment:${attachment.id}` : files.workspaceRoot
+            }`}
             environmentId={props.environmentId}
-            cwd={files.workspaceRoot}
-            projectName={files.projectName}
+            cwd={files.workspaceRoot ?? ""}
+            projectName={files.projectName ?? ""}
             threadRef={threadRef}
             projectId={files.projectId}
             composerDraftTarget={props.composerDraftTarget}
             relativePath={surface.kind === "file" ? surface.relativePath : null}
+            {...(attachment ? { attachment } : {})}
             revealLine={surface.kind === "file" ? (surface.revealLine ?? null) : null}
             revealRequestId={surface.kind === "file" ? surface.revealRequestId : 0}
             onOpenFile={files.onOpenFile}

@@ -337,19 +337,6 @@ import {
 // Coder
 import { PullRequestDiffInput, PullRequestDiffResult } from "./pullRequest.ts";
 // Coder
-import {
-  ProjectImageReadInput,
-  ProjectImageChunk,
-  ProjectImageReadError,
-  ScreenshotArtifactChunk,
-  ScreenshotArtifactReadError,
-  ScreenshotArtifactReadInput,
-  AttachmentFileChunk,
-  AttachmentFileReadInput,
-  TurnItemAssetChunk,
-  TurnItemAssetReadError,
-  TurnItemAssetReadInput,
-} from "./screenshotArtifact.ts";
 import { CoderServeAssetInput, CoderServeAssetPart } from "./coderAssets.ts";
 // Coder
 import {
@@ -565,11 +552,7 @@ export const WS_METHODS = {
   // Coder: workspace-helper methods.
   projectsGetConfig: "projects.getConfig",
   projectsSearchText: "projects.searchText",
-  projectsReadImage: "projects.readImage",
   workspaceListDirectories: "workspace.listDirectories",
-  workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
-  workspaceReadTurnItemAsset: "workspace.readTurnItemAsset",
-  workspaceReadAttachmentFile: "workspace.readAttachmentFile",
   coderServeAsset: "coder.serveAsset",
   projectsCreateFile: "projects.createFile",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
@@ -1885,34 +1868,10 @@ const WsProjectsSearchTextRpc = Rpc.make(WS_METHODS.projectsSearchText, {
   error: ProjectTextSearchError,
 });
 
-const WsProjectsReadImageRpc = Rpc.make(WS_METHODS.projectsReadImage, {
-  payload: ProjectImageReadInput,
-  success: ProjectImageChunk,
-  error: ProjectImageReadError,
-});
-
 const WsWorkspaceListDirectoriesRpc = Rpc.make(WS_METHODS.workspaceListDirectories, {
   payload: WorkspaceListDirectoriesInput,
   success: WorkspaceListDirectoriesResult,
   error: WorkspaceListDirectoriesError,
-});
-
-const WsWorkspaceReadScreenshotArtifactRpc = Rpc.make(WS_METHODS.workspaceReadScreenshotArtifact, {
-  payload: ScreenshotArtifactReadInput,
-  success: ScreenshotArtifactChunk,
-  error: ScreenshotArtifactReadError,
-});
-
-const WsWorkspaceReadTurnItemAssetRpc = Rpc.make(WS_METHODS.workspaceReadTurnItemAsset, {
-  payload: TurnItemAssetReadInput,
-  success: TurnItemAssetChunk,
-  error: TurnItemAssetReadError,
-});
-
-const WsWorkspaceReadAttachmentFileRpc = Rpc.make(WS_METHODS.workspaceReadAttachmentFile, {
-  payload: AttachmentFileReadInput,
-  success: AttachmentFileChunk,
-  error: ScreenshotArtifactReadError,
 });
 
 /**
@@ -2025,7 +1984,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsProjectsSearchTextRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
-  WsProjectsReadImageRpc,
   WsProjectsWriteFileRpc,
   WsFilesystemBrowseRpc,
   WsFilesystemGetMetadataRpc,
@@ -2033,9 +1991,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,
   WsWorkspaceListDirectoriesRpc,
-  WsWorkspaceReadScreenshotArtifactRpc,
-  WsWorkspaceReadTurnItemAssetRpc,
-  WsWorkspaceReadAttachmentFileRpc,
   WsCoderServeAssetRpc,
   WsProjectsCreateFileRpc,
   WsServerRefreshProvidersRpc,

@@ -1,37 +1,34 @@
-// Upstream's expanded-media item and resolvers. Coder has no signed asset URLs: workspace media
-// carries a helper source that the dialog reads through bounded `projects.readImage` chunks, and
-// legacy screenshot artifacts are resolved by `CapturedImageDialog`.
-import type { ScopedThreadRef, ScreenshotArtifactReference } from "@t3tools/contracts";
 import type { ComposerFileAttachment } from "../../composerDraftStore";
-import { isVideoAttachment } from "../../types";
+import { type ChatFileAttachment, type ChatImageAttachment, isVideoAttachment } from "../../types";
+import type {
+  AssetCreateUrlResult,
+  AssetResource,
+  EnvironmentId,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
+import { videoMimeType } from "@t3tools/shared/video";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
+import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+import {
+  squashAtomCommandFailure,
+  type AtomCommandResult,
+} from "@t3tools/client-runtime/state/runtime";
 import { resolveExternalWebLinkHost } from "./externalLinkContextMenu";
-import type { ProjectMediaSource } from "./useProjectVideo";
 import type { MediaActionSource } from "../media/MediaActions";
 import { resolveProtocolRelativeMediaUrl } from "../media/mediaContent";
 
 export interface ExpandedImageItem {
-  /** A loadable URL, or null when the dialog must read it through the helper first. */
   src: string | null;
   name: string;
   mimeType?: string;
   type?: "video";
   /** The preview created this object URL and must revoke it; other blob URLs belong to the timeline. */
   ownsSrc?: boolean;
+  // Coder: SnapShot sources are not carried.
   autoPlay?: boolean;
-  /** Authored remote destination to open when embedding fails, never a generated blob URL. */
   originalUrl?: string;
   srcFragment?: string;
   actionsSource?: MediaActionSource;
-  /** Coder: a workspace image read through the helper, with priority, while it is selected. */
-  projectImage?: ProjectMediaSource | undefined;
-  /** Coder: a workspace video or audio file read through the helper when the dialog opens. */
-  projectVideo?: ProjectMediaSource | undefined;
-  /** Coder: a legacy screenshot artifact resolved by `CapturedImageDialog`. */
-  artifact?: (Omit<ScreenshotArtifactReference, "sizeBytes"> & { sizeBytes?: number }) | undefined;
-  /** Coder: set by transport adapters while a helper read is in flight. */
-  loading?: boolean | undefined;
-  retry?: (() => void) | undefined;
 }
 
 export interface ExpandedImagePreview {
@@ -39,17 +36,17 @@ export interface ExpandedImagePreview {
   index: number;
 }
 
-export function wrapExpandedImageIndex(index: number, imageCount: number): number {
-  return imageCount > 0 ? ((index % imageCount) + imageCount) % imageCount : 0;
-}
-
-/** Resolves a chat media reference on its owning workspace, without reading its bytes. */
 export async function resolveMarkdownMediaPreview(input: {
   source: string;
   resolvedFilePath?: string | undefined;
   cwd?: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
+  httpBaseUrl?: string | undefined;
   onOpenFile?: ((relativePath: string) => void) | undefined;
+  createAssetUrl: (input: {
+    environmentId: EnvironmentId;
+    input: { resource: AssetResource };
+  }) => Promise<AtomCommandResult<AssetCreateUrlResult, unknown>>;
 }): Promise<ExpandedImagePreview | null> {
   const media = resolveMediaSource(input.source, {
     threadId: input.threadRef?.threadId,
@@ -60,19 +57,23 @@ export async function resolveMarkdownMediaPreview(input: {
   const { kind, name, reference } = media;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
 
-  let src: string | null = null;
-  let helperSource: ProjectMediaSource | undefined;
+  let src: string;
+  let asset: MediaActionSource["asset"];
   if (media.access === "direct") {
     src = resolveProtocolRelativeMediaUrl(media.uri);
   } else {
-    // The helper verifies that this root belongs to the thread before reading the file.
-    if (media.access === "unavailable" || !input.threadRef || !input.cwd) {
+    if (media.access === "unavailable" || !input.threadRef || !input.httpBaseUrl) {
       throw new Error("Reconnect to this environment and open the media again.");
     }
-    helperSource = {
-      environmentId: input.threadRef.environmentId,
-      target: { threadId: media.resource.threadId, cwd: input.cwd, filePath: media.resource.path },
-    };
+    asset = { environmentId: input.threadRef.environmentId, resource: media.resource };
+    const result = await input.createAssetUrl({
+      environmentId: asset.environmentId,
+      input: { resource: asset.resource },
+    });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    const assetUrl = resolveAssetUrl(input.httpBaseUrl, result.value.relativeUrl);
+    if (assetUrl === null) throw new Error("The environment returned an invalid media URL.");
+    src = assetUrl + media.srcFragment;
   }
   return {
     images: [
@@ -80,11 +81,6 @@ export async function resolveMarkdownMediaPreview(input: {
         src,
         name,
         ...(kind === "video" ? { type: "video", autoPlay: false } : {}),
-        ...(helperSource
-          ? kind === "video"
-            ? { projectVideo: helperSource }
-            : { projectImage: helperSource }
-          : {}),
         ...(media.access === "direct" && resolveExternalWebLinkHost(media.uri) !== null
           ? { originalUrl: media.uri }
           : {}),
@@ -94,6 +90,7 @@ export async function resolveMarkdownMediaPreview(input: {
           name,
           src,
           ...(reference ? { reference } : {}),
+          ...(asset ? { asset } : {}),
           ...(relativePath && input.onOpenFile
             ? { onOpenFile: () => input.onOpenFile?.(relativePath) }
             : {}),
@@ -104,29 +101,64 @@ export async function resolveMarkdownMediaPreview(input: {
   };
 }
 
-export function expandedImageKey(preview: ExpandedImagePreview): string {
-  const item = preview.images[preview.index];
-  const helperSource = item?.projectImage ?? item?.projectVideo;
-  const identity =
-    item?.src ??
-    (helperSource
-      ? JSON.stringify([helperSource.environmentId, helperSource.target])
-      : (item?.artifact?.id ?? "image"));
-  return `${identity}:${preview.index}`;
+export function buildAttachmentVideoAsset(
+  environmentId: EnvironmentId,
+  attachment: Pick<ChatFileAttachment, "id" | "name" | "mimeType">,
+): NonNullable<MediaActionSource["asset"]> {
+  return {
+    environmentId,
+    resource: {
+      _tag: "attachment" as const,
+      attachmentId: attachment.id,
+      fileName: attachment.name,
+      mimeType: videoMimeType(attachment) ?? attachment.mimeType,
+    },
+  };
 }
 
-/** Upstream's preview builder for composer images and draft videos already in memory. */
+export function buildAttachmentVideoPreview(
+  environmentId: EnvironmentId,
+  attachment: ChatFileAttachment,
+): ExpandedImagePreview | null {
+  if (!isVideoAttachment(attachment)) return null;
+  const src = attachment.previewUrl ?? null;
+  const asset =
+    attachment.downloadable === false
+      ? undefined
+      : buildAttachmentVideoAsset(environmentId, attachment);
+  if (src === null && asset === undefined) return null;
+  return {
+    images: [
+      {
+        src,
+        name: attachment.name,
+        type: "video",
+        actionsSource: {
+          kind: "video",
+          name: attachment.name,
+          src,
+          ...(asset ? { asset } : {}),
+        },
+      },
+    ],
+    index: 0,
+  };
+}
+
+export function expandedImageKey(preview: ExpandedImagePreview): string {
+  const item = preview.images[preview.index];
+  const asset = item?.actionsSource?.asset;
+  return `${item?.src ?? (asset ? JSON.stringify([asset.environmentId, asset.resource]) : "image")}:${preview.index}`;
+}
+
+export function attachVideoThumbnail(video: HTMLVideoElement, file: File): () => void {
+  const url = URL.createObjectURL(file);
+  video.src = url;
+  return () => URL.revokeObjectURL(url);
+}
+
 export function buildExpandedImagePreview(
-  images: ReadonlyArray<
-    | {
-        readonly id: string;
-        readonly type: "image";
-        readonly name: string;
-        readonly mimeType: string;
-        readonly previewUrl?: string | undefined;
-      }
-    | ComposerFileAttachment
-  >,
+  images: ReadonlyArray<ChatImageAttachment | ComposerFileAttachment>,
   selectedImageId: string,
 ): ExpandedImagePreview | null {
   const selected = images.find((image) => image.id === selectedImageId);
@@ -145,11 +177,23 @@ export function buildExpandedImagePreview(
   }
   const previewableImages = images.flatMap((image) =>
     image.type === "image" && image.previewUrl
-      ? [{ id: image.id, src: image.previewUrl, name: image.name, mimeType: image.mimeType }]
+      ? [
+          {
+            id: image.id,
+            src: image.previewUrl,
+            name: image.name,
+            mimeType: image.mimeType,
+          },
+        ]
       : [],
   );
+  if (previewableImages.length === 0) {
+    return null;
+  }
   const selectedIndex = previewableImages.findIndex((image) => image.id === selectedImageId);
-  if (selectedIndex < 0) return null;
+  if (selectedIndex < 0) {
+    return null;
+  }
   return {
     images: previewableImages.map((image) => ({
       src: image.src,

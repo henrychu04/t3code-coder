@@ -1,15 +1,3 @@
-/**
- * Coder: upstream's document frames, fed by bytes the helper read rather than a signed asset URL.
- *
- * HTML is written into the gateway's sandboxed document shell, as MCP Apps are: a blob, srcdoc,
- * or data: frame would inherit the app page's Content-Security-Policy and block the page's own
- * scripts. The shell's CSP sandbox gives the page an opaque origin even if the shell is opened
- * directly. Agent renders use the MCP App shell (upstream's `allow-scripts allow-forms`); HTML
- * files use the document shell, which adds `allow-popups allow-downloads` as upstream's file frame
- * does. A PDF
- * opens from a memory-only blob in the browser's built-in viewer, which needs an unsandboxed
- * frame; a PDF runs no scripts in the app's origin.
- */
 import { useAtomValue } from "@effect/atom-react";
 import {
   type KeybindingCommand,
@@ -34,7 +22,6 @@ import {
   matchesKeybindingShortcut,
   normalizeEventKey,
 } from "@t3tools/shared/keybindings";
-import { HTML_DOCUMENT_FRAME_PATH, MCP_APP_FRAME_PATH } from "@t3tools/shared/mcpApp";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
@@ -46,10 +33,6 @@ import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
-
-// Coder: PDFs stay in the built-in viewer's frame, because the gateway's CSP sets
-// `object-src 'none'`, which blocks upstream's `<embed>`.
-const PDF_VIEWER_FRAGMENT = "#toolbar=0&view=FitH";
 
 /**
  * The page reports the keys, and a page script can report any key it likes,
@@ -78,79 +61,60 @@ const HTML_RENDER_SHORTCUT_COMMANDS: ReadonlySet<KeybindingCommand> = new Set([
 export const isPdfPreviewFile = (path: string): boolean =>
   /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
 
-/** Renders an HTML or PDF document: `pdfUrl` is a blob URL, `html` the page's source. */
-export function BrowserDocumentFrame(
-  props:
-    | { readonly pdfUrl: string; readonly title: string }
-    | {
-        readonly html: string;
-        readonly title: string;
-        readonly htmlRender?: boolean;
-        /** The thread an HTML render's links open beside. */
-        readonly threadRef?: ScopedThreadRef | undefined;
-      },
-) {
-  const className = "min-h-0 flex-1 border-0 bg-white";
-  if ("pdfUrl" in props) {
-    return (
-      // oxlint-disable-next-line react/iframe-missing-sandbox -- the built-in PDF viewer needs an unsandboxed frame.
-      <iframe
-        key={props.pdfUrl}
-        src={`${props.pdfUrl}${PDF_VIEWER_FRAGMENT}`}
-        title={props.title}
-        className={className}
-      />
-    );
-  }
-  return props.htmlRender ? (
+/**
+ * HTML runs in a sandboxed frame with an opaque origin, so a page cannot reach
+ * the app's session or storage. PDFs use the browser's native viewer.
+ */
+export function BrowserDocumentFrame(props: {
+  readonly src: string;
+  readonly title: string;
+  readonly pdf: boolean;
+  readonly htmlRender?: boolean;
+  readonly threadRef?: ScopedThreadRef | undefined;
+  /** Stable resource identity and revision; defaults to src for callers that reload on URL changes. */
+  readonly documentKey?: string | undefined;
+}) {
+  const key = props.documentKey ?? props.src;
+  return props.pdf ? (
+    <embed
+      key={props.src}
+      src={props.src}
+      type="application/pdf"
+      title={props.title}
+      className="min-h-0 w-full flex-1 border-0"
+    />
+  ) : props.htmlRender ? (
     <HtmlRenderDocument
-      key={props.html}
-      html={props.html}
+      key={key}
+      src={props.src}
       title={props.title}
       threadRef={props.threadRef}
       className="min-h-0 flex-1"
     />
   ) : (
-    <ShellDocument
-      key={props.html}
-      html={props.html}
-      title={props.title}
-      shellPath={HTML_DOCUMENT_FRAME_PATH}
-      className={className}
-    />
+    <FileDocument key={key} src={props.src} title={props.title} />
   );
 }
 
-/** A page written into a gateway document shell once the shell has loaded. */
-function ShellDocument(props: {
-  readonly html: string;
-  readonly title: string;
-  readonly shellPath: string;
-  readonly className?: string;
-}) {
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const written = useRef(false);
+// URL renewals must not discard form input or scroll; a new key mounts a fresh document.
+function FileDocument(props: { readonly src: string; readonly title: string }) {
+  const [src] = useState(props.src);
   return (
-    // Never allow-same-origin: the shell's CSP sandbox keeps the page out of the app's session.
     <iframe
-      ref={frameRef}
-      src={props.shellPath}
+      src={src}
       title={props.title}
-      className={props.className}
-      onLoad={() => {
-        if (written.current) return;
-        written.current = true;
-        frameRef.current?.contentWindow?.postMessage({ html: props.html }, "*");
-      }}
+      className="min-h-0 flex-1 border-0 bg-white"
+      sandbox="allow-scripts allow-forms allow-popups allow-downloads"
     />
   );
 }
 
 /**
- * The source is written once for the frame's lifetime.
+ * The first URL is kept for the frame's lifetime: signed asset URLs re-mint
+ * while it stays mounted, and a new src would reload the page.
  */
 export function HtmlRenderDocument(props: {
-  readonly html: string;
+  readonly src: string;
   readonly title: string;
   readonly className?: string;
   readonly threadRef?: ScopedThreadRef | undefined;
@@ -160,9 +124,8 @@ export function HtmlRenderDocument(props: {
 }) {
   const theme = useHtmlRenderTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [src] = useState(() => `${MCP_APP_FRAME_PATH}${htmlRenderThemeFragment(theme)}`);
+  const [src] = useState(() => `${props.src.split("#", 1)[0]}${htmlRenderThemeFragment(theme)}`);
   const [loaded, setLoaded] = useState(false);
-  const written = useRef(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const postTheme = () => {
     frameRef.current?.contentWindow?.postMessage(htmlRenderThemeMessage(theme), "*");
@@ -333,15 +296,10 @@ export function HtmlRenderDocument(props: {
         ref={frameRef}
         src={src}
         title={props.title}
-        // Coder: the shell's CSP sandbox applies; see the file header.
+        // Never allow-same-origin: the opaque origin keeps the page out of the app's session.
+        sandbox="allow-scripts allow-forms"
         loading="lazy"
         onLoad={() => {
-          if (!written.current) {
-            // The first load is the shell; it replaces itself with the page.
-            written.current = true;
-            frameRef.current?.contentWindow?.postMessage({ html: props.html }, "*");
-            return;
-          }
           setLoaded(true);
           // Covers a theme change that landed while the page was loading.
           postTheme();

@@ -176,36 +176,14 @@ describe("local Coder gateway", () => {
     );
   });
 
-  it("serves the MCP App frame shell sandboxed and frameable only by its own pages", async () => {
-    const gateway = await startLocalCoderGateway();
-    closeGateway = gateway.close;
-    const page = await request({ url: `${gateway.url}/healthz` });
-    strictEqual(page.headers["content-security-policy"]?.includes("frame-src 'self'"), true);
-    strictEqual(page.headers["content-security-policy"]?.includes("frame-ancestors 'none'"), true);
-    const shell = await request({ url: `${gateway.url}/mcp-app-frame.html` });
-    strictEqual(shell.statusCode, 200);
-    strictEqual(
-      shell.headers["content-security-policy"],
-      "sandbox allow-scripts allow-forms; frame-ancestors 'self'",
-    );
-    strictEqual(shell.headers["x-frame-options"], "SAMEORIGIN");
-    strictEqual(shell.body.includes("event.source !== parent"), true);
-  });
-
-  // Coder: HTML files previewed in Files get upstream's file frame sandbox (popups and
-  // downloads), and PDFs render from memory-only blobs in the browser's viewer.
-  it("serves the HTML document shell with upstream's file sandbox and allows blob PDFs", async () => {
+  // Coder: upstream frames HTML and embeds PDFs from the workspace's asset URLs on this origin.
+  it("lets its pages frame and embed same-origin asset documents but never be framed", async () => {
     const gateway = await startLocalCoderGateway();
     closeGateway = gateway.close;
     const page = await request({ url: `${gateway.url}/healthz` });
     strictEqual(page.headers["content-security-policy"]?.includes("frame-src 'self' blob:"), true);
-    const shell = await request({ url: `${gateway.url}/html-document-frame.html` });
-    strictEqual(shell.statusCode, 200);
-    strictEqual(
-      shell.headers["content-security-policy"],
-      "sandbox allow-scripts allow-forms allow-popups allow-downloads; frame-ancestors 'self'",
-    );
-    strictEqual(shell.body.includes("event.source !== parent"), true);
+    strictEqual(page.headers["content-security-policy"]?.includes("object-src 'self' blob:"), true);
+    strictEqual(page.headers["content-security-policy"]?.includes("frame-ancestors 'none'"), true);
   });
 
   it("rejects an unexpected Host header", async () => {

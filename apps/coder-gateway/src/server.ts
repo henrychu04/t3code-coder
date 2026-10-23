@@ -23,7 +23,6 @@ import * as FiberSet from "effect/FiberSet";
 import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { WebSocket, WebSocketServer } from "ws";
-import { HTML_DOCUMENT_FRAME_PATH, MCP_APP_FRAME_PATH } from "@t3tools/shared/mcpApp";
 
 import {
   emptyCoderProfileConfig,
@@ -104,46 +103,6 @@ const indexHtml = `<!doctype html>
   </body>
 </html>`;
 
-/**
- * Coder: the shell an MCP App frame loads. The helper reads the captured app document in bounded
- * chunks and the page posts it here, where it replaces the shell in place; a blob or srcdoc frame
- * would inherit the page's own Content-Security-Policy and block the app's scripts. The CSP
- * sandbox gives the shell and the app an opaque origin even when the shell is opened directly,
- * the app's own CSP comes with its document, and only the gateway's pages may frame it.
- */
-const mcpAppFrameHtml = `<!doctype html>
-<meta charset="utf-8" />
-<script>
-  addEventListener("message", function receive(event) {
-    if (event.source !== parent || typeof event.data?.html !== "string") return;
-    removeEventListener("message", receive);
-    document.open();
-    document.write(event.data.html);
-    document.close();
-  });
-</script>`;
-
-/**
- * Coder: the shell also frames agent HTML renders (same sandbox as upstream's render frame) and,
- * with upstream's file frame sandbox (`allow-popups allow-downloads`), HTML files previewed in
- * Files.
- */
-function sendMcpAppFrame(
-  response: NodeHttp.ServerResponse,
-  sandbox = "allow-scripts allow-forms",
-): void {
-  response.writeHead(200, {
-    "Cache-Control": "no-store",
-    "Content-Type": "text/html; charset=utf-8",
-    "Content-Security-Policy": `sandbox ${sandbox}; frame-ancestors 'self'`,
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "SAMEORIGIN",
-    "Cross-Origin-Resource-Policy": "same-origin",
-    "Referrer-Policy": "no-referrer",
-  });
-  response.end(mcpAppFrameHtml);
-}
-
 function sendText(
   response: NodeHttp.ServerResponse,
   statusCode: number,
@@ -154,7 +113,7 @@ function sendText(
     "Cache-Control": "no-store",
     "Content-Type": contentType,
     "Content-Security-Policy":
-      "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' 'sha256-66N88M2Gs4tvXNc8z6k+OKKok8OCKne3d83NpL7KJ9A='; connect-src 'self' blob: https: http: ws://127.0.0.1:*; img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; worker-src 'self' blob:; object-src 'none'; frame-src 'self' blob:",
+      "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' 'sha256-66N88M2Gs4tvXNc8z6k+OKKok8OCKne3d83NpL7KJ9A='; connect-src 'self' blob: https: http: ws://127.0.0.1:*; img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; worker-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -2417,14 +2376,6 @@ export function makeLocalCoderGateway(
             response,
             assetRoute[2] ?? "",
           );
-          return;
-        }
-        if (request.method === "GET" && requestUrl.pathname === HTML_DOCUMENT_FRAME_PATH) {
-          sendMcpAppFrame(response, "allow-scripts allow-forms allow-popups allow-downloads");
-          return;
-        }
-        if (request.method === "GET" && requestUrl.pathname === MCP_APP_FRAME_PATH) {
-          sendMcpAppFrame(response);
           return;
         }
         if (request.method === "GET" && options?.staticDir) {

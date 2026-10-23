@@ -1,5 +1,3 @@
-// Main's media menu. Coder media has no signed asset URL to re-request, so byte actions read the
-// source the element already shows: a memory-only blob for workspace media, or the web URL.
 import {
   formatFilePathForClipboard,
   type MediaActionId,
@@ -8,13 +6,18 @@ import {
   mediaReferenceFileName,
   type MediaReference,
 } from "@t3tools/client-runtime/media-reference";
-import type { ContextMenuItem } from "../../localApiTypes";
+import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import type { ContextMenuItem } from "../../localApiTypes";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState, type ReactElement } from "react";
 
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { readLocalApi } from "../../localApi";
+import { assetEnvironment } from "../../state/assets";
+import { readPreparedConnection } from "../../state/session";
+import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { downloadMedia, readMediaPng } from "./mediaContent";
@@ -24,6 +27,7 @@ export interface MediaActionSource {
   readonly name: string;
   readonly src: string | null;
   readonly reference?: MediaReference;
+  readonly asset?: { readonly environmentId: EnvironmentId; readonly resource: AssetResource };
   readonly onOpenFile?: () => void;
 }
 
@@ -33,13 +37,29 @@ function mediaFileName(source: MediaActionSource): string {
   );
 }
 
-function useMediaActions(source: MediaActionSource) {
+export function useMediaActions(source: MediaActionSource) {
   // Coder: the workspace owner always holds the filesystem read scope.
   const canReadMedia = true;
   const assertCanReadMedia = () => {};
+  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+    reportFailure: false,
+    refresh: true,
+  });
   const actionUrl = async () => {
-    if (!source.src) throw new Error("This media is unavailable. Try reopening the preview.");
-    return source.src;
+    assertCanReadMedia();
+    if (!source.asset) {
+      if (!source.src) throw new Error("This media is unavailable. Try reopening the preview.");
+      return source.src;
+    }
+    const { environmentId, resource } = source.asset;
+    const connection = readPreparedConnection(environmentId);
+    if (!connection) throw new Error("Reconnect to this environment and try again.");
+    const result = await createAssetUrl({ environmentId, input: { resource } });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    assertCanReadMedia();
+    const url = resolveAssetUrl(connection.httpBaseUrl, result.value.relativeUrl);
+    if (!url) throw new Error("The environment returned an invalid media URL.");
+    return url;
   };
   const save = async () => {
     await downloadMedia(await actionUrl(), mediaFileName(source));
@@ -81,7 +101,7 @@ export function MediaActions({
     let progressToast: ReturnType<typeof toastManager.add> | undefined;
     const result = await settlePromise(async () => {
       const noun = source.kind === "image" ? "image" : "video";
-      const unavailable = source.src === null;
+      const unavailable = !canReadMedia || (source.src === null && source.asset === undefined);
       const canCopyImage =
         typeof navigator !== "undefined" &&
         Boolean(navigator.clipboard?.write) &&

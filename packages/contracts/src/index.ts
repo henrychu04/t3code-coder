@@ -52,8 +52,7 @@ export * from "./worktreeMcp.ts";
 export * from "./rpc.ts";
 export * from "./worktreeSetup.ts";
 
-// Coder: legacy screenshot artifacts and the local gateway wire.
-export * from "./screenshotArtifact.ts";
+// Coder: the gateway asset stream and the local gateway wire.
 export * from "./coderAssets.ts";
 export type * from "./coderGateway.ts";
 export * from "./secretRequest.ts";

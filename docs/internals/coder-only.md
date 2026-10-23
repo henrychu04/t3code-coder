@@ -303,8 +303,8 @@ the message; `AttachmentClaims.ts` reads the staged file once through a no-follo
 exact declared size (and, for images, a matching signature) and writes it exclusively. Files reach
 the provider as workspace paths; images are validated again before Codex and Claude read them.
 Images Coder stored before upstream's attachment ids (`<uuid>.<ext>`) decode as
-`legacy-<uuid>-<ext>` attachments that are never claimable. Sent images and files are read back by
-id through bounded helper chunks for previews, Save, and rewind.
+`legacy-<uuid>-<ext>` attachments that are never claimable. Sent images and files load back from
+upstream's signed attachment URLs for previews, Save, and rewind.
 
 The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
 `message.context`) without preview annotations, element captures, or SnapShot frames.
@@ -346,28 +346,25 @@ monopolize the stdio connection.
 
 ### Media and document previews
 
-Media previews follow main's on-demand file flow. The helper verifies the thread's root, resolves
-relative paths from it, and also accepts exact absolute image paths elsewhere on the workspace
-machine. It checks the opened file's identity, rejects non-files, validates each signature against
-its extension (main's image, video, and audio formats), and keeps a file revision constant across
-chunks. Images are bounded by `MAX_SCREENSHOT_ARTIFACT_BYTES`, video and audio by
-`MAX_PROJECT_MEDIA_BYTES`, and each stdio chunk by `MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES`. No
-artifact copies, capture budgets, or quotas exist, and saved v1 screenshot artifacts are no longer
-shown (see the v1 import note below).
+Media, documents, and attachments load from upstream's signed asset URLs: `assets.createUrl`,
+`assets/AssetAccess.ts`, `assets/MediaFile.ts`, and upstream's asset route (`http.ts`, which
+carries only that route). Project favicons, native app icons, and GitHub-authenticated media are
+not carried, so those resource kinds and their errors are cut from `contracts/assets.ts`.
 
-The browser keeps main's thumbnails, gallery, and `MediaActions` menu (copy path or URL, Save, Copy
-image). Workspace media has no signed URL, so the browser reads it whole into a memory-only blob
-(`imageResources.ts` bounds concurrent reads and bytes), and byte actions use that blob or the web
-URL. Inline videos show a play card and read only when pressed. External web images and videos load
-from their host as on main; the gateway CSP allows `https:`/`http:` and `blob:` in `img-src`,
-`media-src`, and `connect-src`, keeps `script-src` to the app, and allows `frame-src 'self' blob:`.
+The gateway serves a workspace's asset URLs at `/api/workspaces/<id>/api/assets/*`
+(`apps/coder-gateway/src/assetProxy.ts`). It forwards `GET` and `HEAD`, with only `Range` and
+`If-Range`, over the helper's gateway-only `coder.serveAsset` stream (`coderAssets.ts`), which runs
+upstream's route in process and returns its status, an allowlist of its headers (type, length,
+range, disposition, caching, validators, and its document CSP), and the body in acknowledged chunks
+of at most `CODER_ASSET_BODY_CHUNK_BYTES`. A closed request interrupts the read; the RPC bridge
+rejects the method from the browser. Responses keep upstream's caching (`private, max-age=3600`,
+and `no-store` for video and audio).
 
-In Files, PDF and HTML files preview as on main, project files only, within `MAX_PROJECT_PDF_BYTES`
-(`%PDF-` signature) and `MAX_PROJECT_HTML_BYTES` (no NUL bytes). A PDF renders from a memory-only
-blob in the browser's built-in viewer; an HTML page is written into the gateway's document shell
-`/html-document-frame.html`, whose CSP sandbox is upstream's file frame (`allow-scripts allow-forms
-allow-popups allow-downloads`, never `allow-same-origin`). Its relative assets do not load, because
-there is no asset server.
+A workspace's `httpBaseUrl` is that gateway path, and client-runtime's `resolveAssetUrl` resolves
+upstream's root-relative URL below it (`Coder:`). External web images and videos load from their
+host as on main. The gateway page CSP allows `https:`/`http:` and `blob:` in `img-src`,
+`media-src`, and `connect-src`, keeps `script-src` to the app, and allows `frame-src 'self' blob:`
+and `object-src 'self' blob:` for upstream's sandboxed HTML frames and PDF embeds.
 
 ### Source control
 
@@ -492,7 +489,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `writeFile` overwrites. Both write paths keep upstream's write-target hardening: the cwd must
     be a `KnownWorkspaces` folder, the root resolves after `path.resolve`, and a target in a git
     folder (`.git`, a bare repository, a linked worktree's git folder, as named or resolved) is
-    refused, with new files checked before any folder is made. `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
+    refused, with new files checked before any folder is made. Path-only FFF errors and stale-write errors retain the fork's bounded-service
     error mapping. `coderWs.ts` wraps `ws.ts`'s upstream Files list, read, and write handlers in
     the root verification, so those handlers stay upstream's code.
   - Upstream's "Add to another machine" (#22180, #22254) is not carried, because it copies a
@@ -502,9 +499,9 @@ listed here is drift to remove rather than fork behavior to keep.
     client-runtime's `projectCommands.ts` has no matching command, `BranchToolbar.tsx` has no
     menu entry, and `ChatView.tsx` shows no file-copy banner or send block.
   - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
-    branch/worktree rename with `moveWorktree`, chunked review files,
-    bounded text/content/media, sent-file (`workspace.readAttachmentFile`), and legacy-artifact
-    reads, new-file creation (`projects.createFile`), fixed project-config reads, workspace
+    branch/worktree rename with `moveWorktree`, chunked review files, bounded text search, the
+    gateway's asset stream (`coder.serveAsset`), new-file creation (`projects.createFile`),
+    fixed project-config reads, workspace
     directory listing, merge-request diffs, and upstream's HTTP bounded thread snapshot,
     history page, and thread transcript over stdio. The method set stays `CoderWsRpcGroup`;
     unsupported upstream methods stay omitted.
@@ -733,51 +730,24 @@ listed here is drift to remove rather than fork behavior to keep.
 - **MCP Apps.** Upstream's inline app rows and sandboxed frame, with resource reads and tool calls
   over the helper's MCP Apps RPCs. The frame has no camera, microphone, geolocation, or clipboard
   permission. `ui/download-file` is upstream's: the user confirms, and the host page saves the
-  embedded or linked bytes. Upstream frames the captured document through a signed asset URL. Here
-  `workspace.readTurnItemAsset` reads it in bounded chunks, but only the document that the named
-  stored tool item references, opened without following symlinks. The frame then loads the
-  gateway's `/mcp-app-frame.html` shell, and the page posts the document to it. The shell checks
-  that the message came from its parent and writes the document over itself.
-  A blob, `srcdoc`, or `data:` frame would inherit the page's Content-Security-Policy and block the
-  app's scripts. The shell's own policy is `sandbox allow-scripts allow-forms; frame-ancestors
-  'self'`, so the shell and the app keep an opaque origin even when the shell is opened directly.
-  The app's CSP comes with its stored document, as upstream injects it. Upstream's asset route
-  adds its theme and cookie bootstraps (`injectMcpAppThemeBootstrap`,
-  `injectMcpAppCookieBootstrap`) to the served document; here `McpAppFrame` adds them before
-  posting the document to the shell. The page policy allows
-  `frame-src 'self'`, and every other gateway response keeps `frame-ancestors 'none'`. The shell's
-  load and the written document's load both count as the app's own; a third load means the app
-  navigated away.
+  embedded or linked bytes. The captured document loads from upstream's signed asset URL (see
+  [Media and document previews](#media-and-document-previews)).
 - **HTML renders.** Upstream's `html_render` tool, `HtmlRender` service, and inline frame, with
   these Coder deltas (each marked `Coder:`):
   - The bridge carries `html_render` only. `htmlRender/HtmlRender.ts` keeps upstream's image
     inlining and storage but not `preview` or height measurement, because T3 Coder installs no
-    headless browser; pages publish at the agent's height, the frame shrinks to a shorter page's
-    reported height, and a page with its images inlined is capped at `MAX_TURN_ITEM_ASSET_BYTES`, the
-    bounded turn-item read. Publishing records the page through upstream's
+    headless browser; pages publish at the agent's height and the frame shrinks to a shorter
+    page's reported height. Publishing records the page through upstream's
     `McpProviderSessions.recordHtmlRender` (#19796). The tool description omits `html_preview` and
     the mobile-only scroll-cap sentence.
   - Over the bridge the call is a shell command, so `htmlRenderFromBridgeCommand` (shared
     `toolOutput.ts`) recognizes a completed `…/t3-tools-<id>/t3.mjs html_render` command whose
     output is the tool's JSON result. `WireProjection` keeps only that compact reference on the
     wire (other command output stays withheld), and the timeline shows the page there, as
-    upstream shows a `dynamic_tool` render. Any command could print such output, so
-    `workspace.readTurnItemAsset` (`html-render` asset) serves only a page stored in the item's own
-    thread, opened without following symlinks.
-  - `chat/HtmlRenderFrame.tsx` reads the page through that read and `files/BrowserDocumentFrame.tsx`
-    writes it into the MCP App shell with the theme in the shell URL's fragment, as upstream's
-    signed URL carries it. **Open full screen** shows the same in-memory page in upstream's
-    `chat/HtmlRenderDialog.tsx`, which takes the page (`html`) where upstream mints a fresh
-    signed URL, so the frame has no "Page unavailable" toast. `BrowserDocumentFrame.tsx` keeps
-    upstream's image dialog and load handling. Links in a page open as
-    upstream's chat links do; `SentAttachmentFilePreview` passes the thread for them where
-    upstream's `FilePreviewPanel` does, and with no in-app browser `browser/useOpenLink.ts`
-    sends every other link to the system browser.
+    upstream shows a `dynamic_tool` render. The page loads from upstream's signed attachment URL.
   - Pages are kept like other attachments; deleting a thread does not delete them.
 - **Tool output images.** `turnItemOutputImages` lists a fetched item's images, and the inspector
-  renders each with `ChatMarkdownAssetImage`, as upstream does. The image is read by index from the
-  stored item through `workspace.readTurnItemAsset` into the shared bounded image store, in place
-  of upstream's signed `tool-output-image` asset URL.
+  renders each with `ChatMarkdownAssetImage` from upstream's signed `tool-output-image` URL.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
@@ -846,47 +816,25 @@ listed here is drift to remove rather than fork behavior to keep.
   element captures, SnapShot (with its open question-draft tracker in `questionAttachments.ts`),
   upstream's large-paste-to-file folding, and remote icons. Draft file
   and video attachments preview from their in-memory bytes as on main: files open in
-  `files/AttachmentFilePreview.tsx` (upstream's viewer, with Save writing the in-memory bytes
-  instead of a signed-URL download) and videos in the gallery. A draft restored after a reload has no bytes, so it has no
-  preview. A context fragment pasted from another workspace
-  brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks,
-  unless this browser copied the fragment from an unsent draft: then upstream's
-  `copiedComposerAttachments.ts` supplies the draft's in-memory images and files.
+  `files/AttachmentFilePreview.tsx` and videos in the gallery. A draft restored after a reload has no bytes, so it has no
+  preview. A context fragment pasted from another workspace downloads its attachments from the
+  source workspace's signed asset URLs, as upstream does.
   A thread dropped from another workspace attaches its saved transcript (see Transport and RPC
   handlers). Images
   and files move through the gateway's Coder CLI transfer (see
   [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
-  the helper's advertised attachment capabilities, as upstream does. Upstream's `assetEnvironment` (`state/assets.ts`) is replaced by atom families
-  that read each image through the helper into the bounded image store and release it when the
-  atom unmounts. `assets/assetUrls.ts` keeps upstream's `useAssetUrlState`, `useAssetUrlRefresh`,
-  and `useAssetUrls` over them: a URL is the store's object URL, a refresh rereads the store
-  entry, a read waiting for room in the store is `Loading` with `deferred`, and
-  `useAssetUrlState` takes a `priority` option for the image the user opened. Upstream's asset
-  URL also carries an image's header size; `assetEnvironment.imageSize`, read through
-  `useAssetImageSize`, stands in for it. It reads the first `IMAGE_SIZE_PROBE_BYTES` of a workspace
-  image for the helper's header size, keeps the size the browser decodes for other formats and
-  resources, and outlives the bytes for `IMAGE_SIZE_IDLE_TTL_MS`, upstream's asset URL idle TTL.
-  Only images use
-  this layer. Workspace video and audio, Files PDFs and HTML, HTML renders, and MCP App documents
-  keep their own reads (`useProjectMedia`, `readTurnItemAsset`), where upstream uses the same
-  hooks, because each needs the whole file or the document text and a size an image store entry
-  does not hold. Those memory-only blobs never re-sign, so `FilePreviewPanel` passes no
-  `revision` to `MediaVideoPlayer` or `AudioPreview` (upstream's file-revision reload, #23106);
-  both components' revision handling is upstream's. Submitted images are read by id
-  (`AttachmentImageResource` carries the media type and size the read verifies). Reads start only once the workspace is connected, because cached
-  threads render before the helper is reachable. Rewind re-stages a message's images through the
-  same reads.
-  Sent file attachments keep upstream's preview and download actions; the helper reads them by
-  id (`workspace.readAttachmentFile`, bounded by the composer file limit) into memory, and the
-  right panel shows them in `files/SentAttachmentFilePreview.tsx` where upstream's
-  `FilePreviewPanel` loads a signed URL. Native app icons fall back to the tool glyph.
+  the helper's advertised attachment capabilities, as upstream does. Submitted images, sent
+  files, rewinds, and queued edits read through upstream's signed attachment URLs (see
+  [Media and document previews](#media-and-document-previews)), and the right panel previews a sent
+  file in upstream's `FilePreviewPanel`. Native app icons fall back to the tool glyph.
+  `attachmentUploadQueue.ts` carries upstream's `verifyPersistedAttachmentUpload` locally, because
+  client-runtime's attachment upload module is not carried.
   `WorkspaceEntryIcon.tsx`, `UserMessageContextChips.tsx`, the composer, and its attachment
   strip format sizes and limits with the web's `lib/attachmentDisplay.ts`, because
   client-runtime's attachment upload module is not carried.
   Upstream's v1 importer carries only messages, and upstream migration 063 drops the v1
   `projection_thread_activities` rows, so screenshots that pre-v2 conversations saved as
-  `artifacts` on v1 tool activities are not shown, as on upstream. `workspace.readScreenshotArtifact`
-  reads submitted image attachments only.
+  `artifacts` on v1 tool activities are not shown, as on upstream.
 - **Project actions.** The thread details panel, action editor, and Settings → Actions are
   upstream's. Coder deltas: repository actions come from the helper's validated `t3.json` read by
   project (`projects.getConfig`), which drops `iconPath` and script preview fields; the editor has
@@ -929,11 +877,10 @@ listed here is drift to remove rather than fork behavior to keep.
   and `ChatCanvas.test.tsx` covers only the details card inset below Find; the right panel keeps
   Coder's per-thread width storage instead of upstream's preview inline size. Pieces upstream
   moved out of `ChatView` carry the same cuts (each marked `Coder:`): `RightPanelSurfaceContent`
-  renders nothing for browser and device surfaces, previews sent attachments through
-  `SentAttachmentFilePreview`, passes the project id to `FilePreviewPanel`, and names merge
+  renders nothing for browser and device surfaces, passes the project id to `FilePreviewPanel`
+  (which a surface therefore needs), and names merge
   requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
-  confirmation; `useQueuedRunEdit` carries no preview annotations and previews only images the
-  helper reads; `useThreadLinkedPullRequest` names merge requests; `useSystemComposerBanners`
+  confirmation; `useQueuedRunEdit` carries no preview annotations; `useThreadLinkedPullRequest` names merge requests; `useSystemComposerBanners`
   shows only the offline or reconnecting banner, with no connection diagnosis, disconnect action,
   server-update notice, or auto-balanced machines; `useDraftEnvironmentRouting` keeps only the
   manual machine switch; `ChatView.logic.ts`'s send snapshot and title fallbacks and
@@ -956,27 +903,11 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Markdown.** `ChatMarkdown.tsx` and the modules upstream split from it (`chat/ChatMarkdownMedia.tsx`
   for images and videos, `chat/MarkdownFileLink.tsx` and its `.logic.ts` for file chips) are
   upstream's, with these differences (each marked `Coder:` in the files):
-  - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's body over
-    `useAssetUrlState` and `useAssetUrlRefresh` for `media-file` and `tool-output-image`
-    resources, without `fallbackSrc` or `originalUrl`. Upstream's `workspaceMutationId` refresh
-    rereads a Markdown file preview's images after an edit, waiting on the workspace's helper
-    connection where upstream waits on its prepared HTTP connection, and on `Loading` alone, since
-    the image store has no refreshing state. A workspace file
-    needs the thread root (`cwd`), which the helper verifies, and reads only near the viewport;
-    until it loads, a placeholder keeps its box (`useAssetImageSize`) and opens the gallery. Its
-    `inline-flex` wrapper is exactly its child's height, so once the size is known, the swap
-    never resizes its row.
-    Failed reads offer **Retry image**; with no signed asset there is no upstream "not found on
-    <host>" toast. Videos show a play card that reads the file when pressed.
-    Images in formats the helper does not read show "Unsupported image format" without a read,
-    and authored `id`s stay on workspace images.
-  - The gallery item (`ExpandedImagePreview.tsx`) is upstream's shape plus `projectImage`,
-    `projectVideo`, legacy `artifact`, `loading`, and `retry`. `resolveMarkdownMediaPreview`
-    returns helper sources rather than asset URLs. The dialog reads the selected image with
-    priority, the gallery also collects `[data-project-image]` wrappers so unloaded images stay
-    navigable, and byte actions use the blob the dialog shows. `wrapExpandedImageIndex` stays (upstream removed
-    it) because the fork's `ExpandedImageDialog` wraps gallery navigation with it. Timeline galleries are hosted by
-    `ChatView`, as on main.
+  - Workspace images and videos load from upstream's signed asset URLs (see
+    [Media and document previews](#media-and-document-previews)), without upstream's GitHub media
+    resource. A media file that is not found names the workspace and the checked path, where
+    upstream first checks its remote-open mode, because every workspace is remote. Timeline
+    galleries are hosted by `ChatView`, as on main.
   - There is no in-app browser, local editor, or file manager: `MarkdownFileLink` never receives
     `onOpen`, `onOpenInBrowser`, or `onReveal`, and the link context menu never offers the
     integrated browser. Without a primary action a chip opens only its copy menu.
@@ -991,14 +922,9 @@ listed here is drift to remove rather than fork behavior to keep.
   content search name the thread so the helper can verify the project root; reads return a
   revision that each write must match, and a rejected save offers **Reload and discard edits**;
   content search uses the helper's time-budgeted search (`projects.searchText`), showing its first
-  page; image, video, and audio previews read through the helper instead of signed asset URLs
-  (the image preview through `useAssetUrlState` with priority; a workspace mutation rereads an
-  open image, but video and audio reread only on retry or
-  reopen because each read moves the whole file); a draft names its project rather than a thread;
-  PDF and HTML previews read through the same helper media chunks, project files only (see
-  [Network and transfer constraints](#network-and-transfer-constraints)), and a PDF keeps the
-  built-in viewer's frame where upstream uses `<embed>`, which the gateway's `object-src 'none'`
-  blocks; there is no
+  page; a draft names its project rather than a thread; image, video, audio, PDF, and HTML
+  previews load from upstream's signed asset URLs, and HTML files are detected locally because
+  upstream's `isBrowserPreviewFile` lives with the in-app browser; there is no
   open-in-editor or reveal action, and the tree adds Copy path. Changed files in the Git actions
   dialog open in the Files surface, with repository-relative status paths mapped to the thread's
   folder; a file outside a subfolder project cannot be opened there.

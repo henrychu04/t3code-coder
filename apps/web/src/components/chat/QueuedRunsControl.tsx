@@ -18,11 +18,7 @@ import {
 } from "lucide-react";
 import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 
-import {
-  type AttachmentImageResource,
-  isAttachmentImageMimeType,
-  useAssetUrls,
-} from "../../assets/assetUrls";
+import { useAssetUrls } from "../../assets/assetUrls";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadProjection } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -54,22 +50,12 @@ export interface QueuedRunsControlHandle {
 
 type ThreadQueueProjection = Parameters<typeof deriveThreadQueueWorkflowState>[0];
 
-// Coder: the helper reads images by id and checks each one's declared media type.
-function queuedImageResources(
-  projection: ThreadQueueProjection | undefined,
-): AttachmentImageResource[] {
+function queuedImageResources(projection: ThreadQueueProjection | undefined) {
   if (!projection) return [];
   return deriveThreadQueueWorkflowState(projection).queuedRuns.flatMap(({ attachments }) =>
-    attachments.flatMap((attachment): AttachmentImageResource[] =>
-      attachment.type === "image" && isAttachmentImageMimeType(attachment.mimeType)
-        ? [
-            {
-              _tag: "attachment",
-              attachmentId: attachment.id,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-            },
-          ]
+    attachments.flatMap((attachment) =>
+      attachment.type === "image"
+        ? [{ _tag: "attachment" as const, attachmentId: attachment.id }]
         : [],
     ),
   );

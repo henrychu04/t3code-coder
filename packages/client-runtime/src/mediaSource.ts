@@ -1,4 +1,4 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { AssetResource, ThreadId } from "@t3tools/contracts";
 import { mediaMimeType, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 
 import {
@@ -16,15 +16,7 @@ import {
   type MediaReference,
 } from "./mediaReference.ts";
 
-/**
- * Main's `media-file` asset resource. Coder has no signed asset URLs: the browser reads this file
- * through the helper's bounded `projects.readImage` chunks instead.
- */
-export interface MediaSourceResource {
-  readonly _tag: "media-file";
-  readonly threadId: ThreadId;
-  readonly path: string;
-}
+export type MediaSourceResource = Extract<AssetResource, { readonly _tag: "media-file" }>;
 
 export type ResolvedMediaSource = {
   readonly kind: "image" | "video";

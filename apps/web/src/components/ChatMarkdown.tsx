@@ -1,5 +1,4 @@
-// Upstream's ChatMarkdown. Coder differences, each marked "Coder:" below: workspace media reads
-// through bounded helper stdio chunks instead of signed asset URLs; the in-app browser, local
+// Upstream's ChatMarkdown. Coder differences, each marked "Coder:" below: the in-app browser, local
 // editor and file-manager actions, and GitHub-authenticated media are omitted; file chips open
 // only project files in the Files surface; relative and non-web links stay inert; and merge
 // request links use GitLab-only matching. See docs/internals/coder-only.md.
@@ -15,6 +14,7 @@ import { resolveWorkspaceFilePath } from "@t3tools/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 import {
   CHAT_MARKDOWN_REMARK_PLUGINS,
@@ -42,12 +42,13 @@ import {
   TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
-import type {
-  EnvironmentId,
-  ServerConfig,
-  ScopedThreadRef,
-  ServerProviderSkill,
-  ThreadPullRequestKey,
+import {
+  AssetWorkspaceAssetNotFoundError,
+  type EnvironmentId,
+  type ServerConfig,
+  type ScopedThreadRef,
+  type ServerProviderSkill,
+  type ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import {
   codexArtifactTemplatePresentationLabel,
@@ -125,7 +126,8 @@ import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
-import { readEnvironmentScope } from "../state/session";
+import { assetEnvironment } from "../state/assets";
+import { readEnvironmentScope, readPreparedConnection } from "../state/session";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { projectEnvironment } from "../state/projects";
 import { filesystemEnvironment } from "../state/filesystem";
@@ -172,6 +174,8 @@ import {
   nodeToPlainText,
 } from "./chat/MarkdownCodeBlock.logic";
 import { reportMarkdownActionFailure } from "./chat/markdownActionFailure";
+
+const isAssetNotFoundError = Schema.is(AssetWorkspaceAssetNotFoundError);
 
 interface ChatMarkdownProps {
   /** Compact markdown transforms remove blocks before rendering inside a label. */
@@ -429,6 +433,10 @@ function useChatMarkdownState({
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Leaving the scope invalidates media requests still loading for it.
     [mediaScopeKey],
   );
+  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+    reportFailure: false,
+    refresh: true,
+  });
   const searchProjectEntries = useAtomQueryRunner(projectEnvironment.searchEntries, {
     reportFailure: false,
   });
@@ -441,7 +449,6 @@ function useChatMarkdownState({
   // Coder: the workspace owner holds every scope, and there is no in-app browser preview.
   const canOperateHost = true;
   const canOperatePreview = false;
-  // Coder: media resolves to a helper-read item rather than a signed asset URL.
   const openMarkdownMedia = (
     source: string,
     resolvedFilePath?: string,
@@ -453,6 +460,11 @@ function useChatMarkdownState({
       resolvedFilePath,
       cwd,
       threadRef,
+      // Read at click time: a reconnect replaces the prepared connection, and
+      // subscribing would hand every rendered markdown element a new context.
+      httpBaseUrl:
+        environmentId === null ? undefined : readPreparedConnection(environmentId)?.httpBaseUrl,
+      createAssetUrl,
       onOpenFile: threadRef
         ? (path) => useRightPanelStore.getState().openFile(threadRef, path)
         : undefined,
@@ -469,16 +481,27 @@ function useChatMarkdownState({
       },
       (error: unknown) => {
         if (mediaRequestId.current !== requestId) return;
-        // Coder: media reads through the helper, so there is no signed-asset not-found error
-        // naming a remote host and checked path.
+        let description =
+          error instanceof Error
+            ? error.message
+            : "The file could not be loaded. It may have been moved or deleted.";
+        if (
+          isAssetNotFoundError(error) &&
+          error.resource._tag === "media-file" &&
+          environmentId !== null
+        ) {
+          // The connection may resolve while the media lookup is pending.
+          const target = readPreparedConnection(environmentId)?.target ?? null;
+          // Coder: every workspace is remote, where upstream checks its remote-open mode.
+          if (target !== null) {
+            description = `The file was not found on ${target.label} at ${error.checkedPath ?? error.resource.path}.`;
+          }
+        }
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Media unavailable",
-            description:
-              error instanceof Error
-                ? error.message
-                : "The file could not be loaded. It may have been moved or deleted.",
+            description,
           }),
         );
       },
@@ -1200,10 +1223,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           copyMarkdown={copyMarkdown}
           srcFragment={markdownImageSourceFragment(classifiedSrc)}
           standalone={standalone}
-          className={className}
           style={authoredSizeStyle}
-          // Coder: keeps authored `id`s for fragment links, as the fork's helper images did.
-          imageProps={imageProps}
           workspaceRoot={cwd}
           workspaceMutationId={workspaceMutationId}
           onImageExpand={imageExpand}

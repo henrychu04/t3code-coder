@@ -13,9 +13,10 @@ import {
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Link } from "@tanstack/react-router";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
-import { workEntryViewedImagePath } from "@t3tools/client-runtime/work-log/presentation";
-import { ProjectImageLink } from "./ProjectImageLink";
-import { resolveMarkdownFileLinkMeta } from "../../markdown-links";
+import {
+  resolveViewedImageAsset,
+  workEntryViewedImagePath,
+} from "@t3tools/client-runtime/work-log/presentation";
 import {
   turnItemHasDetail,
   turnItemNeedsDetailFetch,
@@ -28,9 +29,10 @@ import {
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
+import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
 import { ChevronRightIcon, CircleAlertIcon, XIcon, RotateCcwIcon } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
-import { isAttachmentImageMimeType, useAssetUrls } from "../../assets/assetUrls";
+import { useAssetUrls } from "../../assets/assetUrls";
 import { useThreadShell } from "../../state/entities";
 import {
   threadReadLabelPrefix,
@@ -297,8 +299,10 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         : undefined;
   const viewedImage =
     viewedImagePath && threadRef
-      ? // Coder: viewed workspace images are read through the helper by project path.
-        resolveMarkdownFileLinkMeta(viewedImagePath, workspaceRoot)
+      ? resolveViewedImageAsset(viewedImagePath, {
+          threadId: threadRef.threadId,
+          workspaceRoot,
+        })
       : null;
   const canExpand =
     previewText.trim().length > 0 ||
@@ -497,16 +501,15 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     >
       {expanded && viewedImage && threadRef ? (
         <WorkLogDetails kind="media">
-          <ProjectImageLink
-            cwd={workspaceRoot}
-            threadRef={threadRef}
-            filePath={viewedImage.workspaceRelativePath ?? viewedImage.filePath}
+          <ChatMarkdownAssetImage
+            environmentId={threadRef.environmentId}
+            resource={viewedImage.resource}
+            alt={viewedImage.alt}
+            srcFragment={viewedImage.srcFragment}
+            workspaceRoot={workspaceRoot}
             maxHeightRem={16}
-            alt={viewedImage.basename}
             onImageExpand={onImageExpand}
-          >
-            {viewedImage.basename}
-          </ProjectImageLink>
+          />
         </WorkLogDetails>
       ) : null}
       {expanded && workEntry.questionAnswer ? (
@@ -559,23 +562,11 @@ function QuestionAnswerHistory({
 }) {
   const { activeThreadEnvironmentId } = use(TimelineRowCtx);
   const attachments = Object.values(answer.attachmentsByQuestionId).flat();
-  // Coder: only images are previewed; the helper checks their declared media type.
-  const resources = attachments.flatMap((attachment) =>
-    attachment.type === "image" && isAttachmentImageMimeType(attachment.mimeType)
-      ? [
-          {
-            _tag: "attachment" as const,
-            attachmentId: attachment.id,
-            mimeType: attachment.mimeType,
-            sizeBytes: attachment.sizeBytes,
-          },
-        ]
-      : [],
-  );
+  const resources = attachments.map((attachment) => ({
+    _tag: "attachment" as const,
+    attachmentId: attachment.id,
+  }));
   const urls = useAssetUrls(activeThreadEnvironmentId, resources);
-  const urlByAttachmentId = new Map(
-    resources.map((resource, index) => [resource.attachmentId, urls[index] ?? null] as const),
-  );
   return (
     <div className="ms-7 mt-2 space-y-2" onClick={stopRowToggle}>
       {[
@@ -598,7 +589,7 @@ function QuestionAnswerHistory({
           ) : null}
           <div className="flex flex-wrap gap-2">
             {(answer.attachmentsByQuestionId[questionId] ?? []).map((attachment) => {
-              const url = urlByAttachmentId.get(attachment.id) ?? null;
+              const url = urls[attachments.indexOf(attachment)];
               return (
                 <a
                   key={attachment.id}

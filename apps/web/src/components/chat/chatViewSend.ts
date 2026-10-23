@@ -39,10 +39,10 @@ import {
   cloneComposerImageForRetry,
   type ComposerSendSnapshot,
   readFileAsDataUrl,
+  prepareRevertedMessageAttachments,
   waitForRevertedMessage,
 } from "../ChatView.logic";
-import { readScreenshotBlob } from "../../lib/readScreenshotBlob";
-import { messageImageReferences } from "../../lib/submittedImageAttachments";
+import { readPreparedConnection } from "../../state/session";
 import { recallableComposerPrompt } from "./composerPromptHistory";
 
 // Kept per route so a send in flight, and the multiple-model selections, survive
@@ -162,7 +162,9 @@ export async function rewindToMessage(input: {
   readonly checkpoint: ReturnType<typeof findRevertCheckpoint>;
   readonly draftTarget: ScopedThreadRef | DraftId;
   readonly composerHasPendingAttachments: boolean;
-  readonly readImageChunk: Parameters<typeof readScreenshotBlob>[1];
+  readonly createAssetUrl: Parameters<
+    typeof prepareRevertedMessageAttachments
+  >[0]["createAssetUrl"];
   readonly revertThreadCheckpoint: (value: {
     environmentId: EnvironmentId;
     input: {
@@ -183,35 +185,22 @@ export async function rewindToMessage(input: {
     if (input.composerHasPendingAttachments) {
       throw new Error("Wait for attachments to finish preparing before rewinding.");
     }
+    const connection = readPreparedConnection(environmentId);
+    if (!connection) throw new Error("The environment is not connected.");
+    const files = await prepareRevertedMessageAttachments({
+      message,
+      environmentId,
+      httpBaseUrl: connection.httpBaseUrl,
+      createAssetUrl: input.createAssetUrl,
+    });
     const store = useComposerDraftStore.getState();
-    const imageReferences = messageImageReferences(message.attachments);
     const draft = store.getComposerDraft(draftTarget);
     if (
-      (draft?.images.length ?? 0) + (draft?.files.length ?? 0) + imageReferences.length >
+      (draft?.images.length ?? 0) + (draft?.files.length ?? 0) + files.length >
       PROVIDER_SEND_TURN_MAX_ATTACHMENTS
     ) {
       throw new Error("Make room for this message's attachments in the composer before rewinding.");
     }
-    // Coder: sent images are read back through the helper's bounded chunk reads, all at once
-    // as upstream fetches its asset URLs; a rewind cannot be cancelled, so nothing aborts them.
-    // File attachments live only in the workspace and are not downloaded, so only images
-    // return to the draft. Preview URLs are created only once every read has succeeded.
-    const signal = new AbortController().signal;
-    const files = await Promise.all(
-      imageReferences.map(async (image) => {
-        const blob = await readScreenshotBlob(image, input.readImageChunk, signal);
-        return new File([blob], image.name, { type: image.mimeType });
-      }),
-    );
-    const images = files.map((file): ComposerImageAttachment => ({
-      type: "image",
-      id: randomUUID(),
-      name: file.name,
-      mimeType: file.type,
-      sizeBytes: file.size,
-      previewUrl: URL.createObjectURL(file),
-      file,
-    }));
     const commandId = CommandId.make(randomUUID());
     await waitForRevertedMessage(input.routeThreadRef, input.turnCount, commandId, async () => {
       const result = await input.revertThreadCheckpoint({
@@ -237,7 +226,24 @@ export async function rewindToMessage(input: {
           ? `${currentPrompt}\n\n${restoredPrompt}`
           : restoredPrompt;
     store.setPrompt(draftTarget, nextPrompt);
+    const images: ComposerImageAttachment[] = [];
+    const restoredFiles: ComposerFileAttachment[] = [];
+    files.forEach((file, index) => {
+      const attachment = {
+        id: randomUUID(),
+        name: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        file,
+      };
+      if (message.attachments?.[index]?.type === "image") {
+        images.push({ ...attachment, type: "image", previewUrl: URL.createObjectURL(file) });
+      } else {
+        restoredFiles.push({ ...attachment, type: "file" });
+      }
+    });
     store.addImages(draftTarget, images, { allowDuplicates: true });
+    store.addFiles(draftTarget, restoredFiles, { allowDuplicates: true });
     return { error: null, prompt: nextPrompt };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to revert thread state." };

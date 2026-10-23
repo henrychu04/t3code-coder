@@ -26,10 +26,11 @@ import { useComposerDraftStore } from "../../composerDraftStore";
 import { threadEnvironment } from "../../state/threads";
 import { waitForThreadShell } from "../../state/entities";
 import { openRevertConfirm } from "./ChatOverlayHosts";
-import { projectEnvironment } from "../../state/projects";
+import { assetEnvironment } from "../../state/assets";
 import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { rewindToMessage } from "./chatViewSend";
 import { makeThreadErrorSetter } from "../ChatView.logic";
 interface TimelineRewindInput {
@@ -81,9 +82,9 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     setThreadError,
   } = input;
   const navigate = useNavigate();
-  // Coder: rewinding re-stages sent images from the helper's bounded reads.
-  const readRewindImage = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
+  const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
+    refresh: true,
   });
 
   const revertThreadCheckpoint = useOrchestrationCommand(threadEnvironment.revertCheckpoint, {
@@ -147,11 +148,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
       checkpoint: findRevertCheckpoint(serverProjection?.checkpoints ?? [], turnCount),
       draftTarget: composerDraftTarget,
       composerHasPendingAttachments: composerRef.current?.hasPendingAttachments() === true,
-      readImageChunk: async (readInput) => {
-        const result = await readRewindImage({ environmentId, input: readInput });
-        if (result._tag !== "Success") throw squashAtomCommandFailure(result);
-        return result.value;
-      },
+      createAssetUrl: createAttachmentAssetUrl,
       revertThreadCheckpoint,
     });
     useComposerDraftStore.setState((store) => {

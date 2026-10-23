@@ -28,6 +28,7 @@ const make = Effect.succeed(
       return {
         environmentId: target.environmentId,
         label: target.label,
+        httpBaseUrl: target.httpBaseUrl,
         socketUrl: primarySocketUrl(target.wsBaseUrl),
         target,
       } satisfies PreparedConnection;

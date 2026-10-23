@@ -1,6 +1,7 @@
 import type { ThreadStructure, ThreadStructureRuntime } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import {
+  type AssetResource,
   type OrchestrationV2Checkpoint,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2PlanArtifact,
@@ -41,14 +42,9 @@ import { threadRuntimeHasInterruptibleRun } from "@t3tools/client-runtime/state/
 import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
 
 import {
-  type AttachmentImageResource,
-  isAttachmentImageMimeType,
-} from "./assets/attachmentImageResource";
-import {
-  type ChatAttachment,
-  type ChatImageAttachment,
-  type ChatMessage,
   isImageAttachment,
+  type ChatAttachment,
+  type ChatMessage,
   type ProposedPlan,
   type SessionPhase,
   type TurnDiffSummary,
@@ -148,9 +144,6 @@ export type TimelineEntry = (
       readonly createdAt: string;
       readonly runId: RunId | null;
       readonly htmlRender: HtmlRenderReference;
-      /** Coder: the thread and item the helper reads the page through. */
-      readonly sourceThreadId: ThreadId;
-      readonly itemId: TurnItemId;
     }
   | {
       readonly id: string;
@@ -775,8 +768,6 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         createdAt,
         runId: item.runId,
         htmlRender,
-        sourceThreadId: row.sourceThreadId,
-        itemId: row.sourceItemId,
         ...attemptMetadata,
       });
       continue;
@@ -856,33 +847,22 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
   return entries;
 }
 
-type AttachmentResource = AttachmentImageResource;
+type AttachmentResource = Extract<AssetResource, { readonly _tag: "attachment" }>;
 const EMPTY_IMAGE_RESOURCES = Object.freeze<ReadonlyArray<AttachmentResource>>([]);
-
-// Coder: submitted images are read by id through the helper, which checks their media type.
-function attachmentImageResources(
-  attachments: ReadonlyMap<string, ChatImageAttachment>,
-): ReadonlyArray<AttachmentResource> {
-  if (attachments.size === 0) return EMPTY_IMAGE_RESOURCES;
-  return Array.from(attachments.values(), (attachment) => ({
-    _tag: "attachment" as const,
-    attachmentId: attachment.id,
-    mimeType: attachment.mimeType as AttachmentResource["mimeType"],
-    sizeBytes: attachment.sizeBytes,
-  }));
-}
 
 export function selectMessageImageResources(
   attachments: ChatMessage["attachments"],
 ): ReadonlyArray<AttachmentResource> {
-  const resources = new Map<string, ChatImageAttachment>();
+  const attachmentIds = new Set<string>();
   for (const attachment of attachments ?? []) {
     if (!isImageAttachment(attachment)) continue;
     const previewUrl = attachment.previewUrl;
     if (previewUrl?.startsWith("blob:") || previewUrl?.startsWith("data:")) continue;
-    if (isAttachmentImageMimeType(attachment.mimeType)) resources.set(attachment.id, attachment);
+    attachmentIds.add(attachment.id);
   }
-  return attachmentImageResources(resources);
+  return attachmentIds.size === 0
+    ? EMPTY_IMAGE_RESOURCES
+    : Array.from(attachmentIds, (attachmentId) => ({ _tag: "attachment", attachmentId }));
 }
 
 export function selectHandoffImageResources(
@@ -890,16 +870,16 @@ export function selectHandoffImageResources(
   handoffs: Readonly<Record<string, ReadonlyArray<string>>>,
 ): ReadonlyArray<AttachmentResource> {
   if (Object.keys(handoffs).length === 0) return EMPTY_IMAGE_RESOURCES;
-  const resources = new Map<string, ChatImageAttachment>();
+  const attachmentIds = new Set<string>();
   for (const message of messages ?? []) {
     if (message.role !== "user" || !handoffs[message.id]?.length) continue;
     for (const attachment of message.attachments ?? []) {
-      if (isImageAttachment(attachment) && isAttachmentImageMimeType(attachment.mimeType)) {
-        resources.set(attachment.id, attachment);
-      }
+      if (isImageAttachment(attachment)) attachmentIds.add(attachment.id);
     }
   }
-  return attachmentImageResources(resources);
+  return attachmentIds.size === 0
+    ? EMPTY_IMAGE_RESOURCES
+    : Array.from(attachmentIds, (attachmentId) => ({ _tag: "attachment", attachmentId }));
 }
 
 export function createMessageAttachmentPreviewProjector() {

@@ -1,4 +1,4 @@
-import type { OrchestrationV2TurnItem, ThreadId, TurnItemId } from "@t3tools/contracts";
+import type { AssetResource, OrchestrationV2TurnItem } from "@t3tools/contracts";
 import { toolOutputImageBlocks, toolOutputImages } from "@t3tools/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 
@@ -197,22 +197,9 @@ export function turnItemOutputText(item: OrchestrationV2TurnItem): string | null
   }
 }
 
-/**
- * An image a tool returned inline, by its order in the stored output.
- *
- * Coder: upstream's contracts call this the `tool-output-image` asset resource; the fork has no
- * asset contracts, so the reference is declared here.
- */
-export interface ToolOutputImageResource {
-  readonly _tag: "tool-output-image";
-  readonly threadId: ThreadId;
-  readonly itemId: TurnItemId;
-  readonly index: number;
-}
-
 export function turnItemOutputImages(
   item: OrchestrationV2TurnItem,
-): ReadonlyArray<ToolOutputImageResource> {
+): ReadonlyArray<Extract<AssetResource, { readonly _tag: "tool-output-image" }>> {
   if (item.type !== "dynamic_tool" || item.outputOmitted === true) return [];
   return toolOutputImages(item.output).map((_, index) => ({
     _tag: "tool-output-image",

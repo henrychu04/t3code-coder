@@ -5,7 +5,6 @@ import {
   type ComposerContextRecord,
   type EnvironmentId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  ScreenshotArtifactId,
 } from "@t3tools/contracts";
 import {
   type ComposerFileAttachment,
@@ -24,14 +23,14 @@ import {
   terminalContextRecord,
   terminalContextReference,
 } from "~/lib/composerContextRecords";
+import { assetEnvironment } from "~/state/assets";
 import { copiedComposerAttachmentFile } from "~/lib/copiedComposerAttachments";
 import { countQuestionAttachments, questionAttachmentDraftId } from "../../questionAttachments";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { pendingDraftWork } from "./pendingDraftWork";
 import { randomUUID } from "~/lib/utils";
-import { readScreenshotBlob } from "~/lib/readScreenshotBlob";
-import { projectEnvironment } from "~/state/projects";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { readPreparedConnection } from "~/state/session";
+import { resolveAssetUrl } from "~/assets/assetUrls";
 import { toKindScopedComposerContextId } from "@t3tools/shared/composerContextReferences";
 import { toastManager } from "../ui/toast";
 import {
@@ -39,7 +38,17 @@ import {
   uploadedContextRecordFromDraft,
 } from "../composerContextPresentation";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useStableCallback } from "../../hooks/useStableCallback";
+
+async function downloadAttachmentBlob(url: string): Promise<Blob | null> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    return response.ok ? await response.blob() : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Imports copied composer context (terminal output, review comments, annotations, threads,
@@ -82,9 +91,7 @@ export function useComposerContextImport(input: {
   );
   const addComposerDraftReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const addComposerDraftThreadContexts = useComposerDraftStore((store) => store.addThreadContexts);
-  const readSourceAttachment = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
-    reportFailure: false,
-  });
+  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, { reportFailure: false });
   const loadThreadTranscript = useAtomCommand(orchestrationEnvironment.threadTranscript, {
     reportFailure: false,
   });
@@ -113,14 +120,6 @@ export function useComposerContextImport(input: {
     );
   };
   const countReservedAttachmentsStable = useStableCallback(countReservedAttachments);
-  /**
-   * Bytes for a pasted image or file come from the copy this browser kept when it was copied
-   * from an unsent draft. Otherwise an image comes back through the source workspace helper's
-   * bounded attachment read (the client is the only party that can reach both). Either way it
-   * re-enters this draft as a normal composer attachment under a fresh id, staged again through
-   * the gateway. The pasted chip is rewritten to that id and reads as unresolved until the bytes
-   * land; a failed transfer says so and leaves the chip to remove.
-   */
   const runAttachmentImport = async (
     record: Extract<ComposerContextRecord, { kind: "image" | "file" }>,
     localId: string,
@@ -136,38 +135,26 @@ export function useComposerContextImport(input: {
     };
     let file = copiedComposerAttachmentFile(sourceEnvironmentId, record.attachmentId);
     if (!file) {
-      // Coder: the helper's bounded attachment read returns only signature-checked images, so a
-      // pasted file chip brings its bytes only from this browser's own copy.
-      if (
-        record.kind !== "image" ||
-        (record.mimeType !== "image/png" &&
-          record.mimeType !== "image/jpeg" &&
-          record.mimeType !== "image/webp")
-      ) {
-        fail("Only PNG, JPEG, and WebP images can be copied into another message.");
+      const sourceConnection = readPreparedConnection(sourceEnvironmentId);
+      if (!sourceConnection) {
+        fail("The environment it came from is not connected.");
         return;
       }
-      let blob: Blob;
-      try {
-        blob = await readScreenshotBlob(
-          {
-            id: ScreenshotArtifactId.make(record.attachmentId),
-            name: record.name,
-            mimeType: record.mimeType,
-            ...(record.sizeBytes > 0 ? { sizeBytes: record.sizeBytes } : {}),
-          },
-          async (input) => {
-            const result = await readSourceAttachment({
-              environmentId: sourceEnvironmentId,
-              input,
-            });
-            if (result._tag !== "Success") throw squashAtomCommandFailure(result);
-            return result.value;
-          },
-          AbortSignal.timeout(60_000),
-        );
-      } catch {
+      const result = await createAssetUrl({
+        environmentId: sourceEnvironmentId,
+        input: { resource: { _tag: "attachment", attachmentId: record.attachmentId } },
+      });
+      const url =
+        result._tag === "Success"
+          ? resolveAssetUrl(sourceConnection.httpBaseUrl, result.value.relativeUrl)
+          : null;
+      if (!url) {
         fail("The original attachment is no longer available.");
+        return;
+      }
+      const blob = await downloadAttachmentBlob(url);
+      if (!blob) {
+        fail("Downloading it from the source failed.");
         return;
       }
       file = new File([blob], record.name, { type: record.mimeType || blob.type });

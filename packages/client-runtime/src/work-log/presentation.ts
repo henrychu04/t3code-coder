@@ -1,17 +1,21 @@
 import {
   isOrchestrationV2WorkActive,
   isToolLifecycleItemType,
+  type AssetResource,
   type RuntimeItemStatus,
   type ToolActivitySource,
   type ToolActivitySurface,
   type ToolActivityIcon,
   type OrchestrationV2TurnItem,
+  type ThreadId,
 } from "@t3tools/contracts";
 import {
   resolveT3McpToolDefinition,
   type T3McpToolDefinition,
   type T3McpToolSummaryAction,
 } from "@t3tools/shared/t3McpToolPresentation";
+import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
+import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { classifyToolActivity } from "@t3tools/shared/toolActivity";
@@ -382,6 +386,35 @@ export function workEntryViewedImagePath(entry: WorkLogPresentationEntry): strin
     isWorkspaceImagePreviewPath(detail)
     ? detail
     : null;
+}
+
+export interface ViewedImageAsset {
+  readonly resource: Extract<AssetResource, { readonly _tag: "media-file" }>;
+  readonly alt: string;
+  readonly srcFragment: string;
+}
+
+export function resolveViewedImageAsset(
+  source: string,
+  input: {
+    readonly threadId: ThreadId;
+    readonly workspaceRoot?: string | null | undefined;
+  },
+): ViewedImageAsset | null {
+  const imageSource = classifyMarkdownImageSource(source, input.workspaceRoot ?? ".");
+  if (imageSource._tag !== "WorkspaceFile") return null;
+  const resolvedFilePath =
+    input.workspaceRoot == null && imageSource.path.startsWith("./")
+      ? imageSource.path.slice(2)
+      : imageSource.path;
+
+  const media = resolveMediaSource(source, {
+    threadId: input.threadId,
+    workspaceRoot: input.workspaceRoot,
+    resolvedFilePath,
+  });
+  if (media === null || media.access !== "environment") return null;
+  return { resource: media.resource, alt: media.name, srcFragment: media.srcFragment };
 }
 
 function toolGroupActionCount(

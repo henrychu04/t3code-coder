@@ -119,6 +119,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
       Option.some({
         environmentId: TARGET.environmentId,
         label: TARGET.label,
+        httpBaseUrl: TARGET.httpBaseUrl,
         socketUrl: TARGET.wsBaseUrl,
         target: TARGET,
       }),
