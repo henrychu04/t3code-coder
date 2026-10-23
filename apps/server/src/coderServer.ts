@@ -25,6 +25,7 @@ import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Sqlite.
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
+import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as ProviderRegistryLayer from "./provider/ProviderRegistry.ts";
@@ -190,8 +191,13 @@ const CoderRuntimeCoreLive = Layer.mergeAll(
 );
 
 const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
+  Layer.provideMerge(ProjectEnrichmentService.layer),
+  // As upstream: the asset route and project enrichment share one favicon resolver.
   Layer.provideMerge(
-    ProjectEnrichmentService.layer.pipe(Layer.provide(ProjectFaviconResolver.layer)),
+    ProjectFaviconResolver.layer.pipe(
+      Layer.provide(WorkspacePaths.layer),
+      Layer.provide(T3ProjectFileLoader.layer),
+    ),
   ),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(CoderEnvironment.layer),

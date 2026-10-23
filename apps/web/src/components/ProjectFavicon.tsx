@@ -1,9 +1,13 @@
-// Coder: project icons come from saved metadata or upstream's monograms; workspace favicon
-// image reads are not carried.
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { ProjectIconOverride } from "@t3tools/contracts";
+import {
+  getProjectFaviconResourceKey,
+  isProjectFaviconFallbackUrl,
+} from "@t3tools/shared/projectFavicon";
 import { FolderCodeIcon } from "lucide-react";
-import { createElement, lazy, Suspense, type ComponentType } from "react";
+import type { ComponentType } from "react";
+import { createElement, lazy, Suspense, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { projectFaviconUrlAtom } from "../state/assets";
 import { deriveProjectIdentity } from "../projectIdentity";
 import { projectIconColorClassName } from "../projectIconColors";
 import { ProjectMonogram } from "./ProjectMonogram";
@@ -24,50 +28,86 @@ function DynamicProjectIconFallback() {
   return <FolderCodeIcon className="size-full text-inherit" />;
 }
 
-/** Upstream metadata icons and monograms, without workspace image reads. */
-export type ProjectFaviconProject = Pick<EnvironmentProject, "title" | "workspaceRoot"> &
-  Partial<Pick<EnvironmentProject, "environmentId" | "id" | "projectIcon">>;
-export function ProjectIconGraphic({
-  icon,
-  className,
-}: {
-  icon: ProjectIconOverride;
-  className?: string | undefined;
-}) {
-  if (icon.kind === "monogram")
-    return <ProjectMonogram text={icon.text} color={icon.color} className={className} />;
-  if (icon.kind === "emoji")
-    return (
-      <ProjectFaviconFallback icon={FolderCodeIcon} emoji={icon.emoji} className={className} />
-    );
-  const colorClassName = projectIconColorClassName(icon.color);
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-flex size-3.5 shrink-0 items-center justify-center",
-        colorClassName,
-        className,
-      )}
-    >
-      <Suspense fallback={<DynamicProjectIconFallback />}>
-        <LucideProjectIcon name={icon.name} className={cn("size-full", colorClassName)} />
-      </Suspense>
-    </span>
-  );
-}
+// Every surface must pass the project record itself (or a snapshot spread from it)
+// so the saved title, favicon and icon override always travel together.
+export type ProjectFaviconProject = Pick<
+  EnvironmentProject,
+  "environmentId" | "workspaceRoot" | "title" | "faviconPath" | "projectIcon"
+>;
 export function ProjectFavicon(input: {
-  readonly project: ProjectFaviconProject | null | undefined;
-  readonly className?: string | undefined;
-  readonly fallbackIcon?: ComponentType<{ className?: string }>;
+  project: ProjectFaviconProject;
+  className?: string | undefined;
+  fallbackIcon?: ComponentType<{ className?: string }>;
 }) {
-  if (input.project?.projectIcon)
-    return <ProjectIconGraphic icon={input.project.projectIcon} className={input.className} />;
+  const { project } = input;
+  const src = useAtomValue(
+    projectFaviconUrlAtom({
+      environmentId: project.environmentId,
+      cwd: project.workspaceRoot,
+      faviconPath: project.faviconPath,
+    }),
+  );
+  if (project.projectIcon?.kind === "monogram") {
+    return (
+      <ProjectMonogram
+        text={project.projectIcon.text}
+        color={project.projectIcon.color}
+        className={input.className}
+      />
+    );
+  }
+  if (project.projectIcon?.kind === "emoji") {
+    return (
+      <ProjectFaviconFallback
+        className={input.className}
+        icon={FolderCodeIcon}
+        emoji={project.projectIcon.emoji}
+      />
+    );
+  }
+  if (project.projectIcon?.kind === "lucide") {
+    const colorClassName = projectIconColorClassName(project.projectIcon.color);
+    const iconClassName = cn(
+      "inline-flex size-3.5 shrink-0 items-center justify-center",
+      colorClassName,
+      input.className,
+    );
+    return (
+      <span aria-hidden="true" className={iconClassName}>
+        <Suspense fallback={<DynamicProjectIconFallback />}>
+          <LucideProjectIcon
+            name={project.projectIcon.name}
+            className={cn("size-full", colorClassName)}
+          />
+        </Suspense>
+      </span>
+    );
+  }
+  const FallbackIcon = input.fallbackIcon ?? FolderCodeIcon;
+
+  if (!src || isProjectFaviconFallbackUrl(src)) {
+    return (
+      <ProjectFaviconFallback
+        className={input.className}
+        icon={FallbackIcon}
+        projectName={project.title}
+      />
+    );
+  }
+
+  const cacheKey = getProjectFaviconResourceKey(
+    project.environmentId,
+    project.workspaceRoot,
+    project.faviconPath,
+  );
+
   return (
-    <ProjectFaviconFallback
-      icon={input.fallbackIcon ?? FolderCodeIcon}
+    <ProjectFaviconImage
+      key={cacheKey}
+      src={src}
       className={input.className}
-      {...(!input.fallbackIcon && input.project ? { projectName: input.project.title } : {})}
+      fallbackIcon={FallbackIcon}
+      fallbackProjectName={project.title}
     />
   );
 }
@@ -105,4 +145,55 @@ function ProjectFaviconFallback({
   }
 
   return <Icon className={cn("size-3.5 shrink-0 text-icon-muted", className)} />;
+}
+
+function ProjectFaviconImage({
+  src,
+  className,
+  fallbackIcon: FallbackIcon,
+  fallbackProjectName,
+}: {
+  readonly src: string;
+  readonly className?: string | undefined;
+  readonly fallbackIcon: ComponentType<{ className?: string }>;
+  readonly fallbackProjectName?: string | undefined;
+}) {
+  const [displayedSrc, setDisplayedSrc] = useState<string | null>(() =>
+    src.startsWith("data:image/") ? src : null,
+  );
+  const isLoading = displayedSrc !== src;
+  const handleLoadError = (failedSrc: string) => {
+    setDisplayedSrc((currentSrc) => (currentSrc === failedSrc ? null : currentSrc));
+  };
+
+  return (
+    <>
+      {displayedSrc === null ? (
+        <ProjectFaviconFallback
+          className={className}
+          icon={FallbackIcon}
+          projectName={fallbackProjectName}
+        />
+      ) : null}
+      {displayedSrc ? (
+        <img
+          src={displayedSrc}
+          alt=""
+          className={cn("size-3.5 shrink-0 rounded-[25%] object-contain", className)}
+          onError={() => handleLoadError(displayedSrc)}
+        />
+      ) : null}
+      {isLoading ? (
+        <img
+          src={src}
+          alt=""
+          className="hidden"
+          onLoad={() => {
+            setDisplayedSrc(src);
+          }}
+          onError={() => handleLoadError(src)}
+        />
+      ) : null}
+    </>
+  );
 }
