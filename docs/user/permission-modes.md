@@ -23,6 +23,8 @@ a question.
 
 Claude can still ask in **Full access** when its settings disable bypass permissions or require
 approval for an action.
+While a Claude approval is pending, type a text reply to decline that request and give feedback
+directly to the agent that asked, including a subagent. Other pending requests stay unanswered.
 
 Approvals appear inline in the conversation. Approve or reject one and the agent continues from
 there.

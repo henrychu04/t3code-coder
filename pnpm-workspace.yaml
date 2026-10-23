@@ -68,6 +68,16 @@ minimumReleaseAgeExclude:
   - pele@1.8.0
 
 overrides:
+  # Pin every patched package, including transitive dependencies, so lockfile-free
+  # release installs cannot drift past the patch. Update these with patchedDependencies.
+  # Coder: only the patched packages the fork carries.
+  mdast-util-math: 3.0.0
+  micromark-extension-llm-math: 3.1.0
+  "@ff-labs/fff-node": 0.11.0
+  "@legendapp/list": 3.3.5
+  "@pierre/diffs": 1.5.2
+  node-pty: 1.2.0-beta.15
+  # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "1.8.0"
   "@effect/atom-react": "catalog:"
   "@effect/platform-node": "catalog:"

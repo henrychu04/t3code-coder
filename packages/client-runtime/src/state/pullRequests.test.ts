@@ -405,6 +405,56 @@ it.effect("shares close, reopen, and merge with an untouched client's mounted PR
   ),
 );
 
+it.effect("shares checks reads across reference property order", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let reads = 0;
+      const client = {
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+        [WS_METHODS.pullRequestsChecks]: () =>
+          Effect.sync(() => {
+            reads += 1;
+            return { state: "open", checks: [], observedAt: 1_000 };
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const projectId = ProjectId.make("project-1");
+      const row = atoms.checks({
+        environmentId: TARGET.environmentId,
+        input: { host: "github.com", repository: "acme/web", number: 1, projectId },
+      });
+      const panel = atoms.checks({
+        environmentId: TARGET.environmentId,
+        input: { projectId, host: "github.com", repository: "acme/web", number: 1 },
+      });
+      yield* AtomRegistry.getResult(registry, row);
+      yield* AtomRegistry.getResult(registry, panel);
+      expect(reads).toBe(1);
+    }),
+  ),
+);
+
+it.effect("keeps live detail reads separate from reads that allow stale data", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const client = {
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+        [WS_METHODS.pullRequestsDetail]: (input: { allowStale?: boolean }) =>
+          Effect.succeed({ title: input.allowStale === false ? "latest checks" : "cached checks" }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const target = {
+        environmentId: TARGET.environmentId,
+        input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
+      };
+      const cached = atoms.detail(target);
+      const live = atoms.detail({ ...target, input: { ...target.input, allowStale: false } });
+      expect((yield* AtomRegistry.getResult(registry, cached)).title).toBe("cached checks");
+      expect((yield* AtomRegistry.getResult(registry, live)).title).toBe("latest checks");
+    }),
+  ),
+);
+
 it.effect("updates cached labels after successful edits without rereading the host", () =>
   Effect.scoped(
     Effect.gen(function* () {

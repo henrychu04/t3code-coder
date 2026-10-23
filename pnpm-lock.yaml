@@ -167,12 +167,6 @@ catalogs:
     '@effect/openapi-generator':
       specifier: 4.0.5
       version: 4.0.5
-    '@legendapp/list':
-      specifier: 3.3.5
-      version: 3.3.5
-    '@pierre/diffs':
-      specifier: 1.5.2
-      version: 1.5.2
     '@types/react':
       specifier: ~19.3.0
       version: 19.3.0
@@ -223,6 +217,12 @@ catalogs:
       version: 11.0.5
 
 overrides:
+  mdast-util-math: 3.0.0
+  micromark-extension-llm-math: 3.1.0
+  '@ff-labs/fff-node': 0.11.0
+  '@legendapp/list': 3.3.5
+  '@pierre/diffs': 1.5.2
+  node-pty: 1.2.0-beta.15
   '@exodus/bytes>@noble/hashes': 1.8.0
   '@effect/atom-react': 4.0.5
   '@effect/platform-node': 4.0.5
@@ -427,10 +427,10 @@ importers:
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)(react@19.3.0)(scheduler@0.28.0)
       '@legendapp/list':
-        specifier: 'catalog:'
+        specifier: 3.3.5
         version: 3.3.5(patch_hash=dbfb6dbb29c64bf6a8d40e032f78dd6a14d235c6cc3efbd89da981de3869cca5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/diffs':
-        specifier: 'catalog:'
+        specifier: 1.5.2
         version: 1.5.2(patch_hash=6fcc8c203dd8f15afa2f138e8e22f59724c3ba07e7d38ca13e18e0bdc24d01ba)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/trees':
         specifier: 1.0.0-beta.6
@@ -629,7 +629,7 @@ importers:
   packages/client-runtime:
     dependencies:
       '@pierre/diffs':
-        specifier: 'catalog:'
+        specifier: 1.5.2
         version: 1.5.2(patch_hash=6fcc8c203dd8f15afa2f138e8e22f59724c3ba07e7d38ca13e18e0bdc24d01ba)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@t3tools/contracts':
         specifier: workspace:*

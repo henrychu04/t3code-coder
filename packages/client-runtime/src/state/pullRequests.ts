@@ -25,6 +25,26 @@ import { requestGuarded } from "../rpc/client.ts";
 
 const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 
+// Coder: no `expectedAccountId`; the contract carries no cross-environment routing.
+function normalizePullRequestQuery<A>(
+  query: (target: { readonly environmentId: EnvironmentId; readonly input: PullRequestRef }) => A,
+) {
+  return ({
+    environmentId,
+    input: { projectId, host, repository, number, allowStale },
+  }: Parameters<typeof query>[0]) =>
+    query({
+      environmentId,
+      input: {
+        projectId,
+        ...(host === undefined ? {} : { host }),
+        repository,
+        number,
+        ...(allowStale === undefined ? {} : { allowStale }),
+      },
+    });
+}
+
 function writableQueryFamily<A, E>(
   family: (target: {
     readonly environmentId: EnvironmentId;
@@ -47,16 +67,7 @@ function writableQueryFamily<A, E>(
       (refresh) => refresh(source),
     ).pipe(Atom.setIdleTTL(5 * 60_000)),
   );
-  return ({
-    environmentId,
-    input: { projectId, host, repository, number },
-  }: Parameters<typeof family>[0]) =>
-    writable(
-      family({
-        environmentId,
-        input: { projectId, ...(host === undefined ? {} : { host }), repository, number },
-      }),
-    );
+  return normalizePullRequestQuery((target) => writable(family(target)));
 }
 
 /** Restart pre-mutation reads before patching so they cannot restore stale values. */
@@ -254,12 +265,14 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     }),
     detail,
     preview,
-    checks: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:pull-requests:checks",
-      tag: WS_METHODS.pullRequestsChecks,
-      staleTimeMs: 45_000,
-      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
-    }),
+    checks: normalizePullRequestQuery(
+      createEnvironmentRpcQueryAtomFamily(runtime, {
+        label: "environment-data:pull-requests:checks",
+        tag: WS_METHODS.pullRequestsChecks,
+        staleTimeMs: 45_000,
+        refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+      }),
+    ),
     activity,
     threadComments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:thread-comments",
