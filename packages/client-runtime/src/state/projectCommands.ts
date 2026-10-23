@@ -114,7 +114,7 @@ export function createProjectEnvironmentAtoms<R, E>(
             ),
         ),
     }),
-    // Coder: helper-only project config, content search, directory, and media reads.
+    // Coder: helper-only project config and directory reads.
     getConfig: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:config",
       tag: WS_METHODS.projectsGetConfig,
@@ -130,11 +130,6 @@ export function createProjectEnvironmentAtoms<R, E>(
           request(WS_METHODS.projectsSearchEntries, input),
           (result, isCurrent) => fileMetadata.rememberEntries(input.cwd, result.entries, isCurrent),
         ),
-    }),
-    searchText: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:projects:search-text",
-      tag: WS_METHODS.projectsSearchText,
-      staleTimeMs: 5_000,
     }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
@@ -241,17 +236,6 @@ export function createProjectEnvironmentAtoms<R, E>(
           for (const path of writtenFilePaths(input, result))
             fileMetadata.refreshPath(environmentId, path, registry);
         }),
-    }),
-    // Coder: a new file for upstream's "Save to workspace"; existing files go through writeFile.
-    createFile: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:projects:create-file",
-      tag: WS_METHODS.projectsCreateFile,
-      scheduler: fileScheduler,
-      concurrency: {
-        mode: "serial",
-        key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.cwd, input.relativePath]),
-      },
     }),
   };
 }

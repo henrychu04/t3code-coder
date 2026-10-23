@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectEntry, ProjectFilesOwner } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { useEffect, useRef, useState } from "react";
@@ -6,12 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { projectEnvironment } from "~/state/projects";
 
-// Coder: listings name the owner whose project root the helper verifies.
-export function useDirectoryEntries(
-  environmentId: EnvironmentId,
-  owner: ProjectFilesOwner,
-  cwd: string,
-) {
+export function useDirectoryEntries(environmentId: EnvironmentId, cwd: string) {
   const [directories, setDirectories] = useState(new Map<string, readonly ProjectEntry[]>());
   const [errors, setErrors] = useState(new Map<string, string>());
   // The root starts counted as loading because the mount effect requests it.
@@ -30,10 +25,7 @@ export function useDirectoryEntries(
   const startRequest = (directoryPath: string, refresh: boolean): Promise<void> => {
     loaded.current.add(directoryPath);
     requested.current.add(directoryPath);
-    const atom = projectEnvironment.listEntries({
-      environmentId,
-      input: { ...owner, cwd, directoryPath },
-    });
+    const atom = projectEnvironment.listEntries({ environmentId, input: { cwd, directoryPath } });
     const request = (async () => {
       if (running.current >= 4) await new Promise<void>((resolve) => waiting.current.push(resolve));
       else running.current++;

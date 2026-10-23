@@ -1,6 +1,5 @@
-// Upstream's RightPanelSurfaceContent. Coder: there are no browser or device surfaces, file
-// surfaces name their owner for the helper's root check, and pull request copy names GitLab
-// merge requests. See docs/internals/coder-only.md.
+// Upstream's RightPanelSurfaceContent. Coder: there are no browser or device surfaces, and pull
+// request copy names GitLab merge requests. See docs/internals/coder-only.md.
 import type {
   EnvironmentId,
   ProjectId,
@@ -43,8 +42,6 @@ export interface RightPanelPullRequestProps {
 }
 
 export interface RightPanelFileProps {
-  // Coder: a draft names its project so the helper can verify the root it reads.
-  readonly projectId: ProjectId | null;
   readonly projectName: string | null;
   readonly workspaceRoot: string | undefined;
   readonly pendingSurfaceIds: ReadonlySet<string>;
@@ -89,7 +86,6 @@ export function RightPanelSurfaceContent(props: {
             key={scopedThreadKey(threadRef)}
             mode="embedded"
             composerDraftTarget={props.composerDraftTarget}
-            onOpenFile={props.files.onOpenFile}
             workspaceMutationId={props.workspaceMutationId}
             visible={visible}
           />
@@ -151,12 +147,7 @@ export function RightPanelSurfaceContent(props: {
     case "file": {
       const files = props.files;
       const attachment = surface.kind === "file" ? surface.attachment : undefined;
-      // Coder: Files requests name the project, so a surface needs one.
-      if (
-        files.projectId === null ||
-        (!attachment && (files.projectName === null || !files.workspaceRoot))
-      )
-        return null;
+      if (!attachment && (files.projectName === null || !files.workspaceRoot)) return null;
       return (
         <Suspense fallback={null}>
           <FilePreviewPanel
@@ -167,7 +158,6 @@ export function RightPanelSurfaceContent(props: {
             cwd={files.workspaceRoot ?? ""}
             projectName={files.projectName ?? ""}
             threadRef={threadRef}
-            projectId={files.projectId}
             composerDraftTarget={props.composerDraftTarget}
             relativePath={surface.kind === "file" ? surface.relativePath : null}
             {...(attachment ? { attachment } : {})}

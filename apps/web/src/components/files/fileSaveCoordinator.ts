@@ -6,10 +6,7 @@ export interface FileSaveCoordinatorOptions<A, E> {
   readonly persist: (contents: string) => Promise<AtomCommandResult<A, E>>;
   readonly onPendingChange: (pending: boolean) => void;
   /** Return false when another editor has newer unsaved contents. */
-  // Coder: the write result carries the file's new revision for stale-write detection.
-  readonly onConfirmed: (contents: string, result: A) => boolean | void;
-  // Coder: a rejected write (for example a stale revision) lets the surface offer a reload.
-  readonly onFailed?: () => void;
+  readonly onConfirmed: (contents: string) => boolean | void;
 }
 
 export class FileSaveCoordinator<A = unknown, E = unknown> {
@@ -66,9 +63,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     let confirmed = false;
     if (succeeded) {
       this.confirmedRevision = revision;
-      confirmed = this.options.onConfirmed(contents, result.value) !== false;
-    } else {
-      this.options.onFailed?.();
+      confirmed = this.options.onConfirmed(contents) !== false;
     }
 
     this.saving = false;

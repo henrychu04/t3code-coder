@@ -1,101 +1,86 @@
-import { splitPathAndPosition } from "./terminal-links";
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useRightPanelStore } from "./rightPanelStore";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { ContextMenuItem } from "./localApiTypes";
-import { readLocalApi } from "./localApi";
-import { useCopyToClipboard } from "./hooks/useCopyToClipboard";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 
+import { resolveDiffPathForWorkspace } from "./diffFileActions";
+import { useCopyToClipboard } from "./hooks/useCopyToClipboard";
+import { readLocalApi } from "./localApi";
+import type { ContextMenuItem } from "./localApiTypes";
+import { useRightPanelStore } from "./rightPanelStore";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+
+// Coder: upstream's reveal, open, and open-with actions need a local editor or file manager, so
+// the menu opens the file in the Files surface and copies its path instead.
 export type FileContextMenuAction = "copy-path" | "open";
+
 export interface FileContextMenuTarget {
   readonly environmentId: EnvironmentId | null;
+  /** Repo- or workspace-relative file path, as shown in diffs. */
   readonly filePath: string;
   readonly workspaceRoot: string | undefined;
   readonly repositoryRoot?: string | undefined;
 }
 
-/** Diff paths are repository-relative; the clipboard exposes project-relative paths only. */
-export function resolveFileContextMenuRelativePath(target: FileContextMenuTarget): string | null {
-  const root = target.workspaceRoot?.replace(/\/+$/, "");
-  const path = target.filePath;
-  if (!root || !root.startsWith("/") || !path || /[\0\\]/.test(path) || /^[A-Za-z]:/.test(path))
-    return null;
-  if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return null;
-  const repositoryRoot = target.repositoryRoot?.replace(/\/+$/, "") ?? root;
-  const absolute = `${repositoryRoot}/${path}`;
-  if (!absolute.startsWith(`${root}/`)) return null;
-  const relative = absolute.slice(root.length + 1);
-  return relative.split("/").some((part) => !part || part === "." || part === "..")
-    ? null
-    : relative;
-}
-
-/** Composer mentions are explicit file paths, so extensionless names are valid too. */
-export function resolveComposerFileTarget(filePath: string, workspaceRoot: string | null) {
-  const root = workspaceRoot?.replace(/\/+$/, "");
-  if (!root) return null;
-  const { path, line } = splitPathAndPosition(filePath);
-  const relative = path.startsWith(`${root}/`)
-    ? path.slice(root.length + 1)
-    : path.replace(/^\.\//, "");
-  const relativePath = resolveFileContextMenuRelativePath({
-    environmentId: null,
-    workspaceRoot: root,
-    filePath: relative,
+export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget): string | null {
+  const workspaceFilePath = resolveDiffPathForWorkspace({
+    filePath: target.filePath,
+    workspaceRoot: target.workspaceRoot,
+    repositoryRoot: target.repositoryRoot,
   });
-  if (!relativePath) return null;
-  const lineNumber = line ? Number.parseInt(line, 10) : undefined;
-  return { relativePath, line: lineNumber };
+  if (workspaceFilePath === null) return null;
+  if (target.workspaceRoot === undefined) {
+    return workspaceFilePath.startsWith("/") || /^[a-zA-Z]:/.test(workspaceFilePath)
+      ? workspaceFilePath
+      : null;
+  }
+  return resolvePathLinkTarget(workspaceFilePath, target.workspaceRoot);
 }
 
-export function buildFileContextMenuItems(
+function buildFileContextMenuItems(
   target: FileContextMenuTarget,
   canOpen = false,
 ): readonly ContextMenuItem<FileContextMenuAction>[] {
-  return resolveFileContextMenuRelativePath(target) === null
-    ? []
-    : [
-        ...(canOpen
-          ? [{ id: "open" as const, label: "Open in Files", icon: "file" as const }]
-          : []),
-        { id: "copy-path", label: "Copy path", icon: "copy" },
-      ];
+  if (resolveFileContextMenuAbsolutePath(target) === null) return [];
+  return [
+    ...(canOpen ? [{ id: "open" as const, label: "Open in Files", icon: "file" as const }] : []),
+    { id: "copy-path", label: "Copy path", icon: "copy" },
+  ];
 }
 
+export function useFileContextMenu(_environmentId: EnvironmentId | null) {
+  const { copyToClipboard } = useCopyToClipboard({ target: "path" });
+  return {
+    buildItems: (target: FileContextMenuTarget) => buildFileContextMenuItems(target),
+    activate: async (action: FileContextMenuAction, target: FileContextMenuTarget) => {
+      const absolutePath = resolveFileContextMenuAbsolutePath(target);
+      if (action === "copy-path" && absolutePath) copyToClipboard(absolutePath, undefined);
+    },
+  };
+}
+
+// Coder: the thread, when given, lets the menu open the file in its Files surface.
 export function useFileContextMenuHandler(
   environmentId: EnvironmentId | null,
   threadRef?: ScopedThreadRef | null,
 ) {
-  const { copyToClipboard } = useCopyToClipboard();
+  const contextMenu = useFileContextMenu(environmentId);
   return (target: FileContextMenuTarget, event?: { clientX: number; clientY: number }) => {
-    if (environmentId === null || target.environmentId !== environmentId) return;
-    const path = resolveFileContextMenuRelativePath(target);
     const api = readLocalApi();
-    if (!path || !api) return;
+    const canOpen = threadRef != null && threadRef.environmentId === environmentId;
+    const items = buildFileContextMenuItems(target, canOpen);
+    if (environmentId === null || items.length === 0 || api === undefined) return;
     void api.contextMenu
-      .show(
-        buildFileContextMenuItems(target, threadRef?.environmentId === environmentId),
-        event ? { x: event.clientX, y: event.clientY } : undefined,
-      )
-      .then((action) => {
-        if (action === "open" && threadRef?.environmentId === environmentId)
-          useRightPanelStore.getState().openFile(threadRef, path);
-        if (action === "copy-path") copyToClipboard(path, undefined);
+      .show(items, event ? { x: event.clientX, y: event.clientY } : undefined)
+      .then((clicked) => {
+        if (clicked === "open" && canOpen) {
+          const workspaceFilePath = resolveDiffPathForWorkspace({
+            filePath: target.filePath,
+            workspaceRoot: target.workspaceRoot,
+            repositoryRoot: target.repositoryRoot,
+          });
+          if (workspaceFilePath)
+            useRightPanelStore.getState().openFile(threadRef, workspaceFilePath);
+          return;
+        }
+        if (clicked === "copy-path") void contextMenu.activate(clicked, target);
       });
-  };
-}
-
-/**
- * Coder: the file tree's file actions. Upstream's reveal and open-with-editor actions need a
- * local editor or file manager, so the only action is copying the project-relative path.
- */
-export function useFileContextMenu(_environmentId: EnvironmentId | null) {
-  const { copyToClipboard } = useCopyToClipboard({ target: "project-relative path" });
-  return {
-    buildItems: (target: FileContextMenuTarget) => buildFileContextMenuItems(target),
-    activate: async (action: FileContextMenuAction, target: FileContextMenuTarget) => {
-      const relativePath = resolveFileContextMenuRelativePath(target);
-      if (action === "copy-path" && relativePath) copyToClipboard(relativePath, undefined);
-    },
   };
 }

@@ -2823,7 +2823,6 @@ export default function ChatView(props: ChatViewProps) {
             : undefined,
       }}
       files={{
-        projectId: activeProject?.id ?? null,
         projectName: activeProject?.title ?? null,
         workspaceRoot: activeWorkspaceRoot,
         pendingSurfaceIds: pendingFileSurfaceIds,

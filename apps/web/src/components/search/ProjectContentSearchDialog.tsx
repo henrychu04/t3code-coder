@@ -117,8 +117,6 @@ function OpenContentSearchDialog(props: {
 
   const search = useProjectContentSearch({
     environmentId: target.environmentId,
-    // Coder: the helper verifies that the project root belongs to this thread.
-    threadId: target.threadRef.threadId,
     cwd: target.cwd,
     query,
     caseSensitive,

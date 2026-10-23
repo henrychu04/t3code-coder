@@ -1,6 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
-import type { EnvironmentId, ProjectFilesOwner } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { ArrowLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -34,8 +34,6 @@ import { useProjectEntriesQuery } from "./projectFilesQueryState";
 interface FileBreadcrumbsProps {
   readonly cwd: string;
   readonly environmentId: EnvironmentId;
-  // Coder: listings name the owner whose project root the helper verifies.
-  readonly owner: ProjectFilesOwner;
   /** Moves the browser to a folder crumb; `""` is the workspace root. */
   readonly onNavigateFolder: (relativePath: string) => void;
   readonly onOpenFile: (relativePath: string) => void;
@@ -80,8 +78,6 @@ function BreadcrumbMenuContent(props: {
   readonly currentFilePath: string;
   readonly directoryPath: string;
   readonly environmentId: EnvironmentId;
-  // Coder: listings name the owner whose project root the helper verifies.
-  readonly owner: ProjectFilesOwner;
   readonly onDirectoryChange: (path: string) => void;
   readonly onOpenChange: (open: boolean) => void;
   readonly onOpenFile: (path: string) => void;
@@ -89,12 +85,7 @@ function BreadcrumbMenuContent(props: {
   readonly rootPath: string;
   readonly workspaceMutationId: string | null;
 }) {
-  const entriesQuery = useProjectEntriesQuery(
-    props.environmentId,
-    props.owner,
-    props.cwd,
-    props.directoryPath,
-  );
+  const entriesQuery = useProjectEntriesQuery(props.environmentId, props.cwd, props.directoryPath);
   useWorkspaceMutationRefresh({
     mutationId: props.workspaceMutationId,
     refresh: entriesQuery.refresh,
@@ -263,7 +254,6 @@ function FolderContentsMenu(props: FileBreadcrumbsProps & { readonly crumb: File
           currentFilePath={props.relativePath}
           directoryPath={directoryPath}
           environmentId={props.environmentId}
-          owner={props.owner}
           onDirectoryChange={setDirectoryPath}
           onOpenChange={handleOpenChange}
           onOpenFile={props.onOpenFile}

@@ -4,7 +4,6 @@ import {
   type ProjectListEntriesResult,
   ProjectReadFileError,
   type ProjectReadFileResult,
-  type ProjectFilesOwner,
   T3_PROJECT_FILE_NAME,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -55,30 +54,25 @@ interface ProjectFileQueryState extends ProjectQueryState<ProjectReadFileResult>
   readonly isNotFile: boolean;
 }
 
-// Coder: the helper verifies the project root against the request owner (a persisted thread, or a
-// draft's project), so every project file read and listing names its owner.
 function getProjectEntriesQueryAtom(
   environmentId: EnvironmentId,
-  owner: ProjectFilesOwner,
   cwd: string,
   directoryPath?: string,
 ) {
   return projectEnvironment.listEntries({
     environmentId,
-    input: { ...owner, cwd, ...(directoryPath !== undefined ? { directoryPath } : {}) },
+    input: { cwd, ...(directoryPath !== undefined ? { directoryPath } : {}) },
   });
 }
 
 export function getProjectFileQueryAtom(
   environmentId: EnvironmentId,
-  owner: ProjectFilesOwner,
   cwd: string,
   relativePath: string | null,
 ) {
   return projectEnvironment.readFile({
     environmentId,
     input: {
-      ...owner,
       cwd,
       relativePath: relativePath ?? EMPTY_PROJECT_FILE_PATH,
       ...(relativePath === T3_PROJECT_FILE_NAME ? { allowMissing: true } : {}),
@@ -86,13 +80,11 @@ export function getProjectFileQueryAtom(
   });
 }
 
-// Coder: an in-app edit keeps the revision it was based on, which the next write must match.
 export function setProjectFileQueryData(
   environmentId: EnvironmentId,
   cwd: string,
   relativePath: string,
   contents: string,
-  revision: string,
 ): void {
   const atom = optimisticFileAtom(environmentId, cwd, relativePath);
   if (!unsavedFileMounts.has(atom)) {
@@ -105,7 +97,6 @@ export function setProjectFileQueryData(
       contents,
       byteLength: new TextEncoder().encode(contents).byteLength,
       truncated: false,
-      revision,
     },
   });
 }
@@ -120,15 +111,12 @@ export function getOptimisticProjectFileQueryData(
 
 export function getProjectFileContents(
   environmentId: EnvironmentId,
-  owner: ProjectFilesOwner,
   cwd: string,
   relativePath: string,
 ): string | undefined {
   const optimistic = getOptimisticProjectFileQueryData(environmentId, cwd, relativePath);
   if (optimistic) return optimistic.contents;
-  const result = appAtomRegistry.get(
-    getProjectFileQueryAtom(environmentId, owner, cwd, relativePath),
-  );
+  const result = appAtomRegistry.get(getProjectFileQueryAtom(environmentId, cwd, relativePath));
   const data = Option.getOrUndefined(AsyncResult.value(result));
   return data?.exists === false ? undefined : data?.contents;
 }
@@ -144,21 +132,17 @@ export function getUnsavedProjectFileQueryData(
 
 export function confirmProjectFileQueryData(
   environmentId: EnvironmentId,
-  owner: ProjectFilesOwner,
   cwd: string,
   relativePath: string,
   contents: string,
-  revision: string,
 ): boolean {
   const atom = optimisticFileAtom(environmentId, cwd, relativePath);
   const optimisticFile = appAtomRegistry.get(atom);
   if (optimisticFile?.data.contents !== contents) return false;
 
-  const queryAtom = getProjectFileQueryAtom(environmentId, owner, cwd, relativePath);
-  // Coder: later edits are based on the revision this write produced.
+  const queryAtom = getProjectFileQueryAtom(environmentId, cwd, relativePath);
   const confirmed = {
     ...optimisticFile,
-    data: { ...optimisticFile.data, revision },
     confirmedAgainst: appAtomRegistry.get(queryAtom),
   };
   appAtomRegistry.set(atom, confirmed);
@@ -208,14 +192,13 @@ const isProjectReadFileError = Schema.is(ProjectReadFileError);
 
 export function useProjectEntriesQuery(
   environmentId: EnvironmentId,
-  owner: ProjectFilesOwner,
   cwd: string,
   directoryPath?: string,
 ): ProjectQueryState<ProjectListEntriesResult> {
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const atom = canReadFiles
-    ? getProjectEntriesQueryAtom(environmentId, owner, cwd, directoryPath)
+    ? getProjectEntriesQueryAtom(environmentId, cwd, directoryPath)
     : EMPTY_PROJECT_ENTRIES_QUERY_ATOM;
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
@@ -266,7 +249,6 @@ export function useProjectFilePickerQuery(
 
 export function useProjectFileQuery(
   environmentId: EnvironmentId,
-  owner: ProjectFilesOwner,
   cwd: string,
   relativePath: string | null,
   enabled = true,
@@ -278,7 +260,7 @@ export function useProjectFileQuery(
   const isQueryEnabled = enabled;
   const atom =
     enabled && canReadFiles
-      ? getProjectFileQueryAtom(environmentId, owner, cwd, relativePath)
+      ? getProjectFileQueryAtom(environmentId, cwd, relativePath)
       : EMPTY_PROJECT_FILE_QUERY_ATOM;
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
