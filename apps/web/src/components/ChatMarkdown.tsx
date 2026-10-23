@@ -1,7 +1,6 @@
 // Upstream's ChatMarkdown. Coder differences, each marked "Coder:" below: the in-app browser, local
-// editor and file-manager actions, and GitHub-authenticated media are omitted; file chips open
-// only project files in the Files surface; relative and non-web links stay inert; and merge
-// request links use GitLab-only matching. See docs/internals/coder-only.md.
+// editor and file-manager actions, and GitHub-authenticated media are omitted; relative and
+// non-web links stay inert; and merge request links use GitLab-only matching. See docs/internals/coder-only.md.
 import { buildFileLinkParentSuffixByPath, fileLinkLabel } from "@t3tools/shared/fileLinks";
 import {
   isWindowsDrivePathHref,
@@ -10,7 +9,7 @@ import {
   extractMarkdownLinkHrefs,
   inlineCodeFilePathCandidate,
 } from "@t3tools/shared/markdownLinks";
-import { resolveWorkspaceFilePath } from "@t3tools/shared/path";
+import { isHostPath, resolveWorkspaceFilePath } from "@t3tools/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -668,9 +667,9 @@ function useChatMarkdownState({
       mediaMimeTypeFromExtension(
         fileLinkMeta.basename.slice(fileLinkMeta.basename.lastIndexOf(".")),
       ) !== null;
-    // Coder: the Files surface opens only project files. Media outside the
-    // workspace keeps the expanded preview; other host files stay inert.
-    const panelPath = fileLinkMeta.workspaceRelativePath ?? null;
+    const panelPath =
+      fileLinkMeta.workspaceRelativePath ??
+      (!canPreviewMedia && isHostPath(fileLinkMeta.filePath) ? fileLinkMeta.filePath : null);
 
     return (
       <MarkdownFileLink

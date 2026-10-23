@@ -62,7 +62,6 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
             Effect.gen(function* () {
               const byteLength = file.byteLength;
               yield* readResponse.wait;
-              // Coder: reads carry the Files surface's revision.
               return decodeReadFileResult(
                 readResponse.missing
                   ? {
@@ -70,16 +69,9 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
                       byteLength: 0,
                       contents: "",
                       truncated: false,
-                      revision: "revision-empty",
                       exists: false,
                     }
-                  : {
-                      relativePath: "foo",
-                      byteLength,
-                      contents: "old",
-                      truncated: false,
-                      revision: "revision-old",
-                    },
+                  : { relativePath: "foo", byteLength, contents: "old", truncated: false },
               );
             }),
           [WS_METHODS.projectsWriteFile]: () =>
@@ -169,7 +161,6 @@ describe("writeFile metadata", () => {
         byteLength: 0,
         contents: "",
         truncated: false,
-        revision: "revision-empty",
         exists: false,
       });
       const metadata = h.commands.fileMetadata({
@@ -213,7 +204,7 @@ describe("writeFile metadata", () => {
       const write = yield* Effect.promise(() =>
         h.commands.writeFile.run(h.registry, {
           environmentId: ENVIRONMENT_ID,
-          input: { cwd: "/repo", relativePath: "foo", contents: "new", expectedRevision: "rev" },
+          input: { cwd: "/repo", relativePath: "foo", contents: "new" },
         }),
       );
       expect(write._tag).toBe("Success");
@@ -248,7 +239,7 @@ describe("writeFile metadata", () => {
       const result = yield* Effect.promise(() =>
         h.commands.writeFile.run(h.registry, {
           environmentId: ENVIRONMENT_ID,
-          input: { cwd: "/repo", relativePath: "./foo", contents: "new", expectedRevision: "rev" },
+          input: { cwd: "/repo", relativePath: "./foo", contents: "new" },
         }),
       );
       expect(result).toMatchObject({ _tag: "Success", value: { relativePath: "foo" } });

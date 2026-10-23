@@ -113,7 +113,6 @@ const harness = (
   options: {
     readonly threadManagement?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
     readonly lifecycle?: Partial<ServerLifecycleEvents.ServerLifecycleEvents["Service"]>;
-    readonly workspaceEntries?: Partial<WorkspaceEntries.WorkspaceEntries["Service"]>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -169,7 +168,7 @@ const harness = (
       stub(ProviderLatestVersions.ProviderLatestVersions),
       ServerSettings.layerTest(),
       stub(Keybindings.Keybindings),
-      stub(WorkspaceEntries.WorkspaceEntries, options.workspaceEntries),
+      stub(WorkspaceEntries.WorkspaceEntries),
       stub(WorkspaceFileSystem.WorkspaceFileSystem),
       stub(VcsStatusBroadcaster.VcsStatusBroadcaster, {
         refreshStatus: (cwd) =>
@@ -253,87 +252,6 @@ describe("Coder RPC seams", () => {
         "identity:/workspace/project",
         "status:/workspace/project",
       ]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("rejects file reads, writes, and listings for roots not owned by the thread", () =>
-    Effect.gen(function* () {
-      const h = yield* harness();
-      const inputs = { threadId: testThreadId, cwd: "/unowned" };
-      const list = yield* h.client[WS_METHODS.projectsListEntries](inputs).pipe(Effect.flip);
-      const read = yield* h.client[WS_METHODS.projectsReadFile]({
-        ...inputs,
-        relativePath: "file.txt",
-      }).pipe(Effect.flip);
-      const write = yield* h.client[WS_METHODS.projectsWriteFile]({
-        ...inputs,
-        relativePath: "file.txt",
-        contents: "hello",
-        expectedRevision: "revision",
-      }).pipe(Effect.flip);
-      assert.equal("failure" in list && list.failure, "workspace_not_owned_by_thread");
-      assert.equal("failure" in read && read.failure, "workspace_not_owned_by_thread");
-      assert.equal("failure" in write && write.failure, "workspace_not_owned_by_thread");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("lets a draft list its project root or a worktree a project thread owns", () =>
-    Effect.gen(function* () {
-      const listed: string[] = [];
-      const h = yield* harness({
-        threadManagement: {
-          listProjectThreads: (input) =>
-            Effect.succeed(
-              input.projectId === testProjectId
-                ? [{ ...threadShell, worktreePath: "/workspace/worktrees/feature" }]
-                : [],
-            ),
-        },
-        workspaceEntries: {
-          list: (input) =>
-            Effect.sync(() => {
-              listed.push(input.cwd);
-              return { entries: [], truncated: false };
-            }),
-        },
-      });
-      for (const cwd of ["/workspace/project", "/workspace/worktrees/feature"]) {
-        yield* h.client[WS_METHODS.projectsListEntries]({ draftProjectId: testProjectId, cwd });
-      }
-      assert.deepEqual(listed, ["/workspace/project", "/workspace/worktrees/feature"]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("rejects draft requests outside the named project", () =>
-    Effect.gen(function* () {
-      const h = yield* harness({
-        threadManagement: { listProjectThreads: () => Effect.succeed([threadShell]) },
-      });
-      const requests = [
-        { draftProjectId: testProjectId, cwd: "/unowned" },
-        { draftProjectId: ProjectId.make("project-unknown"), cwd: "/workspace/project" },
-        { cwd: "/workspace/project" },
-      ];
-      for (const request of requests) {
-        const read = yield* h.client[WS_METHODS.projectsReadFile]({
-          ...request,
-          relativePath: "file.txt",
-        }).pipe(Effect.flip);
-        assert.equal("failure" in read && read.failure, "workspace_not_owned_by_thread");
-      }
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("checks a request naming a thread against that thread, not the draft project", () =>
-    Effect.gen(function* () {
-      const h = yield* harness();
-      const read = yield* h.client[WS_METHODS.projectsReadFile]({
-        threadId: ThreadId.make("thread-unknown"),
-        draftProjectId: testProjectId,
-        cwd: "/workspace/project",
-        relativePath: "file.txt",
-      }).pipe(Effect.flip);
-      assert.equal("failure" in read && read.failure, "workspace_not_owned_by_thread");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

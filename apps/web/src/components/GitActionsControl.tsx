@@ -105,6 +105,7 @@ import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsActionManager, vcsEnvironment } from "~/state/vcs";
 import { randomUUID } from "~/lib/utils";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
@@ -1087,15 +1088,18 @@ export default function GitActionsControl({
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
   // Coder: status paths are repository-relative, and the Files surface opens paths relative to
-  // the thread's folder, which can be a subfolder of the repository.
-  const changedFileOpenPath = (filePath: string): string | null => {
+  // the thread's folder, which can be a subfolder of the repository; a file outside it opens by
+  // its absolute path.
+  const changedFileOpenPath = (filePath: string): string => {
     const rootPath = gitStatusForActions?.workingTree.rootPath;
     if (!rootPath || !gitCwd) return filePath;
     const root = rootPath.replace(/\/+$/, "");
     const base = gitCwd.replace(/\/+$/, "");
     if (!base.startsWith(`${root}/`)) return filePath;
     const prefix = `${base.slice(root.length + 1)}/`;
-    return filePath.startsWith(prefix) ? filePath.slice(prefix.length) : null;
+    return filePath.startsWith(prefix)
+      ? filePath.slice(prefix.length)
+      : resolvePathLinkTarget(filePath, rootPath);
   };
   const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));
   const allSelected = excludedFiles.size === 0;
@@ -1911,11 +1915,8 @@ export default function GitActionsControl({
                                 <button
                                   type="button"
                                   className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left enabled:cursor-pointer"
-                                  onClick={() => {
-                                    const openPath = changedFileOpenPath(file.path);
-                                    if (openPath !== null) onOpenFile?.(openPath);
-                                  }}
-                                  disabled={!onOpenFile || changedFileOpenPath(file.path) === null}
+                                  onClick={() => onOpenFile?.(changedFileOpenPath(file.path))}
+                                  disabled={!onOpenFile}
                                 >
                                   <StartTruncatedPath
                                     path={file.path}

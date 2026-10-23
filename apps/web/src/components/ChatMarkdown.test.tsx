@@ -1087,20 +1087,6 @@ describe("ChatMarkdown Coder seams", () => {
     expect(markup).toContain('src="https://example.com/clip.mp4"');
   });
 
-  it("opens only project files in the Files surface", () => {
-    const markup = renderToStaticMarkup(
-      <ChatMarkdown
-        cwd="/workspace/project"
-        threadRef={threadRef}
-        text="[source](src/index.ts#L42) [outside](/tmp/secret.txt)"
-      />,
-    );
-    // The project file is a link chip; the outside file only offers its copy menu.
-    expect(markup).toContain('href="/workspace/project/src/index.ts');
-    expect(markup).not.toContain('href="/tmp/secret.txt"');
-    expect(markup.match(/aria-haspopup="menu"/g)).toHaveLength(1);
-  });
-
   it("renders validated internal citations beside external links", () => {
     const citation: AssistantCitation = {
       version: 1,

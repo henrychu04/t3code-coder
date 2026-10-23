@@ -185,11 +185,13 @@ import {
   ProjectReadFileError,
   ProjectReadFileInput,
   ProjectReadFileResult,
+  ProjectSearchContentsError,
+  ProjectSearchContentsInput,
+  ProjectSearchContentsResult,
   ProjectSearchEntriesError,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
   ProjectWriteFileError,
-  ProjectCreateFileInput,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
@@ -319,9 +321,6 @@ import {
 import { VcsError } from "./vcs.ts";
 // Coder
 import {
-  ProjectTextSearchError,
-  ProjectTextSearchInput,
-  ProjectTextSearchResult,
   WorkspaceListDirectoriesError,
   WorkspaceListDirectoriesInput,
   WorkspaceListDirectoriesResult,
@@ -564,11 +563,9 @@ export const WS_METHODS = {
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
   // Coder: workspace-helper methods.
   projectsGetConfig: "projects.getConfig",
-  projectsSearchText: "projects.searchText",
   workspaceListDirectories: "workspace.listDirectories",
   coderServeAsset: "coder.serveAsset",
   coderWriteRequestBody: "coder.writeRequestBody",
-  projectsCreateFile: "projects.createFile",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
   reviewOpenDiffFileContents: "review.openDiffFileContents",
@@ -1070,6 +1067,12 @@ const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
   payload: ProjectSearchEntriesInput,
   success: ProjectSearchEntriesResult,
   error: Schema.Union([ProjectSearchEntriesError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectsSearchContentsRpc = Rpc.make(WS_METHODS.projectsSearchContents, {
+  payload: ProjectSearchContentsInput,
+  success: ProjectSearchContentsResult,
+  error: Schema.Union([ProjectSearchContentsError, EnvironmentAuthorizationError]),
 });
 
 const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries, {
@@ -1797,6 +1800,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsListEntriesRpc,
   WsProjectsListIgnoredFilesRpc,
   WsProjectsReadFileRpc,
+  WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsEnsureScratchRpc,
   WsProjectsCreateNewRpc,
@@ -1889,12 +1893,6 @@ const WsProjectsGetConfigRpc = Rpc.make(WS_METHODS.projectsGetConfig, {
   success: ProjectGetConfigResult,
 });
 
-const WsProjectsSearchTextRpc = Rpc.make(WS_METHODS.projectsSearchText, {
-  payload: ProjectTextSearchInput,
-  success: ProjectTextSearchResult,
-  error: ProjectTextSearchError,
-});
-
 const WsWorkspaceListDirectoriesRpc = Rpc.make(WS_METHODS.workspaceListDirectories, {
   payload: WorkspaceListDirectoriesInput,
   success: WorkspaceListDirectoriesResult,
@@ -1915,12 +1913,6 @@ const WsCoderServeAssetRpc = Rpc.make(WS_METHODS.coderServeAsset, {
 const WsCoderWriteRequestBodyRpc = Rpc.make(WS_METHODS.coderWriteRequestBody, {
   payload: CoderWriteRequestBodyInput,
   error: CoderRequestBodyError,
-});
-
-const WsProjectsCreateFileRpc = Rpc.make(WS_METHODS.projectsCreateFile, {
-  payload: ProjectCreateFileInput,
-  success: ProjectWriteFileResult,
-  error: ProjectWriteFileError,
 });
 
 const WsSubscribeVcsRefStatusRpc = Rpc.make(WS_METHODS.subscribeVcsRefStatus, {
@@ -2013,7 +2005,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsServerGetStorageCleanupReportRpc,
   WsProjectsGetConfigRpc,
   WsProjectsSearchEntriesRpc,
-  WsProjectsSearchTextRpc,
+  WsProjectsSearchContentsRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsWriteFileRpc,
@@ -2027,7 +2019,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceListDirectoriesRpc,
   WsCoderServeAssetRpc,
   WsCoderWriteRequestBodyRpc,
-  WsProjectsCreateFileRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsServerDiscoverSourceControlRpc,

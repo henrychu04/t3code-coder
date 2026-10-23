@@ -59,9 +59,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   // The path last submitted, so reopening the dialog offers it again.
   const [lastSavePath, setLastSavePath] = useState("");
   const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
-  // Coder: Save to workspace creates a new file in the thread's verified project root; the Files
-  // surface's writes edit existing files only.
-  const writeProjectFile = useAtomCommand(projectEnvironment.createFile, {
+  const writeProjectFile = useAtomCommand(projectEnvironment.writeFile, {
     reportFailure: false,
   });
   const { copyToClipboard, isCopied } = useCopyToClipboard({
@@ -116,11 +114,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
 
   const handleSaveToWorkspace = (savePath: string) => {
     const relativePath = savePath.trim();
-    if (
-      !workspaceRoot ||
-      !threadRef ||
-      !readEnvironmentScope(environmentId, AuthFilesystemWriteScope)
-    ) {
+    if (!workspaceRoot || !readEnvironmentScope(environmentId, AuthFilesystemWriteScope)) {
       return;
     }
     if (!relativePath) {
@@ -137,7 +131,6 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
       const result = await writeProjectFile({
         environmentId,
         input: {
-          threadId: threadRef.threadId,
           cwd: workspaceRoot,
           relativePath,
           contents: saveContents,
@@ -189,7 +182,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
             <MenuItem
               onClick={openSaveDialog}
-              disabled={!canWriteFiles || !workspaceRoot || !threadRef || isSavingToWorkspace}
+              disabled={!canWriteFiles || !workspaceRoot || isSavingToWorkspace}
             >
               Save to workspace
             </MenuItem>

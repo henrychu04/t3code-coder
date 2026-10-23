@@ -1,5 +1,5 @@
 import { render, fakeTimers } from "../../../test/render";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { StrictMode, useEffect } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -31,22 +31,19 @@ const environmentId = EnvironmentId.make("save-lifecycle-audit");
 const onPendingChange = vi.fn();
 const defaultProps = {
   environmentId,
-  owner: { threadId: ThreadId.make("save-lifecycle-thread") },
-  revision: "r1",
-  onSaveFailed: vi.fn(),
   cwd: "/workspace",
   relativePath: "file.txt",
   onPendingChange,
 };
 function setup() {
-  writeFile.mockReset().mockResolvedValue(AsyncResult.success({ revision: "r2" }));
+  writeFile.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   confirmFile.mockReset();
   readScope.mockReset().mockReturnValue(true);
   getUnsavedFile.mockReset().mockReturnValue(null);
   onPendingChange.mockReset();
 }
 
-async function mount(props: Parameters<typeof useFileSaveCoordinator>[0] = defaultProps) {
+async function mount(props = defaultProps) {
   let latestChange: (contents: string) => void = () => {};
   function FileSurface(props: Parameters<typeof useFileSaveCoordinator>[0]) {
     const coordinator = useFileSaveCoordinator(props);
@@ -79,42 +76,15 @@ describe("file-save React lifecycle", () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({
       environmentId,
-      input: {
-        threadId: defaultProps.owner.threadId,
-        cwd: "/workspace",
-        relativePath: "file.txt",
-        contents: "AUDIT7907NATIVE\n",
-        expectedRevision: "r1",
-      },
+      input: { cwd: "/workspace", relativePath: "file.txt", contents: "AUDIT7907NATIVE\n" },
     });
     expect(confirmFile).toHaveBeenCalledExactlyOnceWith(
       environmentId,
-      defaultProps.owner,
       "/workspace",
       "file.txt",
       "AUDIT7907NATIVE\n",
-      "r2",
     );
     expect(onPendingChange).toHaveBeenLastCalledWith("file.txt", false);
-  });
-
-  it("names a draft's project instead of a thread", async () => {
-    setup();
-    using _timers = fakeTimers();
-    const owner = { draftProjectId: ProjectId.make("draft-project") };
-    await using screen = await mount({ ...defaultProps, owner });
-    screen.changeHandler()("draft edit");
-    await vi.advanceTimersByTimeAsync(500);
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({
-      environmentId,
-      input: {
-        draftProjectId: owner.draftProjectId,
-        cwd: "/workspace",
-        relativePath: "file.txt",
-        contents: "draft edit",
-        expectedRevision: "r1",
-      },
-    });
   });
 
   it("flushes on unmount and ignores a retired editor callback", async () => {
@@ -162,13 +132,7 @@ describe("file-save React lifecycle", () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({
       environmentId,
-      input: {
-        threadId: defaultProps.owner.threadId,
-        cwd: "/workspace",
-        relativePath: "file.txt",
-        contents: "pending draft",
-        expectedRevision: "r1",
-      },
+      input: { cwd: "/workspace", relativePath: "file.txt", contents: "pending draft" },
     });
     expect(onPendingChange).toHaveBeenLastCalledWith("file.txt", false);
   });
@@ -191,22 +155,14 @@ describe("file-save React lifecycle", () => {
     expect(writeFile.mock.calls.map(([request]) => request)).toEqual([
       {
         environmentId,
-        input: {
-          threadId: defaultProps.owner.threadId,
-          cwd: "/workspace",
-          relativePath: "file.txt",
-          contents: "old file edit",
-          expectedRevision: "r1",
-        },
+        input: { cwd: "/workspace", relativePath: "file.txt", contents: "old file edit" },
       },
       {
         environmentId: nextProps.environmentId,
         input: {
-          threadId: defaultProps.owner.threadId,
           cwd: nextProps.cwd,
           relativePath: nextProps.relativePath,
           contents: "new file edit",
-          expectedRevision: "r1",
         },
       },
     ]);

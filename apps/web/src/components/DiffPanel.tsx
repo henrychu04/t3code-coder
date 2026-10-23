@@ -19,7 +19,7 @@ import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { useFileContextMenuHandler } from "../fileContextMenu";
 import { type DraftId } from "../composerDraftStore";
-import { resolveDiffPathForWorkspace } from "../diffFileActions";
+import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { useCheckpointDiff } from "~/lib/checkpointDiffState";
 import { cn } from "~/lib/utils";
 import {
@@ -188,8 +188,6 @@ function DiffFileHeaderSuffix({
 interface DiffPanelProps {
   mode?: DiffPanelMode;
   composerDraftTarget: ScopedThreadRef | DraftId;
-  // Coder: ChatView opens the Files surface only for a thread whose project root the helper verifies.
-  onOpenFile: (relativePath: string) => void;
   workspaceMutationId: string | null;
   visible: boolean;
 }
@@ -197,7 +195,6 @@ interface DiffPanelProps {
 export default function DiffPanel({
   mode = "inline",
   composerDraftTarget,
-  onOpenFile,
   workspaceMutationId,
   visible,
 }: DiffPanelProps) {
@@ -621,14 +618,15 @@ export default function DiffPanel({
     }
   }, [collapseScopeKey, selectedFilePath, selectedFileRevealRequestId, revealDiffFile]);
 
-  // Coder: there is no local editor fallback; a diff file opens only in the Files surface.
   const openDiffFile = (filePath: string) => {
-    const workspaceFilePath = resolveDiffPathForWorkspace({
+    openDiffFilePrimaryAction({
+      threadRef: routeThreadRef,
       filePath,
-      workspaceRoot: activeCwd,
+      activeCwd,
       repositoryRoot: activeRepositoryRoot,
+      // Coder: there is no local editor fallback; a diff file opens only in the Files surface.
+      openInEditor: () => undefined,
     });
-    if (workspaceFilePath) onOpenFile(workspaceFilePath);
   };
   // Every file header holds these; a new identity per collapse change would redraw them all.
   const toggleDiffFileCollapsed = useStableCallback((fileKey: string) => {

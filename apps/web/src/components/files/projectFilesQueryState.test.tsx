@@ -1,4 +1,4 @@
-import { EnvironmentId, type ProjectReadFileResult, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, type ProjectReadFileResult } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -74,7 +74,6 @@ import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh
 import { useProjectFileQuery } from "./projectFilesQueryState";
 
 const environmentId = EnvironmentId.make("environment-1");
-const owner = { threadId: ThreadId.make("thread-1") };
 
 function deferred<A>() {
   let resolve!: (value: A) => void;
@@ -125,7 +124,7 @@ describe("project query refresh", () => {
 
     const render = (mutationId: string | null) => {
       reactHooks.beginRender();
-      const query = useProjectFileQuery(environmentId, owner, "/repo", "src/preview.ts");
+      const query = useProjectFileQuery(environmentId, "/repo", "src/preview.ts");
       expect(query.readError).toBeNull();
       renderedContents = query.data?.contents ?? null;
       useWorkspaceMutationRefresh({

@@ -28,7 +28,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useFilesystemReadAccess } from "./filesystem";
 import { orchestrationEnvironment } from "./orchestration";
 import { isPaginatedBranchesNextPagePending } from "./paginatedBranches";
-import { projectEnvironment } from "./projects";
+import { projectContentSearch, projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
 import { vcsEnvironment } from "./vcs";
 
@@ -285,8 +285,6 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
 
 interface ProjectContentSearchTarget {
   readonly environmentId: EnvironmentId | null;
-  // Coder: the helper verifies that the project root belongs to this thread.
-  readonly threadId: ThreadId | null;
   readonly cwd: string | null;
   readonly query: string;
   readonly caseSensitive: boolean;
@@ -305,16 +303,14 @@ export function useProjectContentSearch(target: ProjectContentSearchTarget) {
   const hasQuery = query.trim().length > 0;
   const debouncedQuery = useDebouncedValue(query, PROJECT_CONTENT_SEARCH_DEBOUNCE_MS);
   const result = useEnvironmentQuery(
-    target.environmentId !== null &&
-      target.threadId !== null &&
+    canReadFiles &&
+      target.environmentId !== null &&
       target.cwd !== null &&
       hasQuery &&
       debouncedQuery.trim().length > 0
-      ? // Coder: the helper's time-budgeted content search; the first page is shown.
-        projectEnvironment.searchText({
+      ? projectContentSearch({
           environmentId: target.environmentId,
           input: {
-            threadId: target.threadId,
             cwd: target.cwd,
             query: debouncedQuery,
             limit: PROJECT_CONTENT_SEARCH_LIMIT,
@@ -340,8 +336,7 @@ export function useProjectContentSearch(target: ProjectContentSearchTarget) {
       isCheckingAccess ||
       (canReadFiles && hasQuery && (query !== debouncedQuery || result.isPending)),
     hasQuery,
-    // Coder: a further page also means the results stop short of every match.
-    truncated: (result.data?.truncated ?? false) || result.data?.nextCursor !== undefined,
+    truncated: result.data?.truncated ?? false,
     invalidRegex: target.useRegex && result.data?.regexFallbackError !== undefined,
   };
 }

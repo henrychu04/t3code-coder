@@ -49,10 +49,9 @@ runtime boundary or syncing upstream.
 10. GitLab is the only hosted source-control provider; Git and `glab` run only in the workspace.
 11. The branch policy below is part of the boundary.
 
-Product cuts kept on purpose, documented in `docs/internals/coder-only.md`: Files reads and edits
-stay inside the verified project root, composer attachments are the only laptop-to-workspace
-upload, and upstream's `html_preview` and its headless browser are not carried (work workspaces
-cannot obtain a browser).
+Product cuts kept on purpose, documented in `docs/internals/coder-only.md`: composer attachments
+are the only laptop-to-workspace upload, and upstream's `html_preview` and its headless browser are
+not carried (work workspaces cannot obtain a browser).
 
 ## Provider scope
 

@@ -1,4 +1,3 @@
-import { ProjectId } from "./baseSchemas.ts";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
@@ -10,29 +9,18 @@ import {
   IsoDateTime,
   NonNegativeInt,
   PositiveInt,
-  ThreadId,
+  ProjectId,
   TrimmedNonEmptyString,
   TrimmedString,
   type UnknownUnionMember,
 } from "./baseSchemas.ts";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
-const PROJECT_TEXT_SEARCH_MAX_LIMIT = 500;
-const PROJECT_SEARCH_INPUT_MAX_LENGTH = 256;
+const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
 /** Coder: `t3.json` is read whole for settings, so a stray large file cannot stall the helper. */
 export const PROJECT_CONFIG_MAX_BYTES = 64 * 1024;
-/** Coder: Files reads and edits whole text files in memory on both ends, so they stay small. */
-export const PROJECT_FILE_MAX_BYTES = 1024 * 1024;
-/** Coder: a content search must yield the helper's single stdio connection quickly. */
-export const PROJECT_CONTENT_SEARCH_TIME_BUDGET_MS = 250;
-/** Coder: one noisy file must not crowd every other file out of a results page. */
-export const PROJECT_CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
-/** Coder: one response stays far below the gateway's RPC frame limit. */
-export const PROJECT_CONTENT_SEARCH_MAX_TOTAL_MATCHES = 500;
-/** Coder: an unused content-enabled index is destroyed instead of holding workspace memory. */
-export const PROJECT_SEARCH_INDEX_IDLE_TTL = "15 minutes";
 
 export const ProjectScriptIcon = Schema.Literals([
   "play",
@@ -253,20 +241,17 @@ export type ProjectEntryKind = typeof ProjectEntryKind.Type;
 
 export const ProjectSearchEntriesInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
-  query: TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
+  query: TrimmedString.check(Schema.isMaxLength(256)),
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_ENTRIES_MAX_LIMIT)),
   kind: Schema.optional(ProjectEntryKind),
   imageOnly: Schema.optional(Schema.Boolean),
-  fileMask: Schema.optional(
-    TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
-  ),
 });
 export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 
 export const ProjectEntry = Schema.Struct({
-  ignored: Schema.optional(Schema.Boolean),
   path: TrimmedNonEmptyString,
   kind: ProjectEntryKind,
+  ignored: Schema.optional(Schema.Boolean),
 });
 export type ProjectEntry = typeof ProjectEntry.Type;
 
@@ -276,69 +261,42 @@ export const ProjectSearchEntriesResult = Schema.Struct({
 });
 export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
 
-export const ProjectTextSearchInput = Schema.Struct({
-  cursor: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
-  threadId: ThreadId,
+export const ProjectSearchContentsInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
-  // Leading and trailing whitespace are meaningful in content queries.
-  query: Schema.String.check(
-    Schema.isNonEmpty(),
-    Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH),
-  ),
-  fileMask: Schema.optional(
-    TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
-  ),
-  limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_TEXT_SEARCH_MAX_LIMIT)),
+  // Whitespace is significant in content queries (" foo", regex trailing
+  // spaces), so the query is deliberately not trimmed on the wire.
+  query: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
+  limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_CONTENTS_MAX_LIMIT)),
   caseSensitive: Schema.Boolean,
   wholeWord: Schema.Boolean,
   useRegex: Schema.Boolean,
 });
-export type ProjectTextSearchInput = typeof ProjectTextSearchInput.Type;
+export type ProjectSearchContentsInput = typeof ProjectSearchContentsInput.Type;
 
-export const ProjectTextSearchMatchRange = Schema.Struct({
+export const ProjectContentMatchRange = Schema.Struct({
   start: NonNegativeInt,
   end: NonNegativeInt,
 });
-export type ProjectTextSearchMatchRange = typeof ProjectTextSearchMatchRange.Type;
+export type ProjectContentMatchRange = typeof ProjectContentMatchRange.Type;
 
-export const ProjectTextSearchMatch = Schema.Struct({
-  path: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
+export const ProjectContentMatch = Schema.Struct({
+  path: TrimmedNonEmptyString,
   lineNumber: PositiveInt,
-  lineContent: Schema.String.check(Schema.isMaxLength(4096)),
-  matchRanges: Schema.Array(ProjectTextSearchMatchRange).check(Schema.isMaxLength(100)),
+  lineContent: Schema.String,
+  matchRanges: Schema.Array(ProjectContentMatchRange),
 });
-export type ProjectTextSearchMatch = typeof ProjectTextSearchMatch.Type;
-/** Coder: upstream's name for a content-search match, used by its search dialog. */
-export type ProjectContentMatch = ProjectTextSearchMatch;
+export type ProjectContentMatch = typeof ProjectContentMatch.Type;
 
-export const ProjectTextSearchResult = Schema.Struct({
-  nextCursor: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
-  matches: Schema.Array(ProjectTextSearchMatch),
+export const ProjectSearchContentsResult = Schema.Struct({
+  matches: Schema.Array(ProjectContentMatch),
   truncated: Schema.Boolean,
-  regexFallbackError: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
+  regexFallbackError: Schema.optional(Schema.String),
 });
-export type ProjectTextSearchResult = typeof ProjectTextSearchResult.Type;
-
-/**
- * Coder: the helper verifies every Files request against its owner. A persisted thread names
- * itself, and its project root (or worktree) must match `cwd`. A draft the server does not know
- * yet names its project instead, and `cwd` must be that project's workspace root or a worktree
- * one of the project's persisted threads owns. A request naming a thread is checked as a thread.
- */
-const ProjectFilesOwnerFields = {
-  threadId: Schema.optional(ThreadId),
-  draftProjectId: Schema.optional(ProjectId),
-};
-export type ProjectFilesOwner =
-  | { readonly threadId: ThreadId; readonly draftProjectId?: never }
-  | { readonly draftProjectId: ProjectId; readonly threadId?: never };
+export type ProjectSearchContentsResult = typeof ProjectSearchContentsResult.Type;
 
 export const ProjectListEntriesInput = Schema.Struct({
-  directoryPath: Schema.optional(
-    Schema.String.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
-  ),
-  ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
+  directoryPath: Schema.optional(TrimmedString),
 });
 export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
 
@@ -348,6 +306,7 @@ export const ProjectListEntriesResult = Schema.Struct({
 });
 export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
 
+// Coder: the workspace picker's directory listing (`workspace.listDirectories`).
 export const WorkspaceListDirectoriesInput = Schema.Struct({
   path: Schema.optional(TrimmedNonEmptyString),
 });
@@ -403,7 +362,7 @@ export const ProjectEntriesFailure = Schema.Literals([
   "search_index_create_failed",
   "search_index_scan_timed_out",
   "search_index_search_failed",
-  "workspace_not_owned_by_thread",
+  "directory_list_failed",
 ]);
 export type ProjectEntriesFailure = typeof ProjectEntriesFailure.Type;
 
@@ -434,7 +393,6 @@ export class ProjectSearchEntriesError extends Schema.TaggedError<ProjectSearchE
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
-  // Structured fields remain optional on the wire so older message-only errors decode.
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
   constructor(
     props: ProjectEntriesFailureContext & {
@@ -452,28 +410,33 @@ export class ProjectSearchEntriesError extends Schema.TaggedError<ProjectSearchE
   }
 }
 
-export class ProjectTextSearchError extends Schema.TaggedError<ProjectTextSearchError>()(
-  "ProjectTextSearchError",
+export class ProjectSearchContentsError extends Schema.TaggedError<ProjectSearchContentsError>()(
+  "ProjectSearchContentsError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
     queryLength: Schema.optional(NonNegativeInt),
     limit: Schema.optional(PositiveInt),
     failure: Schema.optional(ProjectEntriesFailure),
+    normalizedCwd: Schema.optional(TrimmedNonEmptyString),
+    timeout: Schema.optional(TrimmedNonEmptyString),
+    detail: Schema.optional(TrimmedNonEmptyString),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
-  // Structured fields remain optional so older message-only errors can decode.
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
-  constructor(props: {
-    readonly queryLength: number;
-    readonly limit: number;
-    readonly failure: ProjectEntriesFailure;
-    readonly detail?: string;
-  }) {
+  constructor(
+    props: ProjectEntriesFailureContext & {
+      readonly cwd: string;
+      readonly queryLength: number;
+      readonly limit: number;
+    },
+  ) {
     super({
       ...props,
-      message: "Failed to search project contents.",
+      message:
+        decodedProjectErrorMessage(props) ??
+        `Failed to search workspace contents in '${props.cwd}'.`,
     } as any);
   }
 }
@@ -501,8 +464,9 @@ export class ProjectListEntriesError extends Schema.TaggedError<ProjectListEntri
 }
 
 export const ProjectReadFileInput = Schema.Struct({
-  ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
+  // Workspace-relative, or an absolute host path for a file outside the
+  // workspace. Only workspace-relative paths can be written back.
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
   // Optional files can be absent without failing the read.
   allowMissing: Schema.optional(Schema.Boolean),
@@ -514,7 +478,6 @@ export const ProjectReadFileResult = Schema.Struct({
   contents: Schema.String,
   byteLength: NonNegativeInt,
   truncated: Schema.Boolean,
-  revision: TrimmedNonEmptyString,
   // Omitted by older servers; false only for an absent optional file.
   exists: Schema.optional(Schema.Boolean),
 });
@@ -525,8 +488,6 @@ export const ProjectFileFailure = Schema.Literals([
   "resolved_path_outside_root",
   "path_not_file",
   "binary_file",
-  "stale_file",
-  "workspace_not_owned_by_thread",
   "operation_failed",
 ]);
 export type ProjectFileFailure = typeof ProjectFileFailure.Type;
@@ -540,7 +501,6 @@ export const ProjectFileOperation = Schema.Literals([
   "close",
   "make-directory",
   "write-file",
-  "rename-file",
 ]);
 export type ProjectFileOperation = typeof ProjectFileOperation.Type;
 
@@ -554,28 +514,6 @@ type ProjectFileFailureContext = {
   readonly operationPath?: string;
   readonly cause?: unknown;
 };
-
-function projectFileFailureMessage(
-  action: "read" | "write",
-  props: ProjectFileFailureContext,
-): string {
-  const path = props.relativePath;
-  switch (props.failure) {
-    case "binary_file":
-      return `Cannot open '${path}' because it is not a UTF-8 text file.`;
-    case "path_not_file":
-      return `Cannot open '${path}' because it is not a regular file.`;
-    case "stale_file":
-      return `Cannot save '${path}' because it changed in the workspace. Reload it before editing again.`;
-    case "workspace_not_owned_by_thread":
-      return `Cannot ${action} '${path}' because the workspace does not belong to this thread.`;
-    case "workspace_path_outside_root":
-    case "resolved_path_outside_root":
-      return `Cannot ${action} '${path}' because it resolves outside the project.`;
-    case "operation_failed":
-      return `Failed to ${action} workspace file '${path}'.`;
-  }
-}
 
 export class ProjectReadFileError extends Schema.TaggedError<ProjectReadFileError>()(
   "ProjectReadFileError",
@@ -595,36 +533,22 @@ export class ProjectReadFileError extends Schema.TaggedError<ProjectReadFileErro
   constructor(props: ProjectFileFailureContext) {
     super({
       ...props,
-      message: decodedProjectErrorMessage(props) ?? projectFileFailureMessage("read", props),
+      message:
+        decodedProjectErrorMessage(props) ??
+        `Failed to read workspace file '${props.relativePath}' in '${props.cwd}'.`,
     } as any);
   }
 }
 
 export const ProjectWriteFileInput = Schema.Struct({
-  ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
-  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_MAX_BYTES)),
-  expectedRevision: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  contents: Schema.String,
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
 
-/**
- * Coder: a new text file inside the owner's verified project root, for upstream's "Save to
- * workspace" of a proposed plan. Upstream writes anywhere; Coder refuses an existing path, so
- * edits keep the Files surface's revision check.
- */
-export const ProjectCreateFileInput = Schema.Struct({
-  ...ProjectFilesOwnerFields,
-  cwd: TrimmedNonEmptyString,
-  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
-  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_MAX_BYTES)),
-});
-export type ProjectCreateFileInput = typeof ProjectCreateFileInput.Type;
-
 export const ProjectWriteFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
-  revision: TrimmedNonEmptyString,
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
 
@@ -664,7 +588,9 @@ export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileEr
   constructor(props: ProjectFileFailureContext) {
     super({
       ...props,
-      message: decodedProjectErrorMessage(props) ?? projectFileFailureMessage("write", props),
+      message:
+        decodedProjectErrorMessage(props) ??
+        `Failed to write workspace file '${props.relativePath}' in '${props.cwd}'.`,
     } as any);
   }
 }

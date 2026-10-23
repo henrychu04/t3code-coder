@@ -36,6 +36,7 @@ import {
   type ProjectMutation,
   ProjectListEntriesError,
   ProjectReadFileError,
+  ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   ProjectMutationError,
@@ -187,20 +188,28 @@ function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesEr
         failure: "workspace_root_not_directory",
         normalizedCwd: error.normalizedWorkspaceRoot,
       };
-    // Coder: the path-only FFF service has no directory-read error or cwd on index errors.
+    case "WorkspaceEntriesReadDirectoryError":
+      return {
+        failure: "directory_list_failed",
+        ...(error.cwd !== undefined ? { normalizedCwd: error.cwd } : {}),
+        detail: error.message,
+      };
     case "WorkspaceSearchIndexCreateFailed":
       return {
         failure: "search_index_create_failed",
+        normalizedCwd: error.cwd,
         detail: error.reason,
       };
     case "WorkspaceSearchIndexScanTimedOut":
       return {
         failure: "search_index_scan_timed_out",
+        normalizedCwd: error.cwd,
         timeout: error.timeout,
       };
     case "WorkspaceSearchIndexSearchFailed":
       return {
         failure: "search_index_search_failed",
+        normalizedCwd: error.cwd,
         detail: error.reason,
       };
     default:
@@ -258,9 +267,6 @@ function projectFileFailureContext(
       return { failure: "path_not_file", resolvedPath: error.resolvedPath };
     case "WorkspaceBinaryFileError":
       return { failure: "binary_file", resolvedPath: error.resolvedPath };
-    // Coder: stale writes are rejected by the bounded workspace text editor.
-    case "WorkspaceFileStaleError":
-      return { failure: "stale_file", resolvedPath: error.resolvedPath };
     default:
       return unexpectedCompatibilityError(error);
   }
@@ -1491,6 +1497,19 @@ const layerWsRpc = () =>
                 }),
             ),
           ),
+        [WS_METHODS.projectsSearchContents]: (input) =>
+          workspaceEntries.searchContents(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectSearchContentsError({
+                  cwd: input.cwd,
+                  queryLength: input.query.length,
+                  limit: input.limit,
+                  ...projectEntriesFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
         [WS_METHODS.projectsListEntries]: (input) =>
           workspaceEntries.list(input).pipe(
             Effect.mapError(
@@ -1885,14 +1904,10 @@ const layerWsRpc = () =>
             }),
           ),
       });
-      // Coder: add the fork-only methods and verify Files roots before upstream's Files handlers.
+      // Coder: add the fork-only methods.
       const helperHandlers = CoderWsRpcGroup.of({
         ...handlers,
-        ...(yield* CoderWs.makeHandlers(handlers, {
-          serverCommandId,
-          refreshGitStatus,
-          projectFileFailureContext,
-        })),
+        ...(yield* CoderWs.makeHandlers({ serverCommandId, refreshGitStatus })),
       });
       const splitHandlers: Pick<typeof helperHandlers, SplitWsRpc["_tag"]> = helperHandlers;
       const otherHandlers: Pick<typeof helperHandlers, Exclude<ServerWsRpc, SplitWsRpc>["_tag"]> =

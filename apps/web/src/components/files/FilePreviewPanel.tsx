@@ -1,10 +1,5 @@
 import { Spinner } from "~/components/ui/spinner";
-import type {
-  EnvironmentId,
-  ProjectFilesOwner,
-  ProjectId,
-  ScopedThreadRef,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import { AuthFilesystemWriteScope } from "@t3tools/contracts";
 import {
@@ -41,7 +36,6 @@ import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
 import { MorphIcon } from "~/components/MorphIcon";
-import { Button } from "~/components/ui/button";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
@@ -97,7 +91,6 @@ import {
 } from "./filePreviewMode";
 import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
 import {
-  clearProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   getProjectFileContents,
   setProjectFileQueryData,
@@ -112,8 +105,6 @@ interface FilePreviewPanelProps {
   attachment?: ChatFileAttachment;
   // Coder: no local editors or open-in keybindings.
   threadRef: ScopedThreadRef;
-  // Coder: a draft names its project so the helper can verify the root it reads.
-  projectId: ProjectId;
   composerDraftTarget: ScopedThreadRef | DraftId;
   revealLine: number | null;
   revealRequestId: number;
@@ -633,9 +624,6 @@ function useEditableAfterHighlight(file: FileContents) {
 
 interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
-  // Coder: writes name their owner and the revision the edit is based on.
-  owner: ProjectFilesOwner;
-  revision: string;
   cwd: string;
   relativePath: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
@@ -645,7 +633,6 @@ interface EditableFileSurfaceProps {
   wordWrap: boolean;
   onPostRender: FilePostRender;
   onPendingChange: (relativePath: string, pending: boolean) => void;
-  onSaveFailed: (relativePath: string) => void;
 }
 
 interface FileSelectionOverride {
@@ -655,8 +642,6 @@ interface FileSelectionOverride {
 
 function EditableFileSurface({
   environmentId,
-  owner,
-  revision,
   cwd,
   relativePath,
   composerDraftTarget,
@@ -666,7 +651,6 @@ function EditableFileSurface({
   wordWrap,
   onPostRender,
   onPendingChange,
-  onSaveFailed,
 }: EditableFileSurfaceProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
@@ -681,18 +665,10 @@ function EditableFileSurface({
   const selectionFrameRef = useRef<number | null>(null);
   const saveCoordinator = useFileSaveCoordinator({
     environmentId,
-    owner,
-    revision,
     cwd,
     relativePath,
     onPendingChange,
-    onSaveFailed,
   });
-  // Coder: edits record the revision the file was read at, for stale-write detection.
-  const revisionRef = useRef(revision);
-  useEffect(() => {
-    revisionRef.current = revision;
-  }, [revision]);
   // The editor owns the draft, so its own edits echoing back through the file
   // query keep the file identity. Only a change from elsewhere replaces it.
   const [externalFile, setExternalFile] = useState(() =>
@@ -719,9 +695,9 @@ function EditableFileSurface({
     file,
     lineAnnotations: nextLineAnnotations,
   }: EditorChangeEvent<"file", FileCommentAnnotationGroup, undefined>) => {
-    if (file.contents === getProjectFileContents(environmentId, owner, cwd, relativePath)) return;
+    if (file.contents === getProjectFileContents(environmentId, cwd, relativePath)) return;
     setEditedContents(file.contents);
-    setProjectFileQueryData(environmentId, cwd, relativePath, file.contents, revisionRef.current);
+    setProjectFileQueryData(environmentId, cwd, relativePath, file.contents);
     saveCoordinator.change(file.contents);
     if (!nextLineAnnotations) return;
     const remapped = remapFileCommentAnnotations(nextLineAnnotations);
@@ -919,8 +895,6 @@ function EditableFileSurface({
 
 function RenderedMarkdownSurface({
   environmentId,
-  owner,
-  revision,
   cwd,
   relativePath,
   contents,
@@ -928,7 +902,6 @@ function RenderedMarkdownSurface({
   workspaceMutationId,
   readOnly,
   onPendingChange,
-  onSaveFailed,
 }: Omit<
   EditableFileSurfaceProps,
   | "resolvedTheme"
@@ -944,12 +917,9 @@ function RenderedMarkdownSurface({
 }) {
   const saveCoordinator = useFileSaveCoordinator({
     environmentId,
-    owner,
-    revision,
     cwd,
     relativePath,
     onPendingChange,
-    onSaveFailed,
   });
 
   return (
@@ -969,16 +939,7 @@ function RenderedMarkdownSurface({
                   contents;
                 const nextContents = setMarkdownTaskChecked(currentContents, markerOffset, checked);
                 if (nextContents === currentContents) return;
-                const currentRevision =
-                  getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.revision ??
-                  revision;
-                setProjectFileQueryData(
-                  environmentId,
-                  cwd,
-                  relativePath,
-                  nextContents,
-                  currentRevision,
-                );
+                setProjectFileQueryData(environmentId, cwd, relativePath, nextContents);
                 saveCoordinator.change(nextContents);
               }
         }
@@ -1009,7 +970,6 @@ export default function FilePreviewPanel({
   relativePath: requestedPath,
   attachment,
   threadRef,
-  projectId,
   composerDraftTarget,
   revealLine,
   revealRequestId,
@@ -1023,11 +983,6 @@ export default function FilePreviewPanel({
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
   const draft = typeof composerDraftTarget === "string";
-  // Coder: every Files request names its owner. The server does not know a draft yet, so a draft
-  // names its project and the helper verifies the root against that project instead.
-  const owner: ProjectFilesOwner = draft
-    ? { draftProjectId: projectId }
-    : { threadId: threadRef.threadId };
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
   // Coder: no in-app browser preview, local editors, or file-manager reveal.
@@ -1045,7 +1000,6 @@ export default function FilePreviewPanel({
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const file = useProjectFileQuery(
     environmentId,
-    owner,
     cwd,
     relativePath,
     attachment === undefined && relativePath !== null,
@@ -1182,23 +1136,6 @@ export default function FilePreviewPanel({
     });
   };
 
-  // Coder: a rejected save (for example a stale revision after the file changed in the
-  // workspace) leaves the edit pending; offer to discard it and reload the file.
-  const [saveFailedPath, setSaveFailedPath] = useState<string | null>(null);
-  const [reloadCount, setReloadCount] = useState(0);
-  const handlePendingChange = (path: string, pending: boolean) => {
-    if (pending) setSaveFailedPath((current) => (current === path ? null : current));
-    onPendingChange(path, pending);
-  };
-  const reloadFile = () => {
-    if (!relativePath) return;
-    clearProjectFileQueryData(environmentId, cwd, relativePath);
-    file.refresh();
-    onPendingChange(relativePath, false);
-    setSaveFailedPath(null);
-    setReloadCount((current) => current + 1);
-  };
-
   if (attachment === undefined && !canReadFiles) {
     if (fileAccess.isPending) {
       return (
@@ -1231,7 +1168,6 @@ export default function FilePreviewPanel({
               <FileBreadcrumbs
                 cwd={cwd}
                 environmentId={environmentId}
-                owner={owner}
                 onNavigateFolder={navigateToFolder}
                 onOpenFile={onOpenFile}
                 projectName={projectName}
@@ -1284,16 +1220,6 @@ export default function FilePreviewPanel({
       {relativePath && !attachment && !isHostFile && !canWriteFiles && !fileAccess.isPending ? (
         <div className="shrink-0 border-b px-3 py-1.5 text-2xs text-muted-foreground">
           Read-only connection. Unsaved edits are kept until write access returns.
-        </div>
-      ) : null}
-      {previewPath && saveFailedPath === previewPath ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-2xs text-destructive">
-          <span className="min-w-0 flex-1">
-            Your edits were not saved. Reload the file to continue editing.
-          </span>
-          <Button size="xs" variant="outline" onClick={reloadFile}>
-            Reload and discard edits
-          </Button>
         </div>
       ) : null}
       {previewPath &&
@@ -1398,18 +1324,15 @@ export default function FilePreviewPanel({
           ) : relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (
               <RenderedMarkdownSurface
-                key={`${relativePath}:${reloadCount}`}
+                key={relativePath}
                 environmentId={environmentId}
-                owner={owner}
-                revision={file.data.revision}
                 cwd={cwd}
                 relativePath={relativePath}
                 threadRef={threadRef}
                 contents={file.data.contents}
                 workspaceMutationId={workspaceMutationId}
                 readOnly={isHostFile || !canWriteFiles}
-                onPendingChange={handlePendingChange}
-                onSaveFailed={setSaveFailedPath}
+                onPendingChange={onPendingChange}
               />
             ) : tableDelimiter && renderTable ? (
               <DelimitedTablePreview
@@ -1428,10 +1351,8 @@ export default function FilePreviewPanel({
             ) : (
               <DiffWorkerPoolProvider>
                 <EditableFileSurface
-                  key={`${relativePath}:${resolvedTheme}:${reloadCount}`}
+                  key={`${relativePath}:${resolvedTheme}`}
                   environmentId={environmentId}
-                  owner={owner}
-                  revision={file.data.revision}
                   cwd={cwd}
                   relativePath={relativePath}
                   composerDraftTarget={composerDraftTarget}
@@ -1440,8 +1361,7 @@ export default function FilePreviewPanel({
                   revealRequestId={revealRequestId}
                   wordWrap={wordWrap}
                   onPostRender={onFilePostRender}
-                  onPendingChange={handlePendingChange}
-                  onSaveFailed={setSaveFailedPath}
+                  onPendingChange={onPendingChange}
                 />
               </DiffWorkerPoolProvider>
             )
@@ -1459,7 +1379,6 @@ export default function FilePreviewPanel({
             <FileBrowserPanel
               key={`${environmentId}:${hostFolderPath ?? cwd}`}
               environmentId={environmentId}
-              owner={owner}
               cwd={hostFolderPath ?? cwd}
               projectName={hostFolderPath ?? projectName}
               hostFolder={hostFolderPath !== null}
