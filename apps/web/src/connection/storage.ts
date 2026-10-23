@@ -16,6 +16,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as Semaphore from "effect/Semaphore";
+import { projectFaviconCache } from "../assets/projectFaviconCache";
+
 const DATABASE_NAME = "t3code:connection-runtime";
 const DATABASE_VERSION = 4;
 const CATALOG_STORE_NAME = "catalog";
@@ -356,7 +358,7 @@ const yieldToBrowserTask = Effect.callback<void>((resume) => {
 });
 
 // Coder: the connection catalog, credentials, and GitHub routing permissions are omitted; Coder
-// owns authentication and the gateway owns workspace targets. Project favicons are not cached.
+// owns authentication and the gateway owns workspace targets.
 export const connectionStorageLayer = Layer.effectContext(
   Effect.gen(function* () {
     const { handle: database } = yield* Effect.acquireRelease(
@@ -371,6 +373,7 @@ export const connectionStorageLayer = Layer.effectContext(
     const cacheStore = Persistence.EnvironmentCacheStore.of({
       loadShell: (environmentId) =>
         readDatabaseValue(database, SHELL_STORE_NAME, environmentId).pipe(
+          Effect.tap(() => Effect.promise(() => projectFaviconCache.hydrate())),
           Effect.flatMap((raw) => {
             if (typeof raw !== "string") {
               return Effect.succeedNone;
@@ -550,6 +553,7 @@ export const connectionStorageLayer = Layer.effectContext(
       clear: (environmentId) =>
         Effect.all(
           [
+            Effect.promise(() => projectFaviconCache.clearEnvironment(environmentId)),
             removeDatabaseValue(database, SHELL_STORE_NAME, environmentId),
             removeDatabaseValuesInRange(
               database,

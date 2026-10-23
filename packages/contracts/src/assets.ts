@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
+import { ProjectFaviconPath } from "./project.ts";
 
 const ASSET_PATH_MAX_LENGTH = 1024;
 
@@ -31,7 +32,13 @@ export const AssetResource = Schema.Union([
     itemId: TurnItemId,
     index: NonNegativeInt,
   }),
-  // Coder: project favicons, native app icons, and GitHub-authenticated media are not carried.
+  Schema.TaggedStruct("project-favicon", {
+    cwd: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+    // A cache-key hint only. The server reads the authoritative path from the
+    // project projection before it issues the signed URL.
+    path: Schema.optional(ProjectFaviconPath),
+  }),
+  // Coder: native app icons and GitHub-authenticated media are not carried.
 ]);
 export type AssetResource = typeof AssetResource.Type;
 
@@ -174,6 +181,41 @@ export class AssetAttachmentNotFoundError extends Schema.TaggedError<AssetAttach
   }
 }
 
+export class AssetProjectFaviconResolutionError extends Schema.TaggedError<AssetProjectFaviconResolutionError>()(
+  "AssetProjectFaviconResolutionError",
+  {
+    resource: AssetResource,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Failed to resolve project favicon.";
+  }
+}
+
+export class AssetProjectFaviconInspectionError extends Schema.TaggedError<AssetProjectFaviconInspectionError>()(
+  "AssetProjectFaviconInspectionError",
+  {
+    resource: AssetResource,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Failed to inspect the project favicon.";
+  }
+}
+
+export class AssetProjectFaviconNotFoundError extends Schema.TaggedError<AssetProjectFaviconNotFoundError>()(
+  "AssetProjectFaviconNotFoundError",
+  {
+    resource: AssetResource,
+  },
+) {
+  override get message(): string {
+    return "Project favicon was not found.";
+  }
+}
+
 export class AssetSigningKeyLoadError extends Schema.TaggedError<AssetSigningKeyLoadError>()(
   "AssetSigningKeyLoadError",
   {
@@ -196,6 +238,9 @@ export const AssetAccessError = Schema.Union([
   AssetWorkspaceAssetNotFoundError,
   AssetWorkspaceResolutionError,
   AssetAttachmentNotFoundError,
+  AssetProjectFaviconResolutionError,
+  AssetProjectFaviconInspectionError,
+  AssetProjectFaviconNotFoundError,
   AssetSigningKeyLoadError,
 ]);
 export type AssetAccessError = typeof AssetAccessError.Type;

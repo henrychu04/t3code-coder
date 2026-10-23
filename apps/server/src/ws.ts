@@ -1575,7 +1575,36 @@ const layerWsRpc = () =>
                 workspaceRoot: input.resource.cwd,
               });
             }
-            // Coder: project favicons are not carried.
+            if (input.resource._tag === "project-favicon") {
+              const project = yield* projectStore
+                .findActiveByWorkspaceRoot(input.resource.cwd)
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new AssetWorkspaceContextResolutionError({
+                        resource: input.resource,
+                        cause,
+                      }),
+                  ),
+                );
+              if (Option.isNone(project)) {
+                return yield* new AssetWorkspaceContextNotFoundError({
+                  resource: input.resource,
+                });
+              }
+              // A cloned project exists before its files do. Clients ask again
+              // when the clone lands (see createProjectFaviconUrlAtomFamily).
+              const clone = yield* projectCloneTracker.get(project.value.projectId);
+              return yield* issueAssetUrl({
+                resource: input.resource,
+                ...(project.value.faviconPath
+                  ? { projectFaviconPath: project.value.faviconPath }
+                  : {}),
+                ...(clone !== null && clone.destinationPath === project.value.workspaceRoot
+                  ? { projectCheckout: clone.phase === "done" ? "cloned" : "pending" }
+                  : {}),
+              });
+            }
             const thread = yield* threadManagement
               .getThreadRecords(input.resource.threadId, [])
               .pipe(

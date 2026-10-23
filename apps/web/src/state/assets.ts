@@ -1,6 +1,19 @@
-import { createAssetEnvironmentAtoms } from "@t3tools/client-runtime/state/assets";
+import {
+  createAssetEnvironmentAtoms,
+  createProjectFaviconUrlAtomFamily,
+} from "@t3tools/client-runtime/state/assets";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { projectFaviconCache } from "../assets/projectFaviconCache";
+import { environmentProjectClonesAtom } from "./projectClones";
+import { environmentSession } from "./session";
 
-// Coder: no local desktop media environment, and project favicons are not carried.
+// Coder: there is no local desktop media environment.
 export const assetEnvironment = createAssetEnvironmentAtoms(connectionAtomRuntime);
+
+export const projectFaviconUrlAtom = createProjectFaviconUrlAtomFamily({
+  imageCache: projectFaviconCache,
+  createUrl: assetEnvironment.createUrl,
+  preparedConnection: environmentSession.preparedConnectionValueAtom,
+  projectClones: environmentProjectClonesAtom,
+});

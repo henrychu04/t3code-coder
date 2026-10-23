@@ -349,8 +349,11 @@ monopolize the stdio connection.
 
 Media, documents, and attachments load from upstream's signed asset URLs: `assets.createUrl`,
 `assets/AssetAccess.ts`, `assets/MediaFile.ts`, and upstream's asset route (`http.ts`, which
-carries only that route). Project favicons, native app icons, and GitHub-authenticated media are
-not carried, so those resource kinds and their errors are cut from `contracts/assets.ts`.
+carries only that route). Native app icons (upstream's resolver answers only on macOS) and
+GitHub-authenticated media are not carried, so those resource kinds and their errors are cut from
+`contracts/assets.ts`. Project favicons are upstream's: `ProjectFaviconResolver` with
+`T3ProjectFileLoader`, the favicon URL atoms and IndexedDB image cache, and Settings → Project's
+file picker, without the desktop-only picker for files outside the project.
 
 The gateway serves a workspace's asset URLs at `/api/workspaces/<id>/api/assets/*`
 (`apps/coder-gateway/src/assetProxy.ts`). It forwards `GET` and `HEAD`, with only `Range` and
@@ -1090,8 +1093,8 @@ listed here is drift to remove rather than fork behavior to keep.
   environment whose settings have none; here the legacy lists are the workspace's own
   `providerPreferencesByEnvironment` entry, falling back to the global lists
   (`legacyModelPreferences` in `useSettings.ts`). `storage.ts` keeps
-  upstream's IndexedDB environment cache without the connection catalog, credentials, GitHub
-  routing permissions, or project favicons. The upstream idle thread-snapshot retention lifecycle
+  upstream's IndexedDB environment cache, including project favicons, without the connection
+  catalog, credentials, or GitHub routing permissions. The upstream idle thread-snapshot retention lifecycle
   keeps Coder's entry and size cap (`threadRetention.ts`). Composer drafts and the prompt stash keep text in browser
   storage but never image bytes. Upstream clears an environment's cached data and
   composer drafts when it is removed; Coder does this only when a workspace leaves the Coder
@@ -1142,8 +1145,7 @@ listed here is drift to remove rather than fork behavior to keep.
     (only files become composer attachments). `ChatComposer.tsx`'s `addComposerFolders` always
     takes upstream's remote-environment branch and shows its "local desktop environment" toast,
     because every workspace is remote; upstream's desktop path lookup (`folderDrop.ts`) is not
-    carried. Project icons come from saved
-    metadata or monograms, without favicon reads. The worktree setup card says "Use project
+    carried. The worktree setup card says "Use project
     checkout", because the checkout is in the workspace.
 - **Codex app-server package.** `packages/effect-codex-app-server` is upstream's, including
   `scripts/generate.ts`, which regenerates `_generated/*` byte-for-byte. Coder deltas (marked
