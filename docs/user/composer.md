@@ -95,8 +95,7 @@ the thumbnail to omit the image from the message. If the prompt still references
 confirming removal removes both the thumbnail and its references.
 
 In an existing thread, select a file mention to open the current file in **Files**. Skill chips
-show their descriptions; **View instructions** opens the skill file when it is inside the
-thread’s project or worktree.
+show their descriptions; **View instructions** opens the skill file in **Files**.
 
 Pasted plain-text fragments of at least 32,768 characters fold into a **Long text** chip. Select it to
 read or edit the text. Folding keeps the full text in the prompt: it counts toward the message

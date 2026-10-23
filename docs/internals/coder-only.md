@@ -319,31 +319,18 @@ its type; it returns no contents.
 
 ### Files and search
 
-The Files surface is a contained text-editing capability. The browser supplies the active project
-root plus a project-relative path; the helper verifies that the root is the requesting thread's
-checkout or managed worktree (a draft names its project, whose checkout or a worktree one of its
-threads owns qualifies). Reads are bounded by `PROJECT_FILE_MAX_BYTES`; binary files are rejected,
-larger text files are truncated and read-only, and lexical traversal and symlinks resolving outside
-the project are rejected. Writes apply only to an existing, non-truncated text file, use the read's
-revision to reject stale edits, and replace the file atomically. `projects.createFile`, used by the
-proposed plan's Save to workspace, creates only a new file inside the verified root. Open files and
-editor state stay in browser memory.
+The Files surface, filename search, and content search are upstream's. Project files are read and
+written relative to the project root, and absolute or `~/` paths read host files in the workspace
+as upstream does (#20950); writes stay inside a known workspace with upstream's git-folder
+refusal, and reads stop at upstream's 1 MiB. Open files and editor state stay in browser memory.
+A folder listing returns at most `MAX_PROJECT_DIRECTORY_ENTRIES` children, because a helper reply
+larger than the stdio frame ends the helper connection. Content search needs no extra cap: fff
+truncates each matched line to 512 bytes and upstream caps a search at 500 matches.
 
 `filesystem.getMetadata`, which file chips use for their icons and size tooltips, is served as
 upstream has it: it takes absolute workspace paths (or `~/` paths) with no thread or project-root
 check, reads only `stat` plus a header sniff of at most 512 bytes for a file without an extension,
-and never returns file contents. Like `filesystem.browse`, it is not subject to the Files
-surface's project containment.
-
-Filename and path search use a lightweight path-only FFF index. Project-content search uses a
-separate, on-demand, content-enabled `@ff-labs/fff-node` index whose `basePath` is the verified real
-project root, never a filesystem root or home directory, with a hard time budget, per-file and
-per-request match caps, cursor pagination, and an idle TTL (the `PROJECT_CONTENT_SEARCH_*` and
-`PROJECT_SEARCH_INDEX_IDLE_TTL` constants). FFF output is untrusted: the helper rejects absolute,
-traversing, NUL-containing, malformed, and escaping paths and binary matches, returns only
-project-relative paths, bounded line snippets, and match ranges, and keeps query text, contents,
-and absolute paths out of errors and logs. Cancellation and timeouts yield so search cannot
-monopolize the stdio connection.
+and never returns file contents.
 
 ### Media and document previews
 
@@ -476,24 +463,12 @@ listed here is drift to remove rather than fork behavior to keep.
     uses upstream's socket fallback because no HTTP shell loader exists.
   - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials
     (`withPullRequestViewer` is an identity in `ws.ts`).
-  - Files listings, reads, writes, file creation, content search, and media reads verify the requesting thread's
-    project root; Files listings, reads, writes, and media reads from a draft verify its named
-    project's root or a worktree one of that project's threads owns (`draftProjectId`). `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
-    `WorkspaceSearchIndex.ts` implement the Files surface and file-search boundaries above in place
-    of upstream's absolute-path and `~/` host reads (#20950), create-anywhere writes, and
-    `searchContents`. A read with upstream's `allowMissing` (#19949, the optional `t3.json`)
-    applies to project-relative paths and returns `exists: false` for an absent file.
-    A folder listing stops at `MAX_PROJECT_DIRECTORY_ENTRIES` children and labels ignored ones
-    with a single `git check-ignore` call, so upstream's wide-folder shortcut (asking whether the
-    folder itself is ignored, #20062) has nothing to save and is not carried.
-    `projects.createFile` serves upstream's proposed-plan "Save to workspace": it creates a new
-    text file inside the verified root and never replaces an existing path, where upstream's
-    `writeFile` overwrites. Both write paths keep upstream's write-target hardening: the cwd must
-    be a `KnownWorkspaces` folder, the root resolves after `path.resolve`, and a target in a git
-    folder (`.git`, a bare repository, a linked worktree's git folder, as named or resolved) is
-    refused, with new files checked before any folder is made. Path-only FFF errors and stale-write errors retain the fork's bounded-service
-    error mapping. `coderWs.ts` wraps `ws.ts`'s upstream Files list, read, and write handlers in
-    the root verification, so those handlers stay upstream's code.
+  - `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and `WorkspaceSearchIndex.ts` are
+    upstream's with these deltas: a folder listing returns at most
+    `MAX_PROJECT_DIRECTORY_ENTRIES` children (see [Files and search](#files-and-search));
+    `WorkspaceEntries.listDirectories` serves `workspace.listDirectories`; and image-only path
+    search matches `isWorkspaceImagePreviewPath`, because project favicons
+    (`isProjectFaviconPath`) are not carried.
   - Upstream's "Add to another machine" (#22180, #22254) is not carried, because it copies a
     project's ignored files, such as `.env`, from one workspace to another through the laptop
     browser. `WorkspaceEntries` has no `listIgnoredFiles`, `ws.ts` serves no
@@ -501,9 +476,8 @@ listed here is drift to remove rather than fork behavior to keep.
     client-runtime's `projectCommands.ts` has no matching command, `BranchToolbar.tsx` has no
     menu entry, and `ChatView.tsx` shows no file-copy banner or send block.
   - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
-    branch/worktree rename with `moveWorktree`, chunked review files, bounded text search, the
-    gateway's asset stream (`coder.serveAsset`), new-file creation (`projects.createFile`),
-    fixed project-config reads, workspace
+    branch/worktree rename with `moveWorktree`, chunked review files, the gateway's asset
+    stream (`coder.serveAsset`), fixed project-config reads, workspace
     directory listing, merge-request diffs, and upstream's HTTP bounded thread snapshot,
     history page, and thread transcript over stdio. The method set stays `CoderWsRpcGroup`;
     unsupported upstream methods stay omitted.
@@ -849,8 +823,7 @@ listed here is drift to remove rather than fork behavior to keep.
   the server's machine kind, there is no "Auto balance" run target (upstream's load balancing is
   not carried), and it has no server-update control (server self-update is not carried). The branch picker adds "Rename current branch…" for a
   thread's own branch (`vcs.renameThreadBranch`), which can also rename the T3 worktree folder
-  through the driver's `moveWorktree`. Proposed-plan cards are upstream's; Save to workspace uses
-  `projects.createFile`, so it fails on an existing path. There is no default-theme adoption, which follows
+  through the driver's `moveWorktree`. Proposed-plan cards are upstream's. There is no default-theme adoption, which follows
   upstream's `t3 theme set` CLI.
 - **App entry.** `index.html`, `bootstrap.ts`, and `main.tsx`'s startup (stale-chunk reload,
   splash held until the first route loads, boot error) are upstream's. `main.tsx` renders the app
@@ -874,14 +847,11 @@ listed here is drift to remove rather than fork behavior to keep.
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
   The active workspace stands in for upstream's primary environment, and drafts read their
-  route workspace's config. The Files surface opens for drafts as on main; a draft's Files
-  requests name its project so the helper can verify the root. `chatCanvasLayout.ts` has no preview obstacles (it accepts upstream's `findBar` and ignores it),
+  route workspace's config. The Files surface opens for drafts as on main. `chatCanvasLayout.ts` has no preview obstacles (it accepts upstream's `findBar` and ignores it),
   and `ChatCanvas.test.tsx` covers only the details card inset below Find; the right panel keeps
   Coder's per-thread width storage instead of upstream's preview inline size. Pieces upstream
   moved out of `ChatView` carry the same cuts (each marked `Coder:`): `RightPanelSurfaceContent`
-  renders nothing for browser and device surfaces, passes the project id to `FilePreviewPanel`
-  (which a surface therefore needs), and names merge
-  requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
+  renders nothing for browser and device surfaces and names merge requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
   confirmation; `useQueuedRunEdit` carries no preview annotations; `useThreadLinkedPullRequest` names merge requests; `useSystemComposerBanners`
   shows only the offline or reconnecting banner, with no connection diagnosis, disconnect action,
   server-update notice, or auto-balanced machines; `useDraftEnvironmentRouting` keeps only the
@@ -913,23 +883,18 @@ listed here is drift to remove rather than fork behavior to keep.
   - There is no in-app browser, local editor, or file manager: `MarkdownFileLink` never receives
     `onOpen`, `onOpenInBrowser`, or `onReveal`, and the link context menu never offers the
     integrated browser. Without a primary action a chip opens only its copy menu.
-  - File chips open only project-relative files in the Files surface; other host paths do not
-    open the panel. Media outside the project opens the gallery. Upstream's chip menu may copy
-    the chip's relative or full path, which is the path already written in the message; this is
-    separate from the Files surface, whose Copy path action stays project-relative.
   - Relative and non-web links render as inert text. GitHub-authenticated media (`githubMedia`)
     is omitted; web images and videos load directly from their host.
 - **Files and search UI.** `components/files/*`, `components/search/*`, the file picker, and the
-  keybindings are upstream's. Coder deltas (marked `Coder:`): file reads, listings, writes, and
-  content search name the thread so the helper can verify the project root; reads return a
-  revision that each write must match, and a rejected save offers **Reload and discard edits**;
-  content search uses the helper's time-budgeted search (`projects.searchText`), showing its first
-  page; a draft names its project rather than a thread; image, video, audio, PDF, and HTML
+  keybindings are upstream's. Coder deltas (marked `Coder:`): image, video, audio, PDF, and HTML
   previews load from upstream's signed asset URLs, and HTML files are detected locally because
-  upstream's `isBrowserPreviewFile` lives with the in-app browser; there is no
-  open-in-editor or reveal action, and the tree adds Copy path. Changed files in the Git actions
-  dialog open in the Files surface, with repository-relative status paths mapped to the thread's
-  folder; a file outside a subfolder project cannot be opened there.
+  upstream's `isBrowserPreviewFile` lives with the in-app browser; there is no open-in-editor,
+  reveal, or open-in-browser action. `fileContextMenu.ts` keeps upstream's
+  `resolveFileContextMenuAbsolutePath` but replaces its editor and reveal items with Open in Files
+  (when the caller passes a thread) and Copy path, which copies that full path; the Files tree,
+  the diff panel, and turn change cards use it. Changed files in the Git actions dialog open in the
+  Files surface instead of an editor: repository-relative status paths map to the thread's folder,
+  and a file outside a subfolder project opens by its absolute path.
   `projectFilesQueryState.ts` has no `isFile`, which only the uncarried `OpenInPicker` reads.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
@@ -1103,12 +1068,10 @@ listed here is drift to remove rather than fork behavior to keep.
   expanded context loads through the chunked review RPCs (`createChunkedGitDiffFileContentsLoader`),
   and a file over the expansion limit is listed in `DiffFileExpansionErrorNotice` above the viewer
   instead of failing the diff. Branch previews ask for one top-level `sourceKind`. A file title
-  opens the Files surface through ChatView's `onOpenFile` and has no local-editor fallback. The
-  context menu offers Copy path (project-relative) in place of upstream's editor actions.
-  Review diffs (`review/ReviewService.ts`) keep upstream's cwd check, which admits the server cwd,
-  managed worktrees, and registered project roots, rather than the Files surface's
-  requesting-thread verification, because every root it admits already belongs to a registered
-  project.
+  opens the Files surface through upstream's `openDiffFilePrimaryAction` with no local-editor
+  fallback, and the file menu is `fileContextMenu.ts`'s (see Files and search UI) with the route
+  thread passed in. Review diffs (`review/ReviewService.ts`) keep upstream's cwd check, which
+  admits the server cwd, managed worktrees, and registered project roots.
 - **Diff renderer patch.** `patches/@pierre%2Fdiffs@1.5.2.patch` is upstream's patch plus a guard
   that ignores loaded file contents unless the current diff is still the partial diff that asked
   for them.
@@ -1213,9 +1176,7 @@ listed here is drift to remove rather than fork behavior to keep.
   `SourceControlProviderRegistry.test.ts` runs
   upstream's registry tests (its `makeRegistry` with remotes, process, and server settings) for
   the GitLab-only registry, with the "asks once" and "asks again" auth-probe tests driving
-  `glab`. `WorkspaceSearchIndex.native.test.ts` is upstream's native decoding test plus the
-  fork's content-search characterization (fff's `Result` imported as `FffResult` beside
-  Effect's). `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
+  `glab`. `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
   `storageCleanup.test.ts` its saved-usage-cache test, and `PullRequestService.test.ts` its
   GitHub-credential branch deletion test; upstream's OTLP `config.test.ts` is not carried.
   `presentation.test.ts` omits upstream's disabled and unsupported connection tests, since Coder

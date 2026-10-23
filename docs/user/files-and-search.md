@@ -1,14 +1,14 @@
 # Files and search
 
-The Files panel in the right panel is a contained way to read and edit text files in the active
-project — not a general window onto the workspace filesystem.
+The Files panel in the right panel reads and edits text files in the active project, and opens
+other workspace files that a message links to.
 
 ## Browsing and reading
 
 Open the Files panel and browse the project tree. Each folder loads when opened, including
-Git-ignored folders; ignored entries are dimmed. The tree skips symlinks and Git metadata. Large
-folders show a limit notice after 1,000 inspected entries. Filename search continues to use the
-separate path index, so ignored files can be browsed without adding them to search results.
+Git-ignored folders; ignored entries are dimmed. The tree skips symlinks and Git metadata. A
+folder lists at most its first 5,000 entries. Filename search continues to use the separate path
+index, so ignored files can be browsed without adding them to search results.
 
 Selecting a text file shows it in the preview.
 Files up to 1 MiB can be opened fully; larger text files open truncated and read-only, and other
@@ -23,26 +23,22 @@ viewer, and HTML files (up to 10 MiB) as a page you can switch to its source. A 
 sandbox away from T3 Coder and your session, and its links open in new tabs; images or styles it
 references by relative path do not load.
 
-Path safety is enforced for you: files are always addressed relative to the project root, and
-links that would escape the project — including through symlinks — do not resolve.
+Project files are addressed relative to the project root. A file link with an absolute or `~/`
+path elsewhere in the workspace, such as a report an agent wrote to a temporary folder, opens that
+file read-only in the panel; a linked folder opens as a read-only tree.
 
 ## Editing
 
-Type in an opened text file to change it; edits save automatically shortly after you stop typing.
-Saves are protected against clobbering work:
-
-- If the file changed in the workspace after you opened it, the save is rejected instead of
-  silently overwriting. A notice offers **Reload and discard edits** so you can start again from
-  the current file.
-- Saves replace the file atomically, so a half-written file never appears mid-save.
-- Edits apply only to files that were fully readable to begin with; truncated read-only files
-  cannot be edited.
+Type in an opened project file to change it; edits save automatically shortly after you stop
+typing. A save writes your version of the file, so if an agent or a terminal changed the file
+while you were editing, the save replaces that change. Truncated files and files outside the
+project are read-only.
 
 Open files and editor state are kept in browser memory only. Whether the file explorer is shown
 and whether Markdown and tables open rendered are remembered as display preferences in the
 browser.
 
-Right-click a file in the tree and choose **Copy path** to put its project-relative path on your
+Right-click a file in the tree and choose **Copy path** to put its full workspace path on your
 clipboard, **Copy mention** to copy it as a composer mention, or **Add to chat** to mention it in
 the composer. You can also drag files from the tree into the composer.
 
@@ -69,4 +65,4 @@ Binary files are skipped.
 Open a CSV or TSV file in Files and select **Show table** to see a table. Switch back with **Show source** to
 read or edit the text. The table shows at most 100 rows and 30 columns, with cells limited to 2,000
 characters. It uses the same bounded project-file read as the source editor, including the 1 MiB
-file limit and project path checks.
+file limit.
