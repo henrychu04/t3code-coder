@@ -5,7 +5,6 @@ import type {
 } from "@t3tools/client-runtime/state/projects";
 import {
   AuthOrchestrationOperateScope,
-  AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProjectId,
@@ -22,12 +21,11 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-import { act, render, type Screen } from "../../../test/render";
+import { render, type Screen } from "../../../test/render";
 import type { Project } from "../../types";
 
 type SessionResult = AsyncResult.AsyncResult<AuthSessionState, Error>;
@@ -161,14 +159,6 @@ const session = (scopes: ReadonlyArray<AuthEnvironmentScope>): AuthSessionState 
 const writable = () => AsyncResult.success(session([AuthOrchestrationOperateScope]));
 const missingProjectFile = Atom.make(AsyncResult.initial<never, never>());
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((complete) => {
-    resolve = complete;
-  });
-  return { promise, resolve };
-}
-
 function setup() {
   vi.clearAllMocks();
   state.sessions.clear();
@@ -296,167 +286,9 @@ async function mountSettings(search: SettingsScopeSearch) {
 
 const nameInput = (screen: Screen) =>
   screen.container.querySelector<HTMLInputElement>('[aria-label="Project name"]')!;
-const removeCheckout = (screen: Screen, root: string) =>
-  screen.container.querySelector<HTMLButtonElement>(`[aria-label="Remove checkout ${root}"]`)!;
-const removeAll = (screen: Screen) =>
-  [...screen.container.querySelectorAll("button")].find((button) =>
-    button.textContent?.includes("Remove all entries"),
-  )!;
 
-async function grant(id: EnvironmentId, result: SessionResult) {
-  await act(async () => appAtomRegistry.set(state.sessions.get(id)!, result));
-}
-
-async function rename(screen: Screen, title: string) {
-  await userEvent.fill(nameInput(screen), title);
-  await userEvent.keyboard("{Enter}");
-}
-
-// The recheck reports the denial by toast; seeing it proves the recheck ran.
-async function expectProjectAccessDeniedToast(title: string) {
-  await vi.waitFor(() =>
-    expect(state.toast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "error",
-        title,
-        description: "This connection cannot change projects in remote.",
-      }),
-    ),
-  );
-  expect(state.toast).toHaveBeenCalledOnce();
-}
-
-describe("project settings permissions", () => {
-  it("disables shared edits when any member lacks project access", async () => {
-    setup();
-    await grant(remoteId, AsyncResult.success(session([AuthSettingsWriteScope])));
-    await using screen = await mountPanel();
-
-    expect(nameInput(screen).disabled).toBe(true);
-    expect(removeAll(screen).disabled).toBe(true);
-    expect(screen.container.textContent).toContain(
-      "Shared settings require permission to change every checkout in this group.",
-    );
-    expect(state.update).not.toHaveBeenCalled();
-  });
-
-  it("renames every member when all have project access without settings access", async () => {
-    setup();
-    await using screen = await mountPanel();
-    await rename(screen, "Renamed");
-    expect(state.update.mock.calls.map(([request]) => request.environmentId)).toEqual([
-      primaryId,
-      remoteId,
-    ]);
-    expect(nameInput(screen).value).toBe("Renamed");
-  });
-
-  it("stops before the next member if its grant is revoked during an earlier update", async () => {
-    setup();
-    const firstUpdate = deferred<AsyncResult.Success<void>>();
-    state.update.mockReturnValueOnce(firstUpdate.promise);
-    await using screen = await mountPanel();
-    await rename(screen, "Renamed");
-    expect(state.update).toHaveBeenCalledOnce();
-
-    await grant(remoteId, AsyncResult.success(session([])));
-    await act(async () => {
-      firstUpdate.resolve(AsyncResult.success(undefined));
-      await firstUpdate.promise;
-    });
-    await expectProjectAccessDeniedToast("Failed to rename project");
-    expect(state.update).toHaveBeenCalledOnce();
-    expect(state.update.mock.calls[0]![0].environmentId).toBe(primaryId);
-  });
-
-  it("disables removal for a checkout whose project grant is missing", async () => {
-    setup();
-    await grant(remoteId, AsyncResult.success(session([])));
-    await using screen = await mountPanel();
-    expect(removeCheckout(screen, "/work/remote").disabled).toBe(true);
-    expect(removeCheckout(screen, "/work/primary").disabled).toBe(false);
-  });
-
-  it("removes a writable checkout while removal of the mixed group stays denied", async () => {
-    setup();
-    await grant(remoteId, AsyncResult.success(session([])));
-    await using screen = await mountPanel();
-    const initialHref = screen.router.state.location.href;
-    expect(removeAll(screen).disabled).toBe(true);
-
-    await userEvent.click(removeCheckout(screen, "/work/primary"));
-    await vi.waitFor(() => expect(state.delete).toHaveBeenCalledOnce());
-    expect(state.delete).toHaveBeenCalledWith({
-      environmentId: primaryId,
-      input: { projectId: state.projects[0]!.id, force: true },
-    });
-    await vi.waitFor(() => expect(state.releaseUploads).toHaveBeenCalledOnce());
-    expect(state.clearDraft).toHaveBeenCalledOnce();
-    expect(screen.router.state.location.href).toBe(initialHref);
-  });
-
-  it("rechecks every removal target after confirmation before deleting or clearing drafts", async () => {
-    setup();
-    const confirmed = deferred<boolean>();
-    state.confirm.mockReturnValueOnce(confirmed.promise);
-    await using screen = await mountPanel();
-    await userEvent.click(removeAll(screen));
-    expect(state.confirm).toHaveBeenCalledOnce();
-
-    await grant(remoteId, AsyncResult.success(session([])));
-    await act(async () => {
-      confirmed.resolve(true);
-      await confirmed.promise;
-    });
-    await expectProjectAccessDeniedToast("Failed to remove project");
-    expect(state.delete).not.toHaveBeenCalled();
-    expect(state.releaseUploads).not.toHaveBeenCalled();
-    expect(state.clearDraft).not.toHaveBeenCalled();
-  });
-
-  it("does not save an edit whose grant was revoked mid-edit, and recovers when restored", async () => {
-    setup();
-    await using screen = await mountPanel();
-    await userEvent.fill(nameInput(screen), "Renamed");
-    await grant(remoteId, AsyncResult.success(session([])));
-    // Chromium takes focus off a newly disabled input without firing blur. Send the
-    // focusout so the save attempt runs and hits the same recheck as a real blur.
-    await act(async () => {
-      nameInput(screen).dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    });
-    await expectProjectAccessDeniedToast("Failed to rename project");
-    expect(state.update).not.toHaveBeenCalled();
-    expect(nameInput(screen).disabled).toBe(true);
-
-    await grant(remoteId, writable());
-    expect(nameInput(screen).disabled).toBe(false);
-    await rename(screen, "Recovered");
-    await vi.waitFor(() => expect(state.update).toHaveBeenCalledTimes(2));
-    expect(nameInput(screen).value).toBe("Recovered");
-  });
-
-  it.each([
-    ["loading", () => AsyncResult.initial<AuthSessionState, Error>(), false],
-    [
-      "failed",
-      () => AsyncResult.failure<AuthSessionState, Error>(Cause.fail(new Error("Disconnected"))),
-      false,
-    ],
-    ["refreshing", () => AsyncResult.waiting(writable()), true],
-  ] as const)(
-    "uses the current grant while a member's session is %s",
-    async (_state, result, allowed) => {
-      setup();
-      await grant(remoteId, result());
-      await using screen = await mountPanel();
-      expect(nameInput(screen).disabled).toBe(!allowed);
-      if (!allowed) return;
-      await rename(screen, "Renamed");
-      expect(state.update).toHaveBeenCalledTimes(2);
-    },
-  );
-});
-
+// Coder: no "project settings permissions" tests. Environment scopes always grant (see
+// coder-only.md, Contracts and scopes), so per-project grants never disable an edit or removal.
 describe("project settings scope", () => {
   const environmentMenu = () => page.getByRole("button", { name: /^Environment scope:/ });
   const primaryOption = () => page.getByRole("menuitemradio", { name: /^primary/ });

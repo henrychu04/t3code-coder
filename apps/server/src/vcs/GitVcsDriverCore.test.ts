@@ -120,6 +120,8 @@ describe("Git output collection", () => {
         stderr,
         stdoutTruncated: false,
         stderrTruncated: false,
+        // Coder: the driver reports malformed UTF-8 for strict review expansion.
+        stdoutInvalidUtf8: false,
       };
 
       assert.deepEqual(yield* driver.execute(input), expected);
