@@ -18,7 +18,8 @@ that port is free, so browser storage keeps one origin across restarts; otherwis
 ephemeral port and saves that. It stores only non-secret Coder deployment URLs, workspace targets,
 structured port-forward rules, an optional Coder executable path, and the last gateway port. A
 composer attachment stays in gateway memory while it is streamed to the workspace and is never
-written to local disk. Browser UI preferences
+written to local disk by the gateway. The browser may store and cache what upstream does, except
+credentials. Browser UI preferences
 such as theme and panel size may use browser storage; as on main, `uiStateStore` keeps sidebar
 project expansion, order, and scope, thread visit times, changed-file folder expansion, and the
 last merge method there, and session storage holds main's one-reload guard for stale split chunks

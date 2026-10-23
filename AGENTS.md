@@ -16,8 +16,8 @@ runtime boundary or syncing upstream.
 - On disk: the checkout and its build output (the web client and a Linux helper bundle that is
   never run locally), `config.json` and `gateway-port` in the T3 Coder config directory, and
   Coder's own per-deployment `--global-config` directories beside them.
-- Nothing else, apart from files the user saves through the browser's own downloads. Attachments
-  stream from gateway memory; nothing is staged on disk.
+- Nothing else, apart from the browser's own storage and cache and files the user saves through its
+  downloads. Attachments stream from gateway memory; the gateway stages nothing on disk.
 - Hosts: Windows 11 in production, macOS for development; use Node platform APIs for local paths.
 
 ## Boundaries
@@ -42,10 +42,10 @@ runtime boundary or syncing upstream.
    Registry driver from its local `kilo acp` command only: no registry index, installs, or agent
    sign-in. Carry no other provider driver or package.
 8. No provider binary is bundled on the laptop; the Anthropic Agent SDK stays type-only.
-9. Durable application state stays in the workspace. Local persistence is limited to non-secret
-   deployment URLs, Coder executable paths, workspace targets, port-forward rules, and the last
-   gateway port. Browser storage keeps UI preferences, draft text, and upstream's IndexedDB caches;
-   never credentials or attachment and file bytes.
+9. Durable application state stays in the workspace, which remains the source of truth. Local
+   persistence outside the browser is limited to non-secret deployment URLs, Coder executable
+   paths, workspace targets, port-forward rules, and the last gateway port. The browser may store
+   and cache what upstream does, but never credentials.
 10. GitLab is the only hosted source-control provider; Git and `glab` run only in the workspace.
 11. The branch policy below is part of the boundary.
 
