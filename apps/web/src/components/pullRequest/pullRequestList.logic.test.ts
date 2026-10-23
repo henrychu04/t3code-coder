@@ -35,6 +35,10 @@ import {
   reusePullRequestEntries,
   settlePullRequestOverrides,
 } from "./pullRequestList.logic";
+import {
+  readPullRequestListPreferences,
+  writePullRequestListPreferences,
+} from "./pullRequestListPreferences";
 
 const VIEWERS = { "github.com": "Bilal" } as const;
 
@@ -403,6 +407,38 @@ describe("the list snapshot across a reload", () => {
     expect(snapshot?.data.entries).toHaveLength(99);
     expect(snapshot?.data.viewers).toEqual(viewers);
     expect(snapshot?.data.providers).toEqual(providers);
+  });
+});
+
+describe("remembered pull request list controls", () => {
+  const makeStorage = () => {
+    const held = new Map<string, string>();
+    return {
+      getItem: (key: string) => held.get(key) ?? null,
+      setItem: (key: string, value: string) => void held.set(key, value),
+    };
+  };
+
+  // regression: #9188 corrupt stored list controls broke the page
+  it("falls back to the default controls when storage is corrupt", () => {
+    const storage = makeStorage();
+    storage.setItem("t3.pullRequests.preferences", "{not json");
+    expect(readPullRequestListPreferences(storage)).toEqual({ involvement: "all", state: "open" });
+  });
+
+  it("falls back when browser policy denies storage", () => {
+    const denied = {
+      getItem: () => {
+        throw new Error("storage denied");
+      },
+      setItem: () => {
+        throw new Error("storage denied");
+      },
+    };
+    expect(readPullRequestListPreferences(denied)).toEqual({ involvement: "all", state: "open" });
+    expect(() =>
+      writePullRequestListPreferences({ involvement: "all", state: "open" }, denied),
+    ).not.toThrow();
   });
 });
 

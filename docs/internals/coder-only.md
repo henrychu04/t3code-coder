@@ -1010,8 +1010,8 @@ listed here is drift to remove rather than fork behavior to keep.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
   come over the `pullRequests.diff` RPC without upstream's cross-environment GitHub routing,
-  snapshots and the last merge method stay in memory (a project's default merge method is a
-  workspace setting whose `null` means "last selected"), and `!` references and GitLab wording are
+  a project's default merge method is a workspace setting whose `null` means "last selected",
+  and `!` references and GitLab wording are
   used. Label RPCs exist but GitLab does not advertise label editing, and native stack actions are
   never advertised. Video uploads play inline, other uploads link as on main, and `/uploads/`
   links resolve against the repository host (client-runtime `pullRequestMarkdown.ts`, which also
@@ -1158,9 +1158,7 @@ listed here is drift to remove rather than fork behavior to keep.
   upstream's migrator and its V2 id-clash check, so `Migrations.test.ts` is upstream's. New
   migrations take upstream's next ID; never add a Coder-only migration ID. `migrationEntries`
   stays exported (upstream made it private) for the Coder legacy-history tests.
-- **Persistence.** Merge-request snapshots, right-panel tabs, diff-panel selections, closed-view
-  history, the last merge method, and the last project grouping mode stay in memory where
-  upstream uses browser storage. Upstream's offline query persistence, which only its mobile app
+- **Persistence.** Upstream's offline query persistence, which only its mobile app
   provides a store for, is not carried: client-runtime's `state/runtime.ts` query atoms take no
   `persistence` option and `state/pullRequests.ts` passes none. Its query key normalizer drops
   upstream's `expectedAccountId`, which the contract does not carry. Model favorites, visibility, and order are upstream's server
