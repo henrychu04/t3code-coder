@@ -95,8 +95,11 @@ function decodeBrowserMessage(message: unknown): BrowserRpcMessage {
       if (!isRequestId(message.id) || typeof message.tag !== "string") {
         throw new RpcBridgeSessionError("Browser sent an invalid RPC request.");
       }
-      // The gateway's asset route is the only caller of the helper's asset stream.
-      if (message.tag === WS_METHODS.coderServeAsset) {
+      // The gateway's asset and upload routes are the only callers of the helper's asset methods.
+      if (
+        message.tag === WS_METHODS.coderServeAsset ||
+        message.tag === WS_METHODS.coderWriteRequestBody
+      ) {
         throw new RpcBridgeSessionError("Browser sent a gateway-only RPC request.");
       }
       return message as unknown as BrowserRpcMessage;

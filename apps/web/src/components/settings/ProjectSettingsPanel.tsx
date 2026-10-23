@@ -35,6 +35,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { SettingsPageContainer } from "./settingsLayout";
+import { ProjectFaviconPickerDialog } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
@@ -274,6 +275,7 @@ function ProjectDetail({
     await updateAllMembers({ title }, "Failed to rename project");
   };
 
+  const [faviconPickerOpen, setFaviconPickerOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
   const savingFaviconRef = useRef(false);
@@ -499,6 +501,16 @@ function ProjectDetail({
                 >
                   Choose icon
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  aria-label="Choose a project icon file"
+                  disabled={isSavingFavicon || !canEditGroup}
+                  onClick={() => setFaviconPickerOpen(true)}
+                >
+                  Choose file
+                </Button>
               </div>
             }
           />
@@ -541,6 +553,15 @@ function ProjectDetail({
         </SettingsSection>
       </SettingsPageContainer>
 
+      <ProjectFaviconPickerDialog
+        key={`${representative.environmentId}:${representative.workspaceRoot}:${faviconPickerOpen}`}
+        cwd={representative.workspaceRoot}
+        environmentId={representative.environmentId}
+        onOpenChange={setFaviconPickerOpen}
+        onSelect={(path) => void setProjectIcon({ faviconPath: path, projectIcon: null })}
+        open={faviconPickerOpen && canEditGroup}
+        projectName={group.displayName}
+      />
       {iconPickerOpen ? (
         <Suspense fallback={null}>
           <ProjectIconPickerDialog

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
 }));
 vi.mock("./useSettingsProjectGroups", () => ({ useSettingsProjectGroups: mocks.groups }));
+vi.mock("./ProjectFaviconPickerDialog", () => ({ ProjectFaviconPickerDialog: () => null }));
 vi.mock("../../state/environments", () => ({ useEnvironments: mocks.environments }));
 vi.mock("../../state/entities", () => ({
   useThreadShells: () => [],

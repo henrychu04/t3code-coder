@@ -20,11 +20,8 @@ const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
 const DEFAULT_COMMAND_TIMEOUT_MS = 2 * 60_000;
 const DEFAULT_TRANSFER_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
-const ATTACHMENT_PATH_SENTINEL = "T3_CODER_ATTACHMENT_PATH=";
 /** Printed once the remote shell is ready to read the transfer from stdin. */
 const TRANSFER_READY_SENTINEL = "T3_CODER_TRANSFER_READY";
-/** A composer attachment's stored extension, without its dot: `png`, `pdf`, `bin`. */
-const ATTACHMENT_EXTENSION_PATTERN = /^[a-z0-9]{1,10}$/;
 const TAR_BLOCK_BYTES = 512;
 
 export class CoderProcessError extends Error {
@@ -334,73 +331,6 @@ export function installCoderHelper(input: {
           input.deployment,
           input.workspace,
           [remotePath, `${remotePath}.tar`],
-          input.invocationOptions,
-        ),
-      ),
-    );
-  });
-}
-
-/**
- * Stages a validated composer image or file in `$HOME/.t3-coder/attachments` under an internally
- * generated name and returns its workspace path.
- */
-export function uploadCoderComposerAttachment(input: {
-  readonly deployment: CoderDeploymentProfile;
-  readonly workspace: CoderWorkspaceProfile;
-  readonly bytes: Buffer;
-  readonly extension: string;
-  readonly invocationOptions?: CoderInvocationOptions;
-}): Effect.Effect<string, CoderProcessError> {
-  return Effect.gen(function* () {
-    if (!ATTACHMENT_EXTENSION_PATTERN.test(input.extension)) {
-      return yield* Effect.fail(new CoderProcessError("Invalid attachment extension."));
-    }
-    // Upstream's pending-upload id, `pending-<uuid>-<ext>`, stored as `<id>.<ext>`. The workspace
-    // helper claims it into the thread when the message is sent.
-    const filename = `pending-${randomUUID()}-${input.extension}.${input.extension}`;
-    const remotePath = `.t3-coder/attachments/${filename}.tmp`;
-    const finalRemotePath = `.t3-coder/attachments/${filename}`;
-    const command = remoteStdinTransferCommand({
-      setup: [`temporary="$HOME/${remotePath}"`, `final="$HOME/${finalRemotePath}"`],
-      target: '"$temporary"',
-      size: input.bytes.byteLength,
-      finish: [
-        'chmod 600 "$temporary"',
-        'mv "$temporary" "$final"',
-        `printf '${ATTACHMENT_PATH_SENTINEL}%s\\n' "$final"`,
-      ],
-    });
-    const upload = Effect.gen(function* () {
-      const stdout = yield* runProcess(
-        buildCoderWorkspaceShellInvocation(
-          input.deployment,
-          input.workspace,
-          command,
-          input.invocationOptions,
-        ),
-        "Coder attachment transfer",
-        DEFAULT_TRANSFER_TIMEOUT_MS,
-        DEFAULT_TERMINATION_GRACE_MS,
-        { readySentinel: TRANSFER_READY_SENTINEL, chunks: [input.bytes] },
-      );
-      const pathLine = stdout
-        .split(/\r?\n/u)
-        .find((line) => line.startsWith(ATTACHMENT_PATH_SENTINEL));
-      const workspacePath = pathLine?.slice(ATTACHMENT_PATH_SENTINEL.length).trim();
-      if (!workspacePath?.startsWith("/")) {
-        return yield* Effect.fail(
-          new CoderProcessError("Coder attachment transfer did not return a workspace path."),
-        );
-      }
-      return workspacePath;
-    });
-    return yield* upload.pipe(
-      Effect.onError(() =>
-        cleanupRemoteTransfer(
-          input.deployment,
-          input.workspace,
-          [remotePath, finalRemotePath],
           input.invocationOptions,
         ),
       ),

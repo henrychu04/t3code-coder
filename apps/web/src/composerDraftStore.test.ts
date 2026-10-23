@@ -1871,69 +1871,6 @@ function createMockStorage() {
   };
 }
 
-describe("composer draft persistence", () => {
-  // Coder: kept after upstream pruned it; it guards that draft image bytes never reach browser storage.
-  it("defers serialization until typing stops and never persists draft image bytes", async () => {
-    await useComposerDraftStore.persist.clearStorage();
-    vi.useFakeTimers();
-    const stringify = vi.spyOn(JSON, "stringify");
-    try {
-      resetComposerDraftStore();
-      const heavyThreadId = ThreadId.make("heavy-draft");
-      const typingThreadId = ThreadId.make("typing-draft");
-      const heavyRef = scopeThreadRef(TEST_ENVIRONMENT_ID, heavyThreadId);
-      const typingRef = scopeThreadRef(TEST_ENVIRONMENT_ID, typingThreadId);
-      const heavyKey = scopedThreadKey(heavyRef);
-      useComposerDraftStore.getState().setPrompt(heavyRef, "Keep this image");
-      const attachments = [
-        {
-          id: "heavy-image",
-          name: "image.png",
-          mimeType: "image/png",
-          sizeBytes: 49_152,
-          dataUrl: `data:image/png;base64,${"AQID".repeat(16_384)}`,
-        },
-      ];
-      let attachmentReads = 0;
-      useComposerDraftStore.setState((state) => ({
-        draftsByThreadKey: {
-          ...state.draftsByThreadKey,
-          [heavyKey]: {
-            ...state.draftsByThreadKey[heavyKey]!,
-            get persistedAttachments() {
-              attachmentReads += 1;
-              return attachments;
-            },
-          },
-        },
-      }));
-      attachmentReads = 0;
-      stringify.mockClear();
-
-      for (let index = 1; index <= 20; index++) {
-        useComposerDraftStore.getState().setPrompt(typingRef, `Draft ${index}`);
-      }
-      expect(attachmentReads).toBe(0);
-      expect(stringify).not.toHaveBeenCalled();
-
-      await vi.advanceTimersByTimeAsync(300);
-      // Coder keeps draft image bytes in browser memory only.
-      expect(attachmentReads).toBe(0);
-      expect(stringify).toHaveBeenCalledTimes(1);
-
-      resetComposerDraftStore();
-      await useComposerDraftStore.persist.rehydrate();
-      expect(draftFor(typingThreadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("Draft 20");
-      expect(draftFor(heavyThreadId, TEST_ENVIRONMENT_ID)?.persistedAttachments ?? []).toEqual([]);
-    } finally {
-      stringify.mockRestore();
-      await useComposerDraftStore.persist.clearStorage();
-      vi.useRealTimers();
-      resetComposerDraftStore();
-    }
-  });
-});
-
 describe("createDeferredStorage", () => {
   const serialize = vi.fn((value: string) => `s:${value}`);
 

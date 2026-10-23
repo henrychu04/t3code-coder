@@ -27,7 +27,10 @@ import {
   classifyComposerAttachmentFile,
   normalizeComposerImageFileMimeType,
 } from "./composerAttachmentFiles";
-import { fileAttachmentTooLargeMessage, formatAttachmentSize } from "~/lib/attachmentDisplay";
+import {
+  fileAttachmentTooLargeMessage,
+  formatAttachmentSize,
+} from "@t3tools/client-runtime/state/attachments";
 import { fileContextReference, imageContextReference } from "~/lib/composerContextRecords";
 import { isMacPlatform, randomUUID } from "~/lib/utils";
 import {

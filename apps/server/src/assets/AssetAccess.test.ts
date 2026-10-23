@@ -2,11 +2,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeFSP from "node:fs/promises";
-import {
-  AssetPreviewTypeValidationError,
-  ThreadId,
-  TurnItemId,
-} from "@t3tools/contracts";
+import { AssetPreviewTypeValidationError, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import { MCP_APP_MAX_HTML_BYTES } from "@t3tools/shared/mcpApp";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
@@ -22,6 +19,8 @@ import { vi } from "vite-plus/test";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
+import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { assetFileResponse } from "../http.ts";
 import { ASSET_ROUTE_PREFIX, issueAssetUrl, readMcpAppHtml, resolveAsset } from "./AssetAccess.ts";
@@ -101,10 +100,14 @@ const layerTest = Layer.mergeAll(
   }),
   layerConfig,
   WorkspacePaths.layer,
+  ProjectFaviconResolver.layer.pipe(
+    Layer.provide(WorkspacePaths.layer),
+    Layer.provide(T3ProjectFileLoader.layer),
+  ),
   ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
-// Coder: project favicon, native app icon, and GitHub media cases are not carried.
+// Coder: native app icon and GitHub media cases are not carried.
 describe("AssetAccess", () => {
   describe("readMcpAppHtml", () => {
     it.effect("accepts snapshots at the stored HTML byte limit", () =>
@@ -815,6 +818,122 @@ describe("AssetAccess", () => {
       expect(
         yield* resolveAsset(suffix.slice(0, separatorIndex), suffix.slice(separatorIndex + 1)),
       ).toMatchObject({ kind: "file", path: attachmentPath, download: true });
+    }).pipe(Effect.provide(layerTest)),
+  );
+  it.effect("issues project favicon capabilities with a signed fallback", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-favicon-",
+      });
+      const faviconPath = path.join(root, "favicon.svg");
+      const initialFavicon = "<svg>a</svg>";
+      const updatedFavicon = "<svg>b</svg>";
+      expect(updatedFavicon).toHaveLength(initialFavicon.length);
+      yield* fileSystem.writeFileString(faviconPath, initialFavicon);
+      const canonicalFaviconPath = yield* fileSystem.realPath(faviconPath);
+
+      const faviconResult = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root },
+      });
+      expect(faviconResult.sourcePath).toBe("favicon.svg");
+      expect(faviconResult.relativeUrl).toMatch(/\/v[0-9a-f]{64}-favicon\.svg$/);
+      expect(
+        yield* issueAssetUrl({
+          resource: { _tag: "project-favicon", cwd: root },
+        }),
+      ).toEqual(faviconResult);
+      const faviconSuffix = faviconResult.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const faviconSeparatorIndex = faviconSuffix.indexOf("/");
+      expect(
+        yield* resolveAsset(
+          faviconSuffix.slice(0, faviconSeparatorIndex),
+          faviconSuffix.slice(faviconSeparatorIndex + 1),
+        ),
+      ).toEqual({ kind: "file", path: canonicalFaviconPath });
+
+      yield* fileSystem.writeFileString(faviconPath, updatedFavicon);
+      const updatedFaviconResult = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root },
+      });
+      expect(
+        updatedFaviconResult.relativeUrl.slice(updatedFaviconResult.relativeUrl.lastIndexOf("/")),
+      ).not.toBe(faviconResult.relativeUrl.slice(faviconResult.relativeUrl.lastIndexOf("/")));
+
+      yield* fileSystem.remove(faviconPath);
+      const fallbackResult = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root },
+      });
+      expect(fallbackResult.relativeUrl.endsWith(`/${PROJECT_FAVICON_FALLBACK_MARKER}`)).toBe(true);
+      expect(fallbackResult.sourcePath).toBeUndefined();
+      const fallbackSuffix = fallbackResult.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const fallbackSeparatorIndex = fallbackSuffix.indexOf("/");
+      expect(
+        yield* resolveAsset(
+          fallbackSuffix.slice(0, fallbackSeparatorIndex),
+          fallbackSuffix.slice(fallbackSeparatorIndex + 1),
+        ),
+      ).toBeNull();
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("issues an exact capability for a saved favicon outside the workspace", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-favicon-workspace-",
+      });
+      const pictures = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-favicon-pictures-",
+      });
+      const externalPath = path.join(pictures, "custom.png");
+      const siblingPath = path.join(pictures, "sibling.png");
+      yield* fileSystem.writeFile(externalPath, new Uint8Array([1, 2, 3]));
+      yield* fileSystem.writeFile(siblingPath, new Uint8Array([4, 5, 6]));
+      const canonicalPath = yield* fileSystem.realPath(externalPath);
+      const canonicalSiblingPath = yield* fileSystem.realPath(siblingPath);
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root },
+        projectFaviconPath: externalPath,
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separatorIndex = suffix.indexOf("/");
+
+      expect(result.sourcePath).toBe(externalPath);
+      expect(result.relativeUrl).toMatch(/\/v[0-9a-f]{64}-custom\.png$/);
+      expect(
+        yield* resolveAsset(suffix.slice(0, separatorIndex), suffix.slice(separatorIndex + 1)),
+      ).toEqual({ kind: "file", path: canonicalPath });
+      const tamperedSuffixResult = yield* resolveAsset(
+        suffix.slice(0, separatorIndex),
+        "sibling.png",
+      );
+      expect(tamperedSuffixResult).toEqual({ kind: "file", path: canonicalPath });
+      expect(tamperedSuffixResult).not.toEqual({ kind: "file", path: canonicalSiblingPath });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("ignores a client favicon path hint", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-favicon-hint-",
+      });
+      yield* fileSystem.makeDirectory(path.join(root, "brand"));
+      yield* fileSystem.writeFileString(path.join(root, "brand", "hint.svg"), "<svg>hint</svg>");
+      yield* fileSystem.writeFileString(path.join(root, "brand", "saved.svg"), "<svg>saved</svg>");
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root, path: "brand/hint.svg" },
+        projectFaviconPath: "brand/saved.svg",
+      });
+
+      expect(result.sourcePath).toBe(path.join("brand", "saved.svg"));
+      expect(result.relativeUrl).toMatch(/\/v[0-9a-f]{64}-saved\.svg$/);
     }).pipe(Effect.provide(layerTest)),
   );
 });

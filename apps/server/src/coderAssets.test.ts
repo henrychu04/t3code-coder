@@ -2,16 +2,20 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CODER_ASSET_BODY_CHUNK_BYTES, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import { issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import { makeServeAsset } from "./coderAssets.ts";
 import * as ServerConfig from "./config.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
+import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 
 const layerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
@@ -22,12 +26,17 @@ const layerTest = Layer.mergeAll(
   layerConfig,
   WorkspacePaths.layer,
   ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),
+  ProjectFaviconResolver.layer.pipe(
+    Layer.provide(WorkspacePaths.layer),
+    Layer.provide(T3ProjectFileLoader.layer),
+  ),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
-const serve = (input: Parameters<Effect.Success<typeof makeServeAsset>>[0]) =>
+type ServeAsset = Effect.Success<typeof makeServeAsset>;
+
+const collect = (assets: ServeAsset, input: Parameters<ServeAsset["serve"]>[0]) =>
   Effect.gen(function* () {
-    const serveAsset = yield* makeServeAsset;
-    const parts = yield* Stream.runCollect(serveAsset(input));
+    const parts = yield* Stream.runCollect(assets.serve(input));
     const [head, ...body] = parts;
     if (head?._tag !== "head") throw new Error("Expected the response head first.");
     return {
@@ -38,6 +47,9 @@ const serve = (input: Parameters<Effect.Success<typeof makeServeAsset>>[0]) =>
       }),
     };
   });
+
+const serve = (input: Parameters<ServeAsset["serve"]>[0]) =>
+  Effect.flatMap(makeServeAsset, (assets) => collect(assets, input));
 
 const issueMediaFile = (contents: Uint8Array | string, name: string) =>
   Effect.gen(function* () {
@@ -87,6 +99,45 @@ describe("coder.serveAsset", () => {
       for (const path of [tampered, "/api/assets/unsigned/shot.png", "/api/other"]) {
         expect((yield* serve({ method: "GET", path })).head.status).toBe(404);
       }
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  it.effect("stores an upload whose body arrives in chunks, and refuses a finished body", () =>
+    Effect.gen(function* () {
+      const assets = yield* makeServeAsset;
+      const bytes = Buffer.alloc(CODER_ASSET_BODY_CHUNK_BYTES + 5, 7);
+      const upload = yield* issueAttachmentUploadUrl({
+        type: "file",
+        name: "notes.bin",
+        mimeType: "application/octet-stream",
+        sizeBytes: bytes.byteLength,
+      });
+      const bodyId = "body-1";
+      const response = yield* collect(assets, {
+        method: "POST",
+        path: upload.relativeUrl,
+        contentType: "application/octet-stream",
+        contentLength: bytes.byteLength,
+        bodyId,
+      }).pipe(Effect.forkChild);
+      for (let offset = 0; offset < bytes.byteLength; offset += CODER_ASSET_BODY_CHUNK_BYTES) {
+        const chunk = bytes.subarray(offset, offset + CODER_ASSET_BODY_CHUNK_BYTES);
+        yield* assets.writeRequestBody({
+          bodyId,
+          dataBase64: chunk.toString("base64"),
+          done: offset + CODER_ASSET_BODY_CHUNK_BYTES >= bytes.byteLength,
+        });
+      }
+      const { head } = yield* Fiber.join(response);
+      expect(head.status).toBe(204);
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const stored = yield* fs.readFile(`${config.attachmentsDir}/${upload.attachmentId}.bin`);
+      expect(Buffer.from(stored).equals(bytes)).toBe(true);
+      const late = yield* assets
+        .writeRequestBody({ bodyId, dataBase64: "", done: true })
+        .pipe(Effect.flip);
+      expect(late._tag).toBe("CoderRequestBodyError");
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 });

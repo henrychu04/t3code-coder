@@ -1,7 +1,13 @@
 import type * as NodeHttp from "node:http";
 
 import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";
-import { type CoderServeAssetInput, WS_METHODS } from "@t3tools/contracts";
+import {
+  CODER_ASSET_BODY_CHUNK_BYTES,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  type CoderServeAssetInput,
+  type CoderWriteRequestBodyInput,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 
@@ -10,6 +16,10 @@ import * as Fiber from "effect/Fiber";
  * route reads only the pathname, a query string is not forwarded.
  */
 export const WORKSPACE_ASSET_ROUTE = /^\/api\/workspaces\/([^/]+)(\/api\/assets\/.*)$/;
+
+/** Matches `/api/workspaces/<id>/api/attachments/upload/<token>`, upstream's signed upload URL. */
+export const WORKSPACE_UPLOAD_ROUTE =
+  /^\/api\/workspaces\/([^/]+)(\/api\/attachments\/upload\/[^/]+)$/;
 
 // Response headers upstream's asset route sets; anything else from the workspace is dropped.
 const FORWARDED_RESPONSE_HEADERS = new Set([
@@ -24,7 +34,11 @@ const FORWARDED_RESPONSE_HEADERS = new Set([
   "last-modified",
 ]);
 
+/** The largest upload upstream mints a URL for (a composer file); images are smaller. */
+export const MAX_FORWARDED_UPLOAD_BYTES = PROVIDER_SEND_TURN_MAX_FILE_BYTES;
+
 let nextAssetRequestId = 0;
+let nextBodyId = 0;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -48,27 +62,59 @@ function responseHeaders(headers: unknown): Record<string, string> {
   return forwarded;
 }
 
+/** Sends one request to the helper and settles with its exit. */
+function callHelper(
+  helper: CoderHelperConnection,
+  tag: string,
+  payload: unknown,
+): Promise<Record<string, unknown>> {
+  const id = `gateway-call:${String(nextAssetRequestId++)}`;
+  return new Promise((resolve, reject) => {
+    const unsubscribe = helper.onRpcMessage((message) => {
+      if (!isRecord(message) || message.requestId !== id || message._tag !== "Exit") return;
+      unsubscribe();
+      resolve(isRecord(message.exit) ? message.exit : {});
+    });
+    void Effect.runPromiseExit(
+      helper.sendRpc({ _tag: "Request", id, tag, payload, headers: [] }),
+    ).then((exit) => {
+      if (exit._tag === "Failure") {
+        unsubscribe();
+        reject(new Error("The workspace helper is disconnected."));
+      }
+    });
+  });
+}
+
 /**
- * Coder: answers one `GET`/`HEAD` asset request through the workspace helper's `coder.serveAsset`
- * stream, which runs upstream's asset route in the workspace. Only `Range` and `If-Range` are
- * forwarded. Each body chunk is acknowledged once the socket accepts it, so a slow browser holds
- * back the helper rather than gateway memory, and a closed request interrupts the helper's read.
+ * Coder: answers one asset (`GET`/`HEAD`) or attachment upload (`POST`) request through the
+ * workspace helper's `coder.serveAsset` stream, which runs upstream's routes in the workspace.
+ * Only `Range`, `If-Range`, and an upload's `Content-Type` and `Content-Length` are forwarded. Each
+ * response chunk is acknowledged once the socket accepts it, so a slow browser holds back the
+ * helper rather than gateway memory, and a closed request interrupts the helper's work. An upload's
+ * body goes to the helper in chunks of `CODER_ASSET_BODY_CHUNK_BYTES`, each sent once the route
+ * has read the previous one.
  */
 export function proxyWorkspaceAsset(
   helper: CoderHelperConnection,
   request: NodeHttp.IncomingMessage,
   response: NodeHttp.ServerResponse,
   assetPath: string,
+  upload?: { readonly contentLength: number },
 ): Promise<void> {
   const requestId = `gateway-asset:${String(nextAssetRequestId++)}`;
-  const method = request.method === "HEAD" ? "HEAD" : "GET";
+  const method = upload ? "POST" : request.method === "HEAD" ? "HEAD" : "GET";
   const range = method === "GET" ? singleHeader(request.headers.range) : undefined;
-  const ifRange = singleHeader(request.headers["if-range"]);
+  const ifRange = method === "POST" ? undefined : singleHeader(request.headers["if-range"]);
+  const contentType = upload ? singleHeader(request.headers["content-type"]) : undefined;
+  const bodyId = upload ? `gateway-body:${String(nextBodyId++)}` : undefined;
   const payload: CoderServeAssetInput = {
     method,
     path: assetPath,
     ...(range === undefined ? {} : { range }),
     ...(ifRange === undefined ? {} : { ifRange }),
+    ...(contentType === undefined ? {} : { contentType }),
+    ...(upload && bodyId !== undefined ? { contentLength: upload.contentLength, bodyId } : {}),
   };
 
   return new Promise<void>((resolve) => {
@@ -163,5 +209,51 @@ export function proxyWorkspaceAsset(
       payload,
       headers: [],
     });
+    if (upload && bodyId !== undefined) {
+      void pumpRequestBody(helper, request, bodyId, upload.contentLength, () => finished).catch(
+        () => {
+          if (finished) return;
+          request.resume();
+          sendRpc({ _tag: "Interrupt", requestId });
+          fail();
+        },
+      );
+    }
   });
+}
+
+/** Streams an upload's body to the helper, one acknowledged chunk at a time. */
+async function pumpRequestBody(
+  helper: CoderHelperConnection,
+  request: NodeHttp.IncomingMessage,
+  bodyId: string,
+  contentLength: number,
+  stopped: () => boolean,
+): Promise<void> {
+  const write = async (data: Buffer, done: boolean) => {
+    const input: CoderWriteRequestBodyInput = {
+      bodyId,
+      dataBase64: data.toString("base64"),
+      done,
+    };
+    const exit = await callHelper(helper, WS_METHODS.coderWriteRequestBody, input);
+    if (exit._tag !== "Success") throw new Error("The workspace refused the upload body.");
+  };
+  let pending: Buffer = Buffer.alloc(0);
+  let received = 0;
+  for await (const chunk of request as AsyncIterable<Buffer>) {
+    if (stopped()) return;
+    received += chunk.byteLength;
+    if (received > contentLength) throw new Error("The upload is larger than declared.");
+    pending = pending.byteLength === 0 ? chunk : Buffer.concat([pending, chunk]);
+    while (pending.byteLength >= CODER_ASSET_BODY_CHUNK_BYTES) {
+      const next = pending.subarray(0, CODER_ASSET_BODY_CHUNK_BYTES);
+      pending = pending.subarray(CODER_ASSET_BODY_CHUNK_BYTES);
+      await write(next, false);
+      if (stopped()) return;
+    }
+  }
+  if (stopped()) return;
+  if (received !== contentLength) throw new Error("The upload is smaller than declared.");
+  await write(pending, true);
 }

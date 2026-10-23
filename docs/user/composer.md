@@ -90,7 +90,7 @@ when it is empty, and is discarded otherwise.
 Review comments and pasted images appear as chips within the prompt alongside file mentions,
 skills, and assistant citations. Select a review-comment chip to edit its text or inspect the
 selected diff; the annotation in the diff viewer updates with it. Select an image chip to preview
-its in-memory draft image. Deleting an image chip removes its inline placement; use **Remove** on
+its draft image. Deleting an image chip removes its inline placement; use **Remove** on
 the thumbnail to omit the image from the message. If the prompt still references that image,
 confirming removal removes both the thumbnail and its references.
 
@@ -99,10 +99,9 @@ show their descriptions; **View instructions** opens the skill file in **Files**
 
 Pasted plain-text fragments of at least 32,768 characters fold into a **Long text** chip. Select it to
 read or edit the text. Folding keeps the full text in the prompt: it counts toward the message
-limit and is sent to the provider as text. Unsent draft and stashed prompt text, including terminal
-excerpts, is kept in browser storage. Image bytes stay in browser memory, including when moved
-between threads or restored from a prompt stash. Image bytes, upload IDs, and credentials are never
-saved in browser storage.
+limit and is sent to the provider as text. Unsent drafts and stashed prompts, including terminal
+excerpts, images, and upload IDs, are kept in browser storage, as on main. Credentials are never
+saved there.
 
 ## Images and files
 
@@ -180,8 +179,8 @@ entry from the stash menu. This is useful when a long prompt is blocked on somet
 it, ask your question, then bring it back.
 
 The stash is per-browser and holds up to 20 entries. Its text, including terminal excerpts, survives
-a reload in browser storage. Wait for uploads to finish before stashing. Pasted images and their
-previews move with the prompt in browser memory. Restoring an entry into another workspace uploads
+a reload in browser storage, and so do its pasted images. Wait for uploads to finish before
+stashing. Restoring an entry into another workspace uploads
 its pasted images to that workspace before sending. Legacy file links
 remain workspace-specific and show a warning when restored elsewhere.
 

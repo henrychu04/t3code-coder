@@ -4,12 +4,18 @@ import {
   type AssetImageDimensions,
   AssetResource,
   EnvironmentId,
+  type ProjectCloneSnapshot,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 import { isWindowsAbsolutePath } from "@t3tools/shared/path";
+import {
+  getProjectFaviconResourceKey,
+  isProjectFaviconFallbackUrl,
+} from "@t3tools/shared/projectFavicon";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
@@ -17,6 +23,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { request } from "../rpc/client.ts";
+import type { ProjectFaviconCache, ProjectFaviconTarget } from "../projectFaviconCache.ts";
 import { createEnvironmentQueryAtomFamily } from "./runtime.ts";
 
 const ASSET_URL_REFRESH_INTERVAL_MS = 30 * 60_000;
@@ -195,4 +202,66 @@ export function createAssetEnvironmentAtoms<R, E>(
   };
 }
 
-// Coder: project favicons are not carried.
+export function createProjectFaviconUrlAtomFamily(input: {
+  readonly imageCache?: ProjectFaviconCache;
+  readonly createUrl: (target: {
+    readonly environmentId: EnvironmentId;
+    readonly input: { readonly resource: AssetResource };
+  }) => Atom.Atom<AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>>;
+  readonly preparedConnection: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<Option.Option<{ readonly httpBaseUrl: string }>>;
+  readonly projectClones?: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<ReadonlyArray<ProjectCloneSnapshot>>;
+}) {
+  const decodeKey = Schema.decodeUnknownSync(
+    Schema.Tuple([EnvironmentId, Schema.String, Schema.NullOr(Schema.String)]),
+  );
+  const projectClones = input.projectClones;
+  const family = Atom.family((key: string) => {
+    const [environmentId, cwd, path] = decodeKey(JSON.parse(key));
+    const resource = { _tag: "project-favicon" as const, cwd, ...(path ? { path } : {}) };
+    const query = input.createUrl({ environmentId, input: { resource } });
+    // A cloned project exists before its files do, and the server reports its
+    // icon missing until the clone lands. Ask again whenever the clone's phase
+    // changes: the first list a client sees may already say done.
+    const request = projectClones
+      ? query.pipe(
+          Atom.makeRefreshOnSignal(
+            Atom.make(
+              (get) =>
+                get(projectClones(environmentId)).find((clone) => clone.destinationPath === cwd)
+                  ?.phase ?? null,
+            ),
+          ),
+        )
+      : query;
+    const resolvedUrl = Atom.make((get): string | null => {
+      const result = get(request);
+      const connection = get(input.preparedConnection(environmentId));
+      const state = assetUrlStateFromResult(
+        result,
+        Option.isSome(connection) ? connection.value.httpBaseUrl : null,
+      );
+      return state._tag === "Success" ? state.url : Option.getOrNull(get.self<string | null>());
+    }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));
+    const cache = input.imageCache;
+    if (!cache) return resolvedUrl;
+
+    const target = { environmentId, cwd, faviconPath: path };
+    const image = Atom.make((get) => {
+      get(request);
+      const url = get(resolvedUrl);
+      return Effect.promise((signal) => cache.resolve(target, url, signal));
+    }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));
+
+    return Atom.make((get): string | null => {
+      const result = get(image);
+      if (isProjectFaviconFallbackUrl(get(resolvedUrl))) return null;
+      return Option.getOrElse(AsyncResult.value(result), () => cache.peek(target));
+    }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));
+  });
+  return (target: ProjectFaviconTarget) =>
+    family(getProjectFaviconResourceKey(target.environmentId, target.cwd, target.faviconPath));
+}

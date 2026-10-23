@@ -28,12 +28,12 @@ to the same image when you move a draft or restore a stash in another workspace.
 workspace re-uploads the original images there; Send waits for those uploads.
 
 Images stay separate from the text while composing. They can be sent without accompanying text and
-move with the prompt when stashed. Draft images and their previews stay in browser memory only and
-are lost on page reload.
+move with the prompt when stashed. Draft images and stashed prompts survive a page reload in
+browser storage, as on main.
 
 The image is copied into the workspace under a generated filename (you cannot choose the path)
-and the message references it there, where the model can open it. The image travels through the
-local app's memory and the Coder CLI; no copy is written on your computer.
+and the message references it there, where the model can open it. The local app streams the
+upload to the workspace through the Coder CLI without writing a copy to disk.
 
 Paste, drop, and the image picker use the same upload queue. Unsupported files are rejected with
 an explanation.

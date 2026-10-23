@@ -51,6 +51,7 @@ export const CODER_WS_METHODS = [
   WS_METHODS.projectsGetConfig,
   WS_METHODS.workspaceListDirectories,
   WS_METHODS.coderServeAsset,
+  WS_METHODS.coderWriteRequestBody,
   WS_METHODS.subscribeVcsRefStatus,
   WS_METHODS.vcsRenameThreadBranch,
   WS_METHODS.reviewOpenDiffFileContents,
@@ -83,7 +84,7 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
     const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
     const terminalManager = yield* TerminalManager.TerminalManager;
     const config = yield* ServerConfig.ServerConfig;
-    const serveAsset = yield* makeServeAsset;
+    const assets = yield* makeServeAsset;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     // Legacy images are read in bounded chunks over helper stdio.
     const pullRequests = yield* PullRequestService.PullRequestService;
@@ -500,8 +501,10 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
               }),
           ),
         ),
-      // Coder: the gateway's loopback asset route, answered by upstream's asset route in process.
-      [WS_METHODS.coderServeAsset]: (input) => serveAsset(input),
+      // Coder: the gateway's loopback asset and upload routes, answered by upstream's routes in
+      // process; an upload's body arrives in chunks.
+      [WS_METHODS.coderServeAsset]: (input) => assets.serve(input),
+      [WS_METHODS.coderWriteRequestBody]: (input) => assets.writeRequestBody(input),
       // Coder: subscribe to non-mutating local branch status.
       [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatusBroadcaster.streamRefStatus(cwd),
       // Coder: rename the branch and managed worktree together.

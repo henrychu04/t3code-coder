@@ -1,12 +1,17 @@
 import {
-  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  AuthOrchestrationOperateScope,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
   type ChatAttachment,
   type EnvironmentId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import * as Predicate from "effect/Predicate";
+import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+import {
+  deletePendingAttachmentUpload,
+  runAttachmentUploadCycle,
+  verifyPersistedAttachmentUpload,
+  type PersistedAttachmentVerification,
+} from "@t3tools/client-runtime/state/attachments";
 import { create } from "zustand";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
@@ -20,20 +25,13 @@ import {
 } from "../composerDraftStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentCatalog } from "../connection/catalog";
-import { uploadCoderClipboardImage, uploadCoderComposerFile } from "../coder/api";
-import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
 import { assetEnvironment } from "../state/assets";
+import { attachmentEnvironment } from "../state/attachments";
+import { readEnvironmentScope, readPreparedConnection } from "../state/session";
 import type { AttachmentUploadState, ReadyAttachmentUpload } from "./attachmentUploadState";
-import { compressImageToByteLimit } from "./imageCompression";
-
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
-import { readEnvironmentScope } from "../state/session";
-type PersistedAttachmentVerification =
-  | { readonly status: "verified" }
-  | { readonly status: "missing" }
-  | { readonly status: "failed"; readonly error: unknown };
 
 const MAX_UPLOADS_PER_ENVIRONMENT = 3;
+const UPLOAD_TIMEOUT_MS = 5 * 60_000;
 
 interface AttachmentUploadStore {
   readonly uploadsByImageId: Readonly<Record<string, AttachmentUploadState>>;
@@ -132,36 +130,46 @@ function stampDraftFileUpload(job: UploadJob, attachmentId: string): void {
     .setFileUpload(draftTarget, job.image.id, job.environmentId, attachmentId);
 }
 
-/**
- * Coder has no pending-upload delete RPC: unsent staged images expire in the helper's daily
- * sweep, as upstream's pending uploads do.
- */
-function deletePendingUpload(_environmentId: EnvironmentId, _attachmentId: string): void {}
+function deletePendingUpload(environmentId: EnvironmentId, attachmentId: string): void {
+  if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return;
+  deletePendingAttachmentUpload({
+    registry: appAtomRegistry,
+    remove: attachmentEnvironment.remove,
+    environmentId,
+    attachmentId,
+  });
+}
 
-// Coder: upstream's `verifyPersistedAttachmentUpload` (client-runtime's attachment upload module,
-// which is not carried): an attachment asset URL exists only while the staged upload does.
-async function verifyPersistedAttachmentUpload(input: {
-  readonly environmentId: EnvironmentId;
-  readonly attachmentId: string;
-}): Promise<PersistedAttachmentVerification> {
-  const result = await executeAtomQuery(
-    appAtomRegistry,
-    assetEnvironment.createUrl({
-      environmentId: input.environmentId,
-      input: { resource: { _tag: "attachment", attachmentId: input.attachmentId } },
-    }),
-    // `refresh` forces a server round trip: the asset URL query atom caches
-    // results (SWR), so a retry right after a transient failure would
-    // otherwise re-observe the cached failure and never ask the server.
-    { reportFailure: false, reportDefect: false, refresh: true },
-  );
-  if (result._tag === "Success") {
-    return { status: "verified" };
-  }
-  const error = squashAtomCommandFailure(result);
-  return Predicate.isTagged(error, "AssetAttachmentNotFoundError")
-    ? { status: "missing" }
-    : { status: "failed", error };
+function uploadBytes(input: {
+  readonly url: string;
+  readonly file: File;
+  readonly mimeType: string;
+  readonly onProgress: (progress: number) => void;
+}): { readonly done: Promise<void>; readonly abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const done = new Promise<void>((resolve, reject) => {
+    xhr.open("POST", input.url, true);
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
+    xhr.setRequestHeader("Content-Type", input.mimeType);
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        input.onProgress(event.loaded / event.total);
+      }
+    });
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Upload rejected (${xhr.status})`));
+      }
+    });
+    xhr.addEventListener("error", () => reject(new Error("Upload failed")));
+    xhr.addEventListener("timeout", () => reject(new Error("Upload timed out")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
+    xhr.send(input.file);
+  });
+
+  return { done, abort: () => xhr.abort() };
 }
 
 async function runUpload(job: UploadJob): Promise<void> {
@@ -176,6 +184,8 @@ async function runUpload(job: UploadJob): Promise<void> {
   }
   if (job.persistedAttachmentId) {
     const verification = await verifyPersistedAttachmentUpload({
+      registry: appAtomRegistry,
+      createAssetUrl: assetEnvironment.createUrl,
       environmentId: job.environmentId,
       attachmentId: job.persistedAttachmentId,
     });
@@ -252,82 +262,99 @@ async function runUpload(job: UploadJob): Promise<void> {
     return;
   }
 
-  const workspaceId = coderWorkspaceIdForEnvironment(job.environmentId);
-  if (!workspaceId) {
+  let lastStep = -1;
+  if (!readEnvironmentScope(job.environmentId, AuthOrchestrationOperateScope)) {
     setUploadState(job.image.id, {
       status: "failed",
       environmentId: job.environmentId,
-      reason: "Not connected",
+      reason: "This connection cannot upload attachments.",
       ...(job.previous ? { previous: job.previous } : {}),
     });
     return;
   }
-
-  let lastStep = -1;
-  const controller = new AbortController();
-  job.abort = () => controller.abort();
-  const transferOptions = {
-    signal: controller.signal,
-    onProgress: (progress: number) => {
-      const step = Math.floor(progress * 20);
-      if (step === lastStep || job.cancelled) {
-        return;
-      }
-      lastStep = step;
-      setUploadState(job.image.id, {
-        status: "uploading",
-        environmentId: job.environmentId,
-        progress,
-        ...(job.previous ? { previous: job.previous } : {}),
-      });
+  const result = await runAttachmentUploadCycle({
+    registry: appAtomRegistry,
+    createUploadUrl: attachmentEnvironment.createUploadUrl,
+    remove: attachmentEnvironment.remove,
+    environmentId: job.environmentId,
+    upload: {
+      ...(job.image.type === "file" ? { type: "file" as const } : {}),
+      name: job.image.name,
+      mimeType,
+      sizeBytes: file.size,
     },
-  };
-  try {
-    // Coder: composer attachments go through the gateway's Coder CLI transfer. Images are
-    // compressed to main's 10 MiB limit first; files go as-is up to main's 50 MiB limit.
-    let staged: { readonly id: string; readonly mimeType?: string; readonly sizeBytes?: number };
-    if (job.image.type === "file") {
-      staged = (await uploadCoderComposerFile(workspaceId, file, transferOptions)).attachment;
-    } else {
-      const prepared = await compressImageToByteLimit(file, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
-      if (!prepared.ok) {
-        throw new Error(
-          prepared.reason === "unreadable"
-            ? "This file could not be read as an image."
-            : "This image is too large to attach, even after resizing to the 10 MiB limit.",
-        );
+    resolveUploadUrl: (relativeUrl) => {
+      if (
+        job.cancelled ||
+        !readEnvironmentScope(job.environmentId, AuthOrchestrationOperateScope)
+      ) {
+        return null;
       }
-      controller.signal.throwIfAborted();
-      staged = (await uploadCoderClipboardImage(workspaceId, prepared.file, transferOptions))
-        .attachment;
-    }
-    job.abort = null;
-    if (job.cancelled) {
-      return;
-    }
+      const connection = readPreparedConnection(job.environmentId);
+      return connection ? resolveAssetUrl(connection.httpBaseUrl, relativeUrl) : null;
+    },
+    transport: (url) =>
+      uploadBytes({
+        url,
+        file,
+        mimeType,
+        onProgress: (progress) => {
+          const step = Math.floor(progress * 20);
+          if (step === lastStep || job.cancelled) {
+            return;
+          }
+          lastStep = step;
+          setUploadState(job.image.id, {
+            status: "uploading",
+            environmentId: job.environmentId,
+            progress,
+            ...(job.previous ? { previous: job.previous } : {}),
+          });
+        },
+      }),
+    onMinted: (attachmentId) => {
+      if (job.cancelled && readEnvironmentScope(job.environmentId, AuthOrchestrationOperateScope)) {
+        return "cancel";
+      }
+      job.attachmentId = attachmentId;
+      return "continue";
+    },
+    onTransferStart: (abort) => {
+      job.abort = abort;
+    },
+  });
+  job.abort = null;
+  if (result.status === "cancelled" || job.cancelled) {
+    return;
+  }
+  if (result.status === "uploaded") {
     setUploadState(job.image.id, {
       status: "ready",
       environmentId: job.environmentId,
-      attachmentId: staged.id,
-      ...(staged.mimeType === undefined ? {} : { mimeType: staged.mimeType }),
-      ...(staged.sizeBytes === undefined ? {} : { sizeBytes: staged.sizeBytes }),
+      attachmentId: result.attachmentId,
     });
-    stampDraftFileUpload(job, staged.id);
+    stampDraftFileUpload(job, result.attachmentId);
     if (job.previous) {
       deletePendingUpload(job.previous.environmentId, job.previous.attachmentId);
     }
-  } catch (error) {
-    job.abort = null;
-    if (job.cancelled) {
-      return;
-    }
-    setUploadState(job.image.id, {
-      status: "failed",
-      environmentId: job.environmentId,
-      reason: error instanceof Error ? error.message : "Upload failed",
-      ...(job.previous ? { previous: job.previous } : {}),
-    });
+    return;
   }
+  setUploadState(job.image.id, {
+    status: "failed",
+    environmentId: job.environmentId,
+    reason:
+      result.step === "mint"
+        ? "Upload could not start"
+        : result.step === "resolve-url"
+          ? readEnvironmentScope(job.environmentId, AuthOrchestrationOperateScope)
+            ? "Not connected"
+            : "This connection cannot upload attachments."
+          : result.error instanceof Error
+            ? result.error.message
+            : "Upload failed",
+    ...(result.attachmentId ? { attachmentId: result.attachmentId } : {}),
+    ...(job.previous ? { previous: job.previous } : {}),
+  });
 }
 
 function pumpUploads(): void {
@@ -554,6 +581,8 @@ export function verifyStashedAttachmentUpload(input: {
   readonly attachmentId: string;
 }): Promise<PersistedAttachmentVerification> {
   return verifyPersistedAttachmentUpload({
+    registry: appAtomRegistry,
+    createAssetUrl: assetEnvironment.createUrl,
     environmentId: input.environmentId,
     attachmentId: input.attachmentId,
   });
@@ -577,9 +606,9 @@ export function getUploadedAttachments(input: {
       type: image.type,
       id: upload.attachmentId,
       name: image.name,
-      mimeType: upload.mimeType ?? image.mimeType,
-      sizeBytes: upload.sizeBytes ?? image.sizeBytes,
-      ...(image.type === "file" && image.source ? { source: image.source } : {}),
+      mimeType: image.mimeType,
+      sizeBytes: image.sizeBytes,
+      ...(image.source ? { source: image.source } : {}),
     });
   }
   return attachments;
