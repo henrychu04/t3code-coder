@@ -5,7 +5,6 @@ import {
   readPullRequestDetailSnapshot,
   resolvePullRequestReferenceHost,
 } from "../components/pullRequest/pullRequestDetail.logic";
-import { pullRequestSnapshotStorage } from "../components/pullRequest/pullRequestSnapshotStorage";
 import { gitLabMergeRequestBrowserUrl } from "../lib/openPullRequestLink";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { useProject } from "../state/entities";
@@ -65,8 +64,7 @@ export function useOpenPanelPullRequestUrl(threadRef: ScopedThreadRef | null) {
   const cachedDetail =
     reference && environmentId
       ? readPullRequestDetailSnapshot(
-          // Coder: merge-request snapshots stay in memory, not browser storage.
-          pullRequestSnapshotStorage,
+          typeof window === "undefined" ? undefined : window.localStorage,
           environmentId,
           reference,
         )

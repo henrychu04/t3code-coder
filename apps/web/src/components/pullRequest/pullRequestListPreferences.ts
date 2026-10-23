@@ -43,12 +43,19 @@ const DEFAULT_PULL_REQUEST_LIST_PREFERENCES = {
   state: "open",
 } as const satisfies PullRequestListPreferences;
 
+const BoundedPreference = Schema.String.check(Schema.isMaxLength(200));
 const PullRequestListPreferencesSchema = Schema.Struct({
   involvement: PullRequestInvolvement,
   state: PullRequestListState,
+  environmentId: Schema.optional(EnvironmentId),
+  projectId: Schema.optional(ProjectId),
+  host: Schema.optional(BoundedPreference),
+  q: Schema.optional(BoundedPreference),
   draft: PullRequestListFilters.fields.draft,
   review: PullRequestListFilters.fields.review,
   checks: PullRequestListFilters.fields.checks,
+  author: Schema.optional(BoundedPreference),
+  labels: Schema.optional(Schema.Array(BoundedPreference).check(Schema.isMaxLength(10))),
   sort: Schema.optional(PullRequestListSort),
 });
 
@@ -64,16 +71,21 @@ function resolvePreferenceStorage(
   return storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
 }
 
-/** Coder: browser storage keeps UI preferences only. Remember presentation controls only, never repository identities or user-entered content. */
 export function pullRequestListPreferences(
   search: PullRequestListPreferences | Schema.Schema.Type<typeof PullRequestListPreferencesSchema>,
 ): PullRequestListPreferences {
   return {
     involvement: search.involvement,
     state: search.state,
+    ...(search.environmentId ? { environmentId: search.environmentId } : {}),
+    ...(search.projectId ? { projectId: search.projectId } : {}),
+    ...(search.host ? { host: search.host } : {}),
+    ...(search.q ? { q: search.q } : {}),
     ...(search.draft ? { draft: search.draft } : {}),
     ...(search.review ? { review: search.review } : {}),
     ...(search.checks ? { checks: search.checks } : {}),
+    ...(search.author ? { author: search.author } : {}),
+    ...(search.labels && search.labels.length > 0 ? { labels: search.labels } : {}),
     ...(search.sort && search.sort !== "ready" ? { sort: search.sort } : {}),
   };
 }
@@ -86,35 +98,13 @@ export function readPullRequestListPreferences(
       PULL_REQUEST_LIST_PREFERENCES_STORAGE_KEY,
     );
     if (!raw) return DEFAULT_PULL_REQUEST_LIST_PREFERENCES;
-    let decoded;
-    try {
-      decoded = decodePullRequestListPreferences(JSON.parse(raw));
-    } catch {
-      decoded = undefined;
-    }
-    const preferences =
-      decoded?._tag === "Some"
-        ? pullRequestListPreferences(decoded.value)
-        : DEFAULT_PULL_REQUEST_LIST_PREFERENCES;
-    // Migrate the old key in place so previously saved search content is removed.
-    writePullRequestListPreferences(preferences, storage);
-    return preferences;
+    const decoded = decodePullRequestListPreferences(JSON.parse(raw));
+    return decoded._tag === "Some"
+      ? pullRequestListPreferences(decoded.value)
+      : DEFAULT_PULL_REQUEST_LIST_PREFERENCES;
   } catch {
     return DEFAULT_PULL_REQUEST_LIST_PREFERENCES;
   }
-}
-
-/** Explicit URL controls win as a set; otherwise restore only presentation defaults. */
-export function restorePullRequestListPreferences(
-  search: Record<string, unknown>,
-  storage?: PreferenceStorage,
-): Record<string, unknown> {
-  if (
-    Object.keys(PullRequestListPreferencesSchema.fields).some((key) => search[key] !== undefined)
-  ) {
-    return search;
-  }
-  return { ...readPullRequestListPreferences(storage), ...search };
 }
 
 export function writePullRequestListPreferences(
@@ -124,7 +114,7 @@ export function writePullRequestListPreferences(
   try {
     resolvePreferenceStorage(storage)?.setItem(
       PULL_REQUEST_LIST_PREFERENCES_STORAGE_KEY,
-      JSON.stringify(pullRequestListPreferences(preferences)),
+      JSON.stringify(preferences),
     );
   } catch {}
 }

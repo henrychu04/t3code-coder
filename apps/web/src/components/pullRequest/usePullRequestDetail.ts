@@ -24,8 +24,6 @@ import {
   writePullRequestDetailSnapshot,
 } from "./pullRequestDetail.logic";
 import { pullRequestChecksState } from "./pullRequestPresentation";
-// Coder: merge-request snapshots stay in memory where upstream uses browser storage.
-import { pullRequestSnapshotStorage } from "./pullRequestSnapshotStorage";
 
 export function pullRequestRefKey(reference: PullRequestRef) {
   return `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
@@ -77,20 +75,33 @@ export function usePullRequestDetail(
     checks: liveDetail?.checks ?? [],
   });
   const [cachedDetail, setCachedDetail] = useState(() =>
-    readPullRequestDetailSnapshot(pullRequestSnapshotStorage, environmentId, reference),
+    readPullRequestDetailSnapshot(
+      typeof window === "undefined" ? undefined : window.localStorage,
+      environmentId,
+      reference,
+    ),
   );
   const [cachedDetailKey, setCachedDetailKey] = useState(scopeKey);
   if (cachedDetailKey !== scopeKey) {
     setCachedDetailKey(scopeKey);
     setCachedDetail(
       detailQuery.data ??
-        readPullRequestDetailSnapshot(pullRequestSnapshotStorage, environmentId, reference),
+        readPullRequestDetailSnapshot(
+          typeof window === "undefined" ? undefined : window.localStorage,
+          environmentId,
+          reference,
+        ),
     );
   } else if (detailQuery.data !== null && detailQuery.data !== cachedDetail) {
     setCachedDetail(detailQuery.data);
   }
   const saveDetailSnapshot = useEffectEvent((data: PullRequestDetail) => {
-    writePullRequestDetailSnapshot(pullRequestSnapshotStorage, environmentId, reference, data);
+    writePullRequestDetailSnapshot(
+      typeof window === "undefined" ? undefined : window.localStorage,
+      environmentId,
+      reference,
+      data,
+    );
   });
   useEffect(() => {
     if (detailQuery.data !== null) saveDetailSnapshot(detailQuery.data);
