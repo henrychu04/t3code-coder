@@ -3342,6 +3342,7 @@ export default function ChatView(props: ChatViewProps) {
                               scheduleComposerFocus={scheduleComposerFocusStable}
                               setThreadError={setThreadError}
                               onExpandImage={onExpandTimelineImageStable}
+                              onFileOpen={openFileAttachmentStable}
                               editingQueuedAttachments={queuedRunEdit.editingAttachments}
                               onRemoveEditingQueuedAttachment={
                                 queuedRunEdit.removeEditingAttachment

@@ -310,11 +310,8 @@ upstream's signed attachment URLs for previews, Save, and rewind.
 
 The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
 `message.context`) without preview annotations, element captures, or SnapShot frames.
-`ComposerAttachmentStrip.tsx`'s media row shows image tiles only; videos list with the other
-files (`composerOtherFilesForPresentation` keeps them, so a video attached to a question answer
-stays visible and removable), and a draft file previews only while its bytes are still in memory.
-In sent messages, `TimelineUserMessageRow.tsx` lists videos with the other files and opens them
-like files, because a submitted attachment is a workspace path the browser cannot read. The work log
+`ComposerAttachmentStrip.tsx`'s media row has upstream's image and video tiles without SnapShot
+frames, and a draft file previews only while its bytes are still in memory. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
 native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
 stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
