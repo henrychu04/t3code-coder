@@ -248,10 +248,11 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   fork's `^24.13.1` and the `@types/node` catalog entry on major 24 even when upstream bumps them,
   so typecheck rejects a Node 25 or 26-only API in carried code. If upstream code needs one, stop
   and tell the user. Bumps: `git diff "$MB" "$SHA" -- package.json pnpm-workspace.yaml | grep -E 'engines|"node"|@types/node'`.
-- **Listeners.** The helper opens no listener of any kind (`AGENTS.md` boundary 6). Cut any new
-  upstream service that listens on a socket, pipe, or port, even a private one, along with its
-  callers (eb1510d249: `CodexManagedTokenBroker`'s managed Codex token pipe). Search the range:
-  `git diff "$MB" "$SHA" -- apps/server/src packages ':!*.test.*' | rg '^\+.*(\.listen\(|createServer)'`.
+- **MCP servers.** T3 tools reach agents over the file bridge, never an MCP server, because work
+  Claude Code and Codex policies block custom MCP servers (`AGENTS.md` boundary 6). Carry a new
+  upstream toolkit over the bridge and cut any new path that hands a provider T3's MCP endpoint.
+  Listeners inside the workspace are otherwise allowed. Search the range:
+  `git diff "$MB" "$SHA" -- apps/server/src packages ':!*.test.*' | rg '^\+.*(mcp_servers|mcpServers|McpHttpServer)'`.
 - **Capabilities.** `coderEnvironment.test.ts` fails when upstream adds an
   `ExecutionEnvironmentCapabilities` key; decide it (advertise, or add to
   `CODER_OMITTED_CAPABILITIES` with a reason).
