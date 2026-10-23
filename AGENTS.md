@@ -122,6 +122,10 @@ computer-control tooling without explicit user permission. Do not test against o
 - Mark every fork delta in upstream code with a `Coder:` comment and list it in the upstream seams
   of `docs/internals/coder-only.md`; a difference not listed there is drift to remove.
 - Run upstream syncs by the checklist in `docs/internals/sync.md`.
+- Track known bugs, including upstream ones the fork carries a fix for or waits on, as GitHub
+  issues on `henrychu04/t3code-coder` (labels `upstream`, `needs-live-check`, `flaky-test`). A PR
+  that fixes one says `Fixes #N`; when upstream fixes one, close it with the upstream commit. The
+  repository is public: keep work-specific details out of issues.
 - Keep byte limits as named constants with a one-line reason; docs refer to the constant.
 - A fresh worktree has no `node_modules`; when the lockfile is unchanged, run
   `pnpm install --frozen-lockfile` there (it links from the pnpm store and does not duplicate
