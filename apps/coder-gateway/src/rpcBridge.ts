@@ -1,4 +1,5 @@
 import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";
+import { WS_METHODS } from "@t3tools/contracts";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -93,6 +94,10 @@ function decodeBrowserMessage(message: unknown): BrowserRpcMessage {
     case "Request":
       if (!isRequestId(message.id) || typeof message.tag !== "string") {
         throw new RpcBridgeSessionError("Browser sent an invalid RPC request.");
+      }
+      // The gateway's asset route is the only caller of the helper's asset stream.
+      if (message.tag === WS_METHODS.coderServeAsset) {
+        throw new RpcBridgeSessionError("Browser sent a gateway-only RPC request.");
       }
       return message as unknown as BrowserRpcMessage;
     case "Ack":

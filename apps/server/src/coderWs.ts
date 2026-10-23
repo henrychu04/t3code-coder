@@ -31,6 +31,7 @@ import {
 } from "@t3tools/contracts";
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
 
+import { makeServeAsset } from "./coderAssets.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as ServerConfig from "./config.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
@@ -75,6 +76,7 @@ export const CODER_WS_METHODS = [
   WS_METHODS.workspaceReadScreenshotArtifact,
   WS_METHODS.workspaceReadTurnItemAsset,
   WS_METHODS.workspaceReadAttachmentFile,
+  WS_METHODS.coderServeAsset,
   WS_METHODS.subscribeVcsRefStatus,
   WS_METHODS.vcsRenameThreadBranch,
   WS_METHODS.reviewOpenDiffFileContents,
@@ -138,6 +140,7 @@ export const makeHandlers = (
     const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
     const terminalManager = yield* TerminalManager.TerminalManager;
     const config = yield* ServerConfig.ServerConfig;
+    const serveAsset = yield* makeServeAsset;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     // Legacy images are read in bounded chunks over helper stdio.
@@ -653,6 +656,8 @@ export const makeHandlers = (
       // Coder: a sent file attachment, in place of upstream's signed attachment asset URL.
       [WS_METHODS.workspaceReadAttachmentFile]: (input) =>
         screenshotArtifacts.readAttachmentFileChunk(input),
+      // Coder: the gateway's loopback asset route, answered by upstream's asset route in process.
+      [WS_METHODS.coderServeAsset]: (input) => serveAsset(input),
       // Coder: subscribe to non-mutating local branch status.
       [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatusBroadcaster.streamRefStatus(cwd),
       // Coder: rename the branch and managed worktree together.

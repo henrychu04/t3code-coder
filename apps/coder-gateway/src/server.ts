@@ -68,6 +68,7 @@ import {
   validateClipboardImage,
   validateComposerFile,
 } from "./composerAttachment.ts";
+import { proxyWorkspaceAsset, WORKSPACE_ASSET_ROUTE } from "./assetProxy.ts";
 import { GatewayProcessError, runGatewayProcess } from "./process.ts";
 import {
   makeWorkspaceRpcBridge,
@@ -2387,6 +2388,35 @@ export function makeLocalCoderGateway(
           } finally {
             response.off("close", abortUpload);
           }
+          return;
+        }
+        // Coder: a workspace's signed asset URLs, answered by upstream's asset route in its helper.
+        const assetRoute = requestUrl.pathname.match(WORKSPACE_ASSET_ROUTE);
+        if ((request.method === "GET" || request.method === "HEAD") && assetRoute !== null) {
+          let workspaceId: string;
+          try {
+            workspaceId = decodeURIComponent(assetRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+            return;
+          }
+          if (!profileConfig.workspaces.some((entry) => entry.id === workspaceId)) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Not found.");
+            return;
+          }
+          let workspaceConnection: WorkspaceConnection;
+          try {
+            workspaceConnection = await ensureWorkspaceConnection(workspaceId);
+          } catch {
+            sendText(response, 502, "text/plain; charset=utf-8", "Workspace unavailable.");
+            return;
+          }
+          await proxyWorkspaceAsset(
+            workspaceConnection.connection,
+            request,
+            response,
+            assetRoute[2] ?? "",
+          );
           return;
         }
         if (request.method === "GET" && requestUrl.pathname === HTML_DOCUMENT_FRAME_PATH) {

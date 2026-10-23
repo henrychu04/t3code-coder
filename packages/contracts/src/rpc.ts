@@ -65,6 +65,7 @@ import {
   AgentSessionScanResult,
   AgentSessionScanError,
 } from "./agentSessions.ts";
+import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
 import {
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetTurnDiffError,
@@ -349,6 +350,7 @@ import {
   TurnItemAssetReadError,
   TurnItemAssetReadInput,
 } from "./screenshotArtifact.ts";
+import { CoderServeAssetInput, CoderServeAssetPart } from "./coderAssets.ts";
 // Coder
 import {
   OrchestrationV2GetThreadProjectionInput,
@@ -568,6 +570,7 @@ export const WS_METHODS = {
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   workspaceReadTurnItemAsset: "workspace.readTurnItemAsset",
   workspaceReadAttachmentFile: "workspace.readAttachmentFile",
+  coderServeAsset: "coder.serveAsset",
   projectsCreateFile: "projects.createFile",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
@@ -1141,6 +1144,12 @@ const WsAgentSessionsImportRpc = Rpc.make(WS_METHODS.agentSessionsImport, {
     AgentSessionScanError,
     EnvironmentAuthorizationError,
   ]),
+});
+
+const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
+  payload: AssetCreateUrlInput,
+  success: AssetCreateUrlResult,
+  error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 });
 
 const WsMcpAppsCallToolRpc = Rpc.make(WS_METHODS.mcpAppsCallTool, {
@@ -1789,6 +1798,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsFilesystemGetMetadataRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
+  WsAssetsCreateUrlRpc,
   WsMcpAppsCallToolRpc,
   WsMcpAppsToolInfoRpc,
   WsMcpAppsReadResourceRpc,
@@ -1905,6 +1915,17 @@ const WsWorkspaceReadAttachmentFileRpc = Rpc.make(WS_METHODS.workspaceReadAttach
   error: ScreenshotArtifactReadError,
 });
 
+/**
+ * Coder: the gateway's loopback asset route asks the helper to answer upstream's
+ * `/api/assets/*` request in process, since the helper opens no listener. The response streams
+ * as one head and then body chunks of at most `CODER_ASSET_BODY_CHUNK_BYTES`.
+ */
+const WsCoderServeAssetRpc = Rpc.make(WS_METHODS.coderServeAsset, {
+  payload: CoderServeAssetInput,
+  success: CoderServeAssetPart,
+  stream: true,
+});
+
 const WsProjectsCreateFileRpc = Rpc.make(WS_METHODS.projectsCreateFile, {
   payload: ProjectCreateFileInput,
   success: ProjectWriteFileResult,
@@ -2010,10 +2031,12 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsFilesystemGetMetadataRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
+  WsAssetsCreateUrlRpc,
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
   WsWorkspaceReadTurnItemAssetRpc,
   WsWorkspaceReadAttachmentFileRpc,
+  WsCoderServeAssetRpc,
   WsProjectsCreateFileRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
