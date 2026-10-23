@@ -420,7 +420,8 @@ listed here is drift to remove rather than fork behavior to keep.
   layers live in `coderWs.ts` and `coderServer.ts`. `ws.ts` keeps upstream's `layerWsRpc`,
   handler order, and helper order, builds the upstream methods it carries over the gateway's
   stdio bridge, and returns them merged with `coderWs.ts`'s handlers at one hook as
-  `CoderWsRpcGroup`. `server.ts` keeps upstream's declarations for the layers the helper uses and
+  `CoderWsRpcGroup`. Upstream's split into two disjoint handler groups, which keeps the layer's
+  requirements typed, splits the whole `CoderWsRpcGroup`, fork-only methods included. `server.ts` keeps upstream's declarations for the layers the helper uses and
   exports them at one hook to `coderServer.ts`, whose `makeCoderRuntimeLayer` composes the helper
   runtime: the Coder provider and orchestration layers, `CoderRuntimeStartup`, `StorageCleanup`,
   `DatabaseStorage`, the T3 tool bridge binding, and the RPC layer. In `server.ts`, settings also
@@ -686,7 +687,9 @@ listed here is drift to remove rather than fork behavior to keep.
     **Settings → Providers → History** for the selected workspace.
   - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
     unavailable; providers authenticate through the workspace's API configuration.
-    `CodexManagedRuntime` keeps only upstream's resolution contract. `CodexAdapterV2` does not
+    `CodexManagedRuntime` keeps only upstream's resolution contract, so upstream's
+    `CodexManagedTokenBroker` (a private token listener the managed runtime's auth command reads,
+    #21786/#21787) and the `__managed-chatgpt-token` CLI entry are not carried. `CodexAdapterV2` does not
     rewrite failures through `CodexManagedErrors` (ChatGPT Business admin request, #23361), and
     the server's `threadErrorSummary` and client-runtime's `ThreadRuntimeSummary` carry no
     `lastErrorCode`; the contract field stays.
@@ -897,8 +900,7 @@ listed here is drift to remove rather than fork behavior to keep.
   not carried), and it has no server-update control (server self-update is not carried). The branch picker adds "Rename current branch…" for a
   thread's own branch (`vcs.renameThreadBranch`), which can also rename the T3 worktree folder
   through the driver's `moveWorktree`. Proposed-plan cards are upstream's; Save to workspace uses
-  `projects.createFile`, so it fails on an existing path. The provider-update launch notification uses the active workspace as upstream's primary
-  environment and has no per-backend (WSL) split. There is no default-theme adoption, which follows
+  `projects.createFile`, so it fails on an existing path. There is no default-theme adoption, which follows
   upstream's `t3 theme set` CLI.
 - **App entry.** `index.html`, `bootstrap.ts`, and `main.tsx`'s startup (stale-chunk reload,
   splash held until the first route loads, boot error) are upstream's. `main.tsx` renders the app
@@ -1156,7 +1158,8 @@ listed here is drift to remove rather than fork behavior to keep.
   history, the last merge method, and the last project grouping mode stay in memory where
   upstream uses browser storage. Upstream's offline query persistence, which only its mobile app
   provides a store for, is not carried: client-runtime's `state/runtime.ts` query atoms take no
-  `persistence` option and `state/pullRequests.ts` passes none. Model favorites, visibility, and order are upstream's server
+  `persistence` option and `state/pullRequests.ts` passes none. Its query key normalizer drops
+  upstream's `expectedAccountId`, which the contract does not carry. Model favorites, visibility, and order are upstream's server
   settings, so each workspace keeps its own. Upstream migrates a browser's saved lists into an
   environment whose settings have none; here the legacy lists are the workspace's own
   `providerPreferencesByEnvironment` entry, falling back to the global lists
@@ -1232,7 +1235,8 @@ listed here is drift to remove rather than fork behavior to keep.
   ones. It reads no device tool version pins, because device tools are not carried.
   `pnpm-workspace.yaml` sets `supportedArchitectures` (Linux x64 glibc) on every host, because
   the helper bundle ships those native modules to the workspace; upstream sets it only on Windows
-  in `.pnpmfile.cjs`, which is not carried.
+  in `.pnpmfile.cjs`, which is not carried. Its `overrides` pin only the patched packages the
+  fork carries, where upstream pins every one of its own.
   Packages typecheck with `tsc --noEmit` from Microsoft's TypeScript 7 (`typescript: 7.0.2` in
   the catalog). Upstream's catalog makes `typescript` the `@tsc-rs/typescript` drop-in, whose
   Windows `tsc.exe` is an unsigned third-party binary that the laptop's endpoint security may
