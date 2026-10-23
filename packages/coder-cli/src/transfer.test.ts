@@ -10,12 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 
-import {
-  hashCoderHelperBundle,
-  installCoderHelper,
-  runProcess,
-  uploadCoderComposerAttachment,
-} from "./transfer.ts";
+import { hashCoderHelperBundle, installCoderHelper, runProcess } from "./transfer.ts";
 
 const temporaryDirectories: string[] = [];
 after(async () => {
@@ -158,60 +153,6 @@ describe("Coder CLI transfers", () => {
       /Coder helper transfer failed/u,
     );
     strictEqual((await remoteEntries(coder.home, "bin")).length, 0);
-  });
-
-  it("uploads a composer attachment under a generated pending name", async () => {
-    const coder = await fakeCoder();
-    const bytes = Buffer.from(Array.from({ length: 70_000 }, (_, index) => (index * 7) % 256));
-
-    const path = await Effect.runPromise(
-      uploadCoderComposerAttachment({ ...coder, bytes, extension: "png" }),
-    );
-
-    const attachments = NodePath.join(coder.home, ".t3-coder", "attachments");
-    match(path, /\/\.t3-coder\/attachments\/pending-[0-9a-f-]{36}-png\.png$/u);
-    strictEqual(NodePath.dirname(path), attachments);
-    strictEqual((await NodeFS.readFile(path)).equals(bytes), true);
-    strictEqual((await NodeFS.stat(path)).mode & 0o777, 0o600);
-    strictEqual((await remoteEntries(coder.home, "attachments")).length, 1);
-  });
-
-  it("removes a truncated attachment transfer", async () => {
-    const coder = await fakeCoder({ stdinFilter: "(chunk) => chunk.subarray(1)" });
-
-    await rejects(
-      Effect.runPromise(
-        uploadCoderComposerAttachment({ ...coder, bytes: Buffer.from("abcdef"), extension: "txt" }),
-      ),
-      /Coder attachment transfer failed/u,
-    );
-    strictEqual((await remoteEntries(coder.home, "attachments")).length, 0);
-  });
-
-  it("rejects a composer attachment extension before spawning any process", async () => {
-    for (const extension of ["../x", "pdf;rm", "", "UPPER", "elevenchars"]) {
-      await rejects(
-        Effect.runPromise(
-          uploadCoderComposerAttachment({
-            deployment: {
-              id: "deployment",
-              name: "Deployment",
-              url: "https://coder.example.test",
-              executable: "/nonexistent/coder",
-            },
-            workspace: {
-              id: "workspace",
-              name: "Workspace",
-              deploymentId: "deployment",
-              workspace: "owner/workspace",
-            },
-            bytes: Buffer.from("x"),
-            extension,
-          }),
-        ),
-        /Invalid attachment extension/u,
-      );
-    }
   });
 
   it("writes stdin only after the remote ready line", async () => {

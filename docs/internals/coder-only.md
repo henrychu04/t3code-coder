@@ -23,8 +23,8 @@ credentials. Browser UI preferences
 such as theme and panel size may use browser storage; as on main, `uiStateStore` keeps sidebar
 project expansion, order, and scope, thread visit times, changed-file folder expansion, and the
 last merge method there, and session storage holds main's one-reload guard for stale split chunks
-(`lib/chunkReloadGuard.ts`). Composer drafts and prompt stashes retain
-text in browser storage, but never image bytes or upload IDs. As on main, IndexedDB caches each
+(`lib/chunkReloadGuard.ts`). As on main, composer drafts and prompt stashes keep their text,
+images, and upload ids in browser storage, and IndexedDB caches each
 environment's shell, settled thread snapshots, server config, and full branch lists so a reload
 renders before the workspace answers; the workspace remains the source of truth. Open Files tabs and
 editor state and provider sessions are memory-only.
@@ -255,14 +255,14 @@ the configured deployment and CLI defaults. Structured port-forward rules use fo
 addresses, and raw tunnel arguments are not exposed. The helper opens no network listener; Codex,
 Claude, Pi, Kilo Code, and user-initiated terminal commands remain subject to workspace policy.
 
-Both laptop-to-workspace transfers, the helper bundle install and composer attachments, stream over
-the stdin of one foreground `coder ssh <workspace> -- sh -l -c '<command>'` process
+The helper bundle install streams over the stdin of one foreground
+`coder ssh <workspace> -- sh -l -c '<command>'` process
 (`packages/coder-cli/src/transfer.ts`); no OpenSSH client is involved. Coder 2.25 always allocates
 a remote PTY, so the remote command first runs `stty raw -echo` and prints
 `T3_CODER_TRANSFER_READY`; only then does the gateway write, and `head -c <size>` reads exactly the
-expected byte count because a PTY never delivers end-of-file. Each transfer writes a generated
-temporary name under `$HOME/.t3-coder/bin` or `$HOME/.t3-coder/attachments`, checks the received
-size, and renames atomically into place. The helper bundle travels as a ustar archive built in
+expected byte count because a PTY never delivers end-of-file. The transfer writes a generated
+temporary name under `$HOME/.t3-coder/bin`, checks the received size, and renames atomically into
+place. The helper bundle travels as a ustar archive built in
 Node (Windows has no `tar -c` to stream) and is extracted with `tar -xf`; the workspace shell then
 recomputes `hashCoderHelperBundle`'s digest and refuses a mismatch before replacing the helper and
 recording `.t3-bundle-sha256`. Failed, damaged, or interrupted transfers are removed by a follow-up
@@ -285,20 +285,20 @@ model manifest and compatibility policy remain bundled-only and are never refres
 ### Composer attachments
 
 Composer attachments are the only laptop-to-workspace upload: an image or file pasted, picked, or
-dropped into the message composer or a question answer. The browser posts it only to the loopback
-gateway: `clipboard-image` accepts signature-validated PNG, JPEG, or WebP within
-`PROVIDER_SEND_TURN_MAX_IMAGE_BYTES`, and `attachment-file` accepts any non-empty file within
-`PROVIDER_SEND_TURN_MAX_FILE_BYTES`, using the name only for the stored extension
-(`@t3tools/shared/attachmentFileExtension`). HEIC and HEIF photos are decoded to JPEG in the
-browser before that upload, as upstream does (`heic-to`'s bundled WASM decoder, which the
-gateway's `wasm-unsafe-eval` script policy allows); no image leaves the laptop undecoded. The gateway streams the bytes from memory to
-upstream's pending-upload name, `pending-<uuid>-<ext>.<ext>`, and returns the workspace path, id,
-size, and (for images) media type. The helper advertises upstream's `attachmentUploads`,
-`questionAttachments`, and `fileAttachments` capabilities. The browser uses upstream's upload queue,
-progress steps, and compression with the gateway as transport; percentage progress covers only the
-loopback upload. Closing the HTTP response interrupts the transfer's Effect scope, which stops its
-exact child process and removes the partial remote copy. Drafts and stashed prompts never store
-image bytes or upload ids.
+dropped into the message composer or a question answer. They use upstream's upload flow:
+`attachments.createUploadUrl` mints a signed upload URL (`assets/AttachmentUpload.ts`), the browser
+POSTs the bytes to it with upstream's upload queue, progress, compression, and HEIC decoding
+(`heic-to`'s bundled WASM decoder, which the gateway's `wasm-unsafe-eval` script policy allows),
+and `attachments.delete` releases an abandoned upload. The gateway serves the URL at
+`/api/workspaces/<id>/api/attachments/upload/<token>`: it requires the exact Origin, a
+`Content-Length` within `MAX_FORWARDED_UPLOAD_BYTES`, and a connected workspace, then streams the
+body to the helper in chunks of `CODER_ASSET_BODY_CHUNK_BYTES` over `coder.writeRequestBody`, each
+sent once upstream's upload route has read the previous one (`coderAssets.ts`). The route checks
+the token and the exact size and stores upstream's pending-upload name, `pending-<uuid>-<ext>`.
+Bytes pass through gateway memory only. Closing the request interrupts the helper's read. The
+helper advertises upstream's `attachmentUploads`, `questionAttachments`, and `fileAttachments`
+capabilities. Drafts and stashed prompts keep their images and upload ids in browser storage, as
+upstream's do.
 
 As upstream does, the helper claims each pending upload into a thread-scoped copy when it accepts
 the message; `AttachmentClaims.ts` reads the staged file once through a no-follow handle at its
@@ -311,7 +311,7 @@ upstream's signed attachment URLs for previews, Save, and rewind.
 The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
 `message.context`) without preview annotations, element captures, or SnapShot frames.
 `ComposerAttachmentStrip.tsx`'s media row has upstream's image and video tiles without SnapShot
-frames, and a draft file previews only while its bytes are still in memory. The work log
+frames. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
 native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
 stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
@@ -819,15 +819,12 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
   element captures, SnapShot (with its open question-draft tracker in `questionAttachments.ts`),
-  upstream's large-paste-to-file folding, and remote icons. Draft file
-  and video attachments preview from their in-memory bytes as on main: files open in
-  `files/AttachmentFilePreview.tsx` and videos in the gallery. A draft restored after a reload has no bytes, so it has no
-  preview. A context fragment pasted from another workspace downloads its attachments from the
+  upstream's large-paste-to-file folding, and remote icons. Draft file and video attachments
+  preview as on main. A context fragment pasted from another workspace downloads its attachments from the
   source workspace's signed asset URLs, as upstream does.
   A thread dropped from another workspace attaches its saved transcript (see Transport and RPC
-  handlers). Images
-  and files move through the gateway's Coder CLI transfer (see
-  [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
+  handlers). Images and files upload through upstream's signed upload URL (see
+  [Composer attachments](#composer-attachments)); `ChatView` gates them on
   the helper's advertised attachment capabilities, as upstream does. Submitted images, sent
   files, rewinds, and queued edits read through upstream's signed attachment URLs (see
   [Media and document previews](#media-and-document-previews)), and the right panel previews a sent
@@ -1095,8 +1092,7 @@ listed here is drift to remove rather than fork behavior to keep.
   (`legacyModelPreferences` in `useSettings.ts`). `storage.ts` keeps
   upstream's IndexedDB environment cache, including project favicons, without the connection
   catalog, credentials, or GitHub routing permissions. The upstream idle thread-snapshot retention lifecycle
-  keeps Coder's entry and size cap (`threadRetention.ts`). Composer drafts and the prompt stash keep text in browser
-  storage but never image bytes. Upstream clears an environment's cached data and
+  keeps Coder's entry and size cap (`threadRetention.ts`). Upstream clears an environment's cached data and
   composer drafts when it is removed; Coder does this only when a workspace leaves the Coder
   config, because stopped and disconnected workspaces also leave the platform registrations.
   The workspace-to-environment mapping that makes this possible is memory-only, so a workspace
@@ -1223,8 +1219,6 @@ listed here is drift to remove rather than fork behavior to keep.
   `presentation.test.ts` omits upstream's disabled and unsupported connection tests, since Coder
   catalog entries have neither state. `GitManager.test.ts`'s pull request draft-status test and
   `SourceControlRepositoryService.test.ts`'s HTTPS clone-retry tests run on GitLab.
-  `composerDraftStore.test.ts` keeps the draft-persistence test upstream pruned, because it
-  checks that draft image bytes never reach browser storage.
   Replay fixtures (`orchestration-v2/testkit/fixtures`) carry only the Claude, Codex, Pi, and ACP
   Registry providers; `ProviderReplayFixtures.ts` lists only those drivers.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because

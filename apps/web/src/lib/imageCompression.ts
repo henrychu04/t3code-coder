@@ -1,4 +1,3 @@
-/** Coder: the prompt stash keeps image bytes in memory only and never persists them. */
 import {
   downscalableImageMimeType,
   fitImageAttachmentSize,

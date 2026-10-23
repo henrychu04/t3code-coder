@@ -54,20 +54,13 @@ import {
   connectCoderPortForward,
   type CoderPortForwardConnection,
 } from "@t3tools/coder-cli/portForward";
+import { hashCoderHelperBundle, installCoderHelper } from "@t3tools/coder-cli/transfer";
 import {
-  hashCoderHelperBundle,
-  installCoderHelper,
-  uploadCoderComposerAttachment,
-} from "@t3tools/coder-cli/transfer";
-import {
-  CLIPBOARD_IMAGE_MIME_TYPES,
-  ComposerAttachmentValidationError,
-  MAX_CLIPBOARD_IMAGE_BYTES,
-  MAX_COMPOSER_FILE_BYTES,
-  validateClipboardImage,
-  validateComposerFile,
-} from "./composerAttachment.ts";
-import { proxyWorkspaceAsset, WORKSPACE_ASSET_ROUTE } from "./assetProxy.ts";
+  MAX_FORWARDED_UPLOAD_BYTES,
+  proxyWorkspaceAsset,
+  WORKSPACE_ASSET_ROUTE,
+  WORKSPACE_UPLOAD_ROUTE,
+} from "./assetProxy.ts";
 import { GatewayProcessError, runGatewayProcess } from "./process.ts";
 import {
   makeWorkspaceRpcBridge,
@@ -696,9 +689,6 @@ export interface LocalCoderGatewayEffectOptions {
   readonly installHelper?: (
     input: Parameters<typeof installCoderHelper>[0],
   ) => Effect.Effect<void, unknown>;
-  readonly uploadComposerAttachment?: (
-    input: Parameters<typeof uploadCoderComposerAttachment>[0],
-  ) => Effect.Effect<string, unknown>;
   readonly connectPortForward?: (
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderPortForwardConnection, unknown, Scope.Scope>;
@@ -822,8 +812,6 @@ export function makeLocalCoderGateway(
     const runWorkspaceUpdate =
       options?.updateWorkspace ?? ((invocation) => runCoderWorkspaceAction(invocation, "update"));
     const installHelper = options?.installHelper ?? installCoderHelper;
-    const uploadComposerAttachment =
-      options?.uploadComposerAttachment ?? uploadCoderComposerAttachment;
     const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
     const readWorkspaceResourceUsage =
       options?.readWorkspaceResourceUsage ??
@@ -2236,125 +2224,23 @@ export function makeLocalCoderGateway(
           }
           return;
         }
-        // Composer images and files stream through the same Coder CLI transfer; only their
-        // validation and size limit differ.
-        const attachmentRoute = requestUrl.pathname.match(
-          /^\/api\/workspaces\/([^/]+)\/(clipboard-image|attachment-file)$/,
-        );
-        if (request.method === "POST" && attachmentRoute !== null) {
-          if (request.headers.origin !== expectedOrigin) {
+        // Coder: a workspace's signed asset and attachment upload URLs, answered by upstream's
+        // routes in its helper.
+        const assetRoute =
+          request.method === "GET" || request.method === "HEAD"
+            ? requestUrl.pathname.match(WORKSPACE_ASSET_ROUTE)
+            : null;
+        const uploadRoute =
+          request.method === "POST" ? requestUrl.pathname.match(WORKSPACE_UPLOAD_ROUTE) : null;
+        const forwardedRoute = assetRoute ?? uploadRoute;
+        if (forwardedRoute !== null) {
+          if (uploadRoute !== null && request.headers.origin !== expectedOrigin) {
             sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
             return;
           }
-          const isImage = attachmentRoute[2] === "clipboard-image";
           let workspaceId: string;
           try {
-            workspaceId = decodeURIComponent(attachmentRoute[1] ?? "");
-          } catch {
-            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
-            return;
-          }
-          const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
-          const deployment =
-            workspace === undefined
-              ? undefined
-              : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
-          if (workspace === undefined || deployment === undefined) {
-            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
-            return;
-          }
-          if (SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId))._tag !== "Connected") {
-            sendText(
-              response,
-              409,
-              "text/plain; charset=utf-8",
-              "Coder workspace is not connected.",
-            );
-            return;
-          }
-          const fileName = requestUrl.searchParams.get("name") ?? "";
-          if (!isImage && fileName.trim().length === 0) {
-            sendText(response, 400, "text/plain; charset=utf-8", "File name is required.");
-            return;
-          }
-          const contentType = request.headers["content-type"] ?? "";
-          const uploadAbort = new AbortController();
-          const abortUpload = () => uploadAbort.abort();
-          response.once("close", abortUpload);
-          try {
-            const bytes = await readBody(
-              request,
-              isImage ? MAX_CLIPBOARD_IMAGE_BYTES : MAX_COMPOSER_FILE_BYTES,
-            );
-            const extension = isImage
-              ? validateClipboardImage(contentType, bytes)
-              : validateComposerFile(fileName, bytes);
-            const path = await runPromise(
-              uploadComposerAttachment({
-                deployment,
-                workspace,
-                bytes,
-                extension,
-                invocationOptions: coderInvocationOptions(deployment.id),
-              }),
-              { signal: uploadAbort.signal },
-            );
-            const attachmentId = NodePath.posix.basename(path, `.${extension}`);
-            if (!new RegExp(`^pending-[0-9a-f-]{36}-${extension}$`).test(attachmentId)) {
-              throw new Error("Attachment upload returned an unexpected workspace path.");
-            }
-            sendText(
-              response,
-              200,
-              "application/json; charset=utf-8",
-              JSON.stringify({
-                path,
-                attachment: {
-                  id: attachmentId,
-                  ...(isImage
-                    ? {
-                        mimeType:
-                          CLIPBOARD_IMAGE_MIME_TYPES[
-                            extension as keyof typeof CLIPBOARD_IMAGE_MIME_TYPES
-                          ],
-                      }
-                    : {}),
-                  sizeBytes: bytes.byteLength,
-                },
-              }),
-            );
-          } catch (cause) {
-            if (uploadAbort.signal.aborted) return;
-            if (cause instanceof RequestBodyTooLargeError) {
-              sendText(
-                response,
-                413,
-                "text/plain; charset=utf-8",
-                isImage ? "Image exceeds 10 MiB." : "File exceeds 50 MiB.",
-              );
-              return;
-            }
-            if (cause instanceof ComposerAttachmentValidationError) {
-              sendText(response, 415, "text/plain; charset=utf-8", cause.message);
-              return;
-            }
-            sendText(
-              response,
-              502,
-              "text/plain; charset=utf-8",
-              cause instanceof Error ? cause.message : "Attachment upload failed.",
-            );
-          } finally {
-            response.off("close", abortUpload);
-          }
-          return;
-        }
-        // Coder: a workspace's signed asset URLs, answered by upstream's asset route in its helper.
-        const assetRoute = requestUrl.pathname.match(WORKSPACE_ASSET_ROUTE);
-        if ((request.method === "GET" || request.method === "HEAD") && assetRoute !== null) {
-          let workspaceId: string;
-          try {
-            workspaceId = decodeURIComponent(assetRoute[1] ?? "");
+            workspaceId = decodeURIComponent(forwardedRoute[1] ?? "");
           } catch {
             sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
             return;
@@ -2363,7 +2249,7 @@ export function makeLocalCoderGateway(
             sendText(response, 404, "text/plain; charset=utf-8", "Not found.");
             return;
           }
-          // Asset URLs are minted over a live connection, so a request never starts one: an image
+          // These URLs are minted over a live connection, so a request never starts one: an image
           // re-rendered after the workspace disconnected must not reconnect it.
           const lifecycle = workspaceLifecycles.get(workspaceId);
           const state = lifecycle === undefined ? undefined : SynchronizedRef.getUnsafe(lifecycle);
@@ -2371,7 +2257,26 @@ export function makeLocalCoderGateway(
             sendText(response, 503, "text/plain; charset=utf-8", "Workspace is not connected.");
             return;
           }
-          await proxyWorkspaceAsset(state.connection, request, response, assetRoute[2] ?? "");
+          let upload: { readonly contentLength: number } | undefined;
+          if (uploadRoute !== null) {
+            const contentLength = Number(request.headers["content-length"]);
+            if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+              sendText(response, 411, "text/plain; charset=utf-8", "Content-Length is required.");
+              return;
+            }
+            if (contentLength > MAX_FORWARDED_UPLOAD_BYTES) {
+              sendText(response, 413, "text/plain; charset=utf-8", "Upload is too large.");
+              return;
+            }
+            upload = { contentLength };
+          }
+          await proxyWorkspaceAsset(
+            state.connection,
+            request,
+            response,
+            forwardedRoute[2] ?? "",
+            upload,
+          );
           return;
         }
         if (request.method === "GET" && options?.staticDir) {

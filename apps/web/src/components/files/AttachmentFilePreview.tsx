@@ -1,5 +1,6 @@
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
@@ -16,8 +17,6 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { toastManager } from "~/components/ui/toast";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
-// Coder: client-runtime's attachment upload module is not carried.
-import { formatAttachmentSize } from "~/lib/attachmentDisplay";
 import { cn } from "~/lib/utils";
 
 import { AudioPreview } from "./AudioPreview";

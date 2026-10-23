@@ -1,6 +1,11 @@
 import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
+import {
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
+} from "./chatAttachment.ts";
 import { ProjectFaviconPath } from "./project.ts";
 
 const ASSET_PATH_MAX_LENGTH = 1024;
@@ -65,7 +70,56 @@ export const AssetCreateUrlResult = Schema.Struct({
 });
 export type AssetCreateUrlResult = typeof AssetCreateUrlResult.Type;
 
-// Coder: attachments upload through the gateway's Coder CLI transfer, not a signed upload URL.
+export const ATTACHMENT_UPLOAD_URL_TTL_MS = 10 * 60_000;
+
+const ImageAttachmentCreateUploadUrlInput = Schema.Struct({
+  type: Schema.optionalKey(Schema.Literal("image")),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: Schema.Literals(PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES),
+  ),
+});
+
+const FileAttachmentCreateUploadUrlInput = Schema.Struct({
+  type: Schema.Literal("file"),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES),
+  ),
+});
+
+export const AttachmentCreateUploadUrlInput = Schema.Union([
+  ImageAttachmentCreateUploadUrlInput,
+  FileAttachmentCreateUploadUrlInput,
+]);
+export type AttachmentCreateUploadUrlInput = typeof AttachmentCreateUploadUrlInput.Type;
+
+export const AttachmentCreateUploadUrlResult = Schema.Struct({
+  attachmentId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  relativeUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
+  expiresAt: Schema.Number,
+});
+export type AttachmentCreateUploadUrlResult = typeof AttachmentCreateUploadUrlResult.Type;
+
+export const AttachmentDeleteInput = Schema.Struct({
+  attachmentId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+});
+export type AttachmentDeleteInput = typeof AttachmentDeleteInput.Type;
+
+export class AttachmentUploadSigningKeyError extends Schema.TaggedError<AttachmentUploadSigningKeyError>()(
+  "AttachmentUploadSigningKeyError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Failed to load the attachment upload signing key.";
+  }
+}
 
 export class AssetWorkspaceContextNotFoundError extends Schema.TaggedError<AssetWorkspaceContextNotFoundError>()(
   "AssetWorkspaceContextNotFoundError",

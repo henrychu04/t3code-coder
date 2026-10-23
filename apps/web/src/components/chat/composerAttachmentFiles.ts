@@ -3,12 +3,12 @@ import {
   isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
 } from "@t3tools/contracts";
-
-import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";
 import {
   clampFileAttachmentUploadBytes,
   fileAttachmentTooLargeMessage,
-} from "../../lib/attachmentDisplay";
+} from "@t3tools/client-runtime/state/attachments";
+
+import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";
 import { isHeicImageFile } from "../../lib/imageCompression";
 import { isVideoAttachment } from "../../types";
 
@@ -20,8 +20,8 @@ interface FileAttachmentCapabilityState {
   readonly maxFileAttachmentBytes: number | null;
 }
 
-// Coder: no gif; the gateway accepts PNG, JPEG, and WebP uploads only, so a GIF is a plain file.
 const IMAGE_MIME_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  gif: "image/gif",
   jpeg: "image/jpeg",
   jpg: "image/jpeg",
   png: "image/png",

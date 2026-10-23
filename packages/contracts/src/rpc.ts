@@ -65,7 +65,15 @@ import {
   AgentSessionScanResult,
   AgentSessionScanError,
 } from "./agentSessions.ts";
-import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
+import {
+  AssetAccessError,
+  AssetCreateUrlInput,
+  AssetCreateUrlResult,
+  AttachmentCreateUploadUrlInput,
+  AttachmentCreateUploadUrlResult,
+  AttachmentDeleteInput,
+  AttachmentUploadSigningKeyError,
+} from "./assets.ts";
 import {
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetTurnDiffError,
@@ -337,7 +345,12 @@ import {
 // Coder
 import { PullRequestDiffInput, PullRequestDiffResult } from "./pullRequest.ts";
 // Coder
-import { CoderServeAssetInput, CoderServeAssetPart } from "./coderAssets.ts";
+import {
+  CoderRequestBodyError,
+  CoderServeAssetInput,
+  CoderServeAssetPart,
+  CoderWriteRequestBodyInput,
+} from "./coderAssets.ts";
 // Coder
 import {
   OrchestrationV2GetThreadProjectionInput,
@@ -554,6 +567,7 @@ export const WS_METHODS = {
   projectsSearchText: "projects.searchText",
   workspaceListDirectories: "workspace.listDirectories",
   coderServeAsset: "coder.serveAsset",
+  coderWriteRequestBody: "coder.writeRequestBody",
   projectsCreateFile: "projects.createFile",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
@@ -1133,6 +1147,17 @@ const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
   success: AssetCreateUrlResult,
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
+});
+
+const WsAttachmentsCreateUploadUrlRpc = Rpc.make(WS_METHODS.attachmentsCreateUploadUrl, {
+  payload: AttachmentCreateUploadUrlInput,
+  success: AttachmentCreateUploadUrlResult,
+  error: Schema.Union([AttachmentUploadSigningKeyError, EnvironmentAuthorizationError]),
+});
+
+const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
+  payload: AttachmentDeleteInput,
+  error: EnvironmentAuthorizationError,
 });
 
 const WsMcpAppsCallToolRpc = Rpc.make(WS_METHODS.mcpAppsCallTool, {
@@ -1782,6 +1807,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,
+  WsAttachmentsCreateUploadUrlRpc,
+  WsAttachmentsDeleteRpc,
   WsMcpAppsCallToolRpc,
   WsMcpAppsToolInfoRpc,
   WsMcpAppsReadResourceRpc,
@@ -1883,6 +1910,11 @@ const WsCoderServeAssetRpc = Rpc.make(WS_METHODS.coderServeAsset, {
   payload: CoderServeAssetInput,
   success: CoderServeAssetPart,
   stream: true,
+});
+
+const WsCoderWriteRequestBodyRpc = Rpc.make(WS_METHODS.coderWriteRequestBody, {
+  payload: CoderWriteRequestBodyInput,
+  error: CoderRequestBodyError,
 });
 
 const WsProjectsCreateFileRpc = Rpc.make(WS_METHODS.projectsCreateFile, {
@@ -1990,8 +2022,11 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,
+  WsAttachmentsCreateUploadUrlRpc,
+  WsAttachmentsDeleteRpc,
   WsWorkspaceListDirectoriesRpc,
   WsCoderServeAssetRpc,
+  WsCoderWriteRequestBodyRpc,
   WsProjectsCreateFileRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,

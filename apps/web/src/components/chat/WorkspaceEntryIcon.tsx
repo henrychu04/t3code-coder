@@ -1,6 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-// Coder: client-runtime's attachment upload module is not carried; the web formats sizes.
-import { formatAttachmentSize } from "~/lib/attachmentDisplay";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 
 import { useFileMetadata } from "../../hooks/useFileMetadata";
 import { PierreEntryIcon } from "./PierreEntryIcon";

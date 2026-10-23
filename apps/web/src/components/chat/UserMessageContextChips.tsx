@@ -3,8 +3,7 @@ import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { COMPOSER_CONTEXT_KINDS } from "@t3tools/contracts";
-// Coder: sizes come from the fork's display helper; client-runtime has no attachments state.
-import { formatAttachmentSize } from "~/lib/attachmentDisplay";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { use, type ReactNode } from "react";
 import { FileDiff } from "@pierre/diffs/react";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";

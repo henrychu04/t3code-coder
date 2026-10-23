@@ -4,10 +4,14 @@ import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 
 import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";
-import { WS_METHODS } from "@t3tools/contracts";
+import { CODER_ASSET_BODY_CHUNK_BYTES, WS_METHODS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import { proxyWorkspaceAsset, WORKSPACE_ASSET_ROUTE } from "./assetProxy.ts";
+import {
+  proxyWorkspaceAsset,
+  WORKSPACE_ASSET_ROUTE,
+  WORKSPACE_UPLOAD_ROUTE,
+} from "./assetProxy.ts";
 
 interface FakeHelper {
   readonly connection: CoderHelperConnection;
@@ -53,10 +57,16 @@ async function withServer(
   run: (origin: string) => Promise<void>,
 ): Promise<void> {
   const server = NodeHttp.createServer((request, response) => {
-    const route = new URL(request.url ?? "/", "http://127.0.0.1").pathname.match(
-      WORKSPACE_ASSET_ROUTE,
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    const upload = request.method === "POST" ? pathname.match(WORKSPACE_UPLOAD_ROUTE) : null;
+    const route = upload ?? pathname.match(WORKSPACE_ASSET_ROUTE);
+    void proxyWorkspaceAsset(
+      helper.connection,
+      request,
+      response,
+      route?.[2] ?? "",
+      upload ? { contentLength: Number(request.headers["content-length"]) } : undefined,
     );
-    void proxyWorkspaceAsset(helper.connection, request, response, route?.[2] ?? "");
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -152,5 +162,48 @@ test("interrupts the helper's stream when the browser goes away", async () => {
     await eventually(() =>
       helper.sent.find((message) => message._tag === "Interrupt" && message.requestId === sent.id),
     );
+  });
+});
+
+test("streams an upload body to the helper in acknowledged chunks", async () => {
+  const helper = fakeHelper();
+  const body = Buffer.alloc(CODER_ASSET_BODY_CHUNK_BYTES + 3, 9);
+  await withServer(helper, async (origin) => {
+    const pendingResponse = fetch(`${origin}/api/workspaces/ws-1/api/attachments/upload/token`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body,
+    });
+    const serve = await request(helper);
+    assert.equal(serve.tag, WS_METHODS.coderServeAsset);
+    assert.deepEqual(serve.payload, {
+      method: "POST",
+      path: "/api/attachments/upload/token",
+      contentType: "application/octet-stream",
+      contentLength: body.byteLength,
+      bodyId: (serve.payload as { bodyId: string }).bodyId,
+    });
+    const received: Array<Buffer> = [];
+    for (let index = 1; ; index++) {
+      const write = await request(helper, index);
+      assert.equal(write.tag, WS_METHODS.coderWriteRequestBody);
+      const payload = write.payload as { dataBase64: string; done: boolean };
+      received.push(Buffer.from(payload.dataBase64, "base64"));
+      helper.emit({
+        _tag: "Exit",
+        requestId: write.id,
+        exit: { _tag: "Success", value: undefined },
+      });
+      if (payload.done) break;
+    }
+    assert.ok(received.every((chunk) => chunk.byteLength <= CODER_ASSET_BODY_CHUNK_BYTES));
+    assert.ok(Buffer.concat(received).equals(body));
+    helper.emit({
+      _tag: "Chunk",
+      requestId: serve.id,
+      values: [{ _tag: "head", status: 204, headers: {} }],
+    });
+    helper.emit({ _tag: "Exit", requestId: serve.id, exit: { _tag: "Success", value: undefined } });
+    assert.equal((await pendingResponse).status, 204);
   });
 });

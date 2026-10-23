@@ -1,7 +1,7 @@
 // Coder: no preview-annotation context (browser preview is not carried).
 import ChatMarkdown from "./ChatMarkdown";
 import type { ThreadContextRecord } from "@t3tools/contracts";
-import { formatAttachmentSize } from "~/lib/attachmentDisplay";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
 import { MessageCircleIcon } from "lucide-react";
 import {
