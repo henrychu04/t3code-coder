@@ -2363,19 +2363,15 @@ export function makeLocalCoderGateway(
             sendText(response, 404, "text/plain; charset=utf-8", "Not found.");
             return;
           }
-          let workspaceConnection: WorkspaceConnection;
-          try {
-            workspaceConnection = await ensureWorkspaceConnection(workspaceId);
-          } catch {
-            sendText(response, 502, "text/plain; charset=utf-8", "Workspace unavailable.");
+          // Asset URLs are minted over a live connection, so a request never starts one: an image
+          // re-rendered after the workspace disconnected must not reconnect it.
+          const lifecycle = workspaceLifecycles.get(workspaceId);
+          const state = lifecycle === undefined ? undefined : SynchronizedRef.getUnsafe(lifecycle);
+          if (state?._tag !== "Connected") {
+            sendText(response, 503, "text/plain; charset=utf-8", "Workspace is not connected.");
             return;
           }
-          await proxyWorkspaceAsset(
-            workspaceConnection.connection,
-            request,
-            response,
-            assetRoute[2] ?? "",
-          );
+          await proxyWorkspaceAsset(state.connection, request, response, assetRoute[2] ?? "");
           return;
         }
         if (request.method === "GET" && options?.staticDir) {

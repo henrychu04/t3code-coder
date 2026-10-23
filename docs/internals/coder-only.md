@@ -360,7 +360,8 @@ The gateway serves a workspace's asset URLs at `/api/workspaces/<id>/api/assets/
 `If-Range`, over the helper's gateway-only `coder.serveAsset` stream (`coderAssets.ts`), which runs
 upstream's route in process and returns its status, an allowlist of its headers (type, length,
 range, disposition, caching, validators, and its document CSP), and the body in acknowledged chunks
-of at most `CODER_ASSET_BODY_CHUNK_BYTES`. A closed request interrupts the read; the RPC bridge
+of at most `CODER_ASSET_BODY_CHUNK_BYTES`. It answers 503 unless the workspace is already connected,
+so an asset request never starts a connection. A closed request interrupts the read; the RPC bridge
 rejects the method from the browser. Responses keep upstream's caching (`private, max-age=3600`,
 and `no-store` for video and audio).
 
