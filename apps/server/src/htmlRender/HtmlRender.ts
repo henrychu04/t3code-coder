@@ -1,10 +1,9 @@
 /**
  * Coder: upstream's HTML render publishing without its headless-browser preview and height
  * measurement. T3 Coder downloads no preview browser, so pages publish at the agent's height and
- * the frame fits the page's own reported height, and `html_preview` is not carried. A page with
- * its images inlined is capped at the helper's bounded turn-item read.
+ * the frame fits the page's own reported height, and `html_preview` is not carried.
  */
-import { MAX_TURN_ITEM_ASSET_BYTES, type ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import {
   clampHtmlRenderHeight,
@@ -26,8 +25,7 @@ import * as ServerConfig from "../config.ts";
 
 const MIB = 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * MIB;
-// Coder: upstream allows 25 MiB; the helper reads a stored page through a 10 MiB bounded read.
-const MAX_PAGE_BYTES = MAX_TURN_ITEM_ASSET_BYTES;
+const MAX_PAGE_BYTES = 25 * MIB;
 const formatMib = (bytes: number) => `${(bytes / MIB).toFixed(1)} MiB`;
 
 export class HtmlRenderImagesNotFoundError extends Schema.TaggedError<HtmlRenderImagesNotFoundError>()(

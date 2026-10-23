@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -41,6 +42,8 @@ import {
   type ServerLifecycleStreamEvent,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
+  AssetWorkspaceContextNotFoundError,
+  AssetWorkspaceContextResolutionError,
   ThreadId,
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
@@ -48,6 +51,8 @@ import {
 } from "@t3tools/contracts";
 import { RpcGroup } from "effect/rpc";
 
+import { isNetworkPath } from "@t3tools/shared/path";
+import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
@@ -1550,6 +1555,57 @@ const layerWsRpc = () =>
         [WS_METHODS.agentSessionsScan]: () => agentSessionScanner.scan,
         [WS_METHODS.agentSessionsImport]: (input) =>
           agentSessionImporter.importRecentAgentThreads(input),
+        [WS_METHODS.assetsCreateUrl]:
+          /* Request instrumentation already owns the span; keep this helper in that context. */
+          Effect.fnUntraced(function* (input) {
+            const path = yield* Path.Path;
+            if (
+              input.resource._tag === "attachment" ||
+              input.resource._tag === "tool-output-image" ||
+              // A network path is served only from the thread's project, looked up below.
+              (input.resource._tag === "media-file" &&
+                path.isAbsolute(input.resource.path) &&
+                !isNetworkPath(input.resource.path))
+            ) {
+              return yield* issueAssetUrl({ resource: input.resource });
+            }
+            if (input.resource._tag === "draft-workspace-file") {
+              return yield* issueAssetUrl({
+                resource: input.resource,
+                workspaceRoot: input.resource.cwd,
+              });
+            }
+            // Coder: project favicons are not carried.
+            const thread = yield* threadManagement
+              .getThreadRecords(input.resource.threadId, [])
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new AssetWorkspaceContextResolutionError({
+                      resource: input.resource,
+                      cause,
+                    }),
+                ),
+              );
+            const project = yield* projectService.getById(thread.thread.projectId).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AssetWorkspaceContextResolutionError({
+                    resource: input.resource,
+                    cause,
+                  }),
+              ),
+            );
+            if (Option.isNone(project)) {
+              return yield* new AssetWorkspaceContextNotFoundError({
+                resource: input.resource,
+              });
+            }
+            return yield* issueAssetUrl({
+              resource: input.resource,
+              workspaceRoot: thread.thread.worktreePath ?? project.value.workspaceRoot,
+            });
+          }),
         [WS_METHODS.subscribeVcsStatus]: (input) => vcsStatusBroadcaster.streamStatus(input),
         [WS_METHODS.subscribeWorktreeSetup]: (input) => worktreeSetupTracker.stream(input.threadId),
         [WS_METHODS.worktreeSetupCancel]: (input) =>

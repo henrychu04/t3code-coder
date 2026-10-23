@@ -53,7 +53,6 @@ vi.mock("./ui/tooltip", async () => {
 vi.mock("../assets/assetUrls", () => ({
   useAssetUrlState: () => ({ _tag: "Loading" }),
   useAssetUrlRefresh: () => async () => null,
-  useAssetImageSize: () => [null, () => undefined],
 }));
 vi.mock("../state/environments", () => ({ useConnectedEnvironmentIds: () => [] }));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
@@ -1065,27 +1064,6 @@ describe("ChatMarkdown Windows file links", () => {
 
 describe("ChatMarkdown Coder seams", () => {
   const threadRef = scopeThreadRef(EnvironmentId.make("env"), ThreadId.make("thread"));
-
-  it("reads workspace images through the helper and loads external images in place", () => {
-    const markup = renderToStaticMarkup(
-      <ChatMarkdown
-        cwd="/project"
-        threadRef={threadRef}
-        text="![embedded](/project/result.png) ![external](https://example.com/image.png)"
-      />,
-    );
-    expect(markup.match(/data-project-image/g)).toHaveLength(1);
-    expect(markup).not.toContain('src="/project/result.png"');
-    expect(markup).toContain('src="https://example.com/image.png"');
-  });
-
-  it("shows workspace videos as a play card instead of reading them eagerly", () => {
-    const markup = renderToStaticMarkup(
-      <ChatMarkdown cwd="/project" threadRef={threadRef} text="![clip](clip.mp4)" />,
-    );
-    expect(markup).toContain('aria-label="Play clip"');
-    expect(markup).not.toContain("<video");
-  });
 
   it("opens web links in a separate tab", () => {
     const markup = renderToStaticMarkup(

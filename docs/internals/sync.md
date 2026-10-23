@@ -43,10 +43,8 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
 - Upstream test files that merge in without conflict can still exercise a cut surface or an SDK
   hook the CLI transport lacks (for example the SDK's `spawnClaudeCodeProcess`); review every
   added or modified `*.test.*` in the range and adapt or cut it with a `Coder:` comment.
-- When upstream edits a block the fork moved into a Coder file, apply the edit there. In the
-  aef0e9ca40 sync, `FilePreviewPanel`'s attachment preview lives in `SentAttachmentFilePreview`
-  and HTML render's full-size open is `HtmlRenderFrame`'s dialog, so upstream's new `threadRef`
-  went to both; the marker and lost-line checks in section 6 do not catch this.
+- When upstream edits a block the fork moved into a Coder file, apply the edit there; the marker
+  and lost-line checks in section 6 do not catch this.
 - An upstream commit for a cut surface can also add hooks to carried files that only the cut
   surface calls (in the dd5c7bd09e sync, `ProviderUpdatesAction`'s `quiet` option and returned
   runs for "Update everything"). Leave those hunks out, mark the file `Coder:`, and list the seam.

@@ -629,9 +629,6 @@ type MessagesTimelineRowContent =
       id: string;
       createdAt: string;
       htmlRender: HtmlRenderReference;
-      // Coder: read through the helper by the owning thread and item.
-      sourceThreadId: ThreadId;
-      itemId: TurnItemId;
     }
   | {
       kind: "mcp-app";
@@ -1840,8 +1837,6 @@ export function deriveMessagesTimelineRows(input: {
         id: timelineEntry.id,
         createdAt: timelineEntry.createdAt,
         htmlRender: timelineEntry.htmlRender,
-        sourceThreadId: timelineEntry.sourceThreadId,
-        itemId: timelineEntry.itemId,
       });
       continue;
     }

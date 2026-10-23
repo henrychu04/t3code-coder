@@ -1,12 +1,11 @@
 import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
-  ScreenshotArtifactId,
   type ChatAttachment,
   type EnvironmentId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { runAtomCommand, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Predicate from "effect/Predicate";
 import { create } from "zustand";
 import * as Option from "effect/Option";
@@ -23,7 +22,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentCatalog } from "../connection/catalog";
 import { uploadCoderClipboardImage, uploadCoderComposerFile } from "../coder/api";
 import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
-import { projectEnvironment } from "../state/projects";
+import { assetEnvironment } from "../state/assets";
 import type { AttachmentUploadState, ReadyAttachmentUpload } from "./attachmentUploadState";
 import { compressImageToByteLimit } from "./imageCompression";
 
@@ -139,31 +138,28 @@ function stampDraftFileUpload(job: UploadJob, attachmentId: string): void {
  */
 function deletePendingUpload(_environmentId: EnvironmentId, _attachmentId: string): void {}
 
-/**
- * Checks that a staged image still exists in the workspace by reading its first byte through
- * the helper's bounded attachment read, the Coder counterpart of upstream's asset-URL probe.
- */
+// Coder: upstream's `verifyPersistedAttachmentUpload` (client-runtime's attachment upload module,
+// which is not carried): an attachment asset URL exists only while the staged upload does.
 async function verifyPersistedAttachmentUpload(input: {
   readonly environmentId: EnvironmentId;
   readonly attachmentId: string;
 }): Promise<PersistedAttachmentVerification> {
-  const result = await runAtomCommand(
+  const result = await executeAtomQuery(
     appAtomRegistry,
-    projectEnvironment.readScreenshotArtifact,
-    {
+    assetEnvironment.createUrl({
       environmentId: input.environmentId,
-      input: {
-        artifactId: ScreenshotArtifactId.make(input.attachmentId),
-        source: "attachment",
-        offset: 0,
-        limit: 1,
-      },
-    },
-    { reportFailure: false, reportDefect: false },
+      input: { resource: { _tag: "attachment", attachmentId: input.attachmentId } },
+    }),
+    // `refresh` forces a server round trip: the asset URL query atom caches
+    // results (SWR), so a retry right after a transient failure would
+    // otherwise re-observe the cached failure and never ask the server.
+    { reportFailure: false, reportDefect: false, refresh: true },
   );
-  if (result._tag === "Success") return { status: "verified" };
+  if (result._tag === "Success") {
+    return { status: "verified" };
+  }
   const error = squashAtomCommandFailure(result);
-  return Predicate.isTagged(error, "ScreenshotArtifactReadError")
+  return Predicate.isTagged(error, "AssetAttachmentNotFoundError")
     ? { status: "missing" }
     : { status: "failed", error };
 }

@@ -19,6 +19,9 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import {
+  type AssetCreateUrlInput,
+  type AssetCreateUrlResult,
+  type ChatFileAttachment,
   type CommandId,
   type EnvironmentId,
   isProviderDriverKind,
@@ -41,6 +44,12 @@ import {
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import * as DateTime from "effect/DateTime";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+import {
+  squashAtomCommandFailure,
+  type AtomCommandResult,
+} from "@t3tools/client-runtime/state/runtime";
+import { videoMimeType } from "@t3tools/shared/video";
 import {
   appendCodexArtifactTemplateUsePrompt,
   codexArtifactTemplateUsePrompt,
@@ -623,7 +632,65 @@ export function revokeBlobPreviewUrl(previewUrl: string | undefined): void {
   URL.revokeObjectURL(previewUrl);
 }
 
-// Coder: attachments have no signed URLs; rewinding re-stages images through helper reads.
+export async function resolveFileAttachmentUrl(input: {
+  attachment: ChatFileAttachment;
+  environmentId: EnvironmentId;
+  httpBaseUrl: string;
+  createAssetUrl: (input: {
+    environmentId: EnvironmentId;
+    input: AssetCreateUrlInput;
+  }) => Promise<AtomCommandResult<AssetCreateUrlResult, unknown>>;
+}): Promise<string> {
+  const { attachment } = input;
+  const result = await input.createAssetUrl({
+    environmentId: input.environmentId,
+    input: {
+      resource: {
+        _tag: "attachment",
+        attachmentId: attachment.id,
+        fileName: attachment.name,
+        mimeType: videoMimeType(attachment) ?? attachment.mimeType,
+      },
+    },
+  });
+  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+  const url = resolveAssetUrl(input.httpBaseUrl, result.value.relativeUrl);
+  if (url === null) throw new Error("The environment returned an invalid attachment URL.");
+  return url;
+}
+
+export async function prepareRevertedMessageAttachments(input: {
+  message: ChatMessage;
+  environmentId: EnvironmentId;
+  httpBaseUrl: string;
+  createAssetUrl: Parameters<typeof resolveFileAttachmentUrl>[0]["createAssetUrl"];
+}): Promise<File[]> {
+  return Promise.all(
+    (input.message.attachments ?? []).map(async (attachment) => {
+      if (attachment.type !== "image" && attachment.type !== "file") {
+        throw new Error("This message has an attachment that cannot be restored.");
+      }
+      const result = await input.createAssetUrl({
+        environmentId: input.environmentId,
+        input: {
+          resource: {
+            _tag: "attachment",
+            attachmentId: attachment.id,
+            fileName: attachment.name,
+            mimeType: attachment.mimeType,
+          },
+        },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      const url = resolveAssetUrl(input.httpBaseUrl, result.value.relativeUrl);
+      if (url === null) throw new Error("The environment returned an invalid attachment URL.");
+      const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      if (!response.ok) throw new Error(`Could not restore attachment: ${attachment.name}`);
+      return new File([await response.blob()], attachment.name, { type: attachment.mimeType });
+    }),
+  );
+}
+
 export function revokeUserMessagePreviewUrls(message: ChatMessage): void {
   if (message.role !== "user" || !message.attachments) {
     return;

@@ -65,6 +65,7 @@ import {
   AgentSessionScanResult,
   AgentSessionScanError,
 } from "./agentSessions.ts";
+import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
 import {
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetTurnDiffError,
@@ -336,19 +337,7 @@ import {
 // Coder
 import { PullRequestDiffInput, PullRequestDiffResult } from "./pullRequest.ts";
 // Coder
-import {
-  ProjectImageReadInput,
-  ProjectImageChunk,
-  ProjectImageReadError,
-  ScreenshotArtifactChunk,
-  ScreenshotArtifactReadError,
-  ScreenshotArtifactReadInput,
-  AttachmentFileChunk,
-  AttachmentFileReadInput,
-  TurnItemAssetChunk,
-  TurnItemAssetReadError,
-  TurnItemAssetReadInput,
-} from "./screenshotArtifact.ts";
+import { CoderServeAssetInput, CoderServeAssetPart } from "./coderAssets.ts";
 // Coder
 import {
   OrchestrationV2GetThreadProjectionInput,
@@ -563,11 +552,8 @@ export const WS_METHODS = {
   // Coder: workspace-helper methods.
   projectsGetConfig: "projects.getConfig",
   projectsSearchText: "projects.searchText",
-  projectsReadImage: "projects.readImage",
   workspaceListDirectories: "workspace.listDirectories",
-  workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
-  workspaceReadTurnItemAsset: "workspace.readTurnItemAsset",
-  workspaceReadAttachmentFile: "workspace.readAttachmentFile",
+  coderServeAsset: "coder.serveAsset",
   projectsCreateFile: "projects.createFile",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
@@ -1141,6 +1127,12 @@ const WsAgentSessionsImportRpc = Rpc.make(WS_METHODS.agentSessionsImport, {
     AgentSessionScanError,
     EnvironmentAuthorizationError,
   ]),
+});
+
+const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
+  payload: AssetCreateUrlInput,
+  success: AssetCreateUrlResult,
+  error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 });
 
 const WsMcpAppsCallToolRpc = Rpc.make(WS_METHODS.mcpAppsCallTool, {
@@ -1789,6 +1781,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsFilesystemGetMetadataRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
+  WsAssetsCreateUrlRpc,
   WsMcpAppsCallToolRpc,
   WsMcpAppsToolInfoRpc,
   WsMcpAppsReadResourceRpc,
@@ -1875,34 +1868,21 @@ const WsProjectsSearchTextRpc = Rpc.make(WS_METHODS.projectsSearchText, {
   error: ProjectTextSearchError,
 });
 
-const WsProjectsReadImageRpc = Rpc.make(WS_METHODS.projectsReadImage, {
-  payload: ProjectImageReadInput,
-  success: ProjectImageChunk,
-  error: ProjectImageReadError,
-});
-
 const WsWorkspaceListDirectoriesRpc = Rpc.make(WS_METHODS.workspaceListDirectories, {
   payload: WorkspaceListDirectoriesInput,
   success: WorkspaceListDirectoriesResult,
   error: WorkspaceListDirectoriesError,
 });
 
-const WsWorkspaceReadScreenshotArtifactRpc = Rpc.make(WS_METHODS.workspaceReadScreenshotArtifact, {
-  payload: ScreenshotArtifactReadInput,
-  success: ScreenshotArtifactChunk,
-  error: ScreenshotArtifactReadError,
-});
-
-const WsWorkspaceReadTurnItemAssetRpc = Rpc.make(WS_METHODS.workspaceReadTurnItemAsset, {
-  payload: TurnItemAssetReadInput,
-  success: TurnItemAssetChunk,
-  error: TurnItemAssetReadError,
-});
-
-const WsWorkspaceReadAttachmentFileRpc = Rpc.make(WS_METHODS.workspaceReadAttachmentFile, {
-  payload: AttachmentFileReadInput,
-  success: AttachmentFileChunk,
-  error: ScreenshotArtifactReadError,
+/**
+ * Coder: the gateway's loopback asset route asks the helper to answer upstream's
+ * `/api/assets/*` request in process, since the helper opens no listener. The response streams
+ * as one head and then body chunks of at most `CODER_ASSET_BODY_CHUNK_BYTES`.
+ */
+const WsCoderServeAssetRpc = Rpc.make(WS_METHODS.coderServeAsset, {
+  payload: CoderServeAssetInput,
+  success: CoderServeAssetPart,
+  stream: true,
 });
 
 const WsProjectsCreateFileRpc = Rpc.make(WS_METHODS.projectsCreateFile, {
@@ -2004,16 +1984,14 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsProjectsSearchTextRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
-  WsProjectsReadImageRpc,
   WsProjectsWriteFileRpc,
   WsFilesystemBrowseRpc,
   WsFilesystemGetMetadataRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
+  WsAssetsCreateUrlRpc,
   WsWorkspaceListDirectoriesRpc,
-  WsWorkspaceReadScreenshotArtifactRpc,
-  WsWorkspaceReadTurnItemAssetRpc,
-  WsWorkspaceReadAttachmentFileRpc,
+  WsCoderServeAssetRpc,
   WsProjectsCreateFileRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,

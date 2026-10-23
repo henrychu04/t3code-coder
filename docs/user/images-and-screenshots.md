@@ -48,10 +48,9 @@ Like main, previews read the original file on the environment's machine. An assi
 copy, or rename an image and embed its final file path without viewing it first or publishing it
 through another tool. Relative paths resolve from the active project; absolute paths, `~/` paths,
 and symlinks can point to images elsewhere on the workspace machine. They never refer to files on
-your local computer. Supported images are PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO, up to
-20 MiB each. Videos (MP4, M4V, MOV, WebM, OGV, MKV, and AVI, up to 256 MiB) show a play card; press it to load
-the video, or select a video link to open it in the gallery. Images and videos hosted on the web
-load directly from their site.
+your local computer. Previews load through short-lived signed links that the local app serves from
+the workspace, so videos stream and seek as on main. Images and videos hosted on the web load
+directly from their site.
 
 Right-click an image or video to save it, copy its path or URL, open it in the Files panel, or copy
 an image. Saving works for files on the workspace machine once they have loaded, and for media
@@ -63,12 +62,8 @@ change what you see in an older conversation. Keep the source file if you need t
 T3 no longer creates screenshot artifact copies or matches Markdown against turn captures. Images
 returned only as tool bytes, without a file path, do not get a separate preview.
 
-If an image fails to load, use **Retry image**. File changes during a chunked read reject that read;
-retry starts again with the current file. Inline previews load near the viewport and release their
-bytes when scrolled away. Repeated previews share a read. The browser permits three concurrent image
-reads and bounds retained image bytes to 100 MiB. Opening the gallery gives its selected image
-priority, including when other previews have been deferred. Closing it returns keyboard focus to
-the opener.
+Your browser may keep loaded images in its cache for up to an hour, as on main, so scrolling back
+does not load them again. Video and audio are never cached.
 
 There is no per-turn preview count limit, total storage quota, or automatic purge. Source files stay
 where you placed them and workspace cleanup is user-controlled. Submitted image attachments use their
@@ -80,7 +75,5 @@ them; opt-in saved-artifact retention under **Settings → Storage** can delete 
 Retention is off by default and excludes submitted attachments and current workspace source images.
 
 The flow follows [main's image previews](https://github.com/henrychu04/t3code-coder/blob/f328db30da063a7bce9a9d038fc583d3ff83673a/docs/user/composer.md#images-and-videos-in-messages).
-Attachment sizing follows main. Coder-specific differences are bounded helper stdio transport,
-size bounds for current-file previews, and workspace videos that load on play rather than
-streaming.
-Unsupported image formats show an explanation instead of a retry button.
+Attachment sizing follows main. The Coder-specific difference is the transport: the local app
+answers each signed link by streaming the file from the workspace over the Coder CLI.

@@ -89,6 +89,7 @@ const TARGET = new ConnectionTarget({
 const PREPARED: PreparedConnection = {
   environmentId: TARGET.environmentId,
   label: TARGET.label,
+  httpBaseUrl: TARGET.httpBaseUrl,
   socketUrl: "wss://environment.example.test/ws?wsTicket=test",
   target: TARGET,
 };

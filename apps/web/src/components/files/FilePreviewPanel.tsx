@@ -31,15 +31,13 @@ import type { WorkerPoolManager } from "@pierre/diffs/worker";
 import { EditProvider, File, Virtualizer, useWorkerPool } from "@pierre/diffs/react";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { useFilesystemReadAccess } from "~/state/filesystem";
+import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 import { FolderTree, WrapTextIcon } from "lucide-react";
 import { Code2, Eye, Table2 } from "lucide";
 import * as Schema from "effect/Schema";
 import { useEffect, useRef, useState } from "react";
 
-import { useAssetUrlState } from "~/assets/assetUrls";
-import { projectMediaReference } from "~/components/chat/projectMediaReference";
-import { useProjectMedia, type ProjectVideoSource } from "~/components/chat/useProjectVideo";
-import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
+import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -51,13 +49,17 @@ import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
+import type { ChatFileAttachment } from "~/types";
 import { isHostPath } from "@t3tools/shared/path";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { buildFileReviewComment } from "~/reviewCommentContext";
 import { useEnvironmentScope } from "~/state/session";
 
+import { AttachmentFilePreview } from "./AttachmentFilePreview";
 import { AudioPreview } from "./AudioPreview";
+import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
 import FileBrowserPanel from "./FileBrowserPanel";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
@@ -91,6 +93,7 @@ import {
   resolveFilePreviewPath,
   setMarkdownTaskChecked,
   shouldShowFileExplorer,
+  workspaceAssetResource,
 } from "./filePreviewMode";
 import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
 import {
@@ -106,8 +109,8 @@ interface FilePreviewPanelProps {
   cwd: string;
   projectName: string;
   relativePath: string | null;
-  // Coder: no attachment previews, local editors, or open-in keybindings; sent file attachments
-  // render as static rows and Files only opens project files.
+  attachment?: ChatFileAttachment;
+  // Coder: no local editors or open-in keybindings.
   threadRef: ScopedThreadRef;
   // Coder: a draft names its project so the helper can verify the root it reads.
   projectId: ProjectId;
@@ -126,40 +129,45 @@ interface FilePreviewPanelProps {
 
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
-const RENDER_TABLE_STORAGE_KEY = "t3code.renderTable";
 const RENDER_BROWSER_FILE_STORAGE_KEY = "t3code.renderBrowserFile";
-const isHtmlPreviewFile = (path: string): boolean => /\.html?$/i.test(path);
+const RENDER_TABLE_STORAGE_KEY = "t3code.renderTable";
+const isHtmlPreviewFile = (path: string): boolean =>
+  /\.html?$/i.test(path.split(/[?#]/, 1)[0] ?? "");
 type FilePostRender = <LAnnotation>(
   fileContainer: HTMLElement,
   instance: FileInstance<LAnnotation, undefined>,
   phase: PostRenderPhase,
 ) => void;
 
-/**
- * Coder: main loads workspace media from signed asset URLs; Coder reads each file through bounded
- * helper stdio chunks into a memory-only blob URL. Opening the file is the explicit request, so
- * the read starts immediately. PDFs open in the browser's viewer and HTML pages in the sandboxed
- * document shell (see BrowserDocumentFrame); a page's relative assets do not load, because there
- * is no asset server to resolve them against. Unlike main's re-signed
- * URLs, video and audio do not reread on workspace mutations: each read moves the whole file
- * through helper stdio, so a retry or reopen shows the current file.
- */
 function WorkspaceImagePreview(props: {
-  readonly source: ProjectVideoSource;
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly draft: boolean;
+  readonly absolutePath: string;
+  readonly workspaceRoot: string;
   readonly alt: string;
+  readonly workspaceMutationId: string | null;
 }) {
-  const assetUrl = useAssetUrlState(
-    props.source.environmentId,
-    { _tag: "project-image", target: props.source.target },
-    { priority: true },
-  );
+  const resource = workspaceAssetResource({
+    kind: "workspace-file",
+    threadRef: props.threadRef,
+    draft: props.draft,
+    workspaceRoot: props.workspaceRoot,
+    absolutePath: props.absolutePath,
+  });
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const imageUrl = assetUrl._tag === "Success" ? assetUrl.url : null;
+  const revisionSuffix =
+    props.workspaceMutationId === null
+      ? ""
+      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}workspace-revision=${encodeURIComponent(props.workspaceMutationId)}`;
+  const imageUrl = assetUrl._tag === "Success" ? `${assetUrl.url}${revisionSuffix}` : null;
   const actionsSource: MediaActionSource = {
     kind: "image",
     name: props.alt,
     src: imageUrl,
-    reference: projectMediaReference(props.source.target),
+    reference: mediaFileReference(props.absolutePath, props.workspaceRoot),
+    asset: { environmentId: props.environmentId, resource },
   };
 
   if (assetUrl._tag === "Failure" || (imageUrl !== null && failedUrl === imageUrl)) {
@@ -173,6 +181,7 @@ function WorkspaceImagePreview(props: {
   }
 
   return assetUrl._tag === "Success" && imageUrl !== null ? (
+    // oxlint-disable-next-line t3code/require-centered-scroll-gutter -- The image is capped at max-h-full max-w-full, so this never scrolls.
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
       <MediaActions source={actionsSource}>
         <img
@@ -190,56 +199,110 @@ function WorkspaceImagePreview(props: {
   );
 }
 
-/** Coder: a project PDF or HTML file read whole through the helper, then rendered from memory. */
+/**
+ * HTML runs in a sandboxed frame with an opaque origin, so a page cannot reach
+ * the app's session or storage.
+ */
 function WorkspaceBrowserPreview(props: {
-  readonly source: ProjectVideoSource;
-  readonly kind: "pdf" | "html";
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly draft: boolean;
+  readonly absolutePath: string;
+  readonly workspaceRoot: string;
   readonly title: string;
+  readonly workspaceMutationId: string | null;
 }) {
-  const { state, retry } = useProjectMedia(props.kind, props.source, true);
-  const url = state.status === "loaded" ? state.src : null;
-  const [html, setHtml] = useState<{ readonly url: string; readonly text: string } | null>(null);
-  useEffect(() => {
-    if (props.kind !== "html" || url === null) return;
-    let cancelled = false;
-    void fetch(url)
-      .then((response) => response.text())
-      .then((text) => {
-        if (!cancelled) setHtml({ url, text });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [props.kind, url]);
-  if (state.status === "failed") {
-    return <FileSurfaceFailure message="Unable to load file preview." onRetry={retry} />;
+  const insideWorkspace =
+    mediaFileReference(props.absolutePath, props.workspaceRoot).relativePath !== undefined;
+  const resource = workspaceAssetResource({
+    kind: insideWorkspace ? "workspace-file" : "media-file",
+    threadRef: props.threadRef,
+    draft: props.draft,
+    workspaceRoot: props.workspaceRoot,
+    absolutePath: props.absolutePath,
+  });
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
+  const revisionSuffix =
+    props.workspaceMutationId === null
+      ? ""
+      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}workspace-revision=${encodeURIComponent(props.workspaceMutationId)}`;
+
+  if (assetUrl._tag === "Failure") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
+        Unable to load file preview.
+      </div>
+    );
   }
-  if (url === null) return <FileSurfaceLoading />;
-  if (props.kind === "pdf") return <BrowserDocumentFrame pdfUrl={url} title={props.title} />;
-  if (html === null || html.url !== url) return <FileSurfaceLoading />;
-  return <BrowserDocumentFrame html={html.text} title={props.title} />;
+  if (assetUrl._tag !== "Success") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+  return (
+    <BrowserDocumentFrame
+      src={`${assetUrl.url}${revisionSuffix}`}
+      documentKey={`${props.environmentId}:${resource._tag}:${props.threadRef.threadId}:${props.absolutePath}:${props.workspaceMutationId}`}
+      title={props.title}
+      pdf={isPdfPreviewFile(props.absolutePath)}
+    />
+  );
 }
 
 function WorkspaceVideoPreview(props: {
-  readonly source: ProjectVideoSource;
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly draft: boolean;
+  readonly absolutePath: string;
+  readonly workspaceRoot: string;
   readonly name: string;
+  readonly workspaceMutationId: string | null;
 }) {
-  const { state, retry } = useProjectMedia("video", props.source, true);
-  const src = state.status === "loaded" ? state.src : null;
+  const resource = workspaceAssetResource({
+    kind: "media-file",
+    threadRef: props.threadRef,
+    draft: props.draft,
+    workspaceRoot: props.workspaceRoot,
+    absolutePath: props.absolutePath,
+  });
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
+  const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, resource);
+  useWorkspaceMutationRefresh({
+    mutationId: props.workspaceMutationId,
+    resourceKey: JSON.stringify([props.environmentId, resource]),
+    refresh: () => {
+      void refreshAssetUrl().catch(() => undefined);
+    },
+  });
+  // Servers that report the file's revision let an unchanged file stay loaded; older ones
+  // only offer the workspace mutation, which changes after every command. The revision also
+  // goes in the URL, since two mints in the same millisecond sign identical URLs.
+  const fileRevision = assetUrl._tag === "Success" ? assetUrl.fileRevision : undefined;
+  const revision = fileRevision ?? props.workspaceMutationId;
+  const revisionSuffix =
+    revision === null
+      ? ""
+      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}${fileRevision !== undefined ? "file" : "workspace"}-revision=${encodeURIComponent(revision)}`;
+  const latestUrl = assetUrl._tag === "Success" ? `${assetUrl.url}${revisionSuffix}` : null;
+
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
       <MediaVideoPlayer
-        src={src}
-        sourceFailed={state.status === "failed"}
+        src={latestUrl}
+        sourceFailed={assetUrl._tag === "Failure"}
         label={props.name}
+        revision={revision}
         preload="metadata"
         className="flex h-full min-h-0 w-full max-w-5xl items-center justify-center"
-        onRetry={retry}
+        onRetry={refreshAssetUrl}
         actionsSource={{
           kind: "video",
           name: props.name,
-          src,
-          reference: projectMediaReference(props.source.target),
+          src: latestUrl,
+          reference: mediaFileReference(props.absolutePath, props.workspaceRoot),
+          asset: { environmentId: props.environmentId, resource },
         }}
       />
     </div>
@@ -247,25 +310,58 @@ function WorkspaceVideoPreview(props: {
 }
 
 function WorkspaceAudioPreview(props: {
-  readonly source: ProjectVideoSource;
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly draft: boolean;
+  readonly absolutePath: string;
+  readonly workspaceRoot: string;
   readonly name: string;
+  readonly workspaceMutationId: string | null;
 }) {
-  const { state, retry } = useProjectMedia("audio", props.source, true);
+  const resource = workspaceAssetResource({
+    kind: "media-file",
+    threadRef: props.threadRef,
+    draft: props.draft,
+    workspaceRoot: props.workspaceRoot,
+    absolutePath: props.absolutePath,
+  });
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
+  const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, resource);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const url = state.status === "loaded" ? state.src : null;
-  if (state.status === "failed" || (url !== null && failedUrl === url)) {
+  useWorkspaceMutationRefresh({
+    mutationId: props.workspaceMutationId,
+    resourceKey: JSON.stringify([props.environmentId, resource]),
+    refresh: () => {
+      void refreshAssetUrl().catch(() => undefined);
+    },
+  });
+  const fileRevision = assetUrl._tag === "Success" ? assetUrl.fileRevision : undefined;
+  const revision = fileRevision ?? props.workspaceMutationId;
+  const revisionSuffix =
+    revision === null
+      ? ""
+      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}${fileRevision !== undefined ? "file" : "workspace"}-revision=${encodeURIComponent(revision)}`;
+  const url = assetUrl._tag === "Success" ? `${assetUrl.url}${revisionSuffix}` : null;
+  if (assetUrl._tag === "Failure" || (url !== null && failedUrl === url)) {
     return (
       <FileSurfaceFailure
         message="Unable to load audio."
         onRetry={() => {
           setFailedUrl(null);
-          void retry();
+          void refreshAssetUrl().catch(() => undefined);
         }}
       />
     );
   }
   if (url === null) return <FileSurfaceLoading />;
-  return <AudioPreview src={url} name={props.name} onError={() => setFailedUrl(url)} />;
+  return (
+    <AudioPreview
+      src={url}
+      name={props.name}
+      revision={revision}
+      onError={() => setFailedUrl(url)}
+    />
+  );
 }
 
 function clampFileLine(contents: string, requestedLine: number): number {
@@ -911,6 +1007,7 @@ export default function FilePreviewPanel({
   cwd,
   projectName,
   relativePath: requestedPath,
+  attachment,
   threadRef,
   projectId,
   composerDraftTarget,
@@ -923,7 +1020,8 @@ export default function FilePreviewPanel({
   selectedFilePending,
   workspaceMutationId,
 }: FilePreviewPanelProps) {
-  const relativePath = resolveFilePreviewPath(requestedPath, cwd);
+  const relativePath =
+    attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
   const draft = typeof composerDraftTarget === "string";
   // Coder: every Files request names its owner. The server does not know a draft yet, so a draft
   // names its project and the helper verifies the root against that project instead.
@@ -932,24 +1030,27 @@ export default function FilePreviewPanel({
     : { threadId: threadRef.threadId };
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
+  // Coder: no in-app browser preview, local editors, or file-manager reveal.
   const isVideo = relativePath !== null && isWorkspaceVideoPreviewPath(relativePath);
   const isAudio = relativePath !== null && !isVideo && isWorkspaceAudioPreviewPath(relativePath);
   const isImage = relativePath !== null && !isVideo && isWorkspaceImagePreviewPath(relativePath);
   const isMedia = isImage || isVideo || isAudio;
-  // Coder: PDFs have no text to show; HTML has, and can toggle between page and source.
   const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);
+  // Coder: upstream's `isBrowserPreviewFile` lives with the in-app browser, which is not carried.
   const isHtml = relativePath !== null && !isPdf && isHtmlPreviewFile(relativePath);
-  const isHostFile = relativePath !== null && isHostPath(relativePath);
+  const isHostFile =
+    attachment !== undefined || (relativePath !== null && isHostPath(relativePath));
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
-  const file = useProjectFileQuery(environmentId, owner, cwd, relativePath, relativePath !== null);
+  const file = useProjectFileQuery(
+    environmentId,
+    owner,
+    cwd,
+    relativePath,
+    attachment === undefined && relativePath !== null,
+  );
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
-  // Coder: media reads go through the helper by owner, root, and project-relative path.
-  const mediaSource: ProjectVideoSource | null =
-    relativePath !== null && (isMedia || isPdf || isHtml)
-      ? { environmentId, target: { ...owner, cwd, filePath: relativePath } }
-      : null;
   // A chat link cannot tell a folder from a file, so a folder arrives here as
   // a file surface and the read fails. Keep the breadcrumbs, drop the preview
   // pane, and let the tree fill the surface with the folder revealed. Mutation
@@ -957,7 +1058,8 @@ export default function FilePreviewPanel({
   // folder outside the workspace gets a tree of its own, rooted at that folder.
   // `folderTrail` is set only when crumbs walked the browser up: the deeper path
   // kept for the way back down. The explorer (`""`) shows crumbs only then.
-  const breadcrumbPath = relativePath ?? (folderTrail === undefined ? null : "");
+  const breadcrumbPath =
+    attachment !== undefined ? null : (relativePath ?? (folderTrail === undefined ? null : ""));
   // A host trail that walked up to the workspace root (`/repo/project` is `""`) no
   // longer passes through the current path, so the crumbs start over there.
   const breadcrumbTrail =
@@ -965,7 +1067,8 @@ export default function FilePreviewPanel({
   // The trail only continues below folders, so a surface with one is a folder
   // before its read settles, and walking up never flashes a file preview.
   const isFolder =
-    file.isNotFile || (folderTrail !== undefined && file.data === null && file.error === null);
+    attachment === undefined &&
+    (file.isNotFile || (folderTrail !== undefined && file.data === null && file.error === null));
   const hostFolderPath = isFolder && isHostFile ? relativePath : null;
   // Everything preview-related keys off previewPath; a folder has no preview.
   const previewPath = isFolder ? null : relativePath;
@@ -973,20 +1076,20 @@ export default function FilePreviewPanel({
   const showExplorer = shouldShowFileExplorer({
     relativePath: previewPath,
     explorerOpen,
-    attachmentOpen: false,
+    attachmentOpen: attachment !== undefined,
   });
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
     RENDER_MARKDOWN_STORAGE_KEY,
     false,
     Schema.Boolean,
   );
-  const [renderTablePreferred, setRenderTablePreferred] = useLocalStorage(
-    RENDER_TABLE_STORAGE_KEY,
+  const [renderBrowserFilePreferred, setRenderBrowserFilePreferred] = useLocalStorage(
+    RENDER_BROWSER_FILE_STORAGE_KEY,
     true,
     Schema.Boolean,
   );
-  const [renderBrowserFilePreferred, setRenderBrowserFilePreferred] = useLocalStorage(
-    RENDER_BROWSER_FILE_STORAGE_KEY,
+  const [renderTablePreferred, setRenderTablePreferred] = useLocalStorage(
+    RENDER_TABLE_STORAGE_KEY,
     true,
     Schema.Boolean,
   );
@@ -998,36 +1101,35 @@ export default function FilePreviewPanel({
   );
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
-  const tableDelimiter = previewPath ? filePreviewDelimiter({ name: previewPath }) : null;
+  const tableDelimiter =
+    previewPath && attachment === undefined ? filePreviewDelimiter({ name: previewPath }) : null;
   const revealHandled =
     revealLine === null ||
     (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
   const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
+  const renderBrowserFile = isPdf || (isHtml && renderBrowserFilePreferred && revealHandled);
   const renderTable = tableDelimiter !== null && renderTablePreferred && revealHandled;
-  const renderHtml = isHtml && renderBrowserFilePreferred && revealHandled;
   const renderedMode = isMarkdown
     ? ("markdown" as const)
-    : isHtml
-      ? ("html" as const)
-      : tableDelimiter
-        ? ("table" as const)
+    : tableDelimiter
+      ? ("table" as const)
+      : isHtml
+        ? ("html" as const)
         : null;
-  const canToggleRendered = previewPath !== null && renderedMode !== null;
-  // Word wrap only reaches the text bodies. A rendered Markdown document and a table lay
-  // themselves out, so the toggle stays hidden rather than inert.
+  const canToggleRendered =
+    previewPath !== null && attachment === undefined && renderedMode !== null;
   const showsRawText =
     previewPath !== null &&
     file.data !== null &&
-    !isPdf &&
     !(isMarkdown && renderMarkdown) &&
-    !(isHtml && renderHtml) &&
-    !(tableDelimiter && renderTable);
-  const rendered = isMarkdown ? renderMarkdown : isHtml ? renderHtml : renderTable;
+    !(tableDelimiter && renderTable) &&
+    !renderBrowserFile;
+  const rendered = isMarkdown ? renderMarkdown : tableDelimiter ? renderTable : renderBrowserFile;
   const setRenderedPreferred = isMarkdown
     ? setRenderMarkdownPreferred
-    : isHtml
-      ? setRenderBrowserFilePreferred
-      : setRenderTablePreferred;
+    : tableDelimiter
+      ? setRenderTablePreferred
+      : setRenderBrowserFilePreferred;
   // A file keeps its tab; walking up from it opens a folder browser beside it.
   // The trail's end keeps its own spelling (`C:/a` or `C:\a`), so it finds its tab.
   const navigateToFolder = (crumbPath: string) => {
@@ -1037,9 +1139,16 @@ export default function FilePreviewPanel({
         : crumbPath;
     onNavigateFolder(path, retainedBreadcrumbTrail(breadcrumbTrail ?? undefined, path), !isFolder);
   };
+  const absolutePath =
+    breadcrumbPath === ""
+      ? cwd
+      : relativePath && attachment === undefined
+        ? resolvePathLinkTarget(relativePath, cwd)
+        : null;
   const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
   useWorkspaceMutationRefresh({
     enabled:
+      attachment === undefined &&
       relativePath !== null &&
       // Media and PDFs never show their contents, so re-reading them on every
       // workspace mutation is waste. A folder named like one still re-reads, so
@@ -1090,7 +1199,7 @@ export default function FilePreviewPanel({
     setReloadCount((current) => current + 1);
   };
 
-  if (!canReadFiles) {
+  if (attachment === undefined && !canReadFiles) {
     if (fileAccess.isPending) {
       return (
         <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -1172,7 +1281,7 @@ export default function FilePreviewPanel({
           ) : null}
         </div>
       ) : null}
-      {relativePath && !isHostFile && !canWriteFiles && !fileAccess.isPending ? (
+      {relativePath && !attachment && !isHostFile && !canWriteFiles && !fileAccess.isPending ? (
         <div className="shrink-0 border-b px-3 py-1.5 text-2xs text-muted-foreground">
           Read-only connection. Unsaved edits are kept until write access returns.
         </div>
@@ -1187,7 +1296,11 @@ export default function FilePreviewPanel({
           </Button>
         </div>
       ) : null}
-      {previewPath && !isMedia && !isPdf && !renderHtml && file.data?.truncated ? (
+      {previewPath &&
+      attachment === undefined &&
+      !isMedia &&
+      !renderBrowserFile &&
+      file.data?.truncated ? (
         <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground">
           Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
         </div>
@@ -1196,32 +1309,59 @@ export default function FilePreviewPanel({
         <div
           className={cn("min-w-0 flex-1 flex-col overflow-hidden", previewPath ? "flex" : "hidden")}
         >
-          {isFolder ? null : mediaSource && isVideo ? (
+          {isFolder ? null : relativePath && attachment ? (
+            <AttachmentFilePreview
+              key={`${environmentId}:${attachment.id}`}
+              name={attachment.name}
+              mimeType={attachment.mimeType}
+              sizeBytes={attachment.sizeBytes}
+              asset={{ environmentId, attachmentId: attachment.id }}
+              htmlRender={attachment.htmlRender === true}
+              threadRef={threadRef}
+            />
+          ) : relativePath && isVideo && absolutePath ? (
             <WorkspaceVideoPreview
-              key={`${environmentId}:${threadRef.threadId}:${relativePath}`}
-              source={mediaSource}
-              name={relativePath ?? "video"}
+              key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
+              environmentId={environmentId}
+              threadRef={threadRef}
+              draft={draft}
+              absolutePath={absolutePath}
+              workspaceRoot={cwd}
+              name={relativePath}
+              workspaceMutationId={workspaceMutationId}
             />
-          ) : mediaSource && isAudio ? (
+          ) : relativePath && isAudio && absolutePath ? (
             <WorkspaceAudioPreview
-              key={`${environmentId}:${threadRef.threadId}:${relativePath}`}
-              source={mediaSource}
-              name={relativePath ?? "audio"}
+              key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
+              environmentId={environmentId}
+              threadRef={threadRef}
+              draft={draft}
+              absolutePath={absolutePath}
+              workspaceRoot={cwd}
+              name={relativePath}
+              workspaceMutationId={workspaceMutationId}
             />
-          ) : mediaSource && (isPdf || renderHtml) ? (
-            // Like images, a workspace mutation rereads the current document.
-            <WorkspaceBrowserPreview
-              key={`${relativePath}:${workspaceMutationId ?? ""}`}
-              source={mediaSource}
-              kind={isPdf ? "pdf" : "html"}
-              title={relativePath ?? "document"}
-            />
-          ) : mediaSource && isImage ? (
-            // Like main's revision suffix, a workspace mutation rereads the current image.
+          ) : relativePath && isImage && absolutePath ? (
             <WorkspaceImagePreview
-              key={`${relativePath}:${workspaceMutationId ?? ""}`}
-              source={mediaSource}
-              alt={relativePath ?? "image"}
+              key={absolutePath}
+              environmentId={environmentId}
+              threadRef={threadRef}
+              draft={draft}
+              absolutePath={absolutePath}
+              workspaceRoot={cwd}
+              alt={relativePath}
+              workspaceMutationId={workspaceMutationId}
+            />
+          ) : relativePath && renderBrowserFile && absolutePath ? (
+            <WorkspaceBrowserPreview
+              key={absolutePath}
+              environmentId={environmentId}
+              threadRef={threadRef}
+              draft={draft}
+              absolutePath={absolutePath}
+              workspaceRoot={cwd}
+              title={relativePath}
+              workspaceMutationId={workspaceMutationId}
             />
           ) : relativePath && file.error && file.data === null ? (
             <div
@@ -1331,7 +1471,9 @@ export default function FilePreviewPanel({
               selectedPathRevealId={revealRequestId}
               onOpenFile={onOpenFile}
               workspaceMutationId={workspaceMutationId}
-              {...(previewPath && !isMedia ? { onRefreshSelectedFile: file.refresh } : {})}
+              {...(previewPath && !isMedia && !isPdf
+                ? { onRefreshSelectedFile: file.refresh }
+                : {})}
             />
           </aside>
         ) : null}

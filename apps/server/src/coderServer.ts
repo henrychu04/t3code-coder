@@ -35,7 +35,6 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ProjectAutoPull from "./vcs/projectAutoPull.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
-import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as CoderWs from "./ws.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
@@ -97,7 +96,6 @@ const CoderProviderInstancesLive = ProviderInstanceRegistryHydration.layer.pipe(
   Layer.provide(BackgroundPolicy.layer),
   Layer.provide(FetchHttpClient.layer),
   Layer.provideMerge(layerServerSettings),
-  Layer.provideMerge(ScreenshotArtifacts.layer),
 );
 
 // The registry reads provider latest versions to settle update state (#18723).
@@ -192,7 +190,6 @@ const CoderRuntimeCoreLive = Layer.mergeAll(
 );
 
 const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
-  Layer.provideMerge(ScreenshotArtifacts.layer),
   Layer.provideMerge(
     ProjectEnrichmentService.layer.pipe(Layer.provide(ProjectFaviconResolver.layer)),
   ),

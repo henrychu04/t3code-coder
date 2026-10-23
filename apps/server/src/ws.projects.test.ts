@@ -20,6 +20,7 @@ import {
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "./config.ts";
+import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as CoderWs from "./ws.ts";
@@ -63,7 +64,6 @@ import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
-import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
@@ -170,7 +170,6 @@ const harness = (
       stub(Keybindings.Keybindings),
       stub(WorkspaceEntries.WorkspaceEntries, options.workspaceEntries),
       stub(WorkspaceFileSystem.WorkspaceFileSystem),
-      stub(ScreenshotArtifacts.ScreenshotArtifacts),
       stub(VcsStatusBroadcaster.VcsStatusBroadcaster, {
         refreshStatus: (cwd) =>
           Effect.sync(() => {
@@ -222,6 +221,7 @@ const harness = (
       stub(McpAppRequests.McpAppRequests),
       stub(StorageCleanup.StorageCleanup),
       stub(CommandOutputHub.CommandOutputHub),
+      stub(ServerSecretStore.ServerSecretStore),
       ServerConfig.layer(config),
       WorkspacePaths.layer,
     ).pipe(Layer.provideMerge(NodeServices.layer));

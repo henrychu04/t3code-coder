@@ -325,7 +325,7 @@ export type ProjectTextSearchResult = typeof ProjectTextSearchResult.Type;
  * yet names its project instead, and `cwd` must be that project's workspace root or a worktree
  * one of the project's persisted threads owns. A request naming a thread is checked as a thread.
  */
-export const ProjectFilesOwnerFields = {
+const ProjectFilesOwnerFields = {
   threadId: Schema.optional(ThreadId),
   draftProjectId: Schema.optional(ProjectId),
 };

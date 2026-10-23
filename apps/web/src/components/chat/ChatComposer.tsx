@@ -11,6 +11,7 @@ import type {
   KeybindingCommand,
   AssistantCitation,
   ChatAttachment as ContractChatAttachment,
+  ChatFileAttachment,
   EnvironmentId,
   ModelSelection,
   ProjectId,
@@ -123,6 +124,7 @@ import {
   composerOtherFilesForPresentation,
   fileAttachmentCapabilityBlockReason,
   fileAttachmentStagingLimit,
+  isPreviewableComposerVideo,
   shouldHandleComposerAttachmentPaste,
 } from "./composerAttachmentFiles";
 import {
@@ -212,7 +214,11 @@ import {
   resolveContextWindowModelDisplayName,
   shouldReserveContextWindowMeter,
 } from "./ContextWindowMeter.logic";
-import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
+import {
+  buildAttachmentVideoPreview,
+  buildExpandedImagePreview,
+  type ExpandedImagePreview,
+} from "./ExpandedImagePreview";
 import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
 import {
   getComposerPromptLengthValidationMessage,
@@ -510,6 +516,7 @@ export interface ChatComposerProps {
   scheduleComposerFocus: () => void;
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
+  onFileOpen: (attachment: ChatFileAttachment) => void;
 }
 
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
@@ -617,6 +624,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     scheduleComposerFocus,
     setThreadError,
     onExpandImage,
+    onFileOpen,
     editingQueuedAttachments,
     onRemoveEditingQueuedAttachment,
   } = props;
@@ -682,7 +690,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         .map((file) => file.id),
     );
   })();
-  const composerOtherFiles = composerOtherFilesForPresentation(composerFiles, inlineFileIdSet);
+  const composerVideos = composerFiles.filter((file) =>
+    isPreviewableComposerVideo(file, environmentId),
+  );
+  const composerOtherFiles = composerOtherFilesForPresentation(
+    composerFiles,
+    environmentId,
+    inlineFileIdSet,
+  );
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerReviewComments = composerDraft.reviewComments;
   const composerThreadContexts = attachmentDraft.threadContexts;
@@ -701,13 +716,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
     openFile: setPreviewFileId,
     openMention: (path: string) => useRightPanelStore.getState().openFile(routeThreadRef, path),
-    // Coder: only drafts whose bytes are still in memory preview; a submitted or reloaded
-    // video has no signed asset URL to play from.
     expandVideo: (fileId: string) => {
       const file = composerFiles.find((candidate) => candidate.id === fileId);
       if (!file || !isVideoAttachment(file)) return;
       const localPreview = buildExpandedImagePreview([file], file.id);
-      if (localPreview) onExpandImage(localPreview);
+      if (localPreview) {
+        onExpandImage(localPreview);
+        return;
+      }
+      if (file.uploadedAttachmentId === undefined || file.uploadEnvironmentId !== environmentId) {
+        return;
+      }
+      const persistedPreview = buildAttachmentVideoPreview(environmentId, {
+        type: "file",
+        id: file.uploadedAttachmentId,
+        name: file.name,
+        mimeType: file.mimeType,
+        sizeBytes: file.sizeBytes,
+      });
+      if (persistedPreview) onExpandImage(persistedPreview);
     },
     openPullRequest: (event: React.MouseEvent<HTMLElement>, url: string) => {
       openPrLink(event, url);
@@ -3183,17 +3210,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Built outside the form's JSX so typing, which rebuilds that JSX, leaves them cached.
   const composerAttachmentMediaRow =
-    !isComposerCollapsedMobile && expandedComposerImages.length > 0 ? (
+    !isComposerCollapsedMobile &&
+    (composerVideos.length > 0 || expandedComposerImages.length > 0) ? (
       <ComposerAttachmentMediaRow
         images={composerImages}
         expandedImages={expandedComposerImages}
+        videos={composerVideos}
         nonPersistedImageIds={nonPersistedComposerImageIds}
         supportsAttachmentUploads={supportsAttachmentUploads}
+        maxFileAttachmentBytes={maxFileAttachmentBytes}
         environmentId={environmentId}
         attachmentDraftTarget={attachmentDraftTarget}
         canOperateThread={canOperateThread}
         onExpandImage={onExpandImage}
+        onFileOpen={onFileOpen}
         onRemoveImage={removeComposerImage}
+        onRemoveFile={removeComposerFileFromDraft}
       />
     ) : null;
   const composerAttachmentFileList =

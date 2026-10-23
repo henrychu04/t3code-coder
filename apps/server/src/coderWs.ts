@@ -13,7 +13,6 @@ import {
   type ProjectFileFailure,
   type ProjectFileOperation,
   type ProjectId,
-  ProjectImageReadError,
   ProjectListEntriesError,
   type ProjectListEntriesInput,
   type ProjectListEntriesResult,
@@ -31,6 +30,7 @@ import {
 } from "@t3tools/contracts";
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
 
+import { makeServeAsset } from "./coderAssets.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as ServerConfig from "./config.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
@@ -53,9 +53,6 @@ import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
-import { readProjectImage } from "./workspace/ProjectImages.ts";
-import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
-import { readTurnItemAssetChunk } from "./workspace/TurnItemAssets.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
@@ -69,12 +66,9 @@ export const CODER_WS_METHODS = [
   WS_METHODS.pullRequestsDiff,
   WS_METHODS.projectsGetConfig,
   WS_METHODS.projectsSearchText,
-  WS_METHODS.projectsReadImage,
   WS_METHODS.projectsCreateFile,
   WS_METHODS.workspaceListDirectories,
-  WS_METHODS.workspaceReadScreenshotArtifact,
-  WS_METHODS.workspaceReadTurnItemAsset,
-  WS_METHODS.workspaceReadAttachmentFile,
+  WS_METHODS.coderServeAsset,
   WS_METHODS.subscribeVcsRefStatus,
   WS_METHODS.vcsRenameThreadBranch,
   WS_METHODS.reviewOpenDiffFileContents,
@@ -138,10 +132,10 @@ export const makeHandlers = (
     const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
     const terminalManager = yield* TerminalManager.TerminalManager;
     const config = yield* ServerConfig.ServerConfig;
+    const serveAsset = yield* makeServeAsset;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     // Legacy images are read in bounded chunks over helper stdio.
-    const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const path = yield* Path.Path;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -599,15 +593,6 @@ export const makeHandlers = (
             ),
           );
         }),
-      // Coder: read signature-validated media in bounded helper chunks.
-      [WS_METHODS.projectsReadImage]: (input) =>
-        Effect.gen(function* () {
-          const owned = yield* workspaceOwnedByThread(input).pipe(
-            Effect.orElseSucceed(() => false),
-          );
-          if (!owned) return yield* new ProjectImageReadError({ message: "Media is unavailable." });
-          return yield* readProjectImage(input);
-        }),
       // Coder: a new file for upstream's "Save to workspace", in the owner's verified project.
       [WS_METHODS.projectsCreateFile]: (input) =>
         Effect.gen(function* () {
@@ -642,17 +627,8 @@ export const makeHandlers = (
               }),
           ),
         ),
-      // Coder: read preserved legacy artifacts through bounded stdio chunks.
-      [WS_METHODS.workspaceReadScreenshotArtifact]: (input) => screenshotArtifacts.readChunk(input),
-      // Coder: MCP App documents and tool output images, in place of upstream's signed asset URLs.
-      [WS_METHODS.workspaceReadTurnItemAsset]: (input) =>
-        readTurnItemAssetChunk(input, {
-          attachmentsDir: config.attachmentsDir,
-          getTurnItem: orchestrationEngine.getTurnItem,
-        }),
-      // Coder: a sent file attachment, in place of upstream's signed attachment asset URL.
-      [WS_METHODS.workspaceReadAttachmentFile]: (input) =>
-        screenshotArtifacts.readAttachmentFileChunk(input),
+      // Coder: the gateway's loopback asset route, answered by upstream's asset route in process.
+      [WS_METHODS.coderServeAsset]: (input) => serveAsset(input),
       // Coder: subscribe to non-mutating local branch status.
       [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatusBroadcaster.streamRefStatus(cwd),
       // Coder: rename the branch and managed worktree together.

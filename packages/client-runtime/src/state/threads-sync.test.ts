@@ -58,6 +58,7 @@ const CACHED_SNAPSHOT_SEQUENCE = 7;
 const PREPARED: PreparedConnection = {
   environmentId: TARGET.environmentId,
   label: TARGET.label,
+  httpBaseUrl: TARGET.httpBaseUrl,
   socketUrl: TARGET.wsBaseUrl,
   target: TARGET,
 };

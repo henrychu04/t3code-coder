@@ -1,5 +1,10 @@
-import type { ChatAttachment, EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import { CircleAlertIcon, PaperclipIcon, XIcon } from "lucide-react";
+import type {
+  ChatAttachment,
+  ChatFileAttachment,
+  EnvironmentId,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
+import { CircleAlertIcon, PaperclipIcon, PlayIcon, XIcon } from "lucide-react";
 import { useRef } from "react";
 
 import {
@@ -21,33 +26,62 @@ import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { composerFloatingLayerProps } from "./composerEventScope";
-import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
+import {
+  attachVideoThumbnail,
+  buildExpandedImagePreview,
+  type ExpandedImagePreview,
+} from "./ExpandedImagePreview";
 import { PierreEntryIcon } from "./PierreEntryIcon";
+import { prepareVideoFirstFrame } from "../../lib/videoFirstFrame";
 
-/**
- * Image tiles above the composer editor. Coder: no SnapShot capture, and videos list with the
- * other files, since a submitted video has no signed asset URL to play from.
- */
+function ComposerVideoThumbnail({ file }: { file: File }) {
+  const setVideo = (video: HTMLVideoElement | null) => {
+    if (!video) return;
+    return attachVideoThumbnail(video, file);
+  };
+
+  return (
+    <video
+      ref={setVideo}
+      muted
+      playsInline
+      preload="metadata"
+      aria-hidden="true"
+      onLoadedMetadata={(event) => prepareVideoFirstFrame(event.currentTarget)}
+      className="pointer-events-none absolute inset-0 size-full object-cover"
+    />
+  );
+}
+
+/** Image and video tiles above the composer editor. Coder: no SnapShot capture. */
 export function ComposerAttachmentMediaRow({
   images,
   expandedImages,
+  videos,
   nonPersistedImageIds,
   supportsAttachmentUploads,
+  maxFileAttachmentBytes,
   environmentId,
   attachmentDraftTarget,
   canOperateThread,
   onExpandImage,
+  onFileOpen,
   onRemoveImage,
+  onRemoveFile,
 }: {
   readonly images: ReadonlyArray<ComposerImageAttachment>;
   readonly expandedImages: ReadonlyArray<ComposerImageAttachment>;
+  readonly videos: ReadonlyArray<ComposerFileAttachment>;
   readonly nonPersistedImageIds: ReadonlyArray<string>;
   readonly supportsAttachmentUploads: boolean;
+  readonly maxFileAttachmentBytes: number | null;
   readonly environmentId: EnvironmentId;
   readonly attachmentDraftTarget: ScopedThreadRef | DraftId;
   readonly canOperateThread: boolean;
   readonly onExpandImage: (preview: ExpandedImagePreview) => void;
+  readonly onFileOpen: (attachment: ChatFileAttachment) => void;
   readonly onRemoveImage: (imageId: string) => void;
+  readonly onRemoveFile: (fileId: string) => void;
 }) {
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   const nonPersistedImageIdSet = new Set(nonPersistedImageIds);
@@ -152,6 +186,81 @@ export function ComposerAttachmentMediaRow({
               className="absolute right-1 top-1"
               onClick={() => onRemoveImage(image.id)}
               aria-label={`Remove ${image.name}`}
+            >
+              <XIcon />
+            </Button>
+          </div>
+        );
+      })}
+      {videos.map((file) => {
+        const fileCanUpload =
+          supportsAttachmentUploads &&
+          maxFileAttachmentBytes !== null &&
+          file.sizeBytes <= maxFileAttachmentBytes;
+        const upload = fileCanUpload ? uploadsByImageId[file.id] : undefined;
+        return (
+          <div
+            key={file.id}
+            className="relative h-16 w-16 shrink-0 snap-start overflow-hidden rounded-lg border border-border/80 bg-black"
+          >
+            <button
+              type="button"
+              className="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1 px-1 text-white"
+              aria-label={`Play ${file.name}`}
+              onClick={() => {
+                if (file.file !== null) {
+                  const preview = buildExpandedImagePreview([file], file.id);
+                  if (preview) onExpandImage(preview);
+                  return;
+                }
+                if (!file.uploadedAttachmentId) return;
+                onFileOpen({ ...file, id: file.uploadedAttachmentId });
+              }}
+            >
+              {file.file && (
+                <>
+                  <ComposerVideoThumbnail file={file.file} />
+                  <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/10" />
+                </>
+              )}
+              <PlayIcon className="relative z-10 size-4 fill-current drop-shadow-md" />
+            </button>
+            {upload?.status === "uploading" && (
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground">
+                {formatAttachmentUploadProgress(upload.progress)}
+              </span>
+            )}
+            {upload?.status === "failed" && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="overlay"
+                      size="icon-xs"
+                      className="absolute bottom-1 left-1"
+                      onClick={() =>
+                        retryAttachmentUpload({
+                          environmentId,
+                          image: file,
+                          draftTarget: attachmentDraftTarget,
+                        })
+                      }
+                      disabled={!canOperateThread}
+                      aria-label={`Retry upload for ${file.name}`}
+                    />
+                  }
+                >
+                  <RefreshIcon />
+                </TooltipTrigger>
+                <TooltipPopup side="top">{upload.reason}</TooltipPopup>
+              </Tooltip>
+            )}
+            <Button
+              variant="media-close"
+              size="icon-xs"
+              className="absolute right-1 top-1"
+              onClick={() => onRemoveFile(file.id)}
+              aria-label={`Remove ${file.name}`}
             >
               <XIcon />
             </Button>

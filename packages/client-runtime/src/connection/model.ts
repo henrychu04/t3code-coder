@@ -55,6 +55,7 @@ export type ConnectionAttemptError = ConnectionTransientError | ConnectionBlocke
 export interface PreparedConnection {
   readonly environmentId: EnvironmentId;
   readonly label: string;
+  readonly httpBaseUrl: string;
   readonly socketUrl: string;
   readonly target: ConnectionTarget;
 }

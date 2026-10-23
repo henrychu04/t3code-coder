@@ -40,6 +40,7 @@ export * from "./t3ProjectFile.ts";
 export * from "./project.ts";
 export * from "./filesystem.ts";
 export * from "./agentSessions.ts";
+export * from "./assets.ts";
 export * from "./review.ts";
 export * from "./mcpApps.ts";
 export * from "./browserProfile.ts";
@@ -51,8 +52,8 @@ export * from "./worktreeMcp.ts";
 export * from "./rpc.ts";
 export * from "./worktreeSetup.ts";
 
-// Coder: legacy screenshot artifacts and the local gateway wire.
-export * from "./screenshotArtifact.ts";
+// Coder: the gateway asset stream and the local gateway wire.
+export * from "./coderAssets.ts";
 export type * from "./coderGateway.ts";
 export * from "./secretRequest.ts";
 export * from "./clientRpcPermissions.ts";

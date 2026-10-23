@@ -27,10 +27,6 @@ interface MediaVideoPlayerProps {
   readonly actionsSource?: MediaActionSource | undefined;
 }
 
-/**
- * Keeps native range streaming and playback state consistent across inline and file previews.
- * Coder workspace videos arrive as memory-only blob URLs rather than signed range URLs.
- */
 export function MediaVideoPlayer({
   src: latestSrc,
   label,

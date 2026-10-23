@@ -1757,13 +1757,6 @@ describe("image asset requests", () => {
     streaming: false,
     attachments: [image],
   };
-  // Coder: helper reads carry the media type and size the bounded chunk read verifies.
-  const imageResource = (attachmentId: string) => ({
-    _tag: "attachment" as const,
-    attachmentId,
-    mimeType: "image/png",
-    sizeBytes: 42,
-  });
 
   it("requests the whole row's gallery and crops without signing local preview IDs", () => {
     const attachments = Object.freeze([
@@ -1779,10 +1772,10 @@ describe("image asset requests", () => {
     ]);
 
     expect(selectMessageImageResources(attachments)).toEqual([
-      imageResource("image"),
-      imageResource("second"),
-      imageResource("crop"),
-      imageResource("provided"),
+      { _tag: "attachment", attachmentId: "image" },
+      { _tag: "attachment", attachmentId: "second" },
+      { _tag: "attachment", attachmentId: "crop" },
+      { _tag: "attachment", attachmentId: "provided" },
     ]);
   });
 
@@ -1815,7 +1808,10 @@ describe("image asset requests", () => {
         [empty.id]: [],
         [assistant.id]: ["blob:unused"],
       }),
-    ).toEqual([imageResource("image"), imageResource("crop")]);
+    ).toEqual([
+      { _tag: "attachment", attachmentId: "image" },
+      { _tag: "attachment", attachmentId: "crop" },
+    ]);
   });
 
   it("hands signed URLs to a mounted row only after the local preview is released", () => {
@@ -1828,7 +1824,7 @@ describe("image asset requests", () => {
     );
     expect(selectMessageImageResources(pending.attachments)).toEqual([]);
     expect(selectHandoffImageResources([message], { [message.id]: ["blob:pending"] })).toEqual([
-      imageResource(image.id),
+      { _tag: "attachment", attachmentId: image.id },
     ]);
 
     const ready = server(message, () => "https://server.test/image");
@@ -1836,7 +1832,9 @@ describe("image asset requests", () => {
       [],
     );
     const released = server(message, () => undefined);
-    expect(selectMessageImageResources(released.attachments)).toEqual([imageResource(image.id)]);
+    expect(selectMessageImageResources(released.attachments)).toEqual([
+      { _tag: "attachment", attachmentId: image.id },
+    ]);
     const displayed = row(released, () => "https://server.test/image");
     expect(displayed).toEqual(ready);
     expect(pending.attachments?.[0]).toMatchObject({ previewUrl: "blob:pending" });

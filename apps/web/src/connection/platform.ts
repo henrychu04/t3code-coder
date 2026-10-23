@@ -63,7 +63,11 @@ const platformConnectionSourceLayer = Layer.effect(
           target: new ConnectionTarget({
             environmentId: descriptor.environmentId,
             label: descriptor.label,
-            httpBaseUrl: window.location.origin,
+            // Coder: the workspace's gateway path, under which its signed asset URLs resolve.
+            httpBaseUrl: new URL(
+              `/api/workspaces/${encodeURIComponent(workspaceId)}/`,
+              window.location.origin,
+            ).toString(),
             wsBaseUrl: socketUrl.toString(),
           }),
         });

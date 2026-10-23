@@ -12,27 +12,23 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   clampMcpAppHeight,
-  injectMcpAppCookieBootstrap,
-  injectMcpAppThemeBootstrap,
   MCP_APP_DEFAULT_HEIGHT,
-  MCP_APP_FRAME_PATH,
   MCP_APP_MAX_HEIGHT,
   mcpAppAllowAttribute,
+  mcpAppFileName,
   type McpAppReference,
 } from "@t3tools/shared/mcpApp";
 import { Minimize2Icon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
+import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { APP_VERSION } from "~/branding";
 import { isConfirmDialogActive, requestConfirmDialog } from "~/confirmDialog";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
-import { readTurnItemAsset } from "~/lib/readTurnItemAsset";
 import { cn } from "~/lib/utils";
-import { useConnectedEnvironmentIds } from "~/state/environments";
-import { projectEnvironment } from "~/state/projects";
 import { useTurnItemDetail } from "~/state/queries";
 import { mcpAppEnvironment } from "~/state/mcpApps";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -47,6 +43,7 @@ const commandFailure = (result: {
   );
 };
 
+const MIN_URL_LIFE_MS = 5 * 60_000;
 const fullscreenSupported =
   typeof HTMLElement !== "undefined" && "popover" in HTMLElement.prototype;
 
@@ -96,37 +93,37 @@ export function McpAppFrame(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Closing and reopening replaces the box.
   }, [closed]);
 
-  // Coder: upstream frames the captured document through a signed asset URL. The helper reads
-  // it in bounded chunks instead, and the frame loads the gateway's sandboxed shell, which the
-  // document then replaces in place.
-  const connected = useConnectedEnvironmentIds().includes(props.environmentId);
-  const readAsset = useAtomCommand(projectEnvironment.readTurnItemAsset, { reportFailure: false });
-  const [html, setHtml] = useState<string | null>(null);
-  const [readFailed, setReadFailed] = useState(false);
+  const resource = {
+    _tag: "attachment" as const,
+    attachmentId: app.attachmentId,
+    fileName: mcpAppFileName(app),
+    mimeType: "text/html",
+    disposition: "inline" as const,
+    renderIntent: "mcp-app" as const,
+  };
+  const asset = useAssetUrlState(props.environmentId, resource);
+  const refreshAsset = useAssetUrlRefresh(props.environmentId, resource);
+  // The frame keeps its first URL: a re-minted one would reload the app. A
+  // cached URL near expiry is minted afresh first, since a frame cannot report
+  // a failed load.
+  const [src, setSrc] = useState<string | null>(null);
+  const [mintFailed, setMintFailed] = useState(false);
+  const minting = useRef(false);
+  const cachedUrl = asset._tag === "Success" ? asset.url : null;
+  const cachedExpiresAt = asset._tag === "Success" ? asset.expiresAt : 0;
   useEffect(() => {
-    if (!connected || html !== null) return;
-    const controller = new AbortController();
-    const environmentId = props.environmentId;
-    void readTurnItemAsset(
-      { threadId: props.threadId, itemId: props.itemId, asset: { _tag: "mcp-app-document" } },
-      (mimeType) => mimeType === "text/html",
-      async (input) => {
-        const result = await readAsset({ environmentId, input });
-        if (result._tag !== "Success") throw squashAtomCommandFailure(result);
-        return result.value;
-      },
-      controller.signal,
-    )
-      .then((blob) => blob.text())
-      // Coder: upstream's asset route adds these bootstraps to the served document; here the
-      // page adds them before the shell writes it.
-      .then((text) => injectMcpAppCookieBootstrap(injectMcpAppThemeBootstrap(text)))
-      .then(setHtml, () => {
-        if (!controller.signal.aborted) setReadFailed(true);
-      });
-    return () => controller.abort();
-  }, [connected, html, props.environmentId, props.threadId, props.itemId, readAsset]);
-  const src = html === null ? null : MCP_APP_FRAME_PATH;
+    if (src !== null || cachedUrl === null || minting.current) return;
+    if (cachedExpiresAt - Date.now() > MIN_URL_LIFE_MS) {
+      // oxlint-disable-next-line react/set-state-in-effect -- Adopts the cached URL once it is known to last.
+      setSrc(cachedUrl);
+      return;
+    }
+    minting.current = true;
+    void refreshAsset().then(
+      (url) => (url === null ? setMintFailed(true) : setSrc(url)),
+      () => setMintFailed(true),
+    );
+  }, [src, cachedUrl, cachedExpiresAt, refreshAsset]);
 
   const detail = useTurnItemDetail({
     environmentId: props.environmentId,
@@ -249,12 +246,7 @@ export function McpAppFrame(props: {
       loads.current = { generation: documentGeneration, count: 0 };
     }
     loads.current.count += 1;
-    // Coder: the first load is the shell, which the document replaces and loads once more.
-    if (loads.current.count === 1) {
-      frameRef.current?.contentWindow?.postMessage({ html }, "*");
-      return;
-    }
-    if (loads.current.count > 2) {
+    if (loads.current.count > 1) {
       hostRef.current?.dispose();
       setNavigatedAway(true);
     }
@@ -453,6 +445,8 @@ export function McpAppFrame(props: {
           size="xs"
           variant="ghost"
           onClick={() => {
+            minting.current = false;
+            setSrc(null);
             setDocumentGeneration((value) => value + 1);
             setClosed(false);
           }}
@@ -512,7 +506,7 @@ export function McpAppFrame(props: {
             className={cn("block w-full border-0", fullscreen ? "min-h-0 flex-1" : "h-full")}
             style={{ colorScheme: theme.appearance }}
           />
-        ) : readFailed ? (
+        ) : asset._tag === "Failure" || mintFailed ? (
           <p className="flex size-full items-center justify-center text-muted-foreground text-xs">
             Unable to load the {app.server} app
           </p>

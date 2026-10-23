@@ -1,0 +1,201 @@
+import * as Schema from "effect/Schema";
+
+import { NonNegativeInt, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
+
+const ASSET_PATH_MAX_LENGTH = 1024;
+
+export const AssetResource = Schema.Union([
+  Schema.TaggedStruct("workspace-file", {
+    threadId: ThreadId,
+    path: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+  }),
+  Schema.TaggedStruct("media-file", {
+    threadId: ThreadId,
+    path: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+  }),
+  Schema.TaggedStruct("draft-workspace-file", {
+    cwd: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+    path: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+  }),
+  Schema.TaggedStruct("attachment", {
+    attachmentId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+    fileName: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(255))),
+    mimeType: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(100))),
+    /** Generic attachments download by default. Document viewers opt into an
+        inline response after deciding the file type is safe to preview. */
+    disposition: Schema.optionalKey(Schema.Literals(["inline", "attachment"])),
+    renderIntent: Schema.optionalKey(Schema.Literal("mcp-app")),
+  }),
+  Schema.TaggedStruct("tool-output-image", {
+    threadId: ThreadId,
+    itemId: TurnItemId,
+    index: NonNegativeInt,
+  }),
+  // Coder: project favicons, native app icons, and GitHub-authenticated media are not carried.
+]);
+export type AssetResource = typeof AssetResource.Type;
+
+export const AssetCreateUrlInput = Schema.Struct({
+  resource: AssetResource,
+});
+export type AssetCreateUrlInput = typeof AssetCreateUrlInput.Type;
+
+export const AssetImageDimensions = Schema.Struct({
+  width: NonNegativeInt.check(Schema.isGreaterThanOrEqualTo(1)),
+  height: NonNegativeInt.check(Schema.isGreaterThanOrEqualTo(1)),
+});
+export type AssetImageDimensions = typeof AssetImageDimensions.Type;
+
+export const AssetCreateUrlResult = Schema.Struct({
+  relativeUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
+  expiresAt: Schema.Number,
+  sourcePath: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
+  ),
+  imageDimensions: Schema.optional(AssetImageDimensions),
+  /** Changes only when the file's contents or identity change, unlike `relativeUrl`, which is re-signed on every mint. */
+  fileRevision: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
+});
+export type AssetCreateUrlResult = typeof AssetCreateUrlResult.Type;
+
+// Coder: attachments upload through the gateway's Coder CLI transfer, not a signed upload URL.
+
+export class AssetWorkspaceContextNotFoundError extends Schema.TaggedError<AssetWorkspaceContextNotFoundError>()(
+  "AssetWorkspaceContextNotFoundError",
+  {
+    resource: AssetResource,
+  },
+) {
+  override get message(): string {
+    return "Workspace context was not found.";
+  }
+}
+
+export class AssetWorkspaceContextResolutionError extends Schema.TaggedError<AssetWorkspaceContextResolutionError>()(
+  "AssetWorkspaceContextResolutionError",
+  {
+    resource: AssetResource,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Failed to resolve workspace context.";
+  }
+}
+
+export class AssetWorkspaceRootNormalizationError extends Schema.TaggedError<AssetWorkspaceRootNormalizationError>()(
+  "AssetWorkspaceRootNormalizationError",
+  {
+    resource: AssetResource,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Failed to normalize the workspace root.";
+  }
+}
+
+export class AssetWorkspacePathValidationError extends Schema.TaggedError<AssetWorkspacePathValidationError>()(
+  "AssetWorkspacePathValidationError",
+  {
+    resource: AssetResource,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Workspace file path must be relative to the project root.";
+  }
+}
+
+export class AssetPreviewTypeValidationError extends Schema.TaggedError<AssetPreviewTypeValidationError>()(
+  "AssetPreviewTypeValidationError",
+  {
+    resource: AssetResource,
+  },
+) {
+  override get message(): string {
+    return this.resource._tag === "media-file" || this.resource._tag === "draft-workspace-file"
+      ? "Only images, videos, audio, HTML, and PDF files can be previewed."
+      : "Only browser documents and images can be previewed.";
+  }
+}
+
+export class AssetWorkspaceAssetInspectionError extends Schema.TaggedError<AssetWorkspaceAssetInspectionError>()(
+  "AssetWorkspaceAssetInspectionError",
+  {
+    resource: AssetResource,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return this.resource._tag === "media-file"
+      ? "Failed to inspect the media file."
+      : "Failed to inspect the workspace asset.";
+  }
+}
+
+export class AssetWorkspaceAssetNotFoundError extends Schema.TaggedError<AssetWorkspaceAssetNotFoundError>()(
+  "AssetWorkspaceAssetNotFoundError",
+  {
+    resource: AssetResource,
+    // Absolute path after home/workspace resolution; absent on older servers.
+    checkedPath: Schema.optionalKey(Schema.String),
+  },
+) {
+  override get message(): string {
+    return this.resource._tag === "media-file"
+      ? "Media file was not found."
+      : this.resource._tag === "tool-output-image"
+        ? "Tool output image was not found."
+        : "Workspace asset was not found.";
+  }
+}
+
+export class AssetWorkspaceResolutionError extends Schema.TaggedError<AssetWorkspaceResolutionError>()(
+  "AssetWorkspaceResolutionError",
+  {
+    resource: AssetResource,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Failed to resolve workspace.";
+  }
+}
+
+export class AssetAttachmentNotFoundError extends Schema.TaggedError<AssetAttachmentNotFoundError>()(
+  "AssetAttachmentNotFoundError",
+  {
+    resource: AssetResource,
+  },
+) {
+  override get message(): string {
+    return "Attachment was not found.";
+  }
+}
+
+export class AssetSigningKeyLoadError extends Schema.TaggedError<AssetSigningKeyLoadError>()(
+  "AssetSigningKeyLoadError",
+  {
+    resource: AssetResource,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Failed to load the asset signing key.";
+  }
+}
+
+export const AssetAccessError = Schema.Union([
+  AssetWorkspaceContextNotFoundError,
+  AssetWorkspaceContextResolutionError,
+  AssetWorkspaceRootNormalizationError,
+  AssetWorkspacePathValidationError,
+  AssetPreviewTypeValidationError,
+  AssetWorkspaceAssetInspectionError,
+  AssetWorkspaceAssetNotFoundError,
+  AssetWorkspaceResolutionError,
+  AssetAttachmentNotFoundError,
+  AssetSigningKeyLoadError,
+]);
+export type AssetAccessError = typeof AssetAccessError.Type;

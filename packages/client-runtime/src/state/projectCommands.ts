@@ -169,28 +169,6 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.workspaceListDirectories,
       staleTimeMs: 5_000,
     }),
-    readImage: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:projects:read-image",
-      tag: WS_METHODS.projectsReadImage,
-      concurrency: { mode: "parallel" },
-    }),
-    readScreenshotArtifact: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:workspace:read-screenshot-artifact",
-      tag: WS_METHODS.workspaceReadScreenshotArtifact,
-      concurrency: { mode: "parallel" },
-    }),
-    // Coder: MCP App documents and tool output images, read in bounded chunks.
-    readTurnItemAsset: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:workspace:read-turn-item-asset",
-      tag: WS_METHODS.workspaceReadTurnItemAsset,
-      concurrency: { mode: "parallel" },
-    }),
-    // Coder: a sent file attachment, read in bounded chunks for its preview and Save.
-    readAttachmentFile: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:workspace:read-attachment-file",
-      tag: WS_METHODS.workspaceReadAttachmentFile,
-      concurrency: { mode: "parallel" },
-    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:create",
       execute: (input: CreateProjectInput) => createProject(input),
