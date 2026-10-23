@@ -136,6 +136,7 @@ export function proxyWorkspaceAsset(
             typeof value.status === "number" ? value.status : 502,
             responseHeaders(value.headers),
           );
+          response.flushHeaders();
         } else if (value._tag === "body" && typeof value.dataBase64 === "string") {
           if (!response.headersSent) return fail();
           if (!response.write(Buffer.from(value.dataBase64, "base64"))) {
