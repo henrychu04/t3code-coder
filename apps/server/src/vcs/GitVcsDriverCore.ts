@@ -889,8 +889,10 @@ const collectOutput = Effect.fnUntraced(function* (
     validateUtf8(chunkToDecode);
     const decoded = decoder.decode(chunkToDecode, { stream: !truncated });
     text += decoded;
-    lineBuffer += lineDecoder ? lineDecoder.decode(chunk, { stream: true }) : decoded;
-    yield* emitCompleteLines(false);
+    if (onLine) {
+      lineBuffer += lineDecoder ? lineDecoder.decode(chunk, { stream: true }) : decoded;
+      yield* emitCompleteLines(false);
+    }
   });
 
   yield* Stream.runForEach(stream, processChunk).pipe(
@@ -907,9 +909,11 @@ const collectOutput = Effect.fnUntraced(function* (
   if (!truncated) validateUtf8();
   const remainder = truncated ? "" : decoder.decode();
   text += remainder;
-  lineBuffer += remainder;
-  if (lineDecoder) lineBuffer += lineDecoder.decode();
-  yield* emitCompleteLines(true);
+  if (onLine) {
+    lineBuffer += remainder;
+    if (lineDecoder) lineBuffer += lineDecoder.decode();
+    yield* emitCompleteLines(true);
+  }
   return {
     text,
     truncated,

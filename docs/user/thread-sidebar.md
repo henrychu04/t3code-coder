@@ -96,7 +96,11 @@ continues to use settlement time.
 To generate a fresh title from the conversation, open a thread's menu and choose
 **Regenerate title**. The action is unavailable while title generation is in progress.
 
-Agents can use T3 Coderr's thread tools to rename a thread, regenerate its title, or
+To change how titles are written, add **Thread title instructions** in **Settings → General →
+Text generation**, such as a length limit or an identifier to put first. They apply to new and
+regenerated titles. Select a project to give it its own instructions.
+
+Agents can use T3 Coder's thread tools to rename a thread, regenerate its title, or
 link and unlink a merge request. The workspace applies these changes, so they appear
 without the originating browser staying open.
 

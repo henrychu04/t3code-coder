@@ -135,7 +135,9 @@ in kept directories (in the 5cbe82a870 sync: `observability/OtlpEndpointCheck.ts
 `usage.ts`; in the 2a7bd1673c sync: server `outboundHttp.ts` and `zipArchive.ts`, the OTLP
 `config.test.ts`, web `sidebar/SidebarUpdateCapsule.tsx` and `settings/DatabaseStorageNotice.tsx`,
 and client-runtime `state/threadTranscriptHttp.ts`, which the fork replaced with an RPC); review
-`git diff --name-only --diff-filter=A "$MB" "$SHA" -- apps packages` for them. Upstream's
+`git diff --name-only --diff-filter=A "$MB" "$SHA" -- apps packages` for them. Upstream's manual
+repro fixtures under `scripts/fixtures` (eb1510d249: `issue-16534`) are upstream tooling; delete
+them. Upstream's
 patches for mobile or desktop packages land in `patches/` (2a7bd1673c: `@expo__ui@58.0.18.patch`);
 delete any that `pnpm-workspace.yaml`'s `patchedDependencies` does not list. A fork-deleted file
 outside those paths that upstream modified (a cut
@@ -246,6 +248,10 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   fork's `^24.13.1` and the `@types/node` catalog entry on major 24 even when upstream bumps them,
   so typecheck rejects a Node 25 or 26-only API in carried code. If upstream code needs one, stop
   and tell the user. Bumps: `git diff "$MB" "$SHA" -- package.json pnpm-workspace.yaml | grep -E 'engines|"node"|@types/node'`.
+- **Listeners.** The helper opens no listener of any kind (`AGENTS.md` boundary 6). Cut any new
+  upstream service that listens on a socket, pipe, or port, even a private one, along with its
+  callers (eb1510d249: `CodexManagedTokenBroker`'s managed Codex token pipe). Search the range:
+  `git diff "$MB" "$SHA" -- apps/server/src packages ':!*.test.*' | rg '^\+.*(\.listen\(|createServer)'`.
 - **Capabilities.** `coderEnvironment.test.ts` fails when upstream adds an
   `ExecutionEnvironmentCapabilities` key; decide it (advertise, or add to
   `CODER_OMITTED_CAPABILITIES` with a reason).

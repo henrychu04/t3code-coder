@@ -866,7 +866,7 @@ function ScheduledTaskEditorForm({
         <DialogTitle>{draft.editingId ? "Edit task" : "New task"}</DialogTitle>
         <DialogDescription>
           {/* Coder: no webhook trigger; T3 Coder serves no inbound webhook route. */}
-          Run a prompt automatically — on an interval or at a fixed time.
+          Run a prompt automatically on an interval or at a fixed time.
         </DialogDescription>
       </DialogHeader>
 
