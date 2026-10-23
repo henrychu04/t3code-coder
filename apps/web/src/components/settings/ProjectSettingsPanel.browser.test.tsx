@@ -288,7 +288,7 @@ const nameInput = (screen: Screen) =>
   screen.container.querySelector<HTMLInputElement>('[aria-label="Project name"]')!;
 
 // Coder: no "project settings permissions" tests. Environment scopes always grant (see
-// coder-only.md, Contracts and scopes), so per-project grants never disable an edit or removal.
+// coder-only.md, Authorization scopes), so per-project grants never disable an edit or removal.
 describe("project settings scope", () => {
   const environmentMenu = () => page.getByRole("button", { name: /^Environment scope:/ });
   const primaryOption = () => page.getByRole("menuitemradio", { name: /^primary/ });
