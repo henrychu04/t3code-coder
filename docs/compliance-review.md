@@ -20,19 +20,19 @@ that any employer has approved the software.
 
 ## How connections are used
 
-| Source                | Destination                    | Mechanism                             | Purpose                                                |
-| --------------------- | ------------------------------ | ------------------------------------- | ------------------------------------------------------ |
-| Approved browser      | `127.0.0.1` gateway            | HTTP and WebSocket                    | Load the UI and exchange live RPC                      |
-| Gateway               | installed Coder CLI            | child stdio, `shell: false`           | Invoke authenticated Coder commands                    |
-| Local client          | configured `127.0.0.1` port    | TCP or UDP                            | Access one configured workspace service                |
-| Coder CLI             | configured Coder workspace     | foreground `coder port-forward`       | Carry a loopback-bound port forward                    |
-| Coder CLI             | configured Coder deployment    | Coder-managed connection              | Authenticate, discover workspaces, and run `coder ssh` |
-| Gateway               | workspace helper               | foreground `coder ssh` stdio          | Newline-delimited RPC                                  |
-| Gateway               | workspace shell                | foreground `coder ssh` stdin          | Copy the helper bundle and validated attachments       |
-| Workspace helper      | workspace Codex or Claude Code | child stdio, `shell: false`           | Provider conversation and permission control           |
-| Workspace provider    | approved provider backend      | workspace-managed provider connection | Inference and authentication                           |
-| Workspace helper      | workspace Git and `glab`       | child stdio, `shell: false`           | Repository and GitLab actions                          |
-| Workspace GitLab CLI  | configured GitLab host         | workspace-managed provider connection | Repository/MR API access and authentication            |
+| Source               | Destination                    | Mechanism                             | Purpose                                                |
+| -------------------- | ------------------------------ | ------------------------------------- | ------------------------------------------------------ |
+| Approved browser     | `127.0.0.1` gateway            | HTTP and WebSocket                    | Load the UI and exchange live RPC                      |
+| Gateway              | installed Coder CLI            | child stdio, `shell: false`           | Invoke authenticated Coder commands                    |
+| Local client         | configured `127.0.0.1` port    | TCP or UDP                            | Access one configured workspace service                |
+| Coder CLI            | configured Coder workspace     | foreground `coder port-forward`       | Carry a loopback-bound port forward                    |
+| Coder CLI            | configured Coder deployment    | Coder-managed connection              | Authenticate, discover workspaces, and run `coder ssh` |
+| Gateway              | workspace helper               | foreground `coder ssh` stdio          | Newline-delimited RPC                                  |
+| Gateway              | workspace shell                | foreground `coder ssh` stdin          | Copy the helper bundle and validated attachments       |
+| Workspace helper     | workspace Codex or Claude Code | child stdio, `shell: false`           | Provider conversation and permission control           |
+| Workspace provider   | approved provider backend      | workspace-managed provider connection | Inference and authentication                           |
+| Workspace helper     | workspace Git and `glab`       | child stdio, `shell: false`           | Repository and GitLab actions                          |
+| Workspace GitLab CLI | configured GitLab host         | workspace-managed provider connection | Repository/MR API access and authentication            |
 
 The gateway contains no general HTTP client and makes no direct external request. It binds only to
 IPv4 loopback and validates the exact Host and Origin. The helper opens no listener, tunnel, or

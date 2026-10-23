@@ -3,7 +3,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeFSP from "node:fs/promises";
 import {
-  AssetAccessError,
   AssetPreviewTypeValidationError,
   ThreadId,
   TurnItemId,
@@ -16,7 +15,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
-import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpServerResponse } from "effect/http";
 import { vi } from "vite-plus/test";

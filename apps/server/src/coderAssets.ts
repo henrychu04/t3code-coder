@@ -14,7 +14,12 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
-import { HttpRouter, HttpServerError, HttpServerRequest, type HttpServerResponse } from "effect/http";
+import {
+  HttpRouter,
+  HttpServerError,
+  HttpServerRequest,
+  type HttpServerResponse,
+} from "effect/http";
 import * as Layer from "effect/Layer";
 import type * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
@@ -45,9 +50,10 @@ function bodyStream(response: HttpServerResponse.HttpServerResponse): Stream.Str
       }
       if (body.body instanceof ReadableStream) {
         const readable = body.body as ReadableStream<Uint8Array>;
-        return Stream.fromReadableStream({ evaluate: () => readable, onError: (cause) => cause }).pipe(
-          Stream.orDie,
-        );
+        return Stream.fromReadableStream({
+          evaluate: () => readable,
+          onError: (cause) => cause,
+        }).pipe(Stream.orDie);
       }
       return Stream.die(new Error("Unsupported asset response body."));
   }
@@ -103,16 +109,14 @@ export const makeServeAsset = Effect.gen(function* () {
             ? Stream.empty
             : bodyStream(response).pipe(
                 Stream.flatMap((chunk) => Stream.fromIterable(splitChunk(chunk))),
-                Stream.map(
-                  (chunk): CoderServeAssetPart => ({
-                    _tag: "body",
-                    dataBase64: Buffer.from(
-                      chunk.buffer,
-                      chunk.byteOffset,
-                      chunk.byteLength,
-                    ).toString("base64"),
-                  }),
-                ),
+                Stream.map((chunk): CoderServeAssetPart => ({
+                  _tag: "body",
+                  dataBase64: Buffer.from(
+                    chunk.buffer,
+                    chunk.byteOffset,
+                    chunk.byteLength,
+                  ).toString("base64"),
+                })),
               );
         // One part per RPC chunk, so each acked message stays within the gateway's frame limit.
         return Stream.concat(Stream.make(head), body).pipe(Stream.rechunk(1));
