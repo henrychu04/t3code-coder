@@ -95,7 +95,8 @@ that arrive together share one aliased `glab api graphql` request per checkout a
 individual REST reads. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
-Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP. Each provider
+Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP, because work
+Claude Code and Codex policies block custom MCP servers. Each provider
 session credential from upstream's `McpSessionRegistry` is a private directory under the temporary
 directory, named `t3-tools-<hash>` from the environment and thread ids, holding a standalone CLI
 (run with the helper's pinned Node runtime) and a read-only tool catalog; no socket, listener, or
@@ -690,7 +691,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
     unavailable; providers authenticate through the workspace's API configuration.
     `CodexManagedRuntime` keeps only upstream's resolution contract, so upstream's
-    `CodexManagedTokenBroker` (a private token listener the managed runtime's auth command reads,
+    `CodexManagedTokenBroker` (which renews the managed runtime's ChatGPT sign-in token,
     #21786/#21787) and the `__managed-chatgpt-token` CLI entry are not carried. `CodexAdapterV2` does not
     rewrite failures through `CodexManagedErrors` (ChatGPT Business admin request, #23361), and
     the server's `threadErrorSummary` and client-runtime's `ThreadRuntimeSummary` carry no
@@ -753,8 +754,8 @@ listed here is drift to remove rather than fork behavior to keep.
 - **HTML renders.** Upstream's `html_render` tool, `HtmlRender` service, and inline frame, with
   these Coder deltas (each marked `Coder:`):
   - The bridge carries `html_render` only. `htmlRender/HtmlRender.ts` keeps upstream's image
-    inlining and storage but not `preview` or height measurement, because T3 Coder installs no
-    headless browser; pages publish at the agent's height, the frame shrinks to a shorter page's
+    inlining and storage but not `preview` or height measurement, because work workspaces cannot
+    obtain the headless browser they need; pages publish at the agent's height, the frame shrinks to a shorter page's
     reported height, and a page with its images inlined is capped at `MAX_TURN_ITEM_ASSET_BYTES`, the
     bounded turn-item read. Publishing records the page through upstream's
     `McpProviderSessions.recordHtmlRender` (#19796). The tool description omits `html_preview` and

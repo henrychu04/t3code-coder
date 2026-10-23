@@ -34,8 +34,9 @@ runtime boundary or syncing upstream.
    structured fields only; stop only the exact child process captured at spawn.
 5. Coder owns authentication: never ask for, read, copy, log, or persist Coder tokens. GitLab and
    provider credentials stay in the workspace. Upstream's agent secret request card stays as is.
-6. The workspace helper runs in the foreground over `coder ssh`, speaks newline-delimited RPC over
-   stdio, and opens no listener of any kind.
+6. The workspace helper runs in the foreground over `coder ssh` and speaks newline-delimited RPC
+   over stdio. T3 tools reach agents over the workspace file bridge, never an MCP server, because
+   work Claude Code and Codex policies block custom MCP servers.
 7. Codex, Claude Code, Pi, and Kilo Code are the only providers; they exist only in the workspace,
    and T3 never probes for or launches a local provider. Kilo Code runs through upstream's ACP
    Registry driver from its local `kilo acp` command only: no registry index, installs, or agent
@@ -44,13 +45,14 @@ runtime boundary or syncing upstream.
 9. Durable application state stays in the workspace. Local persistence is limited to non-secret
    deployment URLs, Coder executable paths, workspace targets, port-forward rules, and the last
    gateway port. Browser storage keeps UI preferences, draft text, and upstream's IndexedDB caches;
-   never credentials or application bytes.
+   never credentials or attachment and file bytes.
 10. GitLab is the only hosted source-control provider; Git and `glab` run only in the workspace.
 11. The branch policy below is part of the boundary.
 
 Product cuts kept on purpose, documented in `docs/internals/coder-only.md`: Files reads and edits
 stay inside the verified project root, composer attachments are the only laptop-to-workspace
-upload, and upstream's `html_preview` and its headless browser are not carried.
+upload, and upstream's `html_preview` and its headless browser are not carried (work workspaces
+cannot obtain a browser).
 
 ## Provider scope
 
