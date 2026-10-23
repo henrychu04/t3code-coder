@@ -37,7 +37,8 @@ export function createAttachmentEnvironmentAtoms<R, E>(
  * lookup. A structural `_tag` check rather than a schema check: the squashed cause of a failed
  * RPC is not guaranteed to be a decoded error class instance, only a tagged value.
  */
-export function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
+// Coder: not exported; upstream exports it for its mobile app, which is not carried.
+function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
   return (
     typeof error === "object" &&
     error !== null &&
