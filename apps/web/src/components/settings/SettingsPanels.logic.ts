@@ -30,15 +30,23 @@ export function projectGroupingModeFromToggle(
   return lastEnabledMode === "repository_path" ? "repository_path" : "repository";
 }
 
-// Coder: the last grouping mode stays in memory where upstream uses browser storage.
-let lastEnabledProjectGroupingMode: SidebarProjectGroupingMode = "repository";
+const LAST_ENABLED_PROJECT_GROUPING_MODE_KEY = "t3code:last-enabled-project-grouping-mode";
 
 export function readLastEnabledProjectGroupingMode(): SidebarProjectGroupingMode {
-  return lastEnabledProjectGroupingMode;
+  try {
+    return localStorage.getItem(LAST_ENABLED_PROJECT_GROUPING_MODE_KEY) === "repository_path"
+      ? "repository_path"
+      : "repository";
+  } catch {
+    return "repository";
+  }
 }
 
 export function rememberEnabledProjectGroupingMode(mode: SidebarProjectGroupingMode): void {
-  if (mode !== "separate") lastEnabledProjectGroupingMode = mode;
+  if (mode === "separate") return;
+  try {
+    localStorage.setItem(LAST_ENABLED_PROJECT_GROUPING_MODE_KEY, mode);
+  } catch {}
 }
 
 export function hasChangedBackgroundActivitySettings(

@@ -1,7 +1,4 @@
 import { applyPullRequestDraftFilterChange } from "@t3tools/client-runtime/pull-request-query";
-// Coder: merge-request list snapshots stay in memory (`pullRequestSnapshotStorage`), not
-// browser storage.
-import { pullRequestSnapshotStorage } from "./pullRequestSnapshotStorage";
 import { Spinner } from "~/components/ui/spinner";
 import type { PullRequestSpeedActionResult } from "~/components/pullRequest/PullRequestSpeedActions";
 import { usePullRequestCloseBatch } from "~/components/pullRequest/usePullRequestActions";
@@ -433,7 +430,10 @@ export function PullRequestsPage() {
   if (environmentKey.length > 0 && snapshotEnvironmentKey !== environmentKey) {
     setSnapshotEnvironmentKey(environmentKey);
     if (loaded?.environmentKey !== environmentKey) {
-      const snapshot = readPullRequestListSnapshot(pullRequestSnapshotStorage, environmentKey);
+      const snapshot = readPullRequestListSnapshot(
+        typeof window === "undefined" ? undefined : window.localStorage,
+        environmentKey,
+      );
       setLoaded(
         snapshot === null
           ? null
@@ -498,17 +498,21 @@ export function PullRequestsPage() {
   const snapshotProviders = baselineQuery.data?.providers;
   useEffect(() => {
     if (snapshotToWrite === null) return;
-    writePullRequestListSnapshot(pullRequestSnapshotStorage, snapshotToWrite.environmentKey, {
-      scope: snapshotToWrite.scope,
-      data: {
-        ...snapshotToWrite.data,
-        viewers: snapshotViewers ?? snapshotToWrite.data.viewers,
-        providers: snapshotProviders ?? snapshotToWrite.data.providers,
+    writePullRequestListSnapshot(
+      typeof window === "undefined" ? undefined : window.localStorage,
+      snapshotToWrite.environmentKey,
+      {
+        scope: snapshotToWrite.scope,
+        data: {
+          ...snapshotToWrite.data,
+          viewers: snapshotViewers ?? snapshotToWrite.data.viewers,
+          providers: snapshotProviders ?? snapshotToWrite.data.providers,
+        },
+        ...(snapshotToWrite.partitions === undefined
+          ? {}
+          : { partitions: snapshotToWrite.partitions }),
       },
-      ...(snapshotToWrite.partitions === undefined
-        ? {}
-        : { partitions: snapshotToWrite.partitions }),
-    });
+    );
   }, [snapshotToWrite, snapshotViewers, snapshotProviders]);
   const narrowed = (() => {
     if (loaded === null || loaded.environmentKey !== environmentKey || loaded.scope === scopeKey) {

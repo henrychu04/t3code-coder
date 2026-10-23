@@ -71,8 +71,8 @@ browser. T3 Coder does not register GitHub, Bitbucket, Azure DevOps, or another 
 The **Pull requests** page can keep several merge requests open as right-panel tabs. Authored work
 appears before review requests. The default ordering ranks merge-ready work first within each
 group, with explicit alternatives for update time, creation time, and change size. Filter loaded
-results by author or labels. Sort order and fixed display filters are remembered in the browser;
-search text, authors, labels, and repository/workspace scope are not saved in browser storage.
+results by author or labels. The list's controls, including sort order, filters, search text,
+authors, labels, and repository/workspace scope, are remembered in the browser.
 See label, check, and change-size context on each row. Opening a row seeds the detail panel from
 list data immediately while the full GitLab detail loads.
 Command-click (Control-click on Windows and Linux) a merge request number to open it on GitLab
