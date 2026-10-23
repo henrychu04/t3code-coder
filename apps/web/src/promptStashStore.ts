@@ -118,7 +118,7 @@ function persistEntries(entries: ReadonlyArray<PromptStashEntry>): {
       PROMPT_STASH_STORAGE_KEY,
       JSON.stringify({
         version: PROMPT_STASH_STORAGE_VERSION,
-        state: { entries: entries.map(withoutPersistedImageBytes) },
+        state: { entries },
       }),
     );
     return { written: true, durable: storageIsDurable };
@@ -126,22 +126,6 @@ function persistEntries(entries: ReadonlyArray<PromptStashEntry>): {
     console.error("[PROMPT-STASH] Could not persist stash (storage quota?).", error);
     return { written: false, durable: false };
   }
-}
-
-/**
- * Coder: image bytes stay in browser memory only. The in-session entry keeps its images; the
- * saved copy lists them as dropped, so an entry restored after a reload says what is missing.
- */
-function withoutPersistedImageBytes(entry: PromptStashEntry): PromptStashEntry {
-  if (entry.attachments.length === 0) return entry;
-  return {
-    ...entry,
-    attachments: [],
-    droppedImageNames: [
-      ...entry.droppedImageNames,
-      ...entry.attachments.map((attachment) => attachment.name),
-    ],
-  };
 }
 
 function readPersistedEntries(): ReadonlyArray<PromptStashEntry> | null {

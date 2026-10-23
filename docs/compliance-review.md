@@ -55,12 +55,14 @@ to Coder, the provider backends, and the configured GitLab host.
 The T3-owned local profile is limited to non-secret Coder deployment URLs, optional Coder executable
 paths, workspace targets, structured port-forward rules, and the last gateway port. UI preferences,
 unsent composer text, and caches of workspace projections (environment shells, thread snapshots,
-server config, and branch lists) may use browser storage; the caches are cleared when a workspace is
-removed from the Coder config and never hold image bytes or credentials. Repositories, prompts,
+server config, and branch lists) may use browser storage, as may drafts and stashed prompts with
+their images; the caches are cleared when a workspace is removed from the Coder config and never
+hold credentials. Repositories, prompts,
 responses, provider sessions, terminals, checkpoints, project records, project roots, and SQLite state
 remain in the selected workspace. Live display data necessarily traverses the foreground stdio
-connection and loopback WebSocket but is not durably cached by the gateway. A validated composer
-attachment stays in gateway memory for one transfer and is never written to local disk.
+connection and loopback WebSocket but is not durably cached by the gateway. A composer attachment
+streams through gateway memory to the workspace's signed upload URL and is never written to local
+disk by the gateway.
 Native Codex image input accepts only bounded opaque ids for generated workspace attachment files;
 the helper rejects symlinks and revalidates file size and image signatures before reading bytes.
 Media, document, and attachment previews load from upstream's signed asset URLs, which the

@@ -4,19 +4,12 @@ import { describe, expect, it } from "vite-plus/test";
 import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";
 import {
   attachmentsToReleaseOnUploadCapabilityLoss,
-  classifyComposerAttachmentFile,
   fileAttachmentCapabilityBlockReason,
   fileAttachmentStagingLimit,
   shouldHandleComposerAttachmentPaste,
 } from "./composerAttachmentFiles";
 
 describe("composer attachment files", () => {
-  // Coder: the gateway accepts PNG, JPEG, and WebP uploads only, so a GIF is a plain file.
-  it("keeps GIFs off the image path", () => {
-    expect(classifyComposerAttachmentFile({ name: "photo.png", type: "image/png" })).toBe("image");
-    expect(classifyComposerAttachmentFile({ name: "photo.gif", type: "" })).toBe("file");
-  });
-
   it("preserves text paste when an application adds a synthetic generic file", () => {
     const file = new File(["clipboard"], "clipboard.rtf", { type: "application/rtf" });
 

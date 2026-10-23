@@ -1942,6 +1942,7 @@ export function partializeComposerDraftStoreState(
       Object.keys(draft.modelSelectionByProvider).length > 0 || draft.activeProvider !== null;
     if (
       draft.prompt.length === 0 &&
+      draft.persistedAttachments.length === 0 &&
       draft.files.length === 0 &&
       draft.terminalContexts.length === 0 &&
       draft.reviewComments.length === 0 &&
@@ -1954,8 +1955,7 @@ export function partializeComposerDraftStoreState(
     }
     const persistedDraft: DeepMutable<PersistedComposerThreadDraftState> = {
       prompt: draft.prompt,
-      // Coder keeps draft image bytes in browser memory only; they are never persisted.
-      attachments: [],
+      attachments: draft.persistedAttachments,
       ...(draft.files.length > 0
         ? {
             files: draft.files.map((file) => ({

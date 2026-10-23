@@ -75,8 +75,7 @@ and rate-limit errors stay.
 - `apps/coder-gateway`: loopback HTTP/static server, configuration UI endpoints, and WebSocket to
   helper-stdio bridge.
 - `packages/coder-cli`: validated non-secret profiles, Coder command construction, helper install
-  and attachment transfer over `coder ssh` stdin, helper connection lifecycle, and foreground
-  port-forward lifecycle.
+  over `coder ssh` stdin, helper connection lifecycle, and foreground port-forward lifecycle.
 - `apps/coder-helper`: bundled Linux stdio entry point.
 - `apps/server`: workspace-owned orchestration, Codex, Claude, Pi, and Kilo Code adapters,
   persistence, terminal, filesystem, and repository-local VCS implementation.

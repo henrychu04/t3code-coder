@@ -4,9 +4,6 @@ export type ReadyAttachmentUpload = {
   readonly status: "ready";
   readonly environmentId: EnvironmentId;
   readonly attachmentId: string;
-  /** Coder stages prepared bytes, which can differ from the draft file after compression. */
-  readonly mimeType?: string;
-  readonly sizeBytes?: number;
 };
 
 export type AttachmentUploadState =

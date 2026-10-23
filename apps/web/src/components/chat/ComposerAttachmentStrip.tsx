@@ -4,6 +4,7 @@ import type {
   EnvironmentId,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { CircleAlertIcon, PaperclipIcon, PlayIcon, XIcon } from "lucide-react";
 import { useRef } from "react";
 
@@ -16,7 +17,6 @@ import {
 import { retryAttachmentUpload, useAttachmentUploadStore } from "../../lib/attachmentUploadQueue";
 import { formatAttachmentUploadProgress } from "../../lib/attachmentUploadState";
 import { isHeicImageFile } from "../../lib/imageCompression";
-import { formatAttachmentSize } from "~/lib/attachmentDisplay";
 import { getRestingComposerImagePreviewCounts } from "../composerFooterLayout";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
@@ -314,9 +314,8 @@ export function ComposerAttachmentFileList({
             <PierreEntryIcon pathValue={file.name} kind="file" theme={resolvedTheme} />
             <button
               type="button"
-              // Coder: a reloaded draft has no bytes left to preview.
-              disabled={file.file === null}
-              className="min-w-0 flex-1 truncate text-left enabled:hover:underline focus-visible:outline-2"
+              disabled={needsReattach}
+              className="min-w-0 flex-1 truncate text-left hover:underline focus-visible:outline-2"
               onClick={() => onPreviewFile(file.id)}
             >
               {file.name}
@@ -379,8 +378,6 @@ export function ComposerFilePreviewDialog({
   readonly onPreviewFileIdChange: (fileId: string | null) => void;
 }) {
   const onClose = () => onPreviewFileIdChange(null);
-  // Coder: only drafts whose bytes are still in memory preview; there is no uploaded asset URL.
-  if (file.file === null) return null;
   return (
     <Dialog
       open
@@ -401,6 +398,14 @@ export function ComposerFilePreviewDialog({
           sizeBytes={file.sizeBytes}
           file={file.file}
           origin="Draft"
+          {...(file.uploadedAttachmentId && file.uploadEnvironmentId
+            ? {
+                asset: {
+                  environmentId: file.uploadEnvironmentId,
+                  attachmentId: file.uploadedAttachmentId,
+                },
+              }
+            : {})}
           onRemove={() => {
             onRemove(file.id);
             onClose();
