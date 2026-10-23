@@ -18,7 +18,8 @@ that port is free, so browser storage keeps one origin across restarts; otherwis
 ephemeral port and saves that. It stores only non-secret Coder deployment URLs, workspace targets,
 structured port-forward rules, an optional Coder executable path, and the last gateway port. A
 composer attachment stays in gateway memory while it is streamed to the workspace and is never
-written to local disk. Browser UI preferences
+written to local disk by the gateway. The browser may store and cache what upstream does, except
+credentials. Browser UI preferences
 such as theme and panel size may use browser storage; as on main, `uiStateStore` keeps sidebar
 project expansion, order, and scope, thread visit times, changed-file folder expansion, and the
 last merge method there, and session storage holds main's one-reload guard for stale split chunks
@@ -95,7 +96,8 @@ that arrive together share one aliased `glab api graphql` request per checkout a
 individual REST reads. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
-Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP. Each provider
+Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP, because work
+Claude Code and Codex policies block custom MCP servers. Each provider
 session credential from upstream's `McpSessionRegistry` is a private directory under the temporary
 directory, named `t3-tools-<hash>` from the environment and thread ids, holding a standalone CLI
 (run with the helper's pinned Node runtime) and a read-only tool catalog; no socket, listener, or
@@ -310,7 +312,9 @@ The composer uses upstream's structured context records (`t3-context://v1/<kind>
 `message.context`) without preview annotations, element captures, or SnapShot frames.
 `ComposerAttachmentStrip.tsx`'s media row shows image tiles only; videos list with the other
 files (`composerOtherFilesForPresentation` keeps them, so a video attached to a question answer
-stays visible and removable), and a draft file previews only while its bytes are still in memory. The work log
+stays visible and removable), and a draft file previews only while its bytes are still in memory.
+In sent messages, `TimelineUserMessageRow.tsx` lists videos with the other files and opens them
+like files, because a submitted attachment is a workspace path the browser cannot read. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
 native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
 stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
@@ -685,7 +689,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
     unavailable; providers authenticate through the workspace's API configuration.
     `CodexManagedRuntime` keeps only upstream's resolution contract, so upstream's
-    `CodexManagedTokenBroker` (a private token listener the managed runtime's auth command reads,
+    `CodexManagedTokenBroker` (which renews the managed runtime's ChatGPT sign-in token,
     #21786/#21787) and the `__managed-chatgpt-token` CLI entry are not carried. `CodexAdapterV2` does not
     rewrite failures through `CodexManagedErrors` (ChatGPT Business admin request, #23361), and
     the server's `threadErrorSummary` and client-runtime's `ThreadRuntimeSummary` carry no
@@ -735,9 +739,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **HTML renders.** Upstream's `html_render` tool, `HtmlRender` service, and inline frame, with
   these Coder deltas (each marked `Coder:`):
   - The bridge carries `html_render` only. `htmlRender/HtmlRender.ts` keeps upstream's image
-    inlining and storage but not `preview` or height measurement, because T3 Coder installs no
-    headless browser; pages publish at the agent's height and the frame shrinks to a shorter
-    page's reported height. Publishing records the page through upstream's
+    inlining and storage but not `preview` or height measurement, because work workspaces cannot
+    obtain the headless browser they need; pages publish at the agent's height and the frame
+    shrinks to a shorter page's reported height. Publishing records the page through upstream's
     `McpProviderSessions.recordHtmlRender` (#19796). The tool description omits `html_preview` and
     the mobile-only scroll-cap sentence.
   - Over the bridge the call is a shell command, so `htmlRenderFromBridgeCommand` (shared
@@ -996,7 +1000,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    ed3f965e07):
+    eb1510d249):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
