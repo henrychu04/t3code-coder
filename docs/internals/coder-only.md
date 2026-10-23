@@ -310,7 +310,9 @@ The composer uses upstream's structured context records (`t3-context://v1/<kind>
 `message.context`) without preview annotations, element captures, or SnapShot frames.
 `ComposerAttachmentStrip.tsx`'s media row shows image tiles only; videos list with the other
 files (`composerOtherFilesForPresentation` keeps them, so a video attached to a question answer
-stays visible and removable), and a draft file previews only while its bytes are still in memory. The work log
+stays visible and removable), and a draft file previews only while its bytes are still in memory.
+In sent messages, `TimelineUserMessageRow.tsx` lists videos with the other files and opens them
+like files, because a submitted attachment is a workspace path the browser cannot read. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
 native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
 stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
@@ -1070,7 +1072,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    ed3f965e07):
+    eb1510d249):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as

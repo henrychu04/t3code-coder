@@ -10,7 +10,7 @@ and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
 an existing worktree, use **New thread in this worktree** from the branch toolbar.
 
-When you change a new thread's project, T3 Coderr stays in the current workspace
+When you change a new thread's project, T3 Coder stays in the current workspace
 if that project exists there. Otherwise it selects a workspace that has it.
 
 ### Start without a project

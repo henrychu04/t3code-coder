@@ -120,7 +120,7 @@ export function ThreadDetailsPrRow({
       ? null
       : pullRequestEnvironment.detail({
           environmentId,
-          input: reference,
+          input: { ...reference, allowStale: false },
         });
   // Read the queries part by part: every poll publishes a new result (a new
   // timestamp, `waiting` on and off) even when nothing in it changed.
