@@ -9,7 +9,9 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
 1. `git fetch origin && git fetch upstream main`. Do not move `origin/main`; mirroring it is a
    separate step the owner authorizes.
 2. Choose the exact upstream commit and read its range. Never take "the tip" without reading it:
-   `git log --oneline origin/coder-only..upstream/main`.
+   `git log --oneline origin/coder-only..upstream/main`. Compare the range with the open issues
+   labelled `upstream` (`gh issue list --label upstream`): note any the range fixes, and the
+   fork seams that fix makes redundant.
 3. Set the variables every later step uses:
    ```sh
    SHA=<verified upstream sha>
@@ -357,14 +359,12 @@ fix and rerun until it completes. Known results:
   against `engines.node` before blaming the merge; do not skip them.
 - `apps/server/src/serverSettings.test.ts` "follows a settings link that is repointed to another
   directory" and "reloads when a dangling settings link gets its destination" can hit their
-  2-second watcher timeout under full-suite load. Rerun it alone:
+  2-second watcher timeout under full-suite load; #236 lists the other known flakes. Rerun it
+  alone:
   `pnpm exec vp test run --config vite.coder.config.ts apps/server/src/serverSettings.test.ts`.
 - On macOS, upstream's `ClaudeSkills.test.ts` "merges plugin enablement and selects installs in
-  native registry order" fails because `TMPDIR` sits under the `/var` symlink (758d773f57). It
+  native registry order" fails because `TMPDIR` sits under the `/var` symlink (758d773f57, #235). It
   passes with a real-path temp directory: `TMPDIR=/private/tmp/<dir>`.
-- Upstream's `MessagesTimeline.browser.test.tsx` "restores a manual reading position after
-  reopening and switching threads" is order dependent and can fail in the full web run; it passes
-  alone.
 - In a fresh worktree, the first web runs can fail in browser test files that load no tests
   ("There was an error when mocking a module") or time out, because Vite re-optimizes
   dependencies mid-run and reloads ("optimized dependencies changed. reloading"). Rerun
@@ -391,3 +391,5 @@ fix and rerun until it completes. Known results:
 
 9. Update the seams doc's "checked against" SHAs for carried fixes still present upstream, and
    add to this file wherever it fell short during the sync.
+10. Close the issues the sync resolved, with a comment naming the upstream commit, and open issues
+    for bugs it surfaced but left unfixed.
