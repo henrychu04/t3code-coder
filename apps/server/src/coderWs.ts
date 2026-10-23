@@ -10,19 +10,6 @@ import {
   type CoderWsRpcGroup,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationThreadTranscriptTooLargeError,
-  type ProjectFileFailure,
-  type ProjectFileOperation,
-  type ProjectId,
-  ProjectListEntriesError,
-  type ProjectListEntriesInput,
-  type ProjectListEntriesResult,
-  ProjectReadFileError,
-  type ProjectReadFileInput,
-  type ProjectReadFileResult,
-  ProjectTextSearchError,
-  ProjectWriteFileError,
-  type ProjectWriteFileInput,
-  type ProjectWriteFileResult,
   ThreadId,
   VcsRenameThreadBranchError,
   WorkspaceListDirectoriesError,
@@ -54,9 +41,6 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
-import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
-import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
-import type * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 
 /** The methods only the helper serves; `ws.ts` builds every other `CoderWsRpcGroup` method. */
 export const CODER_WS_METHODS = [
@@ -65,8 +49,6 @@ export const CODER_WS_METHODS = [
   WS_METHODS.orchestrationGetThreadTranscript,
   WS_METHODS.pullRequestsDiff,
   WS_METHODS.projectsGetConfig,
-  WS_METHODS.projectsSearchText,
-  WS_METHODS.projectsCreateFile,
   WS_METHODS.workspaceListDirectories,
   WS_METHODS.coderServeAsset,
   WS_METHODS.subscribeVcsRefStatus,
@@ -85,44 +67,13 @@ export function exceedsHelperStdioFrame(value: unknown): boolean {
 
 type CoderWsHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof CoderWsRpcGroup>>;
 
-/** Upstream's Files handlers from `ws.ts`, which run once the requesting thread owns the root. */
-interface UpstreamFilesHandlers {
-  readonly [WS_METHODS.projectsListEntries]: (
-    input: ProjectListEntriesInput,
-  ) => Effect.Effect<ProjectListEntriesResult, ProjectListEntriesError>;
-  readonly [WS_METHODS.projectsReadFile]: (
-    input: ProjectReadFileInput,
-  ) => Effect.Effect<ProjectReadFileResult, ProjectReadFileError>;
-  readonly [WS_METHODS.projectsWriteFile]: (
-    input: ProjectWriteFileInput,
-  ) => Effect.Effect<ProjectWriteFileResult, ProjectWriteFileError>;
-}
-
 interface UpstreamHelpers {
   readonly serverCommandId: (tag: string) => Effect.Effect<CommandId>;
   readonly refreshGitStatus: (cwd: string) => Effect.Effect<void>;
-  readonly projectFileFailureContext: (
-    error:
-      | WorkspaceFileSystem.WorkspaceFileSystemError
-      | WorkspacePaths.WorkspacePathOutsideRootError
-      | KnownWorkspaces.UnknownWorkspaceError,
-  ) => {
-    readonly failure: ProjectFileFailure;
-    readonly resolvedPath?: string;
-    readonly resolvedWorkspaceRoot?: string;
-    readonly operation?: ProjectFileOperation;
-    readonly operationPath?: string;
-  };
 }
 
-/**
- * The fork-only handlers, plus upstream's Files listing, read, and write behind the requesting
- * thread's root verification. `ws.ts` spreads these after its own handlers.
- */
-export const makeHandlers = (
-  upstream: UpstreamFilesHandlers,
-  { serverCommandId, refreshGitStatus, projectFileFailureContext }: UpstreamHelpers,
-) =>
+/** The fork-only handlers. `ws.ts` spreads these after its own handlers. */
+export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelpers) =>
   Effect.gen(function* () {
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const projectService = yield* ProjectService.ProjectService;
@@ -134,7 +85,6 @@ export const makeHandlers = (
     const config = yield* ServerConfig.ServerConfig;
     const serveAsset = yield* makeServeAsset;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
-    const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     // Legacy images are read in bounded chunks over helper stdio.
     const pullRequests = yield* PullRequestService.PullRequestService;
     const path = yield* Path.Path;
@@ -318,36 +268,6 @@ export const makeHandlers = (
         detail,
         ...(cause === undefined ? {} : { cause }),
       });
-
-    // Coder: verify file and media roots belong to the requesting thread.
-    const workspaceOwnedByThread = Effect.fn("ws.workspaceOwnedByThread")(function* (input: {
-      readonly threadId?: ThreadId | undefined;
-      readonly draftProjectId?: ProjectId | undefined;
-      readonly cwd: string;
-    }) {
-      const cwd = path.resolve(input.cwd);
-      if (input.threadId === undefined) {
-        // Coder: a draft has no persisted thread, so it names its project. Its root may be the
-        // project's workspace root or a worktree one of the project's persisted threads owns.
-        if (input.draftProjectId === undefined) return false;
-        const project = yield* projectService.getShell(input.draftProjectId);
-        if (Option.isNone(project)) return false;
-        if (cwd === path.resolve(project.value.workspaceRoot)) return true;
-        const threads = yield* threadManagement.listProjectThreads({
-          projectId: input.draftProjectId,
-          includeSubagents: true,
-        });
-        return threads.some(
-          (thread) => thread.worktreePath !== null && cwd === path.resolve(thread.worktreePath),
-        );
-      }
-      const thread = yield* threadManagement.getThreadShell(input.threadId);
-      if (thread === null) return false;
-      const project = yield* projectService.getShell(thread.projectId);
-      if (Option.isNone(project)) return false;
-      const ownedRoot = thread.worktreePath ?? project.value.workspaceRoot;
-      return cwd === path.resolve(ownedRoot);
-    });
 
     // Coder: rename the managed workspace branch and worktree together through workspace Git.
     const nextManagedWorktreePathForBranch = Effect.fn("nextManagedWorktreePathForBranch")(
@@ -569,53 +489,6 @@ export const makeHandlers = (
           if (Option.isNone(project)) return { status: "unavailable" as const, file: null };
           return readProjectConfig(project.value.workspaceRoot);
         }).pipe(Effect.orElseSucceed(() => ({ status: "unavailable" as const, file: null }))),
-      // Coder: search bounded project contents after thread ownership validation.
-      [WS_METHODS.projectsSearchText]: (input) =>
-        Effect.gen(function* () {
-          const owned = yield* workspaceOwnedByThread(input).pipe(
-            Effect.orElseSucceed(() => false),
-          );
-          if (!owned) {
-            return yield* new ProjectTextSearchError({
-              queryLength: input.query.length,
-              limit: input.limit,
-              failure: "workspace_not_owned_by_thread",
-            });
-          }
-          return yield* workspaceEntries.searchText(input).pipe(
-            Effect.mapError(
-              () =>
-                new ProjectTextSearchError({
-                  queryLength: input.query.length,
-                  limit: input.limit,
-                  failure: "search_index_search_failed",
-                }),
-            ),
-          );
-        }),
-      // Coder: a new file for upstream's "Save to workspace", in the owner's verified project.
-      [WS_METHODS.projectsCreateFile]: (input) =>
-        Effect.gen(function* () {
-          const owned = yield* workspaceOwnedByThread(input).pipe(
-            Effect.orElseSucceed(() => false),
-          );
-          if (!owned)
-            return yield* new ProjectWriteFileError({
-              ...input,
-              failure: "workspace_not_owned_by_thread",
-            });
-          return yield* workspaceFileSystem.createFile(input).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ProjectWriteFileError({
-                  cwd: input.cwd,
-                  relativePath: input.relativePath,
-                  ...projectFileFailureContext(cause),
-                  cause,
-                }),
-            ),
-          );
-        }),
       [WS_METHODS.workspaceListDirectories]: (input) =>
         workspaceEntries.listDirectories(input).pipe(
           Effect.mapError(
@@ -646,42 +519,5 @@ export const makeHandlers = (
       [WS_METHODS.reviewOpenDiffFileContents]: (input) => review.openDiffFileContents(input),
       // Coder: read bounded chunks with a revision check.
       [WS_METHODS.reviewReadDiffFileChunk]: (input) => review.readDiffFileChunk(input),
-      // Files access must verify the root belongs to the requesting thread.
-      [WS_METHODS.projectsListEntries]: (input) =>
-        Effect.gen(function* () {
-          const owned = yield* workspaceOwnedByThread(input).pipe(
-            Effect.orElseSucceed(() => false),
-          );
-          if (!owned)
-            return yield* new ProjectListEntriesError({
-              ...input,
-              failure: "workspace_not_owned_by_thread",
-            });
-          return yield* upstream[WS_METHODS.projectsListEntries](input);
-        }),
-      [WS_METHODS.projectsReadFile]: (input) =>
-        Effect.gen(function* () {
-          const owned = yield* workspaceOwnedByThread(input).pipe(
-            Effect.orElseSucceed(() => false),
-          );
-          if (!owned)
-            return yield* new ProjectReadFileError({
-              ...input,
-              failure: "workspace_not_owned_by_thread",
-            });
-          return yield* upstream[WS_METHODS.projectsReadFile](input);
-        }),
-      [WS_METHODS.projectsWriteFile]: (input) =>
-        Effect.gen(function* () {
-          const owned = yield* workspaceOwnedByThread(input).pipe(
-            Effect.orElseSucceed(() => false),
-          );
-          if (!owned)
-            return yield* new ProjectWriteFileError({
-              ...input,
-              failure: "workspace_not_owned_by_thread",
-            });
-          return yield* upstream[WS_METHODS.projectsWriteFile](input);
-        }),
     } satisfies Partial<CoderWsHandlers>;
   });

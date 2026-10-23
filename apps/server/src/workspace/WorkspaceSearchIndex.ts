@@ -1,86 +1,112 @@
-// Coder: a lightweight path-only FFF index plus a separate on-demand content index with the native
-// time budget, cursor pagination, match caps, idle TTL, and result validation described under
-// "File search" in docs/internals/coder-only.md, in place of upstream's single content-enabled index.
-import { randomUUID } from "node:crypto";
-// @effect-diagnostics nodeBuiltinImport:off
-import * as NodeFSP from "node:fs/promises";
-import * as NodePath from "node:path";
+import * as NodeModule from "node:module";
 
-import {
-  type DirItem,
-  type DirSearchResult,
-  type FileItem,
-  FileFinder,
-  type GrepCursor,
-  type GrepMatch,
-  type MixedItem,
-  type MixedSearchResult,
-  type Result,
-  type SearchResult,
+import type {
+  DirItem,
+  DirSearchResult,
+  FileItem,
+  FileFinder as FileFinderType,
+  GrepCursor,
+  MixedItem,
+  MixedSearchResult,
+  Result,
+  SearchResult,
 } from "@ff-labs/fff-node";
-import {
-  PROJECT_CONTENT_SEARCH_MAX_MATCHES_PER_FILE,
-  PROJECT_CONTENT_SEARCH_MAX_TOTAL_MATCHES,
-  PROJECT_CONTENT_SEARCH_TIME_BUDGET_MS,
-  PROJECT_SEARCH_INDEX_IDLE_TTL,
-  type ProjectEntry,
-  type ProjectEntryKind,
-  type ProjectListEntriesResult,
-  type ProjectSearchEntriesResult,
-  type ProjectTextSearchInput,
-  type ProjectTextSearchResult,
-} from "@t3tools/contracts";
-import { matchesFileMask, parseFileMask } from "@t3tools/shared/fileMask";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as LayerMap from "effect/LayerMap";
 import * as Schema from "effect/Schema";
 
+import type {
+  ProjectEntry,
+  ProjectEntryKind,
+  ProjectListEntriesResult,
+  ProjectSearchContentsInput,
+  ProjectSearchContentsResult,
+  ProjectSearchEntriesResult,
+} from "@t3tools/contracts";
+// Coder: project favicons are not carried, so image-only search matches workspace images.
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+
+// fff-node stays external to the CLI bundle because it dlopens a native
+// library. A static `import` of an external package is a hard error inside a
+// Node single-executable (only built-ins resolve there), so load it through
+// `require`, which reads from the real filesystem in every runtime.
+const requireForFff = NodeModule.createRequire(import.meta.url);
+const { FileFinder } = requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
+
 const WORKSPACE_INDEX_MAX_ENTRIES = 25_000;
 const WORKSPACE_INDEX_PAGE_SIZE = WORKSPACE_INDEX_MAX_ENTRIES + 2;
 const WORKSPACE_INDEX_SCAN_TIMEOUT = "15 seconds";
 const WORKSPACE_INDEX_SCAN_TIMEOUT_MS = 15_000;
-const CONTENT_SEARCH_MAX_LINE_CHARS = 4096;
-const CONTENT_SEARCH_MAX_PATH_CHARS = 512;
+const WORKSPACE_INDEX_IDLE_TTL = "15 minutes";
+const CONTENT_SEARCH_TIME_BUDGET_MS = 250;
+const CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
 
 export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedError<WorkspaceSearchIndexCreateFailed>()(
   "WorkspaceSearchIndexCreateFailed",
   {
+    cwd: Schema.String,
     reason: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
   },
-) {}
+) {
+  override get message(): string {
+    return `Failed to create the workspace search index for '${this.cwd}'.`;
+  }
+}
 
 export class WorkspaceSearchIndexScanTimedOut extends Schema.TaggedError<WorkspaceSearchIndexScanTimedOut>()(
   "WorkspaceSearchIndexScanTimedOut",
   {
+    cwd: Schema.String,
     timeout: Schema.String,
   },
-) {}
+) {
+  override get message(): string {
+    return `Workspace search index for '${this.cwd}' did not finish scanning within ${this.timeout}`;
+  }
+}
 
 export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedError<WorkspaceSearchIndexSearchFailed>()(
   "WorkspaceSearchIndexSearchFailed",
   {
+    cwd: Schema.String,
     queryLength: Schema.Number,
     pageSize: Schema.Number,
     reason: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
   },
-) {}
+) {
+  override get message(): string {
+    return `Workspace search failed for '${this.cwd}'.`;
+  }
+}
 
 export class WorkspaceSearchIndexRefreshFailed extends Schema.TaggedError<WorkspaceSearchIndexRefreshFailed>()(
   "WorkspaceSearchIndexRefreshFailed",
   {
+    cwd: Schema.String,
     reason: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
   },
-) {}
+) {
+  override get message(): string {
+    return `Failed to refresh the workspace search index for '${this.cwd}'.`;
+  }
+}
 
 export class WorkspaceSearchIndexDestroyFailed extends Schema.TaggedError<WorkspaceSearchIndexDestroyFailed>()(
   "WorkspaceSearchIndexDestroyFailed",
   {
-    reason: Schema.String,
+    cwd: Schema.String,
+    cause: Schema.Defect(),
   },
-) {}
+) {
+  override get message(): string {
+    return `Failed to destroy the workspace search index for '${this.cwd}'.`;
+  }
+}
 
 export class WorkspaceSearchIndex extends Context.Service<
   WorkspaceSearchIndex,
@@ -91,11 +117,10 @@ export class WorkspaceSearchIndex extends Context.Service<
       limit: number,
       kind?: ProjectEntryKind,
       imageOnly?: boolean,
-      fileMask?: string,
     ) => Effect.Effect<ProjectSearchEntriesResult, WorkspaceSearchIndexSearchFailed>;
-    readonly searchText: (
-      input: Omit<ProjectTextSearchInput, "cwd" | "threadId">,
-    ) => Effect.Effect<ProjectTextSearchResult, WorkspaceSearchIndexSearchFailed>;
+    readonly searchContents: (
+      input: Omit<ProjectSearchContentsInput, "cwd">,
+    ) => Effect.Effect<ProjectSearchContentsResult, WorkspaceSearchIndexSearchFailed>;
     readonly refresh: () => Effect.Effect<
       void,
       WorkspaceSearchIndexRefreshFailed | WorkspaceSearchIndexScanTimedOut
@@ -103,38 +128,49 @@ export class WorkspaceSearchIndex extends Context.Service<
   }
 >()("t3/workspace/WorkspaceSearchIndex") {}
 
-function normalizePath(input: string): string {
-  return input.replaceAll("\\", "/").replace(/\/$/u, "");
+function toPosixPath(input: string): string {
+  return input.replaceAll("\\", "/");
+}
+
+function trimDirectorySeparator(input: string): string {
+  return input.endsWith("/") ? input.slice(0, -1) : input;
+}
+
+function parentPathOf(input: string): string | undefined {
+  const separatorIndex = input.lastIndexOf("/");
+  return separatorIndex === -1 ? undefined : input.slice(0, separatorIndex);
 }
 
 function toProjectEntry(item: MixedItem): ProjectEntry | null {
-  const path = normalizePath(item.item.relativePath);
-  return path ? { path, kind: item.type } : null;
+  const normalizedPath = trimDirectorySeparator(toPosixPath(item.item.relativePath));
+  if (!normalizedPath) {
+    return null;
+  }
+
+  return {
+    path: normalizedPath,
+    kind: item.type,
+  };
 }
 
 function toFileEntry(item: FileItem): ProjectEntry | null {
-  const path = normalizePath(item.relativePath);
-  return path ? { path, kind: "file" } : null;
+  const normalizedPath = trimDirectorySeparator(toPosixPath(item.relativePath));
+  return normalizedPath ? { path: normalizedPath, kind: "file" } : null;
 }
 
 function toDirectoryEntry(item: DirItem): ProjectEntry | null {
-  const path = normalizePath(item.relativePath);
-  return path ? { path, kind: "directory" } : null;
+  const normalizedPath = trimDirectorySeparator(toPosixPath(item.relativePath));
+  return normalizedPath ? { path: normalizedPath, kind: "directory" } : null;
 }
 
 function mapFileSearchResult(
   result: SearchResult,
   limit: number,
-  imageOnly: boolean,
-  fileMask: string,
+  imageOnly = false,
 ): ProjectSearchEntriesResult {
   const entries = result.items.flatMap((item) => {
     const entry = toFileEntry(item);
-    return entry &&
-      (!imageOnly || isWorkspaceImagePreviewPath(entry.path)) &&
-      matchesFileMask(entry.path, fileMask)
-      ? [entry]
-      : [];
+    return entry && (!imageOnly || isWorkspaceImagePreviewPath(entry.path)) ? [entry] : [];
   });
   return {
     entries: entries.slice(0, limit),
@@ -150,29 +186,36 @@ function mapDirectorySearchResult(
     const entry = toDirectoryEntry(item);
     return entry ? [entry] : [];
   });
-  const rootCount = result.items.some((item) => item.relativePath.length === 0) ? 1 : 0;
+  const rootDirectoryCount = result.items.some((item) => item.relativePath.length === 0) ? 1 : 0;
   return {
     entries: entries.slice(0, limit),
-    truncated: entries.length > limit || result.totalMatched - rootCount > entries.length,
+    truncated: result.totalMatched - rootDirectoryCount > limit,
   };
 }
 
 function mapMixedSearchResult(
   result: MixedSearchResult,
   limit: number,
-): ProjectSearchEntriesResult {
-  const entries = result.items.flatMap((item) => {
+): { readonly entries: ProjectEntry[]; readonly truncated: boolean } {
+  const entries: ProjectEntry[] = [];
+  for (const item of result.items) {
     const entry = toProjectEntry(item);
-    return entry ? [entry] : [];
-  });
-  const rootCount = result.items.some(
+    if (entry) {
+      entries.push(entry);
+    }
+    if (entries.length >= limit) {
+      break;
+    }
+  }
+
+  const rootDirectoryCount = result.items.some(
     (item) => item.type === "directory" && item.item.relativePath.length === 0,
   )
     ? 1
     : 0;
   return {
-    entries: entries.slice(0, limit),
-    truncated: entries.length > limit || result.totalMatched - rootCount > entries.length,
+    entries,
+    truncated: result.totalMatched - rootDirectoryCount > limit,
   };
 }
 
@@ -191,35 +234,35 @@ function codePointBefore(line: string, index: number): string | undefined {
   return codePointAt(line, previousIndex);
 }
 
-function buildContentSearchQuery(input: Omit<ProjectTextSearchInput, "cwd" | "threadId">): {
+function buildContentSearchQuery(input: Omit<ProjectSearchContentsInput, "cwd">): {
   readonly searchQuery: string;
   readonly regexMode: boolean;
 } {
-  const query = input.caseSensitive
-    ? input.query
-    : input.useRegex
-      ? `(?i)${input.query}`
-      : input.query.toLowerCase();
-  const nativeMask = input.fileMask?.trim() ? toFffFileMaskConstraint(input.fileMask) : "";
-  return {
-    searchQuery: [nativeMask ?? "", query].filter(Boolean).join(" "),
-    regexMode: input.useRegex,
-  };
+  if (input.caseSensitive) {
+    return { searchQuery: input.query, regexMode: input.useRegex };
+  }
+  return input.useRegex
+    ? { searchQuery: `(?i)${input.query}`, regexMode: true }
+    : { searchQuery: input.query.toLowerCase(), regexMode: false };
 }
 
-function byteRangesToStringRanges(
+function mapContentMatchRanges(
   line: string,
   byteRanges: ReadonlyArray<readonly [number, number]>,
 ): Array<{ readonly start: number; readonly end: number }> {
-  const bytes = Buffer.from(line);
-  const toStringIndex = (byteOffset: number) =>
-    bytes.subarray(0, Math.min(bytes.length, Math.max(0, byteOffset))).toString().length;
+  const lineBytes = Buffer.from(line);
+  const toStringIndex = (byteOffset: number) => lineBytes.subarray(0, byteOffset).toString().length;
   return byteRanges.map(([startByte, endByte]) => ({
     start: toStringIndex(startByte),
     end: toStringIndex(endByte),
   }));
 }
 
+/**
+ * Whole-word filtering happens after the grep rather than by wrapping the pattern in boundary
+ * regex: consuming boundaries such as `(?:^|\W)` swallow the separator between adjacent matches
+ * and widen the reported ranges, and `\b` cannot match punctuation-edged queries at all.
+ */
 function isWholeWordRange(
   line: string,
   range: { readonly start: number; readonly end: number },
@@ -238,175 +281,95 @@ function isWholeWordRange(
   return leftIsBoundary && rightIsBoundary;
 }
 
-function boundedMatchLine(
-  line: string,
-  ranges: ReadonlyArray<{ readonly start: number; readonly end: number }>,
-): { readonly lineContent: string; readonly matchRanges: Array<{ start: number; end: number }> } {
-  if (line.length <= CONTENT_SEARCH_MAX_LINE_CHARS) {
-    return { lineContent: line, matchRanges: [...ranges] };
-  }
-  const firstStart = ranges[0]?.start ?? 0;
-  const start = Math.max(0, firstStart - Math.floor(CONTENT_SEARCH_MAX_LINE_CHARS / 3));
-  const end = Math.min(line.length, start + CONTENT_SEARCH_MAX_LINE_CHARS);
-  return {
-    lineContent: line.slice(start, end),
-    matchRanges: ranges.flatMap((range) => {
-      const clippedStart = Math.max(start, range.start);
-      const clippedEnd = Math.min(end, range.end);
-      return clippedEnd > clippedStart
-        ? [{ start: clippedStart - start, end: clippedEnd - start }]
-        : [];
-    }),
-  };
-}
-
-function safeRelativeSearchPath(input: string): string | null {
-  if (!input || input.length > CONTENT_SEARCH_MAX_PATH_CHARS || input.includes("\0")) return null;
-  const path = normalizePath(input);
-  if (NodePath.posix.isAbsolute(path)) return null;
-  const normalized = NodePath.posix.normalize(path);
-  if (
-    normalized === "." ||
-    normalized === ".." ||
-    normalized.startsWith("../") ||
-    normalized !== path
-  ) {
-    return null;
-  }
-  return normalized;
-}
-
-async function validateContentMatchPath(
-  realProjectRoot: string,
-  match: Pick<GrepMatch, "relativePath" | "isBinary" | "lineContent">,
-): Promise<string | null> {
-  if (match.isBinary || match.lineContent.includes("\0") || match.lineContent.includes("�")) {
-    return null;
-  }
-  const relativePath = safeRelativeSearchPath(match.relativePath);
-  if (!relativePath) return null;
-  const absolutePath = NodePath.resolve(realProjectRoot, relativePath);
-  if (!isContained(realProjectRoot, absolutePath)) return null;
-  try {
-    const [realPath, stat] = await Promise.all([
-      NodeFSP.realpath(absolutePath),
-      NodeFSP.stat(absolutePath),
-    ]);
-    return stat.isFile() && isContained(realProjectRoot, realPath) ? relativePath : null;
-  } catch {
-    return null;
-  }
-}
-
-function isContained(root: string, target: string): boolean {
-  const relative = NodePath.relative(root, target);
-  return (
-    relative !== ".." && !relative.startsWith(`..${NodePath.sep}`) && !NodePath.isAbsolute(relative)
-  );
-}
-
 function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEntry[] {
-  const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+  const entryByPath = new Map(entries.map((entry) => [entry.path, entry]));
   for (const entry of entries) {
-    let separator = entry.path.lastIndexOf("/");
-    while (separator > 0) {
-      const parent = entry.path.slice(0, separator);
-      if (!byPath.has(parent)) byPath.set(parent, { path: parent, kind: "directory" });
-      separator = parent.lastIndexOf("/");
+    let parentPath = parentPathOf(entry.path);
+    while (parentPath) {
+      if (!entryByPath.has(parentPath)) {
+        entryByPath.set(parentPath, { path: parentPath, kind: "directory" });
+      }
+      parentPath = parentPathOf(parentPath);
     }
   }
-  return [...byPath.values()];
+  return [...entryByPath.values()];
 }
 
-const FFF_UNSAFE_FILE_MASK_CHARACTER = /[\s\\/[\]{}:]/u;
-
-/**
- * Compile IntelliJ filename masks into FFF path constraints. FFF constraints
- * operate on project-relative paths, so every filename pattern is anchored to
- * the final path segment. Unsupported literals fall back to the broad native
- * file search plus the exact IntelliJ matcher.
- */
-function toFffFileMaskConstraint(fileMask: string): string | undefined {
-  const { includes, excludes } = parseFileMask(fileMask);
-  const patterns = [...includes, ...excludes];
-  if (patterns.some((pattern) => FFF_UNSAFE_FILE_MASK_CHARACTER.test(pattern))) {
-    return undefined;
-  }
-
-  const includeConstraint =
-    includes.length === 0
-      ? ""
-      : includes.length === 1
-        ? `**/${includes[0]}`
-        : `{${includes.map((pattern) => `**/${pattern}`).join(",")}}`;
-  const excludeConstraints = excludes.map((pattern) => `!**/${pattern}`);
-  return [includeConstraint, ...excludeConstraints].filter(Boolean).join(" ");
-}
+const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
+  cwd: string,
+  variant: WorkspaceSearchIndexVariant,
+) {
+  const result = yield* Effect.try({
+    try: () =>
+      FileFinder.create({
+        basePath: cwd,
+        disableMmapCache: true,
+        // Content indexing costs scan CPU and memory, so only the on-demand
+        // content-search index pays for it; path-only consumers (file tree,
+        // composer path search, file picker) keep the lightweight index.
+        disableContentIndexing: variant !== "content",
+        aiMode: false,
+        enableFsRootScanning: true,
+        enableHomeDirScanning: true,
+      }),
+    catch: (cause) =>
+      new WorkspaceSearchIndexCreateFailed({
+        cwd,
+        reason: "FileFinder.create threw unexpectedly.",
+        cause,
+      }),
+  });
+  if (result.ok) return result.value;
+  return yield* new WorkspaceSearchIndexCreateFailed({
+    cwd,
+    reason: result.error,
+  });
+});
 
 const waitForIndexReady = Effect.fn("WorkspaceSearchIndex.waitForIndexReady")(function* <E>(
-  finder: FileFinder,
-  onFailure: (reason: string) => E,
-) {
+  cwd: string,
+  finder: FileFinderType,
+  onFailure: (input: { readonly reason: string; readonly cause?: unknown }) => E,
+): Effect.fn.Return<void, E | WorkspaceSearchIndexScanTimedOut> {
   const result = yield* Effect.tryPromise({
     try: () => finder.waitForIndexReady(WORKSPACE_INDEX_SCAN_TIMEOUT_MS),
-    catch: () => onFailure("FileFinder.waitForIndexReady rejected."),
+    catch: (cause) =>
+      onFailure({
+        reason: "FileFinder.waitForIndexReady rejected unexpectedly.",
+        cause,
+      }),
   });
   if (!result.ok) {
-    return yield* Effect.fail(onFailure("FileFinder.waitForIndexReady returned an error."));
+    return yield* Effect.fail(onFailure({ reason: result.error }));
   }
   if (!result.value) {
     return yield* new WorkspaceSearchIndexScanTimedOut({
+      cwd,
       timeout: WORKSPACE_INDEX_SCAN_TIMEOUT,
     });
   }
 });
 
-export const WORKSPACE_SEARCH_INDEX_VARIANTS = ["paths", "content"] as const;
-export type WorkspaceSearchIndexVariant = (typeof WORKSPACE_SEARCH_INDEX_VARIANTS)[number];
-
 export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
   cwd: string,
   variant: WorkspaceSearchIndexVariant = "paths",
 ) {
-  const finder = yield* Effect.acquireRelease(
+  const finder = yield* Effect.acquireRelease(createFinder(cwd, variant), (finder) =>
     Effect.try({
-      try: () =>
-        FileFinder.create({
-          basePath: cwd,
-          disableMmapCache: true,
-          disableContentIndexing: variant !== "content",
-          aiMode: false,
-          enableFsRootScanning: false,
-          enableHomeDirScanning: false,
-        }),
-      catch: () =>
-        new WorkspaceSearchIndexCreateFailed({
-          reason: "FileFinder.create threw unexpectedly.",
-        }),
-    }).pipe(
-      Effect.flatMap((result) =>
-        result.ok
-          ? Effect.succeed(result.value)
-          : Effect.fail(
-              new WorkspaceSearchIndexCreateFailed({
-                reason: "FileFinder.create returned an error.",
-              }),
-            ),
-      ),
-    ),
-    (instance) =>
-      Effect.try({
-        try: () => instance.destroy(),
-        catch: () =>
-          new WorkspaceSearchIndexDestroyFailed({
-            reason: "FileFinder.destroy threw unexpectedly.",
-          }),
-      }).pipe(Effect.orDie),
+      try: () => finder.destroy(),
+      catch: (cause) => new WorkspaceSearchIndexDestroyFailed({ cwd, cause }),
+    }).pipe(Effect.orDie),
   );
   let initialScanTimedOut = false;
   yield* waitForIndexReady(
+    cwd,
     finder,
-    (reason) => new WorkspaceSearchIndexCreateFailed({ reason }),
+    ({ reason, cause }) =>
+      new WorkspaceSearchIndexCreateFailed({
+        cwd,
+        reason,
+        cause,
+      }),
   ).pipe(
     Effect.catchTags({
       WorkspaceSearchIndexScanTimedOut: (error) =>
@@ -425,54 +388,57 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     pageSize: number,
     operation: "directorySearch" | "fileSearch" | "grep" | "mixedSearch",
     execute: () => Result<A>,
-  ) {
+  ): Effect.fn.Return<A, WorkspaceSearchIndexSearchFailed> {
     const result = yield* Effect.try({
       try: execute,
-      catch: () =>
+      catch: (cause) =>
         new WorkspaceSearchIndexSearchFailed({
+          cwd,
           queryLength: query.length,
           pageSize,
           reason: `FileFinder.${operation} threw unexpectedly.`,
+          cause,
         }),
     });
     if (!result.ok) {
       return yield* new WorkspaceSearchIndexSearchFailed({
+        cwd,
         queryLength: query.length,
         pageSize,
-        reason: `FileFinder.${operation} returned an error.`,
+        reason: result.error,
       });
     }
     return result.value;
   });
 
-  let generation = 0;
   const refresh: WorkspaceSearchIndex["Service"]["refresh"] = Effect.fn(
     "WorkspaceSearchIndex.refresh",
   )(function* () {
-    generation += 1;
-    continuations.clear();
-    try {
-      const result = yield* Effect.try({
-        try: () => finder.scanFiles(),
-        catch: () =>
-          new WorkspaceSearchIndexRefreshFailed({
-            reason: "FileFinder.scanFiles threw unexpectedly.",
-          }),
+    const result = yield* Effect.try({
+      try: () => finder.scanFiles(),
+      catch: (cause) =>
+        new WorkspaceSearchIndexRefreshFailed({
+          cwd,
+          reason: "FileFinder.scanFiles threw unexpectedly.",
+          cause,
+        }),
+    });
+    if (!result.ok) {
+      return yield* new WorkspaceSearchIndexRefreshFailed({
+        cwd,
+        reason: result.error,
       });
-      if (!result.ok) {
-        return yield* new WorkspaceSearchIndexRefreshFailed({
-          reason: "FileFinder.scanFiles returned an error.",
-        });
-      }
-      yield* waitForIndexReady(
-        finder,
-        (reason) => new WorkspaceSearchIndexRefreshFailed({ reason }),
-      );
-    } finally {
-      // Searches may have started while the native scan was in progress.
-      generation += 1;
-      continuations.clear();
     }
+    yield* waitForIndexReady(
+      cwd,
+      finder,
+      ({ reason, cause }) =>
+        new WorkspaceSearchIndexRefreshFailed({
+          cwd,
+          reason,
+          cause,
+        }),
+    );
   });
 
   const list: WorkspaceSearchIndex["Service"]["list"] = Effect.fn("WorkspaceSearchIndex.list")(
@@ -482,43 +448,37 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         finder.mixedSearch("", { pageSize: WORKSPACE_INDEX_PAGE_SIZE }),
       );
       const mapped = mapMixedSearchResult(result, WORKSPACE_INDEX_MAX_ENTRIES);
-      const sorted = withDirectoryAncestors(mapped.entries).toSorted((left, right) =>
+      const sortedEntries = withDirectoryAncestors(mapped.entries).toSorted((left, right) =>
         left.path.localeCompare(right.path),
       );
+      const entries = sortedEntries.slice(0, WORKSPACE_INDEX_MAX_ENTRIES);
       return {
-        entries: sorted.slice(0, WORKSPACE_INDEX_MAX_ENTRIES),
+        entries,
         truncated:
-          incompleteBeforeQuery || mapped.truncated || sorted.length > WORKSPACE_INDEX_MAX_ENTRIES,
+          incompleteBeforeQuery || mapped.truncated || entries.length < sortedEntries.length,
       };
     },
   );
 
   const search: WorkspaceSearchIndex["Service"]["search"] = Effect.fn(
     "WorkspaceSearchIndex.search",
-  )(function* (query, limit, kind, imageOnly = false, fileMask = "") {
+  )(function* (query, limit, kind, imageOnly) {
+    const pageSize = imageOnly ? WORKSPACE_INDEX_PAGE_SIZE : Math.max(1, limit + 1);
     const incompleteBeforeQuery = hasIncompleteInitialScan();
-    if (kind === "file" || imageOnly || fileMask.trim().length > 0) {
-      const hasFileMask = fileMask.trim().length > 0;
-      const nativeFileMask = hasFileMask ? toFffFileMaskConstraint(fileMask) : "";
-      const nativeQuery =
-        nativeFileMask === undefined ? query : [nativeFileMask, query].filter(Boolean).join(" ");
-      const filtered = imageOnly || hasFileMask;
-      const pageSize = filtered ? WORKSPACE_INDEX_PAGE_SIZE : Math.max(1, limit + 1);
+    if (kind === "file" || imageOnly) {
       const result = yield* runSearch(query, pageSize, "fileSearch", () =>
-        finder.fileSearch(nativeQuery, { pageSize }),
+        finder.fileSearch(query, { pageSize }),
       );
-      const mapped = mapFileSearchResult(result, limit, imageOnly, fileMask);
+      const mapped = mapFileSearchResult(result, limit, imageOnly);
       return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
     }
     if (kind === "directory") {
-      const pageSize = Math.max(1, limit + 1);
       const result = yield* runSearch(query, pageSize, "directorySearch", () =>
         finder.directorySearch(query, { pageSize }),
       );
       const mapped = mapDirectorySearchResult(result, limit);
       return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
     }
-    const pageSize = Math.max(1, limit + 1);
     const result = yield* runSearch(query, pageSize, "mixedSearch", () =>
       finder.mixedSearch(query, { pageSize }),
     );
@@ -526,152 +486,61 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
   });
 
-  // FFF pages end at file boundaries and can exceed pageSize by up to 99 matches.
-  // Keep that bounded overflow so a UI page never drops matches from its last file.
-  const continuations = new Map<
-    string,
-    {
-      cursor: GrepCursor | null;
-      pending: Array<ProjectTextSearchResult["matches"][number]>;
-      query: string;
-      createdAt: number;
-    }
-  >();
-
-  const searchText: WorkspaceSearchIndex["Service"]["searchText"] = Effect.fn(
-    "WorkspaceSearchIndex.searchText",
+  const searchContents: WorkspaceSearchIndex["Service"]["searchContents"] = Effect.fn(
+    "WorkspaceSearchIndex.searchContents",
   )(function* (input) {
-    const searchGeneration = generation;
-    const limit = Math.min(input.limit, PROJECT_CONTENT_SEARCH_MAX_TOTAL_MATCHES);
     const { searchQuery, regexMode } = buildContentSearchQuery(input);
-    const deadline = performance.now() + PROJECT_CONTENT_SEARCH_TIME_BUDGET_MS;
-    const rawPageSize = limit;
-    const nativeMaskSupported =
-      !input.fileMask?.trim() || toFffFileMaskConstraint(input.fileMask) !== undefined;
-    const matches: Array<ProjectTextSearchResult["matches"][number]> = [];
-    const matchesPerFile = new Map<string, number>();
-    const queryIdentity = JSON.stringify({
-      query: input.query,
-      fileMask: input.fileMask ?? "",
-      caseSensitive: input.caseSensitive,
-      wholeWord: input.wholeWord,
-      useRegex: input.useRegex,
-    });
-    for (const [key, entry] of continuations) {
-      if (Date.now() - entry.createdAt > 15 * 60_000) continuations.delete(key);
-    }
-    const continuation = input.cursor ? continuations.get(input.cursor) : undefined;
-    if (input.cursor && (!continuation || continuation.query !== queryIdentity)) {
-      return yield* new WorkspaceSearchIndexSearchFailed({
-        queryLength: input.query.length,
-        pageSize: limit,
-        reason: "Search continuation expired. Run the search again.",
-      });
-    }
-    let nextCursor: GrepCursor | null = continuation?.cursor ?? null;
-    let invalidRegex = false;
-    let truncated = false;
+    const deadline = performance.now() + CONTENT_SEARCH_TIME_BUDGET_MS;
+    // Grep cursors advance by file, so whole-word post-filtering needs enough
+    // raw candidates from the current file before moving to the next one.
+    const rawPageSize = input.wholeWord
+      ? Math.max(input.limit, CONTENT_SEARCH_MAX_MATCHES_PER_FILE)
+      : input.limit;
+    const matches: Array<ProjectSearchContentsResult["matches"][number]> = [];
+    let nextCursor: GrepCursor | null = null;
+    let regexFallbackError: string | undefined;
 
-    for (const match of continuation?.pending ?? []) {
-      const path = yield* Effect.promise(() =>
-        validateContentMatchPath(cwd, {
-          relativePath: match.path,
-          isBinary: false,
-          lineContent: match.lineContent,
-        }),
-      );
-      if (path) matches.push(match);
-    }
-
-    while (matches.length < limit && (!continuation || nextCursor !== null)) {
+    do {
       const remainingTimeBudgetMs = Math.max(1, Math.ceil(deadline - performance.now()));
-      const result = yield* runSearch(input.query, rawPageSize, "grep", () =>
+      const result = yield* runSearch(input.query, input.limit, "grep", () =>
         finder.grep(searchQuery, {
           mode: regexMode ? "regex" : "plain",
           smartCase: !input.caseSensitive && !regexMode,
-          maxFileSize: 10 * 1024 * 1024,
-          maxMatchesPerFile: PROJECT_CONTENT_SEARCH_MAX_MATCHES_PER_FILE,
-          pageSize: Math.max(1, limit - matches.length),
+          maxMatchesPerFile: Math.min(CONTENT_SEARCH_MAX_MATCHES_PER_FILE, rawPageSize),
+          pageSize: rawPageSize,
           cursor: nextCursor,
           timeBudgetMs: remainingTimeBudgetMs,
         }),
       );
-      if (result.regexFallbackError !== undefined) {
-        invalidRegex = true;
-        nextCursor = null;
-        break;
-      }
 
       for (const match of result.items) {
-        if (
-          !nativeMaskSupported &&
-          input.fileMask &&
-          !matchesFileMask(match.relativePath, input.fileMask)
-        ) {
-          continue;
-        }
-        const relativePath = yield* Effect.promise(() => validateContentMatchPath(cwd, match));
-        if (!relativePath || !Number.isSafeInteger(match.lineNumber) || match.lineNumber < 1) {
-          continue;
-        }
-        const ranges = byteRangesToStringRanges(match.lineContent, match.matchRanges)
-          .filter(
-            (range) =>
-              range.start >= 0 && range.end <= match.lineContent.length && range.end > range.start,
-          )
-          .filter((range) => !input.wholeWord || isWholeWordRange(match.lineContent, range))
-          .slice(0, 100);
-        if (ranges.length === 0) continue;
-        const bounded = boundedMatchLine(match.lineContent, ranges);
-        if (bounded.matchRanges.length === 0) continue;
-        const fileMatchCount = matchesPerFile.get(relativePath) ?? 0;
-        if (fileMatchCount >= PROJECT_CONTENT_SEARCH_MAX_MATCHES_PER_FILE) {
-          truncated = true;
-          continue;
-        }
+        const matchRanges = mapContentMatchRanges(match.lineContent, match.matchRanges).filter(
+          (range) => !input.wholeWord || isWholeWordRange(match.lineContent, range),
+        );
+        if (matchRanges.length === 0) continue;
         matches.push({
-          path: relativePath,
+          path: toPosixPath(match.relativePath),
           lineNumber: match.lineNumber,
-          lineContent: bounded.lineContent,
-          matchRanges: bounded.matchRanges,
+          lineContent: match.lineContent,
+          matchRanges,
         });
-        matchesPerFile.set(relativePath, fileMatchCount + 1);
       }
       nextCursor = result.nextCursor;
-      if (nextCursor === null || performance.now() >= deadline) break;
-    }
+      regexFallbackError ??= result.regexFallbackError;
+    } while (matches.length < input.limit && nextCursor !== null && performance.now() < deadline);
 
-    if (generation !== searchGeneration) {
-      return yield* new WorkspaceSearchIndexSearchFailed({
-        queryLength: input.query.length,
-        pageSize: limit,
-        reason: "Search index changed. Run the search again.",
-      });
-    }
-    // Retire the consumed page only after validation succeeds so interruption can be retried.
-    if (input.cursor) continuations.delete(input.cursor);
-    let cursor: string | undefined;
-    const pending = matches.splice(limit);
-    if (nextCursor !== null || pending.length > 0) {
-      if (continuations.size >= 128) continuations.delete(continuations.keys().next().value!);
-      cursor = randomUUID();
-      continuations.set(cursor, {
-        cursor: nextCursor,
-        pending,
-        query: queryIdentity,
-        createdAt: Date.now(),
-      });
-    }
     return {
-      ...(cursor ? { nextCursor: cursor } : {}),
-      matches,
-      truncated: truncated || cursor !== undefined,
-      ...(invalidRegex ? { regexFallbackError: "Invalid regular expression." } : {}),
+      matches: matches.slice(0, input.limit),
+      truncated: matches.length > input.limit || nextCursor !== null,
+      ...(regexFallbackError !== undefined ? { regexFallbackError } : {}),
     };
   });
 
-  return WorkspaceSearchIndex.of({ list, refresh, search, searchText });
+  return WorkspaceSearchIndex.of({ list, refresh, search, searchContents });
 });
+
+export const WORKSPACE_SEARCH_INDEX_VARIANTS = ["paths", "content"] as const;
+export type WorkspaceSearchIndexVariant = (typeof WORKSPACE_SEARCH_INDEX_VARIANTS)[number];
 
 export const workspaceSearchIndexKey = (cwd: string, variant: WorkspaceSearchIndexVariant) =>
   `${variant}\n${cwd}`;
@@ -687,7 +556,9 @@ function parseWorkspaceSearchIndexKey(key: string): {
   };
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/**
+ * @public Service construction is part of the canonical Effect module API.
+ */
 export const layer = (key: string) => {
   const { cwd, variant } = parseWorkspaceSearchIndexKey(key);
   return Layer.effect(WorkspaceSearchIndex, make(cwd, variant));
@@ -697,6 +568,6 @@ export class WorkspaceSearchIndexMap extends LayerMap.Service<WorkspaceSearchInd
   "t3/workspace/WorkspaceSearchIndexMap",
   {
     lookup: layer,
-    idleTimeToLive: PROJECT_SEARCH_INDEX_IDLE_TTL,
+    idleTimeToLive: WORKSPACE_INDEX_IDLE_TTL,
   },
 ) {}
