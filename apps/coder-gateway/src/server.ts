@@ -176,31 +176,6 @@ function readJsonBody(request: NodeHttp.IncomingMessage): Promise<unknown> {
   });
 }
 
-class RequestBodyTooLargeError extends Error {}
-
-function readBody(request: NodeHttp.IncomingMessage, maxBytes: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalBytes = 0;
-    let rejected = false;
-    request.on("data", (chunk: Buffer) => {
-      if (rejected) return;
-      totalBytes += chunk.byteLength;
-      if (totalBytes > maxBytes) {
-        rejected = true;
-        chunks.length = 0;
-        reject(new RequestBodyTooLargeError("Request body is too large."));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    request.on("end", () => {
-      if (!rejected) resolve(Buffer.concat(chunks));
-    });
-    request.once("error", reject);
-  });
-}
-
 function rejectWebSocketUpgrade(socket: Duplex, statusCode: number, statusText: string): void {
   socket.end(
     `HTTP/1.1 ${statusCode} ${statusText}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
