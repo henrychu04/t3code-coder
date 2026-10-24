@@ -1,17 +1,17 @@
-import type {
-  EnvironmentId,
-  PullRequestRef,
-  RepositoryIdentity,
-  ScopedThreadRef,
-} from "@t3tools/contracts";
+import type { EnvironmentId, RepositoryIdentity, ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent } from "react";
 
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { parseChangeRequestUrl } from "@t3tools/client-runtime/pull-request-link-input";
-import type { ChangeRequestLink } from "@t3tools/shared/changeRequestUrl";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
+import {
+  findProjectForChangeRequest,
+  isGitLabProject,
+  resolvePullRequestPreviewTarget,
+} from "@t3tools/client-runtime/change-request-links";
+import {
+  sourceControlClients,
+  type ChangeRequestLink,
+} from "@t3tools/client-runtime/source-control-clients";
 
 import { useOpenLink } from "../browser/useOpenLink";
 import { useClientSettings } from "../hooks/useSettings";
@@ -23,70 +23,6 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { readProjects, useProjects } from "../state/entities";
 import { environmentServerConfigsAtom, serverEnvironment } from "../state/server";
 import { usePrimaryEnvironmentId } from "../state/environments";
-
-export {
-  type ChangeRequestLink,
-  gitHubPullRequestBrowserUrl,
-  pullRequestCandidateUrlFromReferenceAutolink,
-  matchesLinkedPullRequestUrl,
-  changeRequestRepositoryUrl,
-} from "@t3tools/shared/changeRequestUrl";
-
-// Coder: client-runtime's GitLab-only filter over upstream's parser.
-export { parseChangeRequestUrl } from "@t3tools/client-runtime/pull-request-link-input";
-
-/**
- * Coder: merge requests are read through the workspace's GitLab CLI, so only GitLab checkouts
- * (including self-hosted remotes whose provider could not be named) can resolve a link. The
- * registry reads every other kind as the generic host, which would still match by host and path.
- */
-function isGitLabProject(project: EnvironmentProject): boolean {
-  const provider = project.repositoryIdentity?.provider;
-  return provider === "gitlab" || provider === "unknown";
-}
-
-export function findProjectForChangeRequest(
-  projects: ReadonlyArray<EnvironmentProject>,
-  link: ChangeRequestLink,
-): EnvironmentProject | undefined {
-  return projects.filter(isGitLabProject).find((project) => {
-    const identity = project.repositoryIdentity;
-    return (
-      identity?.provider !== undefined &&
-      sourceControlClients.get(identity.provider).isChangeRequestInRepository(identity, link)
-    );
-  });
-}
-
-export function resolvePullRequestPreviewTarget({
-  environmentId,
-  projects,
-  pullRequestsEnabled,
-  url,
-}: {
-  environmentId: EnvironmentId | null;
-  projects: ReadonlyArray<EnvironmentProject>;
-  pullRequestsEnabled: boolean;
-  url: string;
-}): { environmentId: EnvironmentId; input: PullRequestRef } | null {
-  if (!pullRequestsEnabled || environmentId === null) return null;
-  const parsed = parseChangeRequestUrl(url);
-  if (parsed === null) return null;
-  const project = findProjectForChangeRequest(
-    projects.filter((candidate) => candidate.environmentId === environmentId),
-    parsed,
-  );
-  if (project === undefined) return null;
-  return {
-    environmentId,
-    input: {
-      projectId: project.id,
-      host: parsed.authority ?? parsed.host,
-      repository: sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository,
-      number: parsed.number,
-    },
-  };
-}
 
 export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null, url: string) {
   const projects = useProjects();
@@ -100,8 +36,9 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
 }
 
 /**
- * Coder: GitLab's counterpart of `gitHubPullRequestBrowserUrl`. It keeps a self-hosted install's
- * origin and path prefix rather than assuming `https://{host}/`.
+ * Coder: GitLab's counterpart of upstream's `projectChangeRequestUrl`. It keeps a self-hosted
+ * install's origin and path prefix rather than assuming `https://{host}/`, and also serves
+ * checkouts whose provider could not be named.
  */
 export function gitLabMergeRequestBrowserUrl(
   identity: RepositoryIdentity | null | undefined,
@@ -159,6 +96,7 @@ export function findProjectOnChangeRequestHost(
 ): EnvironmentProject | undefined {
   const own = findProjectForChangeRequest(projects, link);
   if (own !== undefined) return own;
+  // Coder: only GitLab (or unnamed) checkouts read merge requests; see `isGitLabProject`.
   return projects.filter(isGitLabProject).find((project) => {
     const identity = project.repositoryIdentity;
     return (
@@ -168,7 +106,7 @@ export function findProjectOnChangeRequestHost(
   });
 }
 
-export function shouldOpenPullRequestExternally(
+function shouldOpenPullRequestExternally(
   event: Pick<MouseEvent<HTMLElement>, "metaKey" | "ctrlKey"> &
     Partial<Pick<MouseEvent<HTMLElement>, "button">>,
 ): boolean {
@@ -199,8 +137,8 @@ export function useOpenChangeRequestLink(
     const allProjects = readProjects();
     const resolvedThreadRef = targetThreadRef ?? threadRef;
     const resolvedPanelRef = panelRef ?? resolvedThreadRef;
-    const parsed = parseChangeRequestUrl(targetUrl);
-    if (parsed === null) return false;
+    const parsed = sourceControlClients.parseChangeRequestUrl(targetUrl)?.link;
+    if (parsed === undefined) return false;
     const reads = (environmentId: string) =>
       serverConfigs.get(environmentId as EnvironmentId)?.environment.capabilities.pullRequests ===
       true;
@@ -235,7 +173,8 @@ export function useOpenChangeRequestLink(
     const repository =
       serverConfigs.get(project.environmentId)?.environment.capabilities.threadPullRequests === true
         ? parsed.repository
-        : (sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository);
+        : (sourceControlClients.repositorySelector(project.repositoryIdentity) ??
+          parsed.repository);
     event.preventDefault();
     event.stopPropagation();
     if (resolvedPanelRef) {

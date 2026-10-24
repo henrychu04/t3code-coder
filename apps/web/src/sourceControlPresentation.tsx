@@ -3,33 +3,40 @@ import type { SourceControlProviderInfo } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import type {
   ChangeRequestTerminology,
-  SourceControlClientDefinition,
+  SourceControlDefinition,
 } from "@t3tools/client-runtime/source-control-clients";
-import { GitLabIcon } from "./components/Icons";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { SourceControlIconArtwork } from "./components/SourceControlIconArtwork";
 
 export type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
 
 type SourceControlIcon = ElementType<{ className?: string }>;
 
-// Coder: GitLab is the only shipped host definition, so it is the only host with art.
-const SOURCE_CONTROL_ICONS: Partial<Record<string, SourceControlIcon>> = {
-  gitlab: GitLabIcon,
-};
+const SOURCE_CONTROL_ICONS = new WeakMap<SourceControlDefinition, SourceControlIcon>();
 
-export function sourceControlIcon(definition: SourceControlClientDefinition): SourceControlIcon {
-  return SOURCE_CONTROL_ICONS[definition.icon] ?? PullRequestGlyph.pullRequest;
+/** One component per definition, so a host's icon keeps its identity across renders. */
+export function sourceControlIcon(definition: SourceControlDefinition): SourceControlIcon {
+  const artwork = definition.icon;
+  if (artwork === null) return PullRequestGlyph.pullRequest;
+  let Icon = SOURCE_CONTROL_ICONS.get(definition);
+  if (Icon === undefined) {
+    Icon = (props: { className?: string }) => (
+      <SourceControlIconArtwork {...props} icon={artwork} />
+    );
+    SOURCE_CONTROL_ICONS.set(definition, Icon);
+  }
+  return Icon;
 }
 
 export interface SourceControlPresentation {
-  readonly definition: SourceControlClientDefinition;
+  readonly definition: SourceControlDefinition;
   readonly providerName: string;
   readonly terminology: ChangeRequestTerminology;
   readonly Icon: SourceControlIcon;
 }
 
 function presentDefinition(
-  definition: SourceControlClientDefinition,
+  definition: SourceControlDefinition,
   providerName: string,
 ): SourceControlPresentation {
   return {

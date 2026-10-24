@@ -1,4 +1,5 @@
 import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
+import type { ReferenceAutolink } from "@t3tools/client-runtime/source-control-clients";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { createContext, useContext } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
@@ -11,6 +12,8 @@ import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestMarkdown.logic";
 
 export const PullRequestMarkdownContext = createContext<{
+  autolinks: ((text: string) => ReadonlyArray<ReferenceAutolink>) | null;
+  // Coder: the repository GitLab's root-relative `/uploads/…` links resolve against.
   repositoryUrl: string | null;
   threadRef: ScopedThreadRef | null;
 } | null>(null);
@@ -18,7 +21,7 @@ export const PullRequestMarkdownContext = createContext<{
 /**
  * Upstream's change-request body renderer: recognized GitLab navigation stays internal, videos play
  * inline from their host, and other uploads open there. Relative GitLab uploads resolve against the
- * repository's host. Coder has no GitHub credential-backed media fetch.
+ * repository's host. Coder: no source control host's credentialed media fetch is carried.
  */
 export function PullRequestMarkdown({
   text,
@@ -38,11 +41,12 @@ export function PullRequestMarkdown({
   className?: string;
 }) {
   const context = useContext(PullRequestMarkdownContext);
+  const autolinks = context?.autolinks;
   const repositoryUrl = context?.repositoryUrl ?? null;
   const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
   const segments = splitPullRequestBody(text, hostUrl ?? repositoryUrl);
-  const extraRemarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = repositoryUrl
-    ? [[remarkPullRequestAutolinks, { repositoryUrl }]]
+  const extraRemarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = autolinks
+    ? [[remarkPullRequestAutolinks, { autolinks }]]
     : [];
   return (
     <div
@@ -50,6 +54,7 @@ export function PullRequestMarkdown({
         "space-y-3 [&_[data-markdown-details]]:border-0 [&_[data-markdown-details-summary]]:text-foreground/80 [&_[data-markdown-details-summary]>svg]:text-muted-foreground/60",
         className,
       )}
+      data-image-gallery
     >
       {segments.map((segment) => {
         if (segment.kind === "markdown" || segment.media === "image") {
@@ -78,6 +83,9 @@ export function PullRequestMarkdown({
           );
         }
         return (
+          // A plain anchor rather than the page's openExternal button: the desktop window
+          // turns a blocked _blank into openExternal itself, and in a browser tab — where
+          // there is no shell to call — this is the only one of the two that goes anywhere.
           <a
             key={segment.id}
             href={segment.url}

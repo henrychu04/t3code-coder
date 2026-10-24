@@ -1,12 +1,16 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Cause from "effect/Cause";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/process";
 
@@ -254,6 +258,64 @@ describe("VcsProcess.run", () => {
       }),
   );
 
+  it.effect("bounds a burst of processes that share a concurrency key", () =>
+    Effect.gen(function* () {
+      const gate = yield* Deferred.make<void>();
+      const starts = yield* Queue.unbounded<number>();
+      const active = yield* Ref.make(0);
+      const peak = yield* Ref.make(0);
+      const total = yield* Ref.make(0);
+      const service = yield* VcsProcess.make.pipe(
+        Effect.provideService(
+          ProcessRunner.ProcessRunner,
+          ProcessRunner.ProcessRunner.of({
+            run: () =>
+              Effect.gen(function* () {
+                const count = yield* Ref.updateAndGet(active, (held) => held + 1);
+                yield* Ref.update(peak, (held) => Math.max(held, count));
+                yield* Ref.update(total, (held) => held + 1);
+                yield* Queue.offer(starts, count);
+                yield* Deferred.await(gate);
+                return {
+                  stdout: "",
+                  stderr: "",
+                  code: ChildProcessSpawner.ExitCode(0),
+                  timedOut: false,
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                  stdoutInvalidUtf8: false,
+                  stderrInvalidUtf8: false,
+                };
+              }).pipe(Effect.ensuring(Ref.update(active, (count) => count - 1))),
+          }),
+        ),
+      );
+
+      const burst = yield* Effect.all(
+        Array.from({ length: 32 }, (_, index) =>
+          service.run({
+            operation: `synthetic.cli.${index}`,
+            command: "host-cli",
+            args: ["api", "user"],
+            cwd: "/workspace",
+            concurrency: { key: "host-cli", limit: 4 },
+          }),
+        ),
+        { concurrency: "unbounded" },
+      ).pipe(Effect.forkChild);
+
+      yield* Effect.all(Array.from({ length: 4 }, () => Queue.take(starts)));
+      yield* Effect.yieldNow;
+      expect(yield* Queue.size(starts)).toBe(0);
+      expect(yield* Ref.get(peak)).toBe(4);
+
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(burst);
+      expect(yield* Ref.get(total)).toBe(32);
+      expect(yield* Ref.get(peak)).toBe(4);
+    }),
+  );
+
   it.effect("keeps git from opening a folder laid out as a bare repository", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -327,6 +389,30 @@ describe("VcsProcess.run", () => {
       });
       expect(error.message).not.toContain(providerStderr);
       expect(error.message).not.toContain("secret-value");
+    }).pipe(provideLive),
+  );
+
+  it.effect("reads a failure with the command's own classifier and names it in its terms", () =>
+    Effect.gen(function* () {
+      const fail = (input: Partial<VcsProcess.VcsProcessInput>) =>
+        run({
+          operation: "test.classify",
+          command: "node",
+          args: ["-e", "process.stderr.write('HTTP 404: 404 Not Found'); process.exit(1)"],
+          cwd: process.cwd(),
+          ...input,
+        }).pipe(Effect.flip);
+
+      expect(yield* fail({})).toMatchObject({
+        failureKind: "command-failed",
+        detail: "Process exited with a non-zero status.",
+      });
+      expect(
+        yield* fail({
+          classifyFailure: (stderr) => (stderr.includes("404") ? "not-found" : null),
+          notFoundDetail: "Merge request not found.",
+        }),
+      ).toMatchObject({ failureKind: "not-found", detail: "Merge request not found." });
     }).pipe(provideLive),
   );
 

@@ -19,6 +19,7 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import type { PullRequestProviderApi } from "@t3tools/source-control-core/server/PullRequestProvider";
+import type { SourceControlProvider } from "@t3tools/source-control-core/server/SourceControlProvider";
 import { PullRequestProviderRegistry, fromProviders } from "./PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./PullRequestService.ts";
 
@@ -143,6 +144,8 @@ const service = PullRequestService.make.pipe(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
         resolveLink: () => undefined,
         resolveHandle: () => Effect.die("Unexpected provider refinement"),
+        // GitLab names no SSH-alias web host, as upstream's harness answers for most hosts.
+        get: () => Effect.succeed({} as SourceControlProvider["Service"]),
       }),
       Layer.mock(ProjectService.ProjectService)({
         listShells: (options) =>

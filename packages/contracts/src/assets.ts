@@ -43,7 +43,9 @@ export const AssetResource = Schema.Union([
     // project projection before it issues the signed URL.
     path: Schema.optional(ProjectFaviconPath),
   }),
-  // Coder: native app icons and GitHub-authenticated media are not carried.
+  // Coder: native app icons and source control hosts' credentialed media are not carried; GitLab's
+  // definition claims no media (`mediaUrl`), so upstream's `SOURCE_CONTROL_MEDIA_ASSET` resource
+  // and its validation error are omitted.
 ]);
 export type AssetResource = typeof AssetResource.Type;
 

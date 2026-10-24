@@ -113,13 +113,8 @@ it.effect(
           'https://github.com/acme/web/pull/7', 'manual', ${createdAt})
       `;
 
-      expect(
-        (yield* listLinkedPullRequestThreads({
-          host: "org.visualstudio.com",
-          repository: "project/_git/web",
-          number: 7,
-        })).threads.map((thread) => thread.id),
-      ).toEqual(["azure"]);
+      // Coder: upstream also looks up an Azure DevOps alias here; its canonical key lives in the
+      // uncarried Azure DevOps definition.
       const result = yield* listLinkedPullRequestThreads({
         host: "GitHub.Com",
         repository: "ACME/WEB",

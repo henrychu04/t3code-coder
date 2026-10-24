@@ -1,11 +1,4 @@
-// Coder: upstream's registry tests for the GitLab-only registry; the other hosts' mocks and
-// routing cases are not carried.
-import {
-  DEFAULT_SERVER_SETTINGS,
-  SourceControlProviderKind,
-  VcsProcessSpawnError,
-  VcsProcessTimeoutError,
-} from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
@@ -16,35 +9,78 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { ChildProcessSpawner } from "effect/process";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  VcsProcessSpawnError,
+  VcsProcessTimeoutError,
+} from "@t3tools/contracts";
+import type {
+  SourceControlCliDiscoverySpec,
+  SourceControlManagedCliDiscoverySpec,
+  SourceControlProviderDiscoverySpec,
+} from "@t3tools/source-control-core/server/discovery";
+import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import { fakeSourceControlProvider } from "@t3tools/source-control-testing/fakeSourceControlDriver";
+import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import type * as VcsDriver from "../vcs/VcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
-import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
-import * as GitLabPullRequestCli from "@t3tools/source-control-gitlab/server/GitLabPullRequestCli";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
-import * as ServerSourceControlHost from "./ServerSourceControlHost.ts";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
+const kind = SourceControlProviderKind.make;
 
-const processOutput = (
-  stdout: string,
-  options?: {
-    readonly stderr?: string;
-    readonly exitCode?: ChildProcessSpawner.ExitCode;
-  },
-): VcsProcess.VcsProcessOutput => ({
-  exitCode: options?.exitCode ?? ChildProcessSpawner.ExitCode(0),
-  stdout,
-  stderr: options?.stderr ?? "",
-  stdoutTruncated: false,
-  stderrTruncated: false,
+class NotAnswered extends Schema.TaggedError<NotAnswered>()("NotAnswered", {}) {}
+
+const linkSubject = (host: string) => () =>
+  Effect.succeed({ title: `${host} subject`, body: null });
+
+/** Only GitHub and GitLab read linked subjects, as in production. */
+const PROVIDERS = [
+  fakeSourceControlProvider("github", { resolveLink: linkSubject("github") }),
+  fakeSourceControlProvider("gitlab", { resolveLink: linkSubject("gitlab") }),
+  fakeSourceControlProvider("forgejo"),
+  fakeSourceControlProvider("bitbucket"),
+  fakeSourceControlProvider("azure-devops"),
+];
+
+/** A host CLI that claims every server it is signed in to, as `glab` does. */
+const claimingCli = (claims: string): SourceControlCliDiscoverySpec => ({
+  type: "cli",
+  kind: kind(claims),
+  label: claims,
+  installHint: `Install ${claims}.`,
+  executable: `${claims}-cli`,
+  versionArgs: ["--version"],
+  authArgs: ["auth", "status"],
+  remoteRefinementArgs: ({ provider }) => ["auth", "status", "--hostname", provider.name],
+  parseAuth: () => ({
+    status: "unknown",
+    account: Option.none(),
+    host: Option.none(),
+    detail: Option.none(),
+  }),
+  refineUnknownRemote: ({ context, auth }) =>
+    auth.stdout.includes(`Logged in to ${context.provider.name}`)
+      ? { kind: kind(claims), name: `${claims} Self-Hosted`, baseUrl: context.provider.baseUrl }
+      : null,
+});
+
+const managedCli = (
+  claims: string,
+  refine: SourceControlManagedCliDiscoverySpec["refineUnknownRemote"],
+): SourceControlManagedCliDiscoverySpec => ({
+  type: "managed-cli",
+  kind: kind(claims),
+  label: claims,
+  installHint: `Install ${claims}.`,
+  probe: () => Effect.die("unused"),
+  refineUnknownRemote: refine,
 });
 
 function makeRegistry(input: {
@@ -52,7 +88,8 @@ function makeRegistry(input: {
     readonly name: string;
     readonly url: string;
   }>;
-  readonly process?: Partial<VcsProcess.VcsProcess["Service"]>;
+  readonly discovery?: ReadonlyArray<SourceControlProviderDiscoverySpec>;
+  readonly run?: SourceControlHost.SourceControlHost["Service"]["process"]["run"];
   readonly settings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
 }) {
   const driver = {
@@ -71,52 +108,47 @@ function makeRegistry(input: {
       }),
   } satisfies Partial<VcsDriver.VcsDriver["Service"]>;
 
-  const layerRegistry = Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-    get: () => Effect.succeed(driver as unknown as VcsDriver.VcsDriver["Service"]),
-    resolve: () =>
-      Effect.succeed({
-        kind: "git",
-        repository: {
-          kind: "git",
-          rootPath: "/repo",
-          metadataPath: null,
-          freshness: {
-            source: "live-local" as const,
-            observedAt: TEST_EPOCH,
-            expiresAt: Option.none(),
-          },
-        },
-        driver: driver as unknown as VcsDriver.VcsDriver["Service"],
-      }),
-  });
-
-  const layerProcess = Layer.mock(VcsProcess.VcsProcess)({
-    run: () => Effect.succeed(processOutput("")),
-    ...input.process,
-  });
-
-  return SourceControlProviderRegistry.make.pipe(
+  const discovery = input.discovery ?? [claimingCli("gitlab")];
+  return SourceControlProviderRegistry.makeWithProviders(
+    PROVIDERS.map((provider) => ({
+      kind: provider.kind,
+      provider,
+      discovery: discovery.find((spec) => spec.kind === provider.kind) ?? {
+        type: "api",
+        kind: provider.kind,
+        label: provider.kind,
+        installHint: "unused",
+        probeAuth: Effect.die("unused"),
+      },
+    })),
+  ).pipe(
     Effect.provide(
       Layer.mergeAll(
-        NodeServices.layer,
-        layerRegistry,
-        layerProcess,
-        ServerSourceControlHost.layer.pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              layerProcess,
-              layerRegistry,
-              ServerSettings.ServerSettingsService.layerTest(),
-              Layer.mock(GitVcsDriver.GitVcsDriver)({}),
-            ),
-          ),
-        ),
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+          resolve: () =>
+            Effect.succeed({
+              kind: "git",
+              repository: {
+                kind: "git",
+                rootPath: "/repo",
+                metadataPath: null,
+                freshness: {
+                  source: "live-local" as const,
+                  observedAt: TEST_EPOCH,
+                  expiresAt: Option.none(),
+                },
+              },
+              driver: driver as unknown as VcsDriver.VcsDriver["Service"],
+            }),
+        }),
+        TestSourceControlHost.layer({
+          process: {
+            run: input.run ?? (() => Effect.succeed(TestSourceControlHost.processOutput(""))),
+          },
+        }),
         input.settings
           ? Layer.mock(ServerSettings.ServerSettingsService)(input.settings)
           : ServerSettings.ServerSettingsService.layerTest(),
-        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
-        Layer.mock(GitLabCli.GitLabCli)({}),
-        Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
         ServerConfig.layerTest(process.cwd(), {
           prefix: "t3-source-control-registry-test-",
         }).pipe(Layer.provide(NodeServices.layer)),
@@ -125,16 +157,148 @@ function makeRegistry(input: {
   );
 }
 
-it.effect("detects the GitLab provider when resolve is called without explicit context", () =>
+const signedIn = (host: string) => () =>
+  Effect.succeed(TestSourceControlHost.processOutput(`  ✓ Logged in to ${host} as user\n`));
+
+it.effect("routes an unknown remote to the integration that claims its server", () =>
   Effect.gen(function* () {
+    const asked: Array<string> = [];
     const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "git@gitlab.com:group/project.git" }],
+      remotes: [{ name: "origin", url: "git@self-hosted.example.test:group/project.git" }],
+      run: (input) => {
+        asked.push([input.command, ...input.args].join(" "));
+        return signedIn("self-hosted.example.test")();
+      },
     });
+
     const handle = yield* registry.resolveHandle({ cwd: "/repo" });
 
     assert.strictEqual(handle.provider.kind, "gitlab");
-    assert.strictEqual(handle.context?.remoteName, "origin");
-    assert.strictEqual(handle.context?.remoteUrl, "git@gitlab.com:group/project.git");
+    assert.deepStrictEqual(handle.context?.provider, {
+      kind: kind("gitlab"),
+      name: "gitlab Self-Hosted",
+      baseUrl: "https://self-hosted.example.test",
+    });
+    assert.deepStrictEqual(asked, ["gitlab-cli auth status --hostname self-hosted.example.test"]);
+  }),
+);
+
+it.effect("leaves a remote no integration claims unknown, with its server's address", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@code.example.test:team/project.git" }],
+    });
+    const handle = yield* registry.resolveHandle({ cwd: "/repo" });
+    assert.strictEqual(handle.provider.kind, kind("unknown"));
+    assert.strictEqual(handle.context?.provider.baseUrl, "https://code.example.test");
+  }),
+);
+
+it.effect("refines the caller-selected remote instead of choosing another configured remote", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@github.com:fork/project.git" }],
+      run: signedIn("self-hosted.example.test"),
+    });
+
+    const handle = yield* registry.resolveHandle({
+      cwd: "/repo",
+      context: {
+        provider: {
+          kind: kind("unknown"),
+          name: "self-hosted.example.test",
+          baseUrl: "https://self-hosted.example.test",
+        },
+        remoteName: "upstream",
+        remoteUrl: "https://self-hosted.example.test/group/project.git",
+      },
+    });
+
+    assert.strictEqual(handle.context?.provider.kind, "gitlab");
+    assert.strictEqual(handle.context?.remoteName, "upstream");
+  }),
+);
+
+it.effect("falls back to a non-origin remote when origin is not configured", () =>
+  Effect.gen(function* () {
+    // Coder: a GitLab remote, since GitLab is the only host definition.
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "upstream", url: "https://gitlab.com/acme/project.git" }],
+    });
+
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+
+    assert.strictEqual(provider.kind, "gitlab");
+  }),
+);
+
+it.effect(
+  "routes linked subjects to the host that serves them, independently of the checkout",
+  () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        remotes: [{ name: "origin", url: "https://github.com/unrelated/checkout.git" }],
+      });
+      // Coder: GitLab is the only host definition, so a GitHub URL is no host's link.
+      for (const [url, host] of [
+        ["https://gitlab.com/team/sub/project/-/merge_requests/2", "gitlab"],
+      ] as const) {
+        const lookup = registry.resolveLink({ cwd: "/unrelated", url: new URL(url) });
+        assert.ok(lookup);
+        assert.deepStrictEqual(yield* lookup, { title: `${host} subject`, body: null });
+      }
+      for (const url of [
+        "https://github.com/team/project/issues/1",
+        "https://example.test/team/project/issues/1",
+        "https://codeberg.org/team/project/issues/1",
+        "https://bitbucket.org/team/project/pull-requests/1",
+        "https://dev.azure.com/org/project/_git/repo/pullrequest/1",
+        "http://github.com/team/project/issues/1",
+        "https://user:secret@github.com/team/project/issues/1",
+      ]) {
+        assert.strictEqual(
+          registry.resolveLink({ cwd: "/unrelated", url: new URL(url) }),
+          undefined,
+          url,
+        );
+      }
+    }).pipe(Effect.scoped),
+);
+
+it.effect("does not refine a context whose server address is empty", () =>
+  Effect.gen(function* () {
+    let asked = 0;
+    const remoteUrl = "git@githubenterprise.dev.example.com:team/workspace.git";
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: remoteUrl }],
+      discovery: [
+        managedCli("github", ({ context }) => {
+          asked += 1;
+          return Effect.succeed(
+            context.provider.baseUrl === ""
+              ? null
+              : { kind: kind("github"), name: "GitHub", baseUrl: context.provider.baseUrl },
+          );
+        }),
+      ],
+    });
+    const context = {
+      provider: { kind: kind("unknown"), name: "Unknown", baseUrl: "" },
+      remoteName: "origin",
+      remoteUrl,
+    };
+    assert.deepStrictEqual(
+      (yield* registry.resolveHandle({ cwd: "/repo", context })).context,
+      context,
+    );
+
+    const resolved = yield* registry.resolveHandle({ cwd: "/repo" });
+    assert.strictEqual(resolved.provider.kind, "github");
+    assert.strictEqual(
+      resolved.context?.provider.baseUrl,
+      "https://githubenterprise.dev.example.com",
+    );
+    assert.strictEqual(asked, 2);
   }),
 );
 
@@ -154,7 +318,7 @@ const resolveUnknown = (
     cwd: `/${repository}`,
     context: {
       provider: {
-        kind: SourceControlProviderKind.make("unknown"),
+        kind: kind("unknown"),
         name: "git.example.internal",
         baseUrl: "https://git.example.internal",
       },
@@ -169,11 +333,16 @@ it.effect("asks once for every checkout of a server no integration claims", () =
     const release = yield* Deferred.make<void>();
     const registry = yield* makeRegistry({
       remotes: [],
-      process: {
-        run: ({ command, args, cwd }) => {
-          asked.push([command, ...args].join(" "));
-          return Deferred.await(release).pipe(Effect.andThen(Effect.fail(notFound(command, cwd))));
-        },
+      discovery: [
+        claimingCli("gitlab"),
+        managedCli("github", ({ context }) => {
+          asked.push(`managed ${context.provider.name}`);
+          return Effect.succeed(null);
+        }),
+      ],
+      run: ({ command, args, cwd }) => {
+        asked.push([command, ...args].join(" "));
+        return Deferred.await(release).pipe(Effect.andThen(Effect.fail(notFound(command, cwd))));
       },
     });
 
@@ -195,7 +364,10 @@ it.effect("asks once for every checkout of a server no integration claims", () =
       ["unknown", "unknown", "unknown"],
     );
     const once = asked.slice();
-    assert.deepStrictEqual(once, ["glab auth status --hostname Git.Example.Internal"]);
+    assert.sameMembers(once, [
+      "managed git.example.internal",
+      "gitlab-cli auth status --hostname git.example.internal",
+    ]);
 
     yield* TestClock.adjust("5 minutes");
     yield* resolveUnknown(registry, "a");
@@ -206,20 +378,27 @@ it.effect("asks once for every checkout of a server no integration claims", () =
 it.effect("asks again after a check that could not answer", () =>
   Effect.gen(function* () {
     let asks = 0;
+    let managedAsks = 0;
     const registry = yield* makeRegistry({
       remotes: [],
-      process: {
-        run: ({ command, cwd }) => {
-          asks += 1;
-          return Effect.fail(
-            new VcsProcessTimeoutError({ operation: "test", command, cwd, timeoutMs: 1 }),
-          );
-        },
+      discovery: [
+        claimingCli("gitlab"),
+        managedCli("github", () => {
+          managedAsks += 1;
+          return Effect.fail(new NotAnswered());
+        }),
+      ],
+      run: ({ command, cwd }) => {
+        asks += 1;
+        return Effect.fail(
+          new VcsProcessTimeoutError({ operation: "test", command, cwd, timeoutMs: 1 }),
+        );
       },
     });
     yield* resolveUnknown(registry, "a");
     yield* resolveUnknown(registry, "b");
     assert.strictEqual(asks, 2);
+    assert.strictEqual(managedAsks, 2);
   }),
 );
 
@@ -227,7 +406,7 @@ it.effect("asks again once Settings change", () =>
   Effect.gen(function* () {
     const changes = yield* PubSub.unbounded<typeof DEFAULT_SERVER_SETTINGS>();
     const handled = yield* Deferred.make<void>();
-    let signedIn = false;
+    let claims = false;
     const registry = yield* makeRegistry({
       remotes: [],
       settings: {
@@ -244,26 +423,22 @@ it.effect("asks again once Settings change", () =>
           ),
         ),
       },
-      process: {
-        run: ({ command, cwd }) =>
-          signedIn
-            ? Effect.succeed(
-                processOutput(
-                  `git.example.internal
-  ✓ Logged in to git.example.internal as gitlab-user
-`,
-                ),
-              )
-            : Effect.fail(notFound(command, cwd)),
-      },
+      discovery: [
+        managedCli("github", ({ context }) =>
+          Effect.succeed(
+            claims
+              ? { kind: kind("github"), name: "GitHub", baseUrl: context.provider.baseUrl }
+              : null,
+          ),
+        ),
+      ],
     });
     assert.strictEqual((yield* resolveUnknown(registry, "a")).provider.kind, "unknown");
-    signedIn = true;
+    claims = true;
     assert.strictEqual((yield* resolveUnknown(registry, "b")).provider.kind, "unknown");
 
-    // A host toggled in Settings.
     yield* PubSub.publish(changes, DEFAULT_SERVER_SETTINGS);
     yield* Deferred.await(handled);
-    assert.strictEqual((yield* resolveUnknown(registry, "c")).provider.kind, "gitlab");
+    assert.strictEqual((yield* resolveUnknown(registry, "c")).provider.kind, "github");
   }),
 );

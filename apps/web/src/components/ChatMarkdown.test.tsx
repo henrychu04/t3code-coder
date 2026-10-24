@@ -8,7 +8,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
-import { GitHubIcon } from "./Icons";
+import { SourceControlIconArtwork } from "./SourceControlIconArtwork";
 import { Button } from "./ui/button";
 import { setMarkdownTaskChecked } from "./files/filePreviewMode";
 
@@ -255,11 +255,12 @@ describe("ChatMarkdown favicon privacy", () => {
         renderer!.update(markdown("https://example.com"));
       });
       expect(renderer!.root.findAllByType("img")).toHaveLength(1);
+      // Coder: GitLab is the only shipped host, so its links carry the host's own mark.
       await act(async () => {
-        renderer!.update(markdown("https://github.com/pingdotgg/t3code/pull/1"));
+        renderer!.update(markdown("https://gitlab.com/pingdotgg/t3code/-/merge_requests/1"));
       });
       expect(renderer!.root.findAllByType("img")).toHaveLength(0);
-      expect(renderer!.root.findAllByType(GitHubIcon)).toHaveLength(1);
+      expect(renderer!.root.findAllByType(SourceControlIconArtwork)).toHaveLength(1);
     } finally {
       await act(async () => {
         renderer?.unmount();
@@ -1118,7 +1119,7 @@ describe("ChatMarkdown Coder seams", () => {
         cwd={undefined}
         parseRawHtml
         text={
-          '<a href="https://gitlab.com/g/p/-/merge_requests/7" data-pull-request-autolink="merge-request">!7</a>'
+          '<a href="https://gitlab.com/g/p/-/merge_requests/7" data-pull-request-autolink="reference">!7</a>'
         }
       />,
     );

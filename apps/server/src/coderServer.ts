@@ -22,7 +22,6 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as Keybindings from "./keybindings.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Sqlite.ts";
-import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
@@ -55,6 +54,7 @@ import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ProviderRuntimeRecovery from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
+import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -220,6 +220,9 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   Layer.provideMerge(CoderProviderInstancesLive),
   Layer.provideMerge(ModelManifest.layerBundled),
   Layer.provideMerge(SqlitePersistenceLayerLive),
+  // As upstream's runtime: every source control driver is built with an HTTP client, though
+  // GitLab's reads go through `glab`.
+  Layer.provideMerge(FetchHttpClient.layer),
 );
 
 // Coder: workspace startup completes before the RPC layer is built, replacing upstream's

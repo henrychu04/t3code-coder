@@ -20,6 +20,7 @@ import {
   VcsProcessTimeoutError,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import type { SourceControlProcessInput } from "@t3tools/source-control-core/server/SourceControlHost";
 
 import * as ProcessRunner from "../processRunner.ts";
 
@@ -37,6 +38,9 @@ export interface VcsProcessInput {
   readonly maxOutputBytes?: number;
   readonly outputMode?: ProcessRunner.ProcessRunInput["outputMode"];
   readonly appendTruncationMarker?: boolean;
+  readonly classifyFailure?: SourceControlProcessInput["classifyFailure"];
+  readonly notFoundDetail?: string;
+  readonly concurrency?: SourceControlProcessInput["concurrency"];
 }
 
 export interface VcsProcessOutput {
@@ -60,7 +64,6 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const VCS_PROCESS_CONCURRENCY = 8;
-// Coder: GitLab-only source control does not allocate a GitHub CLI semaphore.
 
 /** Shown to users when a Git command fails because another process holds the index lock. */
 export const GIT_INDEX_LOCKED_DETAIL =
@@ -110,20 +113,23 @@ export const gitConfigEnv = (
  * Git otherwise opens any folder holding `HEAD`, `objects/` and `refs/` as a
  * bare repository and applies its `config`, including commands such as
  * `core.fsmonitor`. Files saved in a project or checked out from a clone can
- * form one, so git started by T3 (or by gh and friends) only opens a bare
+ * form one, so git started by T3 (or by a host CLI) only opens a bare
  * repository named with `--git-dir` or `GIT_DIR`. Git before 2.38 ignores it.
  */
 export const explicitBareRepositoryEnv = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
   gitConfigEnv(env, "safe.bareRepository", "explicit", platform);
 
-// Coder: hosted CLI authentication/not-found classification is GitLab-only.
-const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
+const classifyNonZeroExit = (
+  stderr: string,
+  classifyFailure: VcsProcessInput["classifyFailure"],
+): VcsProcessExitFailureKind => {
   const normalized = stderr.toLowerCase();
+  const commandKind = classifyFailure?.(stderr) ?? null;
 
   if (
+    commandKind === "authentication" ||
     normalized.includes("authentication failed") ||
     normalized.includes("not logged in") ||
-    normalized.includes("glab auth login") ||
     normalized.includes("no oauth token") ||
     normalized.includes("unauthorized")
   ) {
@@ -131,6 +137,7 @@ const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFai
   }
 
   if (
+    commandKind === "rate-limited" ||
     normalized.includes("api rate limit") ||
     normalized.includes("rate limit exceeded") ||
     normalized.includes("secondary rate limit") ||
@@ -140,16 +147,7 @@ const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFai
     return "rate-limited";
   }
 
-  if (
-    command === "glab" &&
-    (normalized.includes("merge request not found") ||
-      normalized.includes("not found") ||
-      normalized.includes("404"))
-  ) {
-    return "not-found";
-  }
-
-  return "command-failed";
+  return commandKind ?? "command-failed";
 };
 
 // Classify before discarding stderr; keep paths and process output out of errors.
@@ -172,6 +170,15 @@ export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const hostPlatform = yield* HostProcess.Platform;
   const vcsProcesses = yield* Semaphore.make(VCS_PROCESS_CONCURRENCY);
+  const keyedProcesses = new Map<string, Semaphore.Semaphore>();
+  const keyedPermit = (concurrency: NonNullable<VcsProcessInput["concurrency"]>) => {
+    let semaphore = keyedProcesses.get(concurrency.key);
+    if (semaphore === undefined) {
+      semaphore = Semaphore.makeUnsafe(concurrency.limit);
+      keyedProcesses.set(concurrency.key, semaphore);
+    }
+    return semaphore.withPermits(1);
+  };
 
   const spawn = Effect.fn("VcsProcess.spawn")(function* (
     input: VcsProcessInput,
@@ -263,7 +270,7 @@ export const make = Effect.gen(function* () {
     }
 
     if (!input.allowNonZeroExit && result.code !== 0) {
-      const failureKind = classifyNonZeroExit(input.command, result.stderr);
+      const failureKind = classifyNonZeroExit(result.stderr, input.classifyFailure);
       const error = VcsProcessExitError.fromProcessExit(
         baseError,
         {
@@ -272,9 +279,13 @@ export const make = Effect.gen(function* () {
           stderrTruncated: result.stderrTruncated,
         },
         failureKind,
-        input.command === "git" &&
-          failureKind === "command-failed" &&
-          isTransientGitExit(result.stderr),
+        {
+          retryable:
+            input.command === "git" &&
+            failureKind === "command-failed" &&
+            isTransientGitExit(result.stderr),
+          ...(input.notFoundDetail === undefined ? {} : { notFoundDetail: input.notFoundDetail }),
+        },
       );
       if (
         input.command === "git" &&
@@ -322,8 +333,9 @@ export const make = Effect.gen(function* () {
         }),
       );
     }
-    // Coder: all supported VCS processes use only the general semaphore.
-    return yield* bounded;
+    return yield* input.concurrency === undefined
+      ? bounded
+      : keyedPermit(input.concurrency)(bounded);
   });
 
   return VcsProcess.of({ run });

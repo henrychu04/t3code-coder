@@ -20,6 +20,8 @@ import { buildMessageContext, reviewCommentContextReference } from "~/lib/compos
 
 import {
   buildAddSelectionToAgentHandoff,
+  buildExplainPullRequestHandoff,
+  buildResolveConflictsPrompt,
   resolveThreadPanelPullRequestAction,
   buildPullRequestReferenceContext,
   buildFixFindingHandoff,
@@ -53,6 +55,7 @@ import {
   resolveBaseFreshness,
   buildPullRequestTimeline,
   writePullRequestDetailSnapshot,
+  readableFailure,
 } from "./pullRequestDetail.logic";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 
@@ -63,17 +66,14 @@ describe("pull request checkout commands", () => {
     repository: "acme/web",
     number: 42,
   });
-  const identity = (
-    provider: NonNullable<RepositoryIdentity["provider"]>,
-    canonicalKey: string,
-  ): RepositoryIdentity => ({
+  const identity = (provider: string, canonicalKey: string): RepositoryIdentity => ({
     canonicalKey,
     locator: {
       source: "git-remote",
       remoteName: "origin",
       remoteUrl: "git@github.com:acme/web.git",
     },
-    provider,
+    provider: SourceControlProviderKind.make(provider),
   });
 
   it("uses a matching self-hosted identity and rejects an explicit host mismatch", () => {
@@ -99,8 +99,9 @@ describe("pull request checkout commands", () => {
 
 const TIMELINE_SOURCE: Pick<
   PullRequestDetailView,
-  "createdAt" | "author" | "commits" | "comments" | "mergedAt" | "closedAt"
+  "provider" | "createdAt" | "author" | "commits" | "comments" | "mergedAt" | "closedAt"
 > = {
+  provider: SourceControlProviderKind.make("github"),
   createdAt: "2026-07-01T00:00:00Z",
   author: { login: "octocat", name: null, avatarUrl: null },
   commits: [
@@ -330,6 +331,19 @@ describe("pull request timeline", () => {
     });
     expect(events[0]?.id).toBe("merged");
     expect(events.some((event) => event.id === "closed")).toBe(false);
+  });
+
+  it("names the change request in its host's own term", () => {
+    const titles = (provider: string) =>
+      buildPullRequestTimeline({
+        ...TIMELINE_SOURCE,
+        provider: SourceControlProviderKind.make(provider),
+        closedAt: "2026-07-04T00:00:00Z",
+      })
+        .filter((event) => event.kind === "opened" || event.kind === "closed")
+        .map((event) => event.title);
+    // Coder: GitLab is the only shipped host, so only its term is checked.
+    expect(titles("gitlab")).toEqual(["Merge request closed", "opened this merge request"]);
   });
 
   it("groups conversation sections without crossing commits or PR updates", () => {
@@ -641,6 +655,21 @@ describe("fix findings handoff", () => {
     expect(handoff.prompt).toContain("typecheck");
     expect(handoff.prompt).toContain("6 further findings were omitted");
   });
+
+  it("names a GitLab merge request as one", () => {
+    const handoff = buildFixFindingsHandoff({
+      ...base,
+      title: "Add the page",
+      url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
+      reviewThreads: [],
+      checks: [],
+    });
+    // Coder: GitLab references merge requests as `!123`.
+    expect(handoff.prompt).toContain("Fix the actionable findings on MR !42");
+    expect(handoff.prompt).toContain("The MR branch is `feat/page`");
+    expect(handoff.prompt).toContain("inspect the merge request and its failing checks");
+    expect(handoff.prompt).not.toMatch(/\bPR\b|pull request/u);
+  });
 });
 
 describe("findings that cannot be attached", () => {
@@ -828,6 +857,24 @@ describe("asking about a change rather than working on it", () => {
     ]);
     expect(handoff.reviewComments[0]?.text).not.toContain("Do not change any code");
     expect(handoff.reviewComments[1]?.text).toBe("");
+  });
+
+  it("explains a GitLab merge request in its own term", () => {
+    const handoff = buildExplainPullRequestHandoff({
+      ...base,
+      title: "Add the page",
+      url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
+    });
+    expect(handoff.prompt).toBe("Explain this merge request.");
+    // Coder: GitLab references merge requests as `!123`.
+    expect(handoff.reviewComments[0]?.text).toContain("The merge request is !42");
+    expect(handoff.reviewComments[0]?.text).not.toContain("pull request");
+    expect(
+      buildResolveConflictsPrompt({
+        ...base,
+        url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
+      }),
+    ).toMatch(/^MR !42 /u);
   });
 });
 
@@ -1233,6 +1280,13 @@ describe("cached pull request detail", () => {
       mergeCapabilities: { merge: true, squash: true, rebase: true },
       ...overrides,
     }) as PullRequestDetail;
+  // Coder: a merge request on GitLab, the only shipped host.
+  const gitLabDetail = (overrides: Partial<PullRequestDetail> = {}) =>
+    detail({
+      provider: SourceControlProviderKind.make("gitlab"),
+      url: "https://gitlab.com/acme/web/-/merge_requests/7",
+      ...overrides,
+    });
 
   it("uses fresh checks for detail counts without replacing other PR fields", () => {
     const pending = (name: string): PullRequestCheck => ({
@@ -1346,21 +1400,23 @@ describe("cached pull request detail", () => {
     expect(resolvePullRequestReferenceHost(explicit, identity)).toBe(explicit);
   });
 
+  // Coder: GitLab, the only shipped host, stands in for upstream's GitHub URLs.
   it("hydrates legacy hostless snapshots only for the matching host", () => {
     const storage = makeStorage();
-    writePullRequestDetailSnapshot(storage, "env-1", reference, detail());
+    writePullRequestDetailSnapshot(storage, "env-1", reference, gitLabDetail());
     expect(
-      readPullRequestDetailSnapshot(storage, "env-1", { ...reference, host: "github.com" })?.title,
+      readPullRequestDetailSnapshot(storage, "env-1", { ...reference, host: "gitlab.com" })?.title,
     ).toBe("Cache the title");
     expect(
       readPullRequestDetailSnapshot(storage, "env-1", {
         ...reference,
-        host: "github.example.com",
+        host: "gitlab.example.com",
       }),
     ).toBeNull();
   });
 
-  it.each(["github", "gitlab"] as const)(
+  // Coder: GitLab is the only shipped host.
+  it.each(["gitlab"] as const)(
     "retains portless %s snapshot identities for custom web ports",
     (providerName) => {
       const provider = SourceControlProviderKind.make(providerName);
@@ -1387,14 +1443,15 @@ describe("cached pull request detail", () => {
     expect(readPullRequestDetailSnapshot(makeStorage(), "env-2", reference)).toBeNull();
   });
 
+  // Coder: GitLab and a self-hosted GitLab stand in for upstream's GitHub and GitHub Enterprise.
   it("isolates stored and displayed details between hosts with the same repository and number", () => {
     const storage = makeStorage();
-    const publicRef = { ...reference, host: "github.com" };
-    const enterpriseRef = { ...reference, host: "ghe.example.com" };
-    const publicDetail = detail();
-    const enterpriseDetail = detail({
+    const publicRef = { ...reference, host: "gitlab.com" };
+    const enterpriseRef = { ...reference, host: "gitlab.example.com" };
+    const publicDetail = gitLabDetail();
+    const enterpriseDetail = gitLabDetail({
       title: "Enterprise change",
-      url: "https://ghe.example.com/acme/web/pull/7",
+      url: "https://gitlab.example.com/acme/web/-/merge_requests/7",
     });
     writePullRequestDetailSnapshot(storage, "env-1", publicRef, publicDetail);
     expect(readPullRequestDetailSnapshot(storage, "env-1", enterpriseRef)).toBeNull();
@@ -1451,4 +1508,16 @@ describe("single-PR merge compatibility during stack discovery", () => {
       ).toBe(allowed);
     },
   );
+});
+
+describe("readableFailure", () => {
+  it("replaces a host tool's bare failure with the hint, for every host", () => {
+    // Coder: GitLab is the only shipped host, so its tool's bare failure is the one replaced.
+    for (const message of ["GitLab CLI failed.", "GitLab API failed", "GitLab command failed"]) {
+      expect(readableFailure(new Error(message), "Try again.")).toBe("Try again.");
+    }
+    expect(readableFailure(new Error("Branch is protected."), "Try again.")).toBe(
+      "Branch is protected.",
+    );
+  });
 });
