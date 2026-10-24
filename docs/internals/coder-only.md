@@ -993,7 +993,8 @@ listed here is drift to remove rather than fork behavior to keep.
     renames a thread's worktree folder together with its branch, and `refStatusLocal`, a
     branch read that never refreshes the real index. Review file expansion allows up to
     `MAX_REVIEW_DIFF_FILE_BYTES` and fails with `ReviewDiffFileTooLargeError` for the chunked
-    review RPCs, rejecting malformed UTF-8. A top-level review `sourceKind` returns only that
+    review RPCs, rejecting malformed UTF-8; `GitVcsDriverCore.test.ts`'s split-output test
+    expects that field, with a branded exit code so the comparison typechecks. A top-level review `sourceKind` returns only that
     source. Worktree creation reads `t3.json` through the bounded `readProjectConfig`.
     Checkpoint commits use the "T3 Coder" identity.
   - `VcsProcess` has no GitHub CLI semaphore, records no Git command metrics, and classifies only
