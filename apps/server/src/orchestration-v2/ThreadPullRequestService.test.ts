@@ -142,9 +142,8 @@ describe("ThreadPullRequestServiceV2 reads", () => {
                 name: "project",
               }),
           }),
-          // No client holds an activity lease.
+          // No client holds an activity lease. Coder: the fork's policy has no demand query.
           Layer.mock(BackgroundPolicy.BackgroundPolicy)({
-            hasDemand: () => Effect.succeed(false),
             shouldRunScopeWork: () => Effect.succeed(false),
             shouldRunOpportunisticWork: Effect.succeed(false),
           }),

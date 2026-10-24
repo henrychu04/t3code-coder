@@ -1,5 +1,6 @@
 // Coder: VCS polling is already scoped to browser subscription demand. With no
-// client activity leases or host power monitor, scope work is always allowed.
+// client activity leases or host power monitor, scope and opportunistic work are
+// always allowed; the workspace server runs only while the gateway holds its helper.
 import type { BackgroundScope } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -9,9 +10,11 @@ export class BackgroundPolicy extends Context.Service<
   BackgroundPolicy,
   {
     readonly shouldRunScopeWork: (scope: BackgroundScope) => Effect.Effect<boolean>;
+    readonly shouldRunOpportunisticWork: Effect.Effect<boolean>;
   }
 >()("t3/background/BackgroundPolicy") {}
 
 export const layer = Layer.succeed(BackgroundPolicy, {
   shouldRunScopeWork: () => Effect.succeed(true),
+  shouldRunOpportunisticWork: Effect.succeed(true),
 });
