@@ -159,11 +159,6 @@ export function createProjectEnvironmentAtoms<R, E>(
     }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>
       optimisticFileFamily(optimisticProjectFileKey(target)),
-    listDirectories: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:workspace:list-directories",
-      tag: WS_METHODS.workspaceListDirectories,
-      staleTimeMs: 5_000,
-    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:create",
       execute: (input: CreateProjectInput) => createProject(input),

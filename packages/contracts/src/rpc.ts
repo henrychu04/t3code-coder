@@ -320,12 +320,6 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 // Coder
-import {
-  WorkspaceListDirectoriesError,
-  WorkspaceListDirectoriesInput,
-  WorkspaceListDirectoriesResult,
-} from "./project.ts";
-// Coder
 import { ProjectGetConfigInput, ProjectGetConfigResult } from "./t3ProjectFile.ts";
 // Coder
 import {
@@ -563,7 +557,6 @@ export const WS_METHODS = {
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
   // Coder: workspace-helper methods.
   projectsGetConfig: "projects.getConfig",
-  workspaceListDirectories: "workspace.listDirectories",
   coderServeAsset: "coder.serveAsset",
   coderWriteRequestBody: "coder.writeRequestBody",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
@@ -1893,12 +1886,6 @@ const WsProjectsGetConfigRpc = Rpc.make(WS_METHODS.projectsGetConfig, {
   success: ProjectGetConfigResult,
 });
 
-const WsWorkspaceListDirectoriesRpc = Rpc.make(WS_METHODS.workspaceListDirectories, {
-  payload: WorkspaceListDirectoriesInput,
-  success: WorkspaceListDirectoriesResult,
-  error: WorkspaceListDirectoriesError,
-});
-
 /**
  * Coder: the gateway's loopback asset route asks the helper to answer upstream's
  * `/api/assets/*` request in process, since the helper opens no listener. The response streams
@@ -2016,7 +2003,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsAssetsCreateUrlRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
-  WsWorkspaceListDirectoriesRpc,
   WsCoderServeAssetRpc,
   WsCoderWriteRequestBodyRpc,
   WsServerRefreshProvidersRpc,
