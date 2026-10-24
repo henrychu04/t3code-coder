@@ -740,19 +740,14 @@ describe("EnvironmentThreads", () => {
         const harness = yield* makeHarness({
           cached,
           cachedHistory,
-          historyHttpClient: HttpClient.make((request) =>
-            Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                Response.json({
-                  snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
-                  items: [localRow(evenOlder, 0)],
-                  nextCursor: null,
-                  hasMoreHistory: false,
-                }),
-              ),
-            ),
-          ),
+          // Coder: older pages come from the helper's stdio RPC rather than environment HTTP.
+          historyPage: () =>
+            Effect.succeed({
+              snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
+              items: [localRow(evenOlder, 0)],
+              nextCursor: null,
+              hasMoreHistory: false,
+            }),
           ...serverItems({ "cached-command": command("cached-command", "completed", 0) }),
         }).pipe(Scope.provide(scope));
         expect(yield* harness.loadEarlier()).toEqual({ _tag: "loaded" });
@@ -788,19 +783,14 @@ describe("EnvironmentThreads", () => {
       const harness = yield* makeHarness({
         cached,
         cachedHistory,
-        historyHttpClient: HttpClient.make((request) =>
-          Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              Response.json({
-                snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
-                items: [localRow(command("even-older-command", "completed", 0, 0), 0)],
-                nextCursor: null,
-                hasMoreHistory: false,
-              }),
-            ),
-          ),
-        ),
+        // Coder: older pages come from the helper's stdio RPC rather than environment HTTP.
+        historyPage: () =>
+          Effect.succeed({
+            snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
+            items: [localRow(command("even-older-command", "completed", 0, 0), 0)],
+            nextCursor: null,
+            hasMoreHistory: false,
+          }),
         ...serverItems({ "cached-command": command("cached-command", "completed", 0) }),
         ...options,
       }).pipe(Scope.provide(scope));

@@ -707,7 +707,7 @@ it.effect("offers each label once across repositories, despite one that cannot b
           title: "elsewhere",
           workspaceRoot: "/d",
           repository: "group/app",
-          provider: "gitlab",
+          provider: SourceControlProviderKind.make("gitlab"),
         }),
       ],
       providers: [
