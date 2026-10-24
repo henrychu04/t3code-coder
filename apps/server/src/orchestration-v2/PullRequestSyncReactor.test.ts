@@ -1083,67 +1083,8 @@ describe("PullRequestSyncReactor", () => {
     ),
   );
 
-  it.effect("auto-links missing native stack layers on active threads only", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        yield* TestClock.setTime(Date.parse(NOW));
-        const stack: PullRequestStack = {
-          id: "stack-1",
-          number: 42,
-          url: "https://github.com/owner/repository/stack/1",
-          base: "main",
-          layers: [
-            { number: 41, headBranch: "layer-1", state: "merged" },
-            { number: 42, headBranch: "layer-2", state: "open" },
-            { number: 43, headBranch: "layer-3", state: "open" },
-          ],
-        };
-        const fixture = yield* makeHarness({
-          snapshot: makeSnapshot([
-            makeThread("one", {
-              pullRequests: [
-                makeLink(42),
-                makeLink(41, { state: "merged" }, { source: "stack-dismissed" }),
-              ],
-            }),
-            makeThread("settled", {
-              settledOverride: "settled",
-              settledAt: "2026-08-21T00:00:00.000Z",
-              pullRequests: [makeLink(42)],
-            }),
-          ]),
-          stack: () => Effect.succeed(stack),
-        });
-
-        yield* Effect.gen(function* () {
-          yield* startAndSweep(fixture);
-
-          const syncCommands = yield* Ref.get(fixture.syncCommands);
-          assert.deepStrictEqual(
-            syncCommands.map((command) => [command.threadId, command.stack] as const),
-            [
-              [ThreadId.make("one"), { kind: "native", ...stack }],
-              [ThreadId.make("settled"), { kind: "native", ...stack }],
-            ],
-          );
-          assert.deepStrictEqual(
-            (yield* Ref.get(fixture.linkCommands)).map(({ commandId: _, ...rest }) => rest),
-            [
-              {
-                type: "thread.pull-request.link",
-                threadId: ThreadId.make("one"),
-                host: "github.com",
-                repository: "owner/repository",
-                number: 43,
-                url: "https://github.com/owner/repository/pull/43",
-                source: "stack",
-              },
-            ],
-          );
-        }).pipe(Effect.provide(fixture.layer));
-      }),
-    ),
-  );
+  // Coder: upstream's "auto-links missing native stack layers on active threads only" is not
+  // carried; native stacks are GitHub's, which has no carried definition to build layer URLs.
 
   it.effect("re-reads every member's layers once a new layer joins the stack", () =>
     Effect.scoped(
@@ -1312,11 +1253,8 @@ describe("PullRequestSyncReactor", () => {
     ),
   );
 
-  it.effect.each([
-    "gh pr merge 7 --squash 2>&1 | tail -3",
-    "cafe pr merge 7 --squash",
-    "az repos pr update --id 7 --status completed",
-  ])("reads open links fresh only when a run that ran `%s` ends", (mergeCommand) =>
+  // Coder: GitLab is the only host definition, so only its close command marks a run's links.
+  it.effect.each(["glab mr merge 7 --squash 2>&1 | tail -3", "glab mr close 7"])("reads open links fresh only when a run that ran `%s` ends", (mergeCommand) =>
     Effect.scoped(
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
