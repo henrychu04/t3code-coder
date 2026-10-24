@@ -22,6 +22,7 @@
     "apps/server/src/orchestration-v2/ProviderAdapterRegistry.ts": ["exports", "nsExports"],
     "apps/server/src/orchestration-v2/ResourceCleanupService.ts": ["exports", "nsExports"],
     "apps/server/src/orchestration-v2/ThreadStream.ts": ["exports", "nsExports"],
+    "apps/server/src/orchestration-v2/messageSearchIndex.ts": ["exports", "nsExports"],
     "apps/server/src/orchestration-v2/testkit/fixtures/claude_nested_background_subagent_wake/input.ts": ["exports", "nsExports"],
     "apps/server/src/orchestration-v2/testkit/fixtures/claude_nested_subagent_model/input.ts": ["exports", "nsExports"],
     "apps/server/src/orchestration-v2/testkit/fixtures/message_steering/input.ts": ["exports", "nsExports"],
