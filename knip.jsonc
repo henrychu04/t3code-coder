@@ -30,6 +30,7 @@
     "apps/server/src/orchestration-v2/testkit/fixtures/shared.ts": ["exports", "nsExports"],
     "apps/server/src/orchestration-v2/testkit/fixtures/tool_call_read_only_on_request/output.ts": ["exports", "nsExports"],
     "apps/server/src/os-jank.ts": ["exports", "nsExports"],
+    "apps/server/src/project/RepositoryIdentityResolver.ts": ["exports", "nsExports"],
     "apps/server/src/provider/CodexProvider.ts": ["exports", "nsExports"],
     "apps/server/src/scheduledTasks/ScheduledTaskService.ts": ["exports", "nsExports"],
     "apps/server/src/serverActivation.ts": ["exports", "nsExports"],
@@ -41,6 +42,7 @@
     "packages/client-runtime/src/operations/threadTitle.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/rpc/client.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/scheduledTaskWebhook.ts": ["exports", "nsExports"],
+    "packages/client-runtime/src/sourceControlClients.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/state/gitActions.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/state/models.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/state/presentation.ts": ["exports", "nsExports"],
@@ -99,9 +101,11 @@
     "packages/source-control-core/src/server/SourceControlRateLimit.ts": ["exports", "nsExports"],
     "packages/source-control-core/src/server/discovery.ts": ["exports", "nsExports"],
     "packages/source-control-core/src/server/pullRequestChecks.ts": ["exports", "nsExports"],
+    "packages/source-control-core/src/shared/definition.ts": ["exports", "nsExports"],
     "packages/source-control-gitlab/src/server/GitLabPullRequestCli.ts": ["exports", "nsExports"],
     "packages/source-control-gitlab/src/server/GitLabPullRequestProvider.ts": ["exports", "nsExports"],
     "packages/source-control-testing/src/TestSourceControlHost.ts": ["exports", "nsExports"],
+    "packages/source-control-testing/src/fakeSourceControlDriver.ts": ["exports", "nsExports"],
   },
   "workspaces": {
     ".": {
