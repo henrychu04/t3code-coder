@@ -1342,6 +1342,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     questionAttachmentTarget,
     pendingUserInputs,
     composerContextRecords,
+    composerFilesRef,
     pendingImageCompressionsRef,
     pendingThreadImportsRef,
     addComposerFilesToDraft,

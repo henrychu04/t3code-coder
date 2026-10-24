@@ -1496,7 +1496,8 @@ export default function GitActionsControl({
     });
   };
 
-  const canPublishRepository = isRepo && gitStatusForActions !== null && !hasPrimaryRemote;
+  const canPublishRepository =
+    canWriteSourceControl && isRepo && gitStatusForActions !== null && !hasPrimaryRemote;
 
   const initializeGit = () => {
     void (async () => {

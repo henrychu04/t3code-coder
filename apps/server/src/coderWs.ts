@@ -84,7 +84,6 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
     const config = yield* ServerConfig.ServerConfig;
     const assets = yield* makeServeAsset;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
-    // Legacy images are read in bounded chunks over helper stdio.
     const pullRequests = yield* PullRequestService.PullRequestService;
     const path = yield* Path.Path;
     const fileSystem = yield* FileSystem.FileSystem;

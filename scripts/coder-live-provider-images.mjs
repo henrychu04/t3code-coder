@@ -1,14 +1,14 @@
 // Real-provider check for the v2 orchestrator over the Coder gateway. Each provider gets one turn
 // that receives an uploaded image and calls a T3 tool through the workspace bridge; the check then
-// reads a project image on demand and verifies its ownership and containment rules.
+// reads a project image through a signed asset URL and verifies its thread and root rules.
 //
 // Requires authenticated, real Codex and Claude Code CLIs. A missing reply, a tool call that never
 // happened, or an approval request fails the check; nothing is simulated.
 //
 //   node scripts/coder-live-provider-images.mjs --local
 //     Runs the workspace helper on this machine against a temporary T3 Coder home and project,
-//     using the `codex` and `claude` on PATH with their own sign-in. Uploads are copied into the
-//     helper's attachment directory instead of going through the gateway upload. Turns use real provider quota.
+//     using the `codex` and `claude` on PATH with their own sign-in. Uploads go through the
+//     gateway's signed upload route to that helper. Turns use real provider quota.
 //
 //   node scripts/coder-live-provider-images.mjs --gateway <url> --workspace <id> --project-root <path>
 //     Uses a running gateway and a connected workspace. <path> must hold the fixture image as
@@ -18,7 +18,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
 import * as NodeFS from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as NodeOS from "node:os";
@@ -27,12 +26,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { png } from "./coder-live-images.mjs";
-
-const requireGateway = createRequire(
-  new URL("../apps/coder-gateway/package.json", import.meta.url),
-);
-const { WebSocket } = requireGateway("ws");
+import {
+  connectRpc,
+  png,
+  readAsset,
+  uploadImage,
+  workspaceEndpoint,
+} from "./coder-live-images.mjs";
 
 const TURN_TIMEOUT_MS = 300_000;
 const TERMINAL_RUN_STATUSES = new Set([
@@ -44,37 +44,6 @@ const TERMINAL_RUN_STATUSES = new Set([
 ]);
 const COLOR_WORDS =
   /\b(red|green|blue|yellow|orange|purple|pink|black|white|gr[ae]y|cyan|magenta|teal)\b/i;
-
-function connectRpc(url, workspaceId) {
-  const endpoint = `${url}/api/workspaces/${encodeURIComponent(workspaceId)}`;
-  const socket = new WebSocket(`${endpoint.replace("http://", "ws://")}/rpc`, { origin: url });
-  let nextId = 0;
-  const rpc = (tag, payload, timeoutMs = 60_000) =>
-    new Promise((resolve, reject) => {
-      const requestId = String(++nextId);
-      const finish = (error, value) => {
-        clearTimeout(timeout);
-        socket.off("message", receive);
-        socket.off("close", closed);
-        if (error) reject(error);
-        else resolve(value);
-      };
-      const closed = () => finish(new Error(`${tag}: RPC connection closed`));
-      const receive = (data) => {
-        const message = JSON.parse(data.toString());
-        if (message._tag !== "Exit" || message.requestId !== requestId) return;
-        if (message.exit._tag !== "Success") {
-          return finish(new Error(`${tag} failed: ${JSON.stringify(message.exit.cause)}`));
-        }
-        finish(undefined, message.exit.value);
-      };
-      const timeout = setTimeout(() => finish(new Error(`${tag} timed out`)), timeoutMs);
-      socket.on("message", receive);
-      socket.on("close", closed);
-      socket.send(JSON.stringify({ _tag: "Request", id: requestId, tag, payload, headers: [] }));
-    });
-  return { endpoint, socket, rpc };
-}
 
 function pickModel(provider, preferred, cheap) {
   if (preferred) return preferred;
@@ -88,7 +57,7 @@ export async function testLiveProviderImages(
   workspaceId,
   { projectRoot, instances = ["codex", "claudeAgent"], models = {} },
 ) {
-  const endpoint = `${url}/api/workspaces/${encodeURIComponent(workspaceId)}`;
+  const endpoint = workspaceEndpoint(url, workspaceId);
   const connected = await fetch(`${endpoint}/connection`, {
     method: "POST",
     headers: { Origin: url },
@@ -96,8 +65,7 @@ export async function testLiveProviderImages(
   });
   assert.equal(connected.status, 200, `Workspace connection failed: ${await connected.text()}`);
   // Opened only once the workspace is connected, so the open event cannot be missed.
-  const { socket, rpc } = connectRpc(url, workspaceId);
-  await once(socket, "open", { signal: AbortSignal.timeout(30_000) });
+  const { rpc, close } = await connectRpc(url, workspaceId);
   const results = [];
   try {
     const config = await rpc("server.getConfig", {});
@@ -130,15 +98,7 @@ export async function testLiveProviderImages(
       );
       assert.ok(model, `${instanceId} reports no models`);
 
-      const uploaded = await fetch(`${endpoint}/clipboard-image`, {
-        method: "POST",
-        headers: { Origin: url, "Content-Type": "image/png" },
-        body: png,
-        signal: AbortSignal.timeout(180_000),
-      });
-      assert.equal(uploaded.status, 200, `Image upload failed: ${await uploaded.clone().text()}`);
-      const { attachment } = await uploaded.json();
-      assert.match(attachment.id, /^pending-[0-9a-f-]{36}-png$/);
+      const attachment = await uploadImage(url, endpoint, rpc);
 
       const launched = await rpc(
         "orchestration.launchThread",
@@ -158,7 +118,7 @@ export async function testLiveProviderImages(
               "1. In one short sentence, name the dominant color of the attached image.",
               "2. Using the T3 tools shell command described in your instructions, run its `t3_thread_list` tool once and say how many threads it returned.",
             ].join("\n"),
-            attachments: [{ type: "image", name: "fixture.png", ...attachment }],
+            attachments: [attachment],
           },
         },
         120_000,
@@ -203,47 +163,28 @@ export async function testLiveProviderImages(
         `${instanceId} did not call t3_thread_list through the T3 tool bridge`,
       );
 
-      const chunks = [];
-      let offset = 0;
-      let first;
-      do {
-        const chunk = await rpc("projects.readImage", {
-          threadId,
-          cwd: projectRoot,
-          filePath: "fixture.png",
-          offset,
-          limit: 512 * 1024,
-          ...(first ? { revision: first.revision } : {}),
-        });
-        first ??= chunk;
-        assert.equal(chunk.offset, offset);
-        assert.equal(chunk.revision, first.revision);
-        const bytes = Buffer.from(chunk.dataBase64, "base64");
-        assert.ok(bytes.length > 0);
-        chunks.push(bytes);
-        offset += bytes.length;
-        assert.equal(chunk.nextOffset, offset === first.totalBytes ? null : offset);
-      } while (offset < first.totalBytes);
-      assert.deepEqual(Buffer.concat(chunks), png, "Project image bytes must match the file");
-      const parent = NodePath.posix.dirname(projectRoot);
-      for (const input of [
-        { threadId: randomUUID(), cwd: projectRoot, filePath: "fixture.png" },
-        { threadId, cwd: parent, filePath: `${NodePath.posix.basename(projectRoot)}/fixture.png` },
-        { threadId, cwd: projectRoot, filePath: "https://example.com/outside.png" },
+      const { bytes } = await readAsset(endpoint, rpc, {
+        _tag: "workspace-file",
+        threadId,
+        path: "fixture.png",
+      });
+      assert.deepEqual(bytes, png, "Project image bytes must match the file");
+      for (const resource of [
+        { _tag: "workspace-file", threadId: randomUUID(), path: "fixture.png" },
+        // Local mode puts a copy here, so only the root check can refuse it.
+        { _tag: "workspace-file", threadId, path: "../fixture.png" },
       ])
-        await assert.rejects(rpc("projects.readImage", { ...input, offset: 0, limit: 512 }));
+        await assert.rejects(rpc("assets.createUrl", { resource }));
 
       results.push({ instanceId, model, threadId, reply });
       console.log(
-        `PASS: ${instanceId} (${model}) image turn, T3 tool bridge, and project image reads.`,
+        `PASS: ${instanceId} (${model}) image turn, T3 tool bridge, and signed project image reads.`,
       );
       console.log(`      reply: ${reply.replace(/\s+/g, " ").slice(0, 240)}`);
     }
     return results;
   } finally {
-    const closed = once(socket, "close");
-    socket.close();
-    await closed;
+    await close();
   }
 }
 
@@ -265,10 +206,9 @@ async function runLocal(options) {
   const root = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-live-providers-"));
   const coderHome = NodePath.join(root, "t3-coder-home");
   const projectRoot = NodePath.join(root, "project");
-  const attachmentsDir = NodePath.join(coderHome, "attachments");
   await NodeFS.mkdir(projectRoot, { recursive: true });
-  await NodeFS.mkdir(attachmentsDir, { recursive: true });
   await NodeFS.writeFile(NodePath.join(projectRoot, "fixture.png"), png);
+  await NodeFS.writeFile(NodePath.join(root, "fixture.png"), png);
   await NodeFS.writeFile(NodePath.join(projectRoot, "README.md"), "# Live provider check\n");
   for (const args of [
     ["init", "--quiet", "--initial-branch=main"],
@@ -337,15 +277,6 @@ async function runLocal(options) {
     checkAuthentication: async () => "authenticated",
     probeWorkspace: async () => undefined,
     connectHelper,
-    // Local mode stands in for the gateway upload: the staged file lands where the helper claims uploads.
-    uploadComposerAttachment: async ({ localPath, extension }) => {
-      const target = NodePath.join(
-        attachmentsDir,
-        `pending-${randomUUID()}-${extension}.${extension}`,
-      );
-      await NodeFS.copyFile(localPath, target);
-      return target;
-    },
   });
   let passed = false;
   try {

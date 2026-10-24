@@ -1,18 +1,11 @@
 // Coder: no preview-annotation context (browser preview is not carried).
 import ChatMarkdown from "./ChatMarkdown";
+import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
 import type { ThreadContextRecord } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
 import { MessageCircleIcon } from "lucide-react";
-import {
-  createContext,
-  lazy,
-  type MouseEvent,
-  type ReactElement,
-  type ReactNode,
-  Suspense,
-  use,
-} from "react";
+import { createContext, type MouseEvent, type ReactElement, type ReactNode, use } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "~/composerDraftStore";
@@ -70,9 +63,6 @@ export interface ComposerContextActions {
   openMention: (path: string) => void;
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
 }
-
-// Highlighted source loads on demand, as on main, so importers never load the diff workers.
-const ReadOnlySourcePreview = lazy(() => import("./files/ReadOnlySourcePreview"));
 
 export const ComposerContextActionsContext = createContext<ComposerContextActions>({
   environmentId: null,
@@ -267,9 +257,7 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
       {comment.text.trim() ? <ChatMarkdown text={comment.text.trim()} cwd={undefined} /> : null}
       {comment.diff.trim() ? (
         <div className="flex h-64 min-h-0 flex-col overflow-hidden rounded-md border border-border">
-          <Suspense fallback={null}>
-            <ReadOnlySourcePreview name="review.diff" text={comment.diff} />
-          </Suspense>
+          <ReadOnlySourcePreview name="review.diff" text={comment.diff} />
         </div>
       ) : null}
     </div>

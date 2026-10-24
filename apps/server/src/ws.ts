@@ -1657,6 +1657,7 @@ const layerWsRpc = () =>
               workspaceRoot: thread.thread.worktreePath ?? project.value.workspaceRoot,
             });
           }),
+        // Coder: no assets.persistChatAttachments; composer uploads use the signed upload URL.
         [WS_METHODS.subscribeVcsStatus]: (input) => vcsStatusBroadcaster.streamStatus(input),
         [WS_METHODS.subscribeWorktreeSetup]: (input) => worktreeSetupTracker.stream(input.threadId),
         [WS_METHODS.worktreeSetupCancel]: (input) =>
