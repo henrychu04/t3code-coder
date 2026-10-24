@@ -50,7 +50,7 @@ function entry(
 ) {
   return {
     environmentId: "env-1",
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     host: "github.com",
     projectId: "project-1",
     projectTitle: "t3code",
@@ -701,24 +701,23 @@ describe("pull request quick actions", () => {
     ...(actions === undefined ? {} : { actions }),
   });
 
-  it("offers what each host reports, and GitHub's legacy set when a server reports none", () => {
+  it("offers what each host reports, and the host's own set when a server reports none", () => {
     const actionsOf = pullRequestHostActions([
       summary("bitbucket.org", "bitbucket", ["merge", "close"]),
       summary("github.com", "github"),
+      summary("gitlab.com", "gitlab"),
     ]);
     const bitbucket = actionsOf({
       host: "bitbucket.org",
       provider: SourceControlProviderKind.make("bitbucket"),
     });
     expect(pullRequestQuickActions({ state: "closed", isDraft: false }, bitbucket)).toEqual([]);
-    const github = actionsOf({
-      host: "github.com",
-      provider: SourceControlProviderKind.make("github"),
+    // Coder: GitHub, whose definition supplies a legacy set, is not a shipped host.
+    const gitlab = actionsOf({
+      host: "gitlab.com",
+      provider: SourceControlProviderKind.make("gitlab"),
     });
-    expect(pullRequestQuickActions({ state: "open", isDraft: true }, github)).toEqual([
-      "close",
-      "ready",
-    ]);
+    expect(pullRequestQuickActions({ state: "open", isDraft: false }, gitlab)).toEqual([]);
   });
 });
 
@@ -738,48 +737,12 @@ describe("refresh page size", () => {
     expect(largestPullRequestReadCount(twoPagesAcrossFourRepositories("gitlab"))).toBe(198);
   });
 
-  // regression: #19403 refreshes were not bounded by each tracker read
-  it("asks for the whole host where one search reads every repository", () => {
-    expect(largestPullRequestReadCount(twoPagesAcrossFourRepositories("github"))).toBe(792);
-  });
+  // Coder: upstream's whole-host search case (#19403) needs GitHub's definition, which is not
+  // shipped; GitLab reads repositories one at a time.
 });
 
 describe("findProjectForRepository", () => {
-  it("resolves Azure bare names using matching project and environment scope", () => {
-    const azure = (id: string, environmentId: string, path: string) => ({
-      id,
-      environmentId,
-      repositoryIdentity: {
-        canonicalKey: `dev.azure.com/${path}`,
-        locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl: "" },
-        provider: "azure-devops",
-        displayName: path,
-        owner: "contoso",
-        name: path.split("/").at(-1)!,
-      },
-    });
-    const payments = azure("p1", ENV_1, "contoso/payments/_git/api");
-    const billing = azure("p2", ENV_1, "contoso/billing/_git/api");
-    const remoteBilling = azure("p2", ENV_2, "contoso/billing/_git/api");
-    const unrelated = azure("p3", ENV_2, "contoso/billing/_git/web");
-    const projects = [payments, billing, remoteBilling, unrelated];
-
-    expect(findProjectForRepository(projects, { repository: "api" })).toBe(payments);
-    expect(
-      findProjectForRepository(projects, {
-        repository: "api",
-        scopedProjectId: "p2",
-        scopedEnvironmentId: ENV_2,
-      }),
-    ).toBe(remoteBilling);
-    expect(
-      findProjectForRepository(projects, {
-        repository: "api",
-        scopedProjectId: "p3",
-        scopedEnvironmentId: ENV_2,
-      }),
-    ).toBe(payments);
-  });
+  // Coder: upstream's Azure DevOps bare-name case needs Azure's definition, which is not shipped.
 
   it("keeps repository matches on the selected environment when project IDs overlap", () => {
     const project = (id: string, environmentId: string, repository: string) => ({
@@ -788,7 +751,7 @@ describe("findProjectForRepository", () => {
       repositoryIdentity: {
         canonicalKey: `github.com/${repository}`,
         locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl: "" },
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         displayName: repository,
       },
     });

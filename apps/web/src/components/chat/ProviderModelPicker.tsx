@@ -299,9 +299,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           terminalOpen={props.terminalOpen ?? false}
           onRequestClose={() => setIsMenuOpen(false)}
           {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
-          {...(props.getModelDisabledReason
-            ? { getModelDisabledReason: props.getModelDisabledReason }
-            : {})}
+          getModelDisabledReason={(instanceId, model) =>
+            props.disabled
+              ? "Model picker is disabled"
+              : (props.getModelDisabledReason?.(instanceId, model) ?? null)
+          }
           onInstanceModelChange={handleInstanceModelChange}
         />
         {/* Coder: no ChatGPT sharing control; subscription plans are out of scope. */}

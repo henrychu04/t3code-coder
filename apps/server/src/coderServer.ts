@@ -22,7 +22,6 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as Keybindings from "./keybindings.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Sqlite.ts";
-import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
@@ -63,6 +62,7 @@ import {
   layerGitWorkflow,
   layerIdleCompactionWorker,
   layerPullRequestService,
+  layerRepositoryIdentityResolver,
   layerServerSettings,
   layerSourceControlProviderRegistry,
   layerTerminal,
@@ -199,7 +199,9 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
       Layer.provide(T3ProjectFileLoader.layer),
     ),
   ),
-  Layer.provideMerge(RepositoryIdentityResolver.layer),
+  // As upstream: hosts refine an identity no remote parser recognised (GitLab confirms a
+  // self-hosted host through its `glab` login).
+  Layer.provideMerge(layerRepositoryIdentityResolver),
   // As upstream's `layerBackground`: periodic merge request discovery asks the (always-allow)
   // background policy before each sweep.
   Layer.provideMerge(BackgroundPolicy.layer),
@@ -220,6 +222,9 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   Layer.provideMerge(CoderProviderInstancesLive),
   Layer.provideMerge(ModelManifest.layerBundled),
   Layer.provideMerge(SqlitePersistenceLayerLive),
+  // As upstream's runtime: every source control driver is built with an HTTP client, though
+  // GitLab's reads go through `glab`.
+  Layer.provideMerge(FetchHttpClient.layer),
 );
 
 // Coder: workspace startup completes before the RPC layer is built, replacing upstream's

@@ -132,26 +132,23 @@ export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>
     context: VcsProcessErrorContext,
     error: VcsProcessExitFailure,
     failureKind: VcsProcessExitFailureKind,
-    retryable?: boolean,
+    options?: { readonly retryable?: boolean; readonly notFoundDetail?: string },
   ) {
-    // Coder: only glab reaches VcsProcess, so upstream's gh/az "Pull request not found." branch
-    // is not carried.
     const detail =
       failureKind === "authentication"
         ? "Authentication failed."
         : failureKind === "rate-limited"
           ? "API rate limit exceeded."
           : failureKind === "not-found"
-            ? context.command === "glab"
-              ? "Merge request not found."
-              : "VCS resource not found."
+            ? (options?.notFoundDetail ?? "VCS resource not found.")
             : "Process exited with a non-zero status.";
+
     return new VcsProcessExitError({
       ...context,
       exitCode: error.exitCode,
       detail,
       failureKind,
-      ...(retryable === true ? { retryable: true } : {}),
+      ...(options?.retryable === true ? { retryable: true } : {}),
       stderrLength: error.stderr.length,
       stderrTruncated: error.stderrTruncated,
     });

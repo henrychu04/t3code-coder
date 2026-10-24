@@ -755,9 +755,12 @@ listed here is drift to remove rather than fork behavior to keep.
     error unions but is never emitted.
   - `ServerConfig` omits auth, editors, remote open targets, and observability, except
     upstream's optional `lastEventLoopStall`, which stays in the schema but is never sent.
-  - `VcsProcessExitError`'s not-found detail drops upstream's `gh`/`az` "Pull request" text.
-    The rest of `vcs.ts` and `git.ts` keep upstream's shapes, plus the helper-only ref-status
-    and thread-branch rename schemas.
+  - `vcs.ts` and `git.ts` keep upstream's shapes (GitLab's `GitLabCli` supplies its own
+    "Merge request not found." detail), plus the helper-only ref-status and thread-branch rename
+    schemas.
+  - `assets.ts` omits native app icons and upstream's source control credentialed media
+    (`SOURCE_CONTROL_MEDIA_ASSET` and `AssetSourceControlMediaUrlValidationError`), because GitLab's
+    definition claims no `mediaUrl`.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
     `CustomModelCapabilities`, which cannot declare them.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
@@ -882,8 +885,11 @@ listed here is drift to remove rather than fork behavior to keep.
   - There is no in-app browser, local editor, or file manager: `MarkdownFileLink` never receives
     `onOpen`, `onOpenInBrowser`, or `onReveal`, and the link context menu never offers the
     integrated browser. Without a primary action a chip opens only its copy menu.
-  - Relative and non-web links render as inert text. GitHub-authenticated media (`githubMedia`)
-    is omitted; web images and videos load directly from their host.
+  - Relative and non-web links render as inert text. Host-credentialed media
+    (`sourceControlMedia`) is omitted; web images and videos load directly from their host.
+  - GitLab references open directly: `confirmBeforeOpen` is false and the candidate URL is the
+    link itself, because `!N` already names a merge request and `#N` an issue (GitLab's
+    `changeRequestUrlFromReferenceAutolink` returns null).
 - **Files and search UI.** `components/files/*`, `components/search/*`, the file picker, and the
   keybindings are upstream's. Coder deltas (marked `Coder:`): image, video, audio, PDF, and HTML
   previews load from upstream's signed asset URLs, and HTML files are detected locally because
@@ -903,12 +909,14 @@ listed here is drift to remove rather than fork behavior to keep.
   used. Label RPCs exist but GitLab does not advertise label editing, and native stack actions are
   never advertised. Video uploads play inline, other uploads link as on main, and `/uploads/`
   links resolve against the repository host (client-runtime `pullRequestMarkdown.ts`, which also
-  names a GitLab or self-hosted upload's host; the `!123` autolinks stay in the web's
-  `pullRequestMarkdown.logic.ts`). Actor avatars load as on main. MR links everywhere
+  names a GitLab or self-hosted upload's host; the markdown context carries `repositoryUrl` beside
+  upstream's `autolinks` for that). `!123`, `#123`, and commit autolinks come from GitLab's
+  definition (`referenceAutolinks`), which the web's upstream `pullRequestMarkdown.logic.ts` calls.
+  Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
-  upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl` (client-runtime's
-  `pullRequestLinkInput.ts` filter, re-exported) accepts only a URL a shipped host definition
-  claims (GitLab's `/-/merge_requests/`), and project matching uses upstream's host
+  upstream's `lib/openPullRequestLink.ts`. The GitLab-only registry claims only GitLab's
+  `/-/merge_requests/` URLs, and project matching (client-runtime `changeRequestLinks.ts`'s
+  `isGitLabProject`, also used by `findProjectOnChangeRequestHost`) uses upstream's host
   resolvers but skips checkouts whose provider is neither GitLab nor unknown (the registry reads
   other kinds as the generic host, which would still match by host and path). A linked MR's
   snapshot status needs a GitLab URL, with no fallback host. `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL (and GitLab's
@@ -923,9 +931,7 @@ listed here is drift to remove rather than fork behavior to keep.
   runs the action without upstream's verified-credential wrapper. In Markdown
   they are upstream's new-tab anchors with hover previews. The merge requests page resolves a link
   against every workspace that reads merge requests, the primary first. Right-clicking a web link shows upstream's menu (system browser, Copy Link, and
-  Link/Unlink to thread through `usePullRequestLinking`). GitLab autolinks keep their
-  `merge-request`, `issue`, and `commit` kinds, so upstream's GitHub reference confirmation is
-  unused.
+  Link/Unlink to thread through `usePullRequestLinking`).
   - User-facing text says "merge request", "MR", and `!123` wherever upstream says "pull
     request", "PR", or `#123`: the panels, composer, settings, toasts, keybinding labels, and
     the strings the web shows from `client-runtime` (work-log tool labels and MR actions) and
@@ -937,33 +943,39 @@ listed here is drift to remove rather than fork behavior to keep.
     (`mcp/toolkits/pullRequests/tools.ts`, with GitLab example URLs), and `GitManager`'s
     merge-request ref fetch error. `runtimeInstructions.ts` stays upstream's. Identifiers, wire
     names, and search haystacks keep upstream's spelling, and the composer trigger stays `#`.
-    GitLab's client definition supplies "MR" and "merge request" wherever upstream reads a host's
-    terminology, and a missing provider reads as GitLab because it is the only definition; `!123`
-    is still applied by hand, since definitions carry no reference prefix. Text for paths GitLab never reaches (native stacks, stack merges,
+    GitLab's definition supplies "MR" and "merge request" wherever upstream reads a host's
+    terminology (#23999 made most surfaces read it), and a missing provider reads as GitLab because
+    it is the only definition; `!123` is still applied by hand, since definitions carry no
+    reference prefix. Text for paths GitLab never reaches (native stacks, stack merges,
     `PullRequestsUnavailableState`'s GitHub link, GitHub-only setting rows) is upstream's. These
     pure wording substitutions are not marked line by line; every other difference is.
 - **Source control and merge-request services.** `sourceControl/`, `pullRequest/`, and upstream's
-  `@t3tools/source-control-core`, `-gitlab`, and `-testing` packages are upstream's, GitLab-only.
-  Upstream's GitHub, Azure DevOps, Bitbucket, and Forgejo packages are not carried. Coder deltas,
-  each marked `Coder:`:
-  - `sourceControl/builtInDrivers.ts` lists and provides only the GitLab driver, so both
-    registries iterate GitLab alone. Upstream's client host definitions are carried the same way:
-    client-runtime's `sourceControlClients.ts` registers only GitLab's definition, so labels,
-    terminology, icons, clone and publish pickers, reference parsing, and project matching follow
-    GitLab alone, and every other kind reads as the generic host. The server's
-    `sourceControl/sourceControlHostSecrets.ts` reads only GitLab's definition, which declares no
-    host settings, so no host secrets exist; upstream's `SourceControlHostSettings` form is not
-    carried.
-  - GitLab's client definition (`source-control-gitlab/src/client/definition.ts`) has three
-    deltas: `isChangeRequestReference` accepts a merge request URL on any HTTP(S) host, because
+  `@t3tools/source-control-core`, `-definitions`, `-gitlab`, and `-testing` packages are
+  upstream's, GitLab-only. Upstream's GitHub, Azure DevOps, Bitbucket, Forgejo, and GitCafe
+  packages are not carried. Coder deltas, each marked `Coder:`:
+  - `source-control-definitions`' `registry.ts` registers only GitLab's definition, and the
+    server's `sourceControl/sourceControlDefinitions.ts` lists only the GitLab driver, so both
+    sides iterate GitLab alone: labels, terminology, icons, clone and publish pickers, reference
+    parsing, and project matching follow GitLab, and every other kind reads as the generic host.
+    `builtInDrivers.ts`, `sourceControlHostSecrets.ts`, and client-runtime's
+    `sourceControlClients.ts` are upstream's over that registry, except that
+    `sourceControlClients.ts` drops `readHostCredentialSettings` and its credential types, which
+    only the uncarried token and account settings use. GitLab declares no host settings, so no
+    host secrets exist; upstream's host, token, account, and routing settings are not carried.
+    The registry's `parseChangeRequestUrl` (core `shared/definition.ts`) rejects a URL carrying
+    credentials, because links persist their URL verbatim.
+  - GitLab's definition (`source-control-gitlab/src/shared/definition.ts`) has three deltas:
+    `isChangeRequestReference` accepts a merge request URL on any HTTP(S) host, because
     self-hosted hostnames need not contain "gitlab"; `authorProfileUrl` links comment authors
-    under the host root; and `referenceAutolinkRepositoryUrl` gives the web's GitLab autolinks
-    (`pullRequestMarkdown.logic.ts`) the repository URL, where upstream's definition returns null.
+    under the host root; and `referenceAutolinks` (`shared/referenceAutolinks.ts`) links `!N`
+    merge requests, `#N` issues, and full commit SHAs below the project with GitLab's `/-/`
+    routes, where upstream's GitLab defines none. The package exports upstream's two entry
+    points plus `server/GitLabCli`, which `ws.projects.test.ts` stubs.
   - GitLab implements upstream's optional hover-preview and summary (batched through aliased
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    bb7783e295):
+    be1d066732):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
@@ -971,8 +983,15 @@ listed here is drift to remove rather than fork behavior to keep.
   - `glab auth status` lines carrying a token label or a `glpat-` token are never surfaced. Clones
     accept only GitLab URLs without credentials, query, or fragment, and pass `--` before the URL.
   - `PullRequestService` omits upstream's cross-environment routing (routing identities,
-    verified credentials, `expectedAccountId` refs) and Forgejo SSH-alias refinement. It keeps
-    `allowStale: false`, which the merge-request watcher uses to read past the held detail.
+    verified credentials, `expectedAccountId` refs). It keeps `allowStale: false`, which the
+    merge-request watcher uses to read past the held detail.
+  - `coderServer.ts` uses upstream's `layerRepositoryIdentityResolver` from `server.ts`, whose
+    refine hook lets GitLab confirm a self-hosted host through its `glab` login, and provides
+    `FetchHttpClient` to the runtime because every source-control driver requires an HTTP client.
+  - Shared `sourceControl.ts` is upstream's `isSshRemoteUrl` plus the fork's
+    `parseGitLabCloneSource`, which keeps a small table of other hosts so their URLs are still
+    rejected. A pasted `owner/repo` clone shorthand takes the first registered host's default
+    transport, as upstream's does, so it becomes `git@gitlab.com:owner/repo.git`.
   - Review guides are upstream's (`pullRequest/PullRequestReviewGuideService.ts`, migration 061,
     the guide T3 tools, and the web Guide tab). `coderServer.ts` provides the service to the
     helper RPC handlers and the bridged tools. The temporary checkout, its fetches, and the
@@ -997,13 +1016,13 @@ listed here is drift to remove rather than fork behavior to keep.
     expects that field, with a branded exit code so the comparison typechecks. A top-level review `sourceKind` returns only that
     source. Worktree creation reads `t3.json` through the bounded `readProjectConfig`.
     Checkpoint commits use the "T3 Coder" identity.
-  - `VcsProcess` has no GitHub CLI semaphore, records no Git command metrics, and classifies only
-    `glab` failures.
-  - `GitManager` fetches merge-request heads from `refs/merge-requests/<n>/head`. It has no `targetsOnlyRemote`: with no origin, the only
-    remote is the repository `glab` targets, so upstream's check of gh's `GH_REPO` and
-    `gh-resolved` mark (and its `source-control-github` import) is not carried.
-    Upstream's GitHub and Forgejo branches stay verbatim but are unreachable with the GitLab-only
-    registry.
+  - `VcsProcess` records no Git command metrics. Its concurrency keys and failure
+    classification are upstream's per-call `concurrency` and `classifyFailure` hooks (GitLab's
+    `classifyGlabFailure`).
+  - `GitManager` is upstream's apart from the merge-request ref fetch error's wording: merge
+    request heads come from GitLab's `changeRequestHeadRef` (`refs/merge-requests/<n>/head`), and
+    upstream's `targetsOnlyRemote` check is host-neutral through `createsChangeRequestsIn`, which
+    GitLab does not define.
   - `GitWorkflowService` adds `moveWorktree` and `localRefStatus` pass-throughs.
   - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
     auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
@@ -1016,7 +1035,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
-  pairing, mobile app links (`MobileAppSettingsRow`), or `keybindings.json` editor. Appearance's **Add theme** is upstream's
+  pairing, mobile app links (`MobileAppSettingsRow`), or `keybindings.json` editor. Settings
+  search carries upstream's `sourceControlHostSearchItems` but not `SOURCE_CONTROL_HOST_LABELS`,
+  whose only rows (routing, MR link target, agent credits) are not carried. Appearance's **Add theme** is upstream's
   `ThemeImportDialog` without its remote theme catalog search or desktop file picker: the browser
   reads picked, dropped, or pasted theme files itself. Connections holds the Coder deployments,
   workspaces, and TCP/UDP port forwards in place of pairing and network access. Each workspace
@@ -1162,9 +1183,17 @@ listed here is drift to remove rather than fork behavior to keep.
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query` shim rather than the
   Agent SDK's, and omits upstream's SDK transcript-copy fork tests, since the CLI forks natively. `ProviderSessionManager.test.ts`'s parallel shutdown test waits briefly in real time
   after moving the test clock, because each release closes a T3 tool bridge on the real file
-  system. Upstream's GitHub and Azure DevOps fixtures in the GitManager and guide-tool
-  tests use GitLab projects, with GitLab merge request templates in place of GitHub's; GitManager's `GH_REPO` and `gh-resolved` only-remote cases are not
-  carried. `ProviderInstanceRegistry.test.ts` runs upstream's Claude one-probe fallback test
+  system. Upstream's GitHub and Azure DevOps fixtures in the GitManager, review-guide, guide-tool,
+  T3 tool bridge, sync-key, and linked-thread tests use GitLab projects and merge request URLs
+  (`refs/merge-requests/<n>/head`, "MR" toasts); `GitManager.test.ts` is upstream's fake-provider
+  harness with a GitLab default kind, and the fork's old fake-`gh` only-remote, template,
+  fast-forward-only checkout, and merge-request-ref cases are not carried, since upstream moved
+  host behaviour tests into the forge packages (#24000). Tests of uncarried hosts' behaviour
+  (Azure key canonicalisation and aliases, Forgejo ports, Bitbucket and Azure list cases, GitHub
+  legacy actions and term cases) are cut from the pull-request, linked-thread, handler, client
+  link, thread pull request, git action, and list-logic tests. `linkCreatedPullRequest.test.ts`
+  uses GitLab merge request URLs; `PullRequestSyncReactor.test.ts` runs its close-command case on
+  `glab mr merge`/`glab mr close` and does not carry the native stack auto-link test. `ProviderInstanceRegistry.test.ts` runs upstream's Claude one-probe fallback test
   against the CLI transport's `query`, without the organization change the fork does not read.
   `SourceControlRepositoryService.test.ts` and `RepositoryIdentityResolver.test.ts` carry
   upstream's new publish-push, local-remote, display-casing, partial-clone, and missing-parent
@@ -1173,12 +1202,13 @@ listed here is drift to remove rather than fork behavior to keep.
   `ThreadDetailsPrRows.browser.test.tsx` checks the run context, not the editor picker. `CommandPalette.focus.browser.test.tsx`
   mocks `useCoder` and sends `mod+p` with the platform's modifier (upstream's Ctrl+P matches only
   off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
-  `SourceControlProviderRegistry.test.ts` runs
-  upstream's registry tests (its `makeRegistry` with remotes, process, and server settings) for
-  the GitLab-only registry, with the "asks once" and "asks again" auth-probe tests driving
-  `glab`. `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
+  `SourceControlProviderRegistry.test.ts` is upstream's fake-driver file, with its unknown-host
+  fallback on a GitLab remote and a GitHub URL among the URLs no host claims.
+  `SourceControlRepositoryService.test.ts` does not carry upstream's two new lookup-detail tests. `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
   `storageCleanup.test.ts` its saved-usage-cache test, and `PullRequestService.test.ts` its
-  GitHub-credential branch deletion test; upstream's OTLP `config.test.ts` is not carried.
+  GitHub-credential branch deletion, GitHub Enterprise listing, Bitbucket paging, routing,
+  Forgejo, replacement-read retry, Azure environment viewed-file, and repository-identity
+  resolution tests; upstream's OTLP `config.test.ts` is not carried.
   `presentation.test.ts` omits upstream's disabled and unsupported connection tests, since Coder
   catalog entries have neither state. `GitManager.test.ts`'s pull request draft-status test and
   `SourceControlRepositoryService.test.ts`'s HTTPS clone-retry tests run on GitLab.

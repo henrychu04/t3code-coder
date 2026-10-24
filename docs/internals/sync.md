@@ -276,11 +276,18 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   them `#N`; the fork's text is `!N`.
   New text that describes a mechanism the fork cut (in dd5c7bd09e, provider update checks
   "fetch model catalog updates", where the catalog is bundled) keeps describing what T3 Coder does.
-- **Source-control host definitions.** client-runtime's `sourceControlClients.ts` and the server's
-  `sourceControl/sourceControlHostSecrets.ts` register only GitLab's definition. When upstream
-  moves host behavior into definitions, delete the fork's per-kind GitLab shims that the GitLab-only
-  registry now expresses, and move a remaining GitLab difference into GitLab's definition when the
-  field exists for it.
+- **Source-control host definitions.** `source-control-definitions`' `registry.ts` and the server's
+  `sourceControl/sourceControlDefinitions.ts` register only GitLab. When upstream moves host
+  behavior into definitions or driver hooks, delete the fork's per-kind GitLab shims that the
+  GitLab-only registry now expresses, and move a remaining GitLab difference into GitLab's
+  definition when the field exists for it (be1d066732: `referenceAutolinks` replaced the web's
+  GitLab autolink code). When upstream deletes code in favor of a hook, check that the helper
+  wires the hook: be1d066732 replaced `PullRequestService`'s unknown-host refinement with the
+  repository identity resolver's `refine`, which an older sync had dropped from the fork, so
+  self-hosted GitLab detection would have silently stopped. Upstream tests that build GitHub,
+  GitCafe, or Azure URLs fail only at runtime once the registry no longer parses them; move them
+  to GitLab URLs or cut them. A host's media, settings, and credential helpers that only cut hosts
+  use go in `knip.jsonc`'s `ignoreIssues`.
 
 ## 6. Mechanical checks after the merge
 

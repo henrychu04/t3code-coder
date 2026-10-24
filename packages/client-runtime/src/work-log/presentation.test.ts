@@ -163,6 +163,20 @@ describe("resolveWorkEntryToolPresentation", () => {
     ).toBe("Failed to click in the preview browser");
   });
 
+  // Coder: GitLab is the only host, and merge requests read as `!7`.
+  it.each([["https://gitlab.com/acme/web/-/merge_requests/7", "MR !7"]])(
+    "names a linked change request with its host's term (%s)",
+    (url, target) => {
+      expect(
+        resolveWorkEntryToolPresentation({
+          label: "T3-code.link_pull_request",
+          toolLifecycleStatus: "completed",
+          toolData: { arguments: { url } },
+        })?.displayName,
+      ).toMatch(new RegExp(` ${target}$`));
+    },
+  );
+
   it("does not brand unknown tools or another server's matching tool name", () => {
     for (const label of [
       "mcp__github__preview_click",

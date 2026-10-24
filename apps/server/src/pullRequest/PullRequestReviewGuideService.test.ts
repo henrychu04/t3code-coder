@@ -94,6 +94,8 @@ const makeRepositories = Effect.gen(function* () {
 
 const detail = (workspaceRoot: string, headSha: string): PullRequestDetail =>
   ({
+    // Coder: GitLab is the only host, so the guide tries GitLab's merge request head ref.
+    provider: "gitlab",
     number: 7,
     title: "Add the feature",
     body: "Adds the feature.",
@@ -385,13 +387,7 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
       name: "a head no source has",
       reportedHead: () => "e".repeat(40),
       shadow: "none",
-      expected: [
-        "local objects:",
-        "the commit:",
-        "branch feature:",
-        "refs/pull/7/head:",
-        "refs/merge-requests/7/head:",
-      ],
+      expected: ["local objects:", "the commit:", "branch feature:", "refs/merge-requests/7/head:"],
     },
   ])("refuses to write a guide for $name", ({ reportedHead, shadow, expected }) =>
     Effect.scoped(
@@ -415,6 +411,8 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
         assert.strictEqual(result.run?._tag, "Failed");
         const detail = result.run?._tag === "Failed" ? result.run.detail : "";
         for (const part of expected) assert.include(detail, part);
+        // Only the host's own head ref is tried.
+        assert.notInclude(detail, "refs/pull/");
         assert.deepStrictEqual(run.observed, []);
         assert.isFalse(run.fetchedRefs.some((ref) => ref.startsWith("-")));
         const fs = yield* FileSystem.FileSystem;

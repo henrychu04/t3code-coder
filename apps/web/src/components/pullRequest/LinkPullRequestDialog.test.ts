@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveLinkPullRequestInput } from "@t3tools/client-runtime/pull-request-link-input";
@@ -10,7 +11,7 @@ describe("resolveLinkPullRequestProject", () => {
     "preserves %s when linking a bare MR number",
     (origin) => {
       const ownProject = resolveLinkPullRequestProject({
-        provider: "gitlab",
+        provider: SourceControlProviderKind.make("gitlab"),
         canonicalKey: "code.example/team/frontend",
         displayName: "team/frontend",
         locator: {

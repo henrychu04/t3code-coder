@@ -312,7 +312,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         | "attachment"
         | "workspace-file"
         | "media-file"
-        // Coder: GitHub media is not carried.
+        // Coder: source control host media is not carried.
         | "tool-output-image";
     }
   >;

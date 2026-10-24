@@ -6,6 +6,7 @@ import {
   type GitRunStackedActionResult,
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   type OrchestrationProjectShell,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -34,13 +35,13 @@ const project: OrchestrationProjectShell = {
   defaultModelSelection: null,
   scripts: [],
   repositoryIdentity: {
-    canonicalKey: "github.acme.test/platform/api",
+    canonicalKey: "gitlab.acme.test/platform/api",
     locator: {
       source: "git-remote",
       remoteName: "origin",
-      remoteUrl: "git@github.acme.test:Platform/API.git",
+      remoteUrl: "git@gitlab.acme.test:Platform/API.git",
     },
-    provider: "github",
+    provider: SourceControlProviderKind.make("gitlab"),
     displayName: "Platform/API",
     owner: "Platform",
     name: "API",
@@ -94,6 +95,7 @@ const recordingDispatch = Effect.fn("recordingDispatch")(function* () {
   return { commands, dispatch };
 });
 
+// Coder: GitLab is the only host definition, so the fixtures use GitLab merge request URLs.
 describe("createdPullRequestKey", () => {
   it("reads host and repository from the URL when it is recognisable", () => {
     expect(
@@ -101,15 +103,15 @@ describe("createdPullRequestKey", () => {
         prResult({
           status: "created",
           number: 12,
-          url: "https://github.com/Other/Fork/pull/12",
+          url: "https://gitlab.com/Other/Fork/-/merge_requests/12",
         }),
         project,
       ),
     ).toEqual({
-      host: "github.com",
+      host: "gitlab.com",
       repository: "other/fork",
       number: 12,
-      url: "https://github.com/Other/Fork/pull/12",
+      url: "https://gitlab.com/Other/Fork/-/merge_requests/12",
     });
   });
 
@@ -120,7 +122,7 @@ describe("createdPullRequestKey", () => {
         project,
       ),
     ).toEqual({
-      host: "github.acme.test",
+      host: "gitlab.acme.test",
       repository: "platform/api",
       number: 3,
       url: "https://ghe.internal/x/3",
@@ -143,7 +145,7 @@ describe("linkCreatedPullRequest", () => {
         result: prResult({
           status: "created",
           number: 42,
-          url: "https://github.com/t3tools/t3code/pull/42",
+          url: "https://gitlab.com/t3tools/t3code/-/merge_requests/42",
         }),
         commandId,
       }).pipe(Effect.provide(layerDependenciesFor(dispatch)));
@@ -153,10 +155,10 @@ describe("linkCreatedPullRequest", () => {
           type: "thread.pull-request.link",
           commandId: "server:pr-created-link:test",
           threadId: THREAD_ID,
-          host: "github.com",
+          host: "gitlab.com",
           repository: "t3tools/t3code",
           number: 42,
-          url: "https://github.com/t3tools/t3code/pull/42",
+          url: "https://gitlab.com/t3tools/t3code/-/merge_requests/42",
           source: "created",
         },
       ]);

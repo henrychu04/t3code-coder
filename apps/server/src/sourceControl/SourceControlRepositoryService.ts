@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 
 import {
   GitCommandError,
+  SourceControlProviderError,
   SourceControlRepositoryError,
   type GitCommandFailureReason,
   type SourceControlCloneRepositoryInput,
@@ -29,11 +30,13 @@ import {
   type GitCloneProgressLine,
 } from "../project/gitCloneProgress.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { cloneUrlForProtocol, cloneUrlProtocol } from "@t3tools/shared/cloneUrl";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
+const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isGitCommandError = Schema.is(GitCommandError);
 
 export class SourceControlRepositoryService extends Context.Service<
@@ -91,8 +94,10 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
       : new SourceControlRepositoryError({
           operation,
           provider,
-          // Coder: GitLab is the only provider, so Bitbucket's locator detail never applies.
-          detail: "The source control operation could not be completed.",
+          detail:
+            (isSourceControlProviderError(cause)
+              ? SourceControlProvider.userFacingSourceControlDetail(cause.cause)
+              : undefined) ?? "The source control operation could not be completed.",
           cause,
         }),
   );

@@ -14,12 +14,11 @@ import {
 import type { EnvironmentProject } from "../state/models.ts";
 
 describe("add project shared logic", () => {
-  it("routes owner/repository shorthand to GitHub over HTTPS", () => {
-    expect(normalizePastedCloneUrl("imputnet/helium")).toBe(
-      "https://github.com/imputnet/helium.git",
-    );
+  // Coder: shorthand goes to the first host, GitLab, over its default SSH transport.
+  it("routes owner/repository shorthand to the default host", () => {
+    expect(normalizePastedCloneUrl("imputnet/helium")).toBe("git@gitlab.com:imputnet/helium.git");
     expect(normalizePastedCloneUrl("  pingdotgg/t3code  ")).toBe(
-      "https://github.com/pingdotgg/t3code.git",
+      "git@gitlab.com:pingdotgg/t3code.git",
     );
   });
 

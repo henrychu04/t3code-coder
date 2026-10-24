@@ -71,7 +71,7 @@ export function useOpenPanelPullRequestUrl(threadRef: ScopedThreadRef | null) {
       : null;
   const fallbackUrl = reference
     ? (requestedReference?.url ??
-      // Coder: GitLab is the only hosted provider.
+      // Coder: GitLab is the only hosted provider; keeps a self-hosted install's origin and path.
       gitLabMergeRequestBrowserUrl(
         project?.repositoryIdentity,
         reference.repository,

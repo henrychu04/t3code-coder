@@ -1,22 +1,23 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { splitPullRequestBody } from "./pullRequestMarkdown.ts";
+import { changeRequestReferenceAutolinker, splitPullRequestBody } from "./pullRequestMarkdown.ts";
 
 describe("pull request body segmentation", () => {
   // GitHub writes a dropped image into the body as an `<img>` tag, so a bare attachment link on
   // its own line is the shape it uses for a video — every one sampled in the wild was one.
+  // Coder: GitHub's extensionless media URLs are not carried, so the video is a GitLab upload.
   it("lifts a dropped video out and keeps the prose around it", () => {
     expect(
       splitPullRequestBody(
-        "Before\n\nhttps://github.com/user-attachments/assets/2f8c1a90-1b2c-4d5e-8f90-abcdef123456\n\nAfter",
+        "Before\n\nhttps://gitlab.com/group/project/uploads/0123456789abcdef/demo.mp4\n\nAfter",
       ),
     ).toEqual([
       { id: "markdown:0", kind: "markdown", text: "Before" },
       {
         id: "attachment:1",
         kind: "attachment",
-        url: "https://github.com/user-attachments/assets/2f8c1a90-1b2c-4d5e-8f90-abcdef123456",
-        hostLabel: "GitHub",
+        url: "https://gitlab.com/group/project/uploads/0123456789abcdef/demo.mp4",
+        hostLabel: "GitLab",
         media: "video",
       },
       { id: "markdown:2", kind: "markdown", text: "After" },
@@ -140,5 +141,25 @@ describe("media on custom hosts", () => {
     expect(splitPullRequestBody(body)).toEqual([
       { id: "markdown:0", kind: "markdown", text: body },
     ]);
+  });
+});
+
+describe("change request reference autolinks", () => {
+  const urls = (provider: string, url: string, text: string) =>
+    changeRequestReferenceAutolinker({ provider, url })?.(text).map((link) => link.url) ?? null;
+
+  // Coder: GitLab's grammar, linked below the merge request's own project.
+  it("links references against the change request's own repository", () => {
+    expect(
+      urls("gitlab", "https://code.example/group/project/-/merge_requests/7", "Fixes #5 and !6"),
+    ).toEqual([
+      "https://code.example/group/project/-/issues/5",
+      "https://code.example/group/project/-/merge_requests/6",
+    ]);
+  });
+
+  // regression: the mobile review guide linked every host's `#5` with GitHub's grammar
+  it("links nothing on a host whose grammar is not applied", () => {
+    expect(urls("forgejo", "https://codeberg.org/acme/web/pulls/7", "#5")).toBeNull();
   });
 });

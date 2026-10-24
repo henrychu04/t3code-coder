@@ -1,19 +1,21 @@
-import { makeSourceControlClientRegistry } from "@t3tools/source-control-core/client/definition";
+import { builtInSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
 
+// Coder: no hosted account or token settings (Coder and the workspace own credentials), so
+// upstream's `readHostCredentialSettings` and its credential types are not carried.
 export {
+  isMonochromeSourceControlIcon,
   UNKNOWN_SOURCE_CONTROL_CLIENT,
+  type ChangeRequestLink,
   type ChangeRequestTerminology,
-  type SourceControlClientDefinition,
-} from "@t3tools/source-control-core/client/definition";
-import * as GitLab from "@t3tools/source-control-gitlab/client/definition";
+  type ParsedChangeRequestUrl,
+  type ReferenceAutolink,
+  type SourceControlDefinition,
+  type SourceControlIcon,
+} from "@t3tools/source-control-core/shared/definition";
 
-/**
- * Coder: GitLab is the only hosted source control provider, so it is the only definition. A
- * repository that has not reported its host yet reads as GitLab, and every other kind reads as
- * the generic host.
- */
-const BUILT_IN_SOURCE_CONTROL_CLIENTS = [GitLab.definition];
+export const sourceControlClients = builtInSourceControlDefinitions;
 
-export const sourceControlClients = makeSourceControlClientRegistry(
-  BUILT_IN_SOURCE_CONTROL_CLIENTS,
-);
+/** A host's change request term where it opens a sentence: "Merge request merged". */
+export function capitalizeTerm(term: string): string {
+  return term.charAt(0).toUpperCase() + term.slice(1);
+}

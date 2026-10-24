@@ -1,67 +1,53 @@
+import { changeRequestReferenceAutolinker } from "@t3tools/client-runtime/pull-request-markdown";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { describe, expect, it } from "vite-plus/test";
-
-import type { MarkdownNode } from "~/vendor/mdast-find-and-replace";
 
 import { remarkPullRequestAutolinks } from "./pullRequestMarkdown.logic";
 
-describe("GitLab merge request markdown autolinks", () => {
-  it("links same-project merge requests, issues, and full commit ids", () => {
+type Node = {
+  type: string;
+  value?: string;
+  url?: string;
+  data?: { hProperties?: Record<string, unknown> };
+  children?: Node[];
+};
+
+// Coder: GitLab is the only host, so the autolinks follow GitLab's grammar.
+function links(markdown: string) {
+  const autolinks = changeRequestReferenceAutolinker({
+    provider: "gitlab",
+    url: "https://gitlab.example/group/project/-/merge_requests/8",
+  })!;
+  const tree = unified().use(remarkParse).parse(markdown) as Node;
+  remarkPullRequestAutolinks({ autolinks })(tree as never);
+  const found: Array<[string | undefined, string | undefined, unknown]> = [];
+  const visit = (node: Node) => {
+    if (node.type === "link") {
+      found.push([
+        node.children?.[0]?.value,
+        node.url,
+        node.data?.hProperties?.["dataPullRequestAutolink"],
+      ]);
+    }
+    node.children?.forEach(visit);
+  };
+  visit(tree);
+  return found;
+}
+
+describe("remarkPullRequestAutolinks", () => {
+  it("links the host's references in prose and leaves links and code alone", () => {
     const commit = "0123456789abcdef0123456789abcdef01234567";
-    const tree: MarkdownNode = {
-      type: "root",
-      children: [{ type: "text", value: `See !42, #17, and ${commit}.` }],
-    };
-
-    remarkPullRequestAutolinks({ repositoryUrl: "https://gitlab.example/group/project/" })(tree);
-
-    expect(tree.children).toEqual([
-      { type: "text", value: "See " },
-      {
-        type: "link",
-        url: "https://gitlab.example/group/project/-/merge_requests/42",
-        data: { hProperties: { dataPullRequestAutolink: "merge-request" } },
-        children: [{ type: "text", value: "!42" }],
-      },
-      { type: "text", value: ", " },
-      {
-        type: "link",
-        url: "https://gitlab.example/group/project/-/issues/17",
-        data: { hProperties: { dataPullRequestAutolink: "issue" } },
-        children: [{ type: "text", value: "#17" }],
-      },
-      { type: "text", value: ", and " },
-      {
-        type: "link",
-        url: `https://gitlab.example/group/project/-/commit/${commit}`,
-        data: { hProperties: { dataPullRequestAutolink: "commit" } },
-        children: [{ type: "text", value: "0123456" }],
-      },
-      { type: "text", value: "." },
+    expect(links(`See !42, #17, and **${commit}**. [!13](https://example.com) \`#14\``)).toEqual([
+      ["!42", "https://gitlab.example/group/project/-/merge_requests/42", "reference"],
+      ["#17", "https://gitlab.example/group/project/-/issues/17", "reference"],
+      ["0123456", `https://gitlab.example/group/project/-/commit/${commit}`, "commit"],
+      ["!13", "https://example.com", undefined],
     ]);
   });
 
-  it("leaves authored links and word-like reference fragments alone", () => {
-    const tree: MarkdownNode = {
-      type: "root",
-      children: [
-        { type: "text", value: "team!42 abc#17" },
-        {
-          type: "link",
-          url: "https://example.com",
-          children: [{ type: "text", value: "!9" }],
-        },
-      ],
-    };
-
-    remarkPullRequestAutolinks({ repositoryUrl: "https://gitlab.example/group/project" })(tree);
-
-    expect(tree.children).toEqual([
-      { type: "text", value: "team!42 abc#17" },
-      {
-        type: "link",
-        url: "https://example.com",
-        children: [{ type: "text", value: "!9" }],
-      },
-    ]);
+  it("leaves word-like reference fragments alone", () => {
+    expect(links("team!42 abc#17")).toEqual([]);
   });
 });
