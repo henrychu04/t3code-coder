@@ -54,7 +54,6 @@ import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ProviderRuntimeRecovery from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
-import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -63,6 +62,7 @@ import {
   layerGitWorkflow,
   layerIdleCompactionWorker,
   layerPullRequestService,
+  layerRepositoryIdentityResolver,
   layerServerSettings,
   layerSourceControlProviderRegistry,
   layerTerminal,
@@ -199,7 +199,9 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
       Layer.provide(T3ProjectFileLoader.layer),
     ),
   ),
-  Layer.provideMerge(RepositoryIdentityResolver.layer),
+  // As upstream: hosts refine an identity no remote parser recognised (GitLab confirms a
+  // self-hosted host through its `glab` login).
+  Layer.provideMerge(layerRepositoryIdentityResolver),
   // As upstream's `layerBackground`: periodic merge request discovery asks the (always-allow)
   // background policy before each sweep.
   Layer.provideMerge(BackgroundPolicy.layer),

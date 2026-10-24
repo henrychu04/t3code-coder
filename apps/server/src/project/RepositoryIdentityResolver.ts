@@ -1,4 +1,4 @@
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
 import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -24,6 +24,9 @@ export interface RepositoryIdentityResolverOptions {
   readonly cacheCapacity?: number;
   readonly positiveCacheTtl?: Duration.Input;
   readonly negativeCacheTtl?: Duration.Input;
+  readonly refine?: (
+    identity: RepositoryIdentity,
+  ) => Effect.Effect<RepositoryIdentity, SourceControlProviderError>;
 }
 
 export class RepositoryIdentityResolver extends Context.Service<
@@ -228,6 +231,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 ) {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
+  const refine = options.refine ?? Effect.succeed;
   const timeToLive = (exit: Exit.Exit<unknown>) =>
     Exit.match(exit, {
       onSuccess: (value) =>
@@ -252,6 +256,10 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
     (cacheKey) =>
       resolveRepositoryIdentityFromCacheKey(cacheKey).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+        Effect.filterOrElse(
+          (identity): identity is null => identity === null,
+          (identity) => refine(identity).pipe(Effect.orElseSucceed(() => identity)),
+        ),
       ),
     { capacity: cacheCapacity, timeToLive },
   );

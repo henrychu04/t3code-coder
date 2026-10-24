@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type { RepositoryIdentity } from "@t3tools/contracts";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
@@ -9,6 +10,8 @@ import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
+import { BUILT_IN_SOURCE_CONTROL_DRIVER_LIST } from "./sourceControl/sourceControlDefinitions.ts";
+import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -54,6 +57,28 @@ const layerSourceControlProviderRegistry = SourceControlProviderRegistry.layer.p
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerVcsDriverRegistry),
 );
+
+const layerRepositoryIdentityResolver = Layer.effect(
+  RepositoryIdentityResolver.RepositoryIdentityResolver,
+  Effect.gen(function* () {
+    const registry = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+    return yield* RepositoryIdentityResolver.make({
+      refine: Effect.fn(function* (identity: RepositoryIdentity) {
+        for (const { kind } of BUILT_IN_SOURCE_CONTROL_DRIVER_LIST) {
+          const provider = yield* registry.get(kind);
+          if (provider.refineRepositoryIdentity === undefined) continue;
+          const refined = yield* provider.refineRepositoryIdentity({
+            identity,
+            resolveContext: (input) =>
+              registry.resolveHandle(input).pipe(Effect.map((handle) => handle.context)),
+          });
+          if (refined !== identity) return refined;
+        }
+        return identity;
+      }),
+    });
+  }),
+).pipe(Layer.provide(layerSourceControlProviderRegistry), Layer.provide(ProcessRunner.layer));
 
 const layerPullRequestService = PullRequestService.layer.pipe(
   Layer.provide(PullRequestProviderRegistry.layer),
@@ -161,6 +186,7 @@ export {
   layerGitWorkflow,
   layerIdleCompactionWorker,
   layerPullRequestService,
+  layerRepositoryIdentityResolver,
   layerServerSettings,
   layerSourceControlProviderRegistry,
   layerTerminal,
