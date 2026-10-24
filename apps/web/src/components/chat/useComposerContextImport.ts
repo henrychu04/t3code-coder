@@ -9,6 +9,8 @@ import {
 import {
   type ComposerFileAttachment,
   type DraftId,
+  composerFileMatchesReattachMarker,
+  composerFileNeedsReattach,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { type PendingUserInput } from "../../session-logic";
@@ -65,6 +67,7 @@ export function useComposerContextImport(input: {
   readonly questionAttachmentTarget: DraftId | null;
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
   readonly composerContextRecords: ComposerDraftContextRecords;
+  readonly composerFilesRef: ChatComposerProps["composerFilesRef"];
   readonly pendingImageCompressionsRef: RefObject<Map<string, number>>;
   readonly pendingThreadImportsRef: RefObject<Map<string, number>>;
   readonly addComposerFilesToDraft: (files: ComposerFileAttachment[]) => string[];
@@ -80,6 +83,7 @@ export function useComposerContextImport(input: {
     questionAttachmentTarget,
     pendingUserInputs,
     composerContextRecords,
+    composerFilesRef,
     pendingImageCompressionsRef,
     pendingThreadImportsRef,
     addComposerFilesToDraft,
@@ -162,7 +166,19 @@ export function useComposerContextImport(input: {
     // The draft these bytes belong to may have been sent or switched away from while they
     // downloaded. Dropping them here keeps them out of whatever draft is open now.
     if (attachmentTargetKeyRef.current !== importTargetKey) return;
+    const replacesFileMarker =
+      record.kind === "file" &&
+      composerFilesRef.current.some(
+        (candidate) =>
+          composerFileNeedsReattach(candidate) &&
+          composerFileMatchesReattachMarker(candidate, {
+            name: record.name,
+            mimeType: file.type,
+            sizeBytes: file.size,
+          }),
+      );
     if (
+      !replacesFileMarker &&
       (pendingThreadImportsRef.current.get(importTargetKey) ?? 0) > 0 &&
       countReservedAttachments() >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS
     ) {
@@ -218,6 +234,8 @@ export function useComposerContextImport(input: {
     threadDraftTarget = attachmentDraftTarget,
   ): ReadonlyMap<string, string> => {
     const rewritten = new Map<string, string>();
+    // Coder: preview annotations and element captures are not carried, so their records are
+    // skipped and no screenshot depends on an annotation id.
     for (const candidate of records) {
       // Producer ids fold into context ids, so two different excerpts can collide. Only skip
       // when the draft already holds the same payload; a colliding but different record is
