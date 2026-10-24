@@ -298,7 +298,9 @@ the token and the exact size and stores upstream's pending-upload name, `pending
 Bytes pass through gateway memory only. Closing the request interrupts the helper's read. The
 helper advertises upstream's `attachmentUploads`, `questionAttachments`, and `fileAttachments`
 capabilities. Drafts and stashed prompts keep their images and upload ids in browser storage, as
-upstream's do.
+upstream's do. Upstream's data-URL `assets.persistChatAttachments` is not carried (`ws.ts`), and
+client-runtime's `state/attachments.ts` keeps `isAssetAttachmentNotFoundFailure` module-private,
+because only upstream's mobile app imports it.
 
 As upstream does, the helper claims each pending upload into a thread-scoped copy when it accepts
 the message; `AttachmentClaims.ts` reads the staged file once through a no-follow handle at its
@@ -309,7 +311,8 @@ Images Coder stored before upstream's attachment ids (`<uuid>.<ext>`) decode as
 upstream's signed attachment URLs for previews, Save, and rewind.
 
 The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
-`message.context`) without preview annotations, element captures, or SnapShot frames.
+`message.context`) without preview annotations, element captures, or SnapShot frames
+(`useComposerContextImport.ts` skips those records when pasting).
 `ComposerAttachmentStrip.tsx`'s media row has upstream's image and video tiles without SnapShot
 frames. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
@@ -336,11 +339,15 @@ and never returns file contents.
 
 Media, documents, and attachments load from upstream's signed asset URLs: `assets.createUrl`,
 `assets/AssetAccess.ts`, `assets/MediaFile.ts`, and upstream's asset route (`http.ts`, which
-carries only that route). Native app icons (upstream's resolver answers only on macOS) and
+carries only that route; `auth/utils.ts` carries only upstream's token signing helpers, because
+upstream's HTTP session auth is not carried). Native app icons (upstream's resolver answers only on macOS) and
 GitHub-authenticated media are not carried, so those resource kinds and their errors are cut from
 `contracts/assets.ts`. Project favicons are upstream's: `ProjectFaviconResolver` with
 `T3ProjectFileLoader`, the favicon URL atoms and IndexedDB image cache, and Settings → Project's
-file picker, without the desktop-only picker for files outside the project.
+file picker, without the desktop-only picker for files outside the project. For the same reason
+`shared/projectFavicon.ts` keeps `PROJECT_FAVICON_EXTENSIONS` module-private, and
+`shared/t3ProjectFile.ts` drops `buildT3ProjectFileJsonSchema`, which only upstream's marketing
+site uses.
 
 The gateway serves a workspace's asset URLs at `/api/workspaces/<id>/api/assets/*`
 (`apps/coder-gateway/src/assetProxy.ts`). It forwards `GET` and `HEAD`, with only `Range` and
@@ -731,9 +738,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Contracts.** `packages/contracts` follows upstream, including dormant schemas for surfaces Coder
   does not serve (auth, provider setup, other providers' settings, browser, device, preview, usage
   sources, agent sessions, filesystem browse, background policy). Coder deltas:
-  - `rpc.ts` omits RPCs whose schemas belong to excluded modules (assets, attachment upload URLs,
+  - `rpc.ts` omits RPCs whose schemas belong to excluded modules (chat attachment persistence,
     preview automation, relay, resource telemetry, usage, editor launch, GitHub routing, feedback
-    upload, HTTP content search, and the OTLP endpoint check) and adds the helper-only methods
+    upload, and the OTLP endpoint check) and adds the helper-only methods
     (with the transcript read's `OrchestrationThreadTranscriptTooLargeError`) and
     `CoderWsRpcGroup`, the
     only group the helper serves. That group carries upstream's thread find
@@ -799,11 +806,6 @@ listed here is drift to remove rather than fork behavior to keep.
   files, rewinds, and queued edits read through upstream's signed attachment URLs (see
   [Media and document previews](#media-and-document-previews)), and the right panel previews a sent
   file in upstream's `FilePreviewPanel`. Native app icons fall back to the tool glyph.
-  `attachmentUploadQueue.ts` carries upstream's `verifyPersistedAttachmentUpload` locally, because
-  client-runtime's attachment upload module is not carried.
-  `WorkspaceEntryIcon.tsx`, `UserMessageContextChips.tsx`, the composer, and its attachment
-  strip format sizes and limits with the web's `lib/attachmentDisplay.ts`, because
-  client-runtime's attachment upload module is not carried.
   Upstream's v1 importer carries only messages, and upstream migration 063 drops the v1
   `projection_thread_activities` rows, so screenshots that pre-v2 conversations saved as
   `artifacts` on v1 tool activities are not shown, as on upstream.
@@ -844,8 +846,7 @@ listed here is drift to remove rather than fork behavior to keep.
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
   The active workspace stands in for upstream's primary environment, and drafts read their
   route workspace's config. The Files surface opens for drafts as on main. `chatCanvasLayout.ts` has no preview obstacles (it accepts upstream's `findBar` and ignores it),
-  and `ChatCanvas.test.tsx` covers only the details card inset below Find; the right panel keeps
-  Coder's per-thread width storage instead of upstream's preview inline size. Pieces upstream
+  and `ChatCanvas.test.tsx` covers only the details card inset below Find. Pieces upstream
   moved out of `ChatView` carry the same cuts (each marked `Coder:`): `RightPanelSurfaceContent`
   renders nothing for browser and device surfaces and names merge requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
   confirmation; `useQueuedRunEdit` carries no preview annotations; `useThreadLinkedPullRequest` names merge requests; `useSystemComposerBanners`
@@ -1095,8 +1096,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - A thread whose workspace is not connected shows `WorkspaceConnectionStatus`, and so does
     `_chat.index.tsx` after upstream's draft branch (#20183) while workspaces are pending or
     unreachable; the `/projects/$projectKey` redirect has no auth gate.
-  - Merge-request list preferences remember presentation controls only, never repository
-    identities or search text. Dropped or pasted folders are neither uploaded nor referenced
+  - Dropped or pasted folders are neither uploaded nor referenced
     (only files become composer attachments). `ChatComposer.tsx`'s `addComposerFolders` always
     takes upstream's remote-environment branch and shows its "local desktop environment" toast,
     because every workspace is remote; upstream's desktop path lookup (`folderDrop.ts`) is not
@@ -1139,7 +1139,7 @@ listed here is drift to remove rather than fork behavior to keep.
   (`scripts/coder-live-test.mjs` and `scripts/coder-live-template/`) is kept local and is not
   committed, because it provisions external tooling; `.gitignore` excludes both, so those scripts
   fail in a fresh clone. Its two checks are tracked: `scripts/coder-live-images.mjs` drives a
-  running gateway's upload and helper image reads against a connected workspace, and
+  running gateway's signed upload and asset URLs against a connected workspace, and
   `scripts/coder-live-provider-images.mjs` (`pnpm coder:live:providers`) runs one real turn per
   provider, which needs authenticated workspace or local Codex and Claude Code CLIs and spends
   their quota.
@@ -1165,8 +1165,6 @@ listed here is drift to remove rather than fork behavior to keep.
   `ThreadDetailsPrRows.browser.test.tsx` checks the run context, not the editor picker. `CommandPalette.focus.browser.test.tsx`
   mocks `useCoder` and sends `mod+p` with the platform's modifier (upstream's Ctrl+P matches only
   off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
-  `McpAppFrame.browser.test.tsx` reads its app through a mocked helper read into a stand-in for
-  the gateway's document shell, where upstream serves a data-URL asset.
   `SourceControlProviderRegistry.test.ts` runs
   upstream's registry tests (its `makeRegistry` with remotes, process, and server settings) for
   the GitLab-only registry, with the "asks once" and "asks again" auth-probe tests driving
@@ -1180,10 +1178,11 @@ listed here is drift to remove rather than fork behavior to keep.
   Registry providers; `ProviderReplayFixtures.ts` lists only those drivers.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
   the Coder config owns registration and there is no per-environment switch.
+  client-runtime's `threads-sync.test.ts` and `threads-atoms.test.ts` fake older history pages
+  over the helper's history RPC (`threadHistoryHttp.ts`) instead of upstream's HTTP client.
   `ws.test.ts` omits upstream's config-RPC buffering test, which builds upstream's session-scoped
   `layerWsRpc`. Upstream's `composerContextUndo.test.ts` (preview annotations
-  only), `HtmlRenderFrame.browser.test.tsx`, and `BrowserDocumentFrame.browser.test.tsx` (signed
-  URLs) are not carried; `DiffPanel.browser.test.tsx` passes `onOpenFile` without an editor mock,
+  only) is not carried; `DiffPanel.browser.test.tsx` passes `onOpenFile` without an editor mock,
   and `ProjectSettingsPanel.browser.test.tsx` keeps `projects.getConfig` pending as upstream
   keeps its file read.
   `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
@@ -1192,12 +1191,10 @@ listed here is drift to remove rather than fork behavior to keep.
   only; `reactCompilerCoverage.test.ts` skips four fork-only files the compiler bails on
   (`CODER_UNCOMPILED_FILES`). The fork keeps `jsdom` and `react-test-renderer` as web dev
   dependencies for its own unit tests and for fork-adapted suites that stay unit tests in place
-  of upstream's browser versions: `ChatMarkdown.test.tsx` (upstream's `ChatMarkdown.browser`,
-  `.logic`, and `.assets` browser tests are not carried), `AttachmentFilePreview.test.tsx`,
-  `ProjectSettingsPanel.test.tsx`, and `RightPanelTabs.test.tsx`
+  of upstream's browser versions: `ChatMarkdown.test.tsx` (upstream's `ChatMarkdown.browser` and
+  `ChatMarkdown.permissions.browser` tests are not carried), `ProjectSettingsPanel.test.tsx`, and `RightPanelTabs.test.tsx`
   (upstream's `RightPanelTabs.browser.test.tsx` is not carried). The carried browser tests omit
-  cases for cut surfaces: grant checks in `ProjectSettingsPanel`, signed-URL renewal in
-  `AttachmentFilePreview`, uncarried providers in
+  cases for cut surfaces: grant checks in `ProjectSettingsPanel`, uncarried providers in
   `ProviderModelPicker`, and preview mocks in `ReopenClosedViewShortcut`.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
