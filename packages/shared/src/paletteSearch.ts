@@ -931,9 +931,10 @@ function matchHint(
   typos: boolean,
 ): SearchMatchHint | undefined {
   const candidates: Array<{ readonly label: string; readonly text: string | null | undefined }> = [
+    // Coder: GitLab merge request wording.
     ...(thread.pullRequests ?? []).map((pullRequest) => ({
-      label: "PR",
-      text: `#${pullRequest.number}${pullRequest.title ? ` ${pullRequest.title}` : ""}`,
+      label: "MR",
+      text: `!${pullRequest.number}${pullRequest.title ? ` ${pullRequest.title}` : ""}`,
     })),
     { label: "Branch", text: searchableBranch(thread.branch) },
     { label: "Project", text: thread.projectTitle },

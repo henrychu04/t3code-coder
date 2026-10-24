@@ -270,9 +270,10 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
       projectTitle: "lakebed",
       pullRequests: [{ number: 243, title: "perf: faster cold starts" }],
     });
+    // Coder: the hint uses GitLab merge request wording.
     expect(scoreThreadSearch("lakebed perf", lakebed, NOW)?.explain?.()).toEqual({
-      label: "PR",
-      text: "#243 perf: faster cold starts",
+      label: "MR",
+      text: "!243 perf: faster cold starts",
       ranges: [{ start: 5, end: 9 }],
     });
   });
@@ -283,9 +284,10 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
       pullRequests: [{ number: 22889, title: "Smaller MCP payloads" }],
     });
     for (const query of ["#22889", "pr 22889", "pr22889", "pull request #22889"]) {
+      // Coder: the hint uses GitLab merge request wording.
       expect(scoreThreadSearch(foldSearchQuery(query), subject, NOW)?.explain?.(), query).toEqual({
-        label: "PR",
-        text: "#22889 Smaller MCP payloads",
+        label: "MR",
+        text: "!22889 Smaller MCP payloads",
         ranges: [{ start: 1, end: 6 }],
       });
     }
