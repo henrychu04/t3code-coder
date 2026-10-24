@@ -306,35 +306,6 @@ export const ProjectListEntriesResult = Schema.Struct({
 });
 export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
 
-// Coder: the workspace picker's directory listing (`workspace.listDirectories`).
-export const WorkspaceListDirectoriesInput = Schema.Struct({
-  path: Schema.optional(TrimmedNonEmptyString),
-});
-export type WorkspaceListDirectoriesInput = typeof WorkspaceListDirectoriesInput.Type;
-
-export const WorkspaceDirectoryEntry = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  path: TrimmedNonEmptyString,
-});
-export type WorkspaceDirectoryEntry = typeof WorkspaceDirectoryEntry.Type;
-
-export const WorkspaceListDirectoriesResult = Schema.Struct({
-  path: TrimmedNonEmptyString,
-  parentPath: Schema.optional(TrimmedNonEmptyString),
-  directories: Schema.Array(WorkspaceDirectoryEntry),
-  truncated: Schema.Boolean,
-});
-export type WorkspaceListDirectoriesResult = typeof WorkspaceListDirectoriesResult.Type;
-
-export class WorkspaceListDirectoriesError extends Schema.TaggedError<WorkspaceListDirectoriesError>()(
-  "WorkspaceListDirectoriesError",
-  {
-    path: TrimmedNonEmptyString,
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
-
 // Untracked files git ignores. Wholly ignored folders such as `node_modules`
 // are left out, so the list stays small enough to pick from.
 export const ProjectListIgnoredFilesInput = Schema.Struct({

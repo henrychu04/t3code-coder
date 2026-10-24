@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -19,8 +18,6 @@ import type {
   ProjectSearchContentsResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
-  WorkspaceListDirectoriesInput,
-  WorkspaceListDirectoriesResult,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
@@ -106,27 +103,8 @@ export class WorkspaceEntries extends Context.Service<
       input: ProjectSearchContentsInput,
     ) => Effect.Effect<ProjectSearchContentsResult, WorkspaceEntriesError>;
     readonly refresh: (cwd: string) => Effect.Effect<void>;
-    // Coder: the workspace picker's directory listing (`workspace.listDirectories`).
-    readonly listDirectories: (
-      input: WorkspaceListDirectoriesInput,
-    ) => Effect.Effect<WorkspaceListDirectoriesResult, WorkspaceDirectoryListFailed>;
   }
 >()("t3/workspace/WorkspaceEntries") {}
-
-export class WorkspaceDirectoryListFailed extends Schema.TaggedError<WorkspaceDirectoryListFailed>()(
-  "WorkspaceDirectoryListFailed",
-  {
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to list directories in '${this.path}'.`;
-  }
-}
-
-/** Coder: folders the workspace picker lists at once. */
-const MAX_LISTED_DIRECTORIES = 500;
 
 /** Coder: a folder listing must fit one helper stdio frame, even with long paths. */
 const MAX_PROJECT_DIRECTORY_ENTRIES = 5000;
@@ -416,54 +394,8 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  // Coder: the workspace picker's directory listing.
-  const listDirectories: WorkspaceEntries["Service"]["listDirectories"] = Effect.fn(
-    "WorkspaceEntries.listDirectories",
-  )(function* (input) {
-    const requestedPath = input.path?.trim() ?? NodeOS.homedir();
-    if (!path.isAbsolute(requestedPath)) {
-      return yield* new WorkspaceDirectoryListFailed({
-        path: requestedPath,
-        cause: new Error("Workspace directory paths must be absolute."),
-      });
-    }
-    const directory = path.resolve(requestedPath);
-    const directories = yield* Effect.tryPromise({
-      try: async () => {
-        const entries = await NodeFSP.readdir(directory, { withFileTypes: true });
-        const candidates = await Promise.all(
-          entries.map(async (entry) => {
-            const entryPath = path.join(directory, entry.name);
-            if (entry.isDirectory()) return { name: entry.name, path: entryPath };
-            if (!entry.isSymbolicLink()) return null;
-            try {
-              return (await NodeFSP.stat(entryPath)).isDirectory()
-                ? { name: entry.name, path: entryPath }
-                : null;
-            } catch {
-              return null;
-            }
-          }),
-        );
-        return candidates
-          .filter(
-            (entry): entry is { readonly name: string; readonly path: string } => entry !== null,
-          )
-          .sort((left, right) => left.name.localeCompare(right.name));
-      },
-      catch: (cause) => new WorkspaceDirectoryListFailed({ path: directory, cause }),
-    });
-    const parentPath = path.dirname(directory);
-    return {
-      path: directory,
-      ...(parentPath === directory ? {} : { parentPath }),
-      directories: directories.slice(0, MAX_LISTED_DIRECTORIES),
-      truncated: directories.length > MAX_LISTED_DIRECTORIES,
-    };
-  });
-
   // Coder: no listIgnoredFiles; "Add to another machine" (#22180) is not carried.
-  return WorkspaceEntries.of({ browse, list, listDirectories, refresh, search, searchContents });
+  return WorkspaceEntries.of({ browse, list, refresh, search, searchContents });
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make).pipe(

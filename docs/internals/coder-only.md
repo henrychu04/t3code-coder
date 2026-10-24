@@ -467,11 +467,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials
     (`withPullRequestViewer` is an identity in `ws.ts`).
   - `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and `WorkspaceSearchIndex.ts` are
-    upstream's with these deltas: a folder listing returns at most
-    `MAX_PROJECT_DIRECTORY_ENTRIES` children (see [Files and search](#files-and-search));
-    `WorkspaceEntries.listDirectories` serves `workspace.listDirectories`; and image-only path
-    search matches `isWorkspaceImagePreviewPath`, because project favicons
-    (`isProjectFaviconPath`) are not carried.
+    upstream's, except that a folder listing returns at most `MAX_PROJECT_DIRECTORY_ENTRIES`
+    children (see [Files and search](#files-and-search)).
   - Upstream's "Add to another machine" (#22180, #22254) is not carried, because it copies a
     project's ignored files, such as `.env`, from one workspace to another through the laptop
     browser. `WorkspaceEntries` has no `listIgnoredFiles`, `ws.ts` serves no
@@ -480,8 +477,7 @@ listed here is drift to remove rather than fork behavior to keep.
     menu entry, and `ChatView.tsx` shows no file-copy banner or send block.
   - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
     branch/worktree rename with `moveWorktree`, chunked review files, the gateway's asset
-    stream (`coder.serveAsset`), fixed project-config reads, workspace
-    directory listing, merge-request diffs, and upstream's HTTP bounded thread snapshot,
+    stream (`coder.serveAsset`), fixed project-config reads, merge-request diffs, and upstream's HTTP bounded thread snapshot,
     history page, and thread transcript over stdio. The method set stays `CoderWsRpcGroup`;
     unsupported upstream methods stay omitted.
   - A thread dropped on the composer from another workspace attaches upstream's saved transcript

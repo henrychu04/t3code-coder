@@ -12,7 +12,6 @@ import {
   OrchestrationThreadTranscriptTooLargeError,
   ThreadId,
   VcsRenameThreadBranchError,
-  WorkspaceListDirectoriesError,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
@@ -49,7 +48,6 @@ export const CODER_WS_METHODS = [
   WS_METHODS.orchestrationGetThreadTranscript,
   WS_METHODS.pullRequestsDiff,
   WS_METHODS.projectsGetConfig,
-  WS_METHODS.workspaceListDirectories,
   WS_METHODS.coderServeAsset,
   WS_METHODS.coderWriteRequestBody,
   WS_METHODS.subscribeVcsRefStatus,
@@ -490,17 +488,6 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
           if (Option.isNone(project)) return { status: "unavailable" as const, file: null };
           return readProjectConfig(project.value.workspaceRoot);
         }).pipe(Effect.orElseSucceed(() => ({ status: "unavailable" as const, file: null }))),
-      [WS_METHODS.workspaceListDirectories]: (input) =>
-        workspaceEntries.listDirectories(input).pipe(
-          Effect.mapError(
-            (cause) =>
-              new WorkspaceListDirectoriesError({
-                path: input.path ?? "workspace home",
-                message: cause.message,
-                cause,
-              }),
-          ),
-        ),
       // Coder: the gateway's loopback asset and upload routes, answered by upstream's routes in
       // process; an upload's body arrives in chunks.
       [WS_METHODS.coderServeAsset]: (input) => assets.serve(input),

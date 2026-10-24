@@ -1,6 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeOS from "node:os";
-
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, afterEach, describe, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -286,59 +284,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         });
         expect(images.entries.map((entry) => entry.path).toSorted()).toEqual(imagePaths.toSorted());
         expect(images.truncated).toBe(false);
-      }),
-    );
-  });
-
-  // Coder: the workspace picker's directory listing.
-  describe("listDirectories", () => {
-    it.effect("lists immediate remote directories without reading file contents", () =>
-      Effect.gen(function* () {
-        const entries = yield* WorkspaceEntries.WorkspaceEntries;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const root = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3-coder-directory-list-",
-        });
-        yield* fileSystem.makeDirectory(path.join(root, "zeta"));
-        yield* fileSystem.makeDirectory(path.join(root, "alpha"));
-        yield* fileSystem.writeFileString(path.join(root, "README.md"), "not transferred");
-        yield* fileSystem.symlink(path.join(root, "alpha"), path.join(root, "link"));
-
-        const result = yield* entries.listDirectories({ path: root });
-
-        expect(result).toEqual({
-          path: root,
-          parentPath: path.dirname(root),
-          directories: [
-            { name: "alpha", path: path.join(root, "alpha") },
-            { name: "link", path: path.join(root, "link") },
-            { name: "zeta", path: path.join(root, "zeta") },
-          ],
-          truncated: false,
-        });
-      }),
-    );
-
-    it.effect("rejects relative browse paths", () =>
-      Effect.gen(function* () {
-        const entries = yield* WorkspaceEntries.WorkspaceEntries;
-
-        const error = yield* entries
-          .listDirectories({ path: "relative/project" })
-          .pipe(Effect.flip);
-
-        expect(error.message).toContain("Failed to list directories");
-      }),
-    );
-
-    it.effect("defaults to the workspace home directory", () =>
-      Effect.gen(function* () {
-        const entries = yield* WorkspaceEntries.WorkspaceEntries;
-
-        const result = yield* entries.listDirectories({});
-
-        expect(result.path).toBe(NodeOS.homedir());
       }),
     );
   });
