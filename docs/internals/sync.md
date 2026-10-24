@@ -134,8 +134,9 @@ in kept directories (in the 5cbe82a870 sync: `observability/OtlpEndpointCheck.ts
 `config.test.ts`, web `sidebar/SidebarUpdateCapsule.tsx` and `settings/DatabaseStorageNotice.tsx`,
 and client-runtime `state/threadTranscriptHttp.ts`, which the fork replaced with an RPC); review
 `git diff --name-only --diff-filter=A "$MB" "$SHA" -- apps packages` for them. Upstream's manual
-repro fixtures under `scripts/fixtures` (eb1510d249: `issue-16534`) are upstream tooling; delete
-them. Upstream's
+repro fixtures and seed scripts under `scripts` (eb1510d249: `fixtures/issue-16534`; bb7783e295:
+`fixtures/issue-18188`, `fixtures/issue-21397.json`, `seed-issue-21397.py` and its test) are
+upstream tooling; delete them. Upstream's
 patches for mobile or desktop packages land in `patches/` (2a7bd1673c: `@expo__ui@58.0.18.patch`);
 delete any that `pnpm-workspace.yaml`'s `patchedDependencies` does not list. A fork-deleted file
 outside those paths that upstream modified (a cut
@@ -353,7 +354,8 @@ directory with `pnpm exec vp test run <file>`.
 Then start up a real instance with mocks and do a simple test.
 
 `pnpm test:coder` exits 0; a failure is real. It stops at the first failing package script, so
-fix and rerun until it completes. Known results:
+fix and rerun until it completes. A full run takes over ten minutes, longer than an agent's
+foreground command limit, so run it in the background and read its log. Known results:
 
 - The suite needs a Node version in the root `engines.node` (the fork's `^24.13.1`). On an
   older Node, three upstream tests fail on unmodified upstream code: ProjectionRecovery's "selects

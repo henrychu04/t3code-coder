@@ -171,8 +171,12 @@ settlement.
 ## Find and reference work
 
 Open the command palette with `Cmd/Ctrl+K` to search threads across connected
-workspaces. Message search starts after two characters and
-includes your messages and final agent responses.
+workspaces by title, branch, merge request, or project.
+Threads you open often or recently rank higher, and for three weeks the thread
+you last picked for a query ranks higher when you type that query again.
+Threads whose messages contain all your words appear below, under **In
+messages**, and open at the matching message. Message search needs at least
+one word of three or more letters, or two for Chinese, Japanese, and Korean.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files
 and copying a thread reference. A copied reference uses the thread's merge request

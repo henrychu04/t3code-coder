@@ -1017,3 +1017,5 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       assert.strictEqual(detectionError._tag, "VcsProcessSpawnError");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
+
+// Coder: upstream's Git command metric tests are not carried; the fork exports no metrics.

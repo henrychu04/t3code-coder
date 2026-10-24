@@ -39,7 +39,6 @@ import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
-import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 
 /** The methods only the helper serves; `ws.ts` builds every other `CoderWsRpcGroup` method. */
 export const CODER_WS_METHODS = [
@@ -83,7 +82,6 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
     const terminalManager = yield* TerminalManager.TerminalManager;
     const config = yield* ServerConfig.ServerConfig;
     const assets = yield* makeServeAsset;
-    const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const path = yield* Path.Path;
     const fileSystem = yield* FileSystem.FileSystem;

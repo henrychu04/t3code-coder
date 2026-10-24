@@ -454,7 +454,8 @@ listed here is drift to remove rather than fork behavior to keep.
     is in `CODER_OMITTED_CAPABILITIES`, and Settings → Storage has no database notice
     (upstream's `DatabaseStorageNotice` and client-runtime's `databaseStorage` atom are not
     carried). Upstream's `persistence/DatabaseMaintenance.ts`, which only `t3 doctor` uses, is
-    not carried either.
+    not carried either, so `orchestration-v2/messageSearchIndex.ts`'s `rebuildMessageSearch` has
+    no caller (`knip.jsonc` ignores it); migration 069's backfill and triggers keep the index.
   - Upstream's idle Claude compaction worker (`layerIdleCompactionWorker`) runs in
     `CoderRuntimeCoreLive`. `coderServer.ts`'s `CoderProviderRegistryLive` gives
     `ProviderRegistry` the provider support layer, which upstream's registry now reads for
@@ -790,7 +791,8 @@ listed here is drift to remove rather than fork behavior to keep.
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies
   keybindings; every workspace is remote; Add project always shows the workspace picker, which
   also lists each domain's unconnected workspaces and connects the chosen one; there is no desktop or WSL folder picker, browser
-  preview, or usage page; and review actions say merge request. Clone sources, host icons, and
+  preview, usage page, or file manager action (the footer holds only the message search notice);
+  and review actions say merge request. Clone sources, host icons, and
   publish targets come from the GitLab-only client registry (see Source control below).
   Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
@@ -927,7 +929,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - User-facing text says "merge request", "MR", and `!123` wherever upstream says "pull
     request", "PR", or `#123`: the panels, composer, settings, toasts, keybinding labels, and
     the strings the web shows from `client-runtime` (work-log tool labels and MR actions) and
-    `shared` (T3 tool presentation, watch descriptions, and copy-link toasts). The agent-facing
+    `shared` (T3 tool presentation, watch descriptions, copy-link toasts, and the command palette's
+    match hints). The agent-facing
     text the server writes says "merge request", `!123`, and "T3 Coder" too: the merge-request
     watch wakes and their notification summaries (`pullRequestWatch.ts`,
     `PullRequestWatchReactor.ts`), the merge-request T3 tool descriptions and errors
@@ -960,7 +963,7 @@ listed here is drift to remove rather than fork behavior to keep.
     GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    eb1510d249):
+    bb7783e295):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
@@ -990,10 +993,12 @@ listed here is drift to remove rather than fork behavior to keep.
     renames a thread's worktree folder together with its branch, and `refStatusLocal`, a
     branch read that never refreshes the real index. Review file expansion allows up to
     `MAX_REVIEW_DIFF_FILE_BYTES` and fails with `ReviewDiffFileTooLargeError` for the chunked
-    review RPCs, rejecting malformed UTF-8. A top-level review `sourceKind` returns only that
+    review RPCs, rejecting malformed UTF-8; `GitVcsDriverCore.test.ts`'s split-output test
+    expects that field, with a branded exit code so the comparison typechecks. A top-level review `sourceKind` returns only that
     source. Worktree creation reads `t3.json` through the bounded `readProjectConfig`.
     Checkpoint commits use the "T3 Coder" identity.
-  - `VcsProcess` has no GitHub CLI semaphore and classifies only `glab` failures.
+  - `VcsProcess` has no GitHub CLI semaphore, records no Git command metrics, and classifies only
+    `glab` failures.
   - `GitManager` fetches merge-request heads from `refs/merge-requests/<n>/head`. It has no `targetsOnlyRemote`: with no origin, the only
     remote is the repository `glab` targets, so upstream's check of gh's `GH_REPO` and
     `gh-resolved` mark (and its `source-control-github` import) is not carried.
@@ -1003,7 +1008,10 @@ listed here is drift to remove rather than fork behavior to keep.
   - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
     auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
     Coder-owned stub that always allows work, because polling already stops when the last
-    status subscription ends. `server.ts` provides upstream's `layerAutomaticFetchInterval`, so the remote refresh interval follows the background-activity profile as upstream's does.
+    status subscription ends. Its `shouldRunOpportunisticWork` is always true too, so
+    `ThreadPullRequestService`'s minute-by-minute merge request sweep runs whenever the workspace
+    server does, which is only while the gateway holds its helper; `coderServer.ts` provides the
+    policy to the runtime as upstream's `layerBackground` does. `server.ts` provides upstream's `layerAutomaticFetchInterval`, so the remote refresh interval follows the background-activity profile as upstream's does.
   - Startup auto-pull (`vcs/projectAutoPull.ts`) is upstream's `autoPullProjects` from
     `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,

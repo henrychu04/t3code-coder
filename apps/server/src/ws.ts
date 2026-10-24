@@ -1335,6 +1335,7 @@ const layerWsRpc = () =>
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
         [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
         [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
+        [WS_METHODS.pullRequestsFilterOptions]: (input) => pullRequests.filterOptions(input),
         [WS_METHODS.pullRequestsSummary]: (input) =>
           withPullRequestViewer(input, pullRequests.summary(input)),
         [WS_METHODS.pullRequestsStack]: (input) =>

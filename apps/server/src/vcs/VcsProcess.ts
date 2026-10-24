@@ -173,8 +173,12 @@ export const make = Effect.gen(function* () {
   const hostPlatform = yield* HostProcess.Platform;
   const vcsProcesses = yield* Semaphore.make(VCS_PROCESS_CONCURRENCY);
 
-  const spawn = (input: VcsProcessInput, baseError: VcsProcessErrorContext) =>
-    processRunner
+  const spawn = Effect.fn("VcsProcess.spawn")(function* (
+    input: VcsProcessInput,
+    baseError: VcsProcessErrorContext,
+  ) {
+    // Coder: no Git command metrics (the fork exports no telemetry).
+    return yield* processRunner
       .run({
         command: input.command,
         args: input.args,
@@ -221,6 +225,7 @@ export const make = Effect.gen(function* () {
           }),
         ),
       );
+  });
 
   const runUnbounded = Effect.fn("VcsProcess.runUnbounded")(function* (input: VcsProcessInput) {
     const baseError = {

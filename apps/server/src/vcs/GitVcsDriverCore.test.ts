@@ -115,7 +115,8 @@ describe("Git output collection", () => {
       const driver = yield* makeDriver({ stdout, stderr });
       const input = { operation: "test.chunkedGitOutput", cwd: "/repo", args: ["status"] };
       const expected = {
-        exitCode: 0,
+        // Coder: branded so the expected value matches the driver's ExecuteGitResult type.
+        exitCode: ChildProcessSpawner.ExitCode(0),
         stdout,
         stderr,
         stdoutTruncated: false,

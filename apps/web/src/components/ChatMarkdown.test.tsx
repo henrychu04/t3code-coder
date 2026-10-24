@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { EnvironmentId, MessageId, ThreadId, type AssistantCitation } from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { act, type ComponentProps, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -1063,8 +1062,6 @@ describe("ChatMarkdown Windows file links", () => {
 });
 
 describe("ChatMarkdown Coder seams", () => {
-  const threadRef = scopeThreadRef(EnvironmentId.make("env"), ThreadId.make("thread"));
-
   it("opens web links in a separate tab", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown cwd={undefined} text="[issue](https://gitlab.com/group/project/-/issues/1)" />,
