@@ -908,8 +908,9 @@ listed here is drift to remove rather than fork behavior to keep.
   and `!` references and GitLab wording are
   used. Label RPCs exist but GitLab does not advertise label editing, and native stack actions are
   never advertised. Video uploads play inline, other uploads link as on main, and `/uploads/`
-  links resolve against the repository host (client-runtime `pullRequestMarkdown.ts`, which also
-  names a GitLab or self-hosted upload's host; the markdown context carries `repositoryUrl` beside
+  links resolve below the repository, where GitLab serves them (client-runtime
+  `pullRequestMarkdown.ts`, which also names a GitLab or self-hosted upload's host; the markdown
+  context carries `repositoryUrl` beside
   upstream's `autolinks` for that). `!123`, `#123`, and commit autolinks come from GitLab's
   definition (`referenceAutolinks`), which the web's upstream `pullRequestMarkdown.logic.ts` calls.
   Actor avatars load as on main. MR links everywhere
@@ -918,11 +919,15 @@ listed here is drift to remove rather than fork behavior to keep.
   `/-/merge_requests/` URLs, and project matching (client-runtime `changeRequestLinks.ts`'s
   `isGitLabProject`, also used by `findProjectOnChangeRequestHost`) uses upstream's host
   resolvers but skips checkouts whose provider is neither GitLab nor unknown (the registry reads
-  other kinds as the generic host, which would still match by host and path). A linked MR's
-  snapshot status needs a GitLab URL, with no fallback host. `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL (and GitLab's
+  other kinds as the generic host, which would still match by host and path).
+  `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL (and GitLab's
   definition URL in `LinkPullRequestDialog`'s `resolveLinkPullRequestProject`, which wraps
   client-runtime's `pullRequestLinkProject`) and keeps a self-hosted install's origin and path
-  prefix. A plain click opens the panel or page, and a
+  prefix; it stays because nothing sets `RepositoryIdentity.webUrl`, which GitLab's definition
+  URL needs for such an install. The link dialog also accepts `!123`, the form "Copy MR number"
+  copies (client-runtime `pullRequestLinkInput.ts`). Hover previews read upstream's
+  `pullRequests.preview` (the merge request alone) instead of the detail view's read with its
+  merge settings (`PullRequestLinkPreview.tsx`). A plain click opens the panel or page, and a
   modifier or middle click or an MR no workspace project can read goes to the system browser.
   Upstream's "Open pull requests in T3 Code" client setting lives on the Integrations page, which
   is not carried, so it keeps its default and MR links always open in the app.
@@ -945,8 +950,8 @@ listed here is drift to remove rather than fork behavior to keep.
     names, and search haystacks keep upstream's spelling, and the composer trigger stays `#`.
     GitLab's definition supplies "MR" and "merge request" wherever upstream reads a host's
     terminology (#23999 made most surfaces read it), and a missing provider reads as GitLab because
-    it is the only definition; `!123` is still applied by hand, since definitions carry no
-    reference prefix. Text for paths GitLab never reaches (native stacks, stack merges,
+    it is the only definition (an `unknown` one gets upstream's generic wording); `!123` is still
+    applied by hand, since definitions carry no reference prefix. Text for paths GitLab never reaches (native stacks, stack merges,
     `PullRequestsUnavailableState`'s GitHub link, GitHub-only setting rows) is upstream's. These
     pure wording substitutions are not marked line by line; every other difference is.
 - **Source control and merge-request services.** `sourceControl/`, `pullRequest/`, and upstream's
@@ -983,8 +988,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - `glab auth status` lines carrying a token label or a `glpat-` token are never surfaced. Clones
     accept only GitLab URLs without credentials, query, or fragment, and pass `--` before the URL.
   - `PullRequestService` omits upstream's cross-environment routing (routing identities,
-    verified credentials, `expectedAccountId` refs). It keeps `allowStale: false`, which the
-    merge-request watcher uses to read past the held detail.
+    verified credentials, `expectedAccountId` refs).
   - `coderServer.ts` uses upstream's `layerRepositoryIdentityResolver` from `server.ts`, whose
     refine hook lets GitLab confirm a self-hosted host through its `glab` login, and provides
     `FetchHttpClient` to the runtime because every source-control driver requires an HTTP client.
