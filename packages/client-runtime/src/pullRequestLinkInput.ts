@@ -2,7 +2,8 @@ import type { RepositoryIdentity } from "@t3tools/contracts";
 
 import { sourceControlClients, type ChangeRequestTerminology } from "./sourceControlClients.ts";
 
-const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;
+// Coder: GitLab references merge requests as `!123`, the form "Copy MR number" copies.
+const PULL_REQUEST_NUMBER_PATTERN = /^[#!]?(\d+)$/;
 
 export function parsePullRequestReference(input: string): string | null {
   const trimmed = input.trim();

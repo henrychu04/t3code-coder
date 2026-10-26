@@ -134,9 +134,9 @@ function LinkPullRequestDialog({
   const validation = !dirty
     ? null
     : reference.trim().length === 0
-      ? "Paste a merge request URL or enter 123 / #123."
+      ? "Paste a merge request URL or enter 123 / !123."
       : resolved === null
-        ? "Use a merge request URL, 123, or #123."
+        ? "Use a merge request URL, 123, or !123."
         : "error" in resolved
           ? resolved.error
           : null;
@@ -154,7 +154,7 @@ function LinkPullRequestDialog({
         <DialogPanel>
           <Input
             ref={inputRef}
-            placeholder="Merge request URL or #42"
+            placeholder="Merge request URL or !42"
             value={reference}
             onChange={(event) => {
               setDirty(true);
