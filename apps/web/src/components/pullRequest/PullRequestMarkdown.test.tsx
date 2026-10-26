@@ -73,7 +73,6 @@ it("opens a recognized MR in the page panel and updates its URL selection", asyn
         <PullRequestMarkdown
           environmentId={EnvironmentId.make("workspace")}
           cwd="/project"
-          hostUrl="https://gitlab.example"
           text="[Next MR](https://gitlab.example/group/project/-/merge_requests/42)"
         />
       </PullRequestMarkdownContext>,
@@ -109,21 +108,28 @@ it("opens a recognized MR in the page panel and updates its URL selection", asyn
 it("plays videos from their host and links other attachments, as on main", async () => {
   await act(() =>
     root.render(
-      <PullRequestMarkdown
-        environmentId={EnvironmentId.make("workspace")}
-        cwd="/project"
-        hostUrl="https://gitlab.example"
-        text={
-          "https://example.com/demo.mp4\n\n/uploads/abc/file.zip\n\n![image](https://example.com/picture.png)"
-        }
-      />,
+      <PullRequestMarkdownContext
+        value={{
+          autolinks: null,
+          repositoryUrl: "https://gitlab.example/group/project",
+          threadRef: null,
+        }}
+      >
+        <PullRequestMarkdown
+          environmentId={EnvironmentId.make("workspace")}
+          cwd="/project"
+          text={
+            "https://example.com/demo.mp4\n\n/uploads/abc/file.zip\n\n![image](https://example.com/picture.png)"
+          }
+        />
+      </PullRequestMarkdownContext>,
     ),
   );
   expect(container.querySelector("video")?.getAttribute("src")).toBe(
     "https://example.com/demo.mp4",
   );
   const attachment = container.querySelector<HTMLAnchorElement>(
-    'a[href="https://gitlab.example/uploads/abc/file.zip"]',
+    'a[href="https://gitlab.example/group/project/uploads/abc/file.zip"]',
   );
   expect(attachment?.textContent).toContain("Open attachment on gitlab.example");
   expect(attachment?.target).toBe("_blank");

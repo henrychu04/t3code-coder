@@ -40,10 +40,13 @@ function isWebUrl(url: string): boolean {
   }
 }
 
-function resolveAttachmentUrl(url: string, hostUrl?: string | null): string | null {
+// GitLab serves `/uploads/…` below the project (`https://host/group/project/uploads/…`), not the
+// host root.
+function resolveAttachmentUrl(url: string, repositoryUrl?: string | null): string | null {
   if (isWebUrl(url)) return url;
-  if (!url.startsWith("/uploads/") || hostUrl == null || !isWebUrl(hostUrl)) return null;
-  return new URL(url, hostUrl).href;
+  if (!url.startsWith("/uploads/") || repositoryUrl == null || !isWebUrl(repositoryUrl))
+    return null;
+  return `${repositoryUrl.replace(/\/+$/u, "")}${url}`;
 }
 
 function attachmentHostLabel(url: string): string {
@@ -55,12 +58,12 @@ function attachmentHostLabel(url: string): string {
 
 function attachmentFromLine(
   line: string,
-  hostUrl?: string | null,
+  repositoryUrl?: string | null,
 ): { url: string; hostLabel: string; media: "video" | "image" | "unknown" } | null {
   const reference =
     BARE_URL_PATTERN.exec(line.trim())?.[1] ?? MARKDOWN_LINK_PATTERN.exec(line.trim())?.[1];
   if (reference === undefined) return null;
-  const url = resolveAttachmentUrl(reference, hostUrl);
+  const url = resolveAttachmentUrl(reference, repositoryUrl);
   if (url === null) return null;
   const hostLabel = attachmentHostLabel(url);
   if (VIDEO_EXTENSION_PATTERN.test(url) || sourceControlClients.mediaUrl(url)?.kind === "video") {
@@ -73,12 +76,12 @@ function attachmentFromLine(
 }
 
 /**
- * Coder: GitLab's root-relative `/uploads/…` form is resolved against the merge request host
- * before it is exposed.
+ * Coder: GitLab's root-relative `/uploads/…` form is resolved against the merge request's
+ * repository before it is exposed.
  */
 export function splitPullRequestBody(
   body: string,
-  hostUrl?: string | null,
+  repositoryUrl?: string | null,
 ): ReadonlyArray<PullRequestBodySegment> {
   const segments: PullRequestBodySegment[] = [];
   const markdown: string[] = [];
@@ -121,7 +124,7 @@ export function splitPullRequestBody(
       continue;
     }
 
-    const bareAttachment = attachmentFromLine(line, hostUrl);
+    const bareAttachment = attachmentFromLine(line, repositoryUrl);
     if (bareAttachment !== null) {
       flushMarkdown();
       segments.push({ id: `attachment:${segments.length}`, kind: "attachment", ...bareAttachment });
@@ -141,7 +144,7 @@ export function splitPullRequestBody(
       ? VIDEO_TAG_SRC_PATTERN.exec(lines.slice(index, cursor + 1).join("\n"))?.[1]
       : undefined;
     const source =
-      sourceReference === undefined ? null : resolveAttachmentUrl(sourceReference, hostUrl);
+      sourceReference === undefined ? null : resolveAttachmentUrl(sourceReference, repositoryUrl);
     if (source !== null) {
       flushMarkdown();
       segments.push({

@@ -13,7 +13,7 @@ import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestM
 
 export const PullRequestMarkdownContext = createContext<{
   autolinks: ((text: string) => ReadonlyArray<ReferenceAutolink>) | null;
-  // Coder: the repository GitLab's root-relative `/uploads/…` links resolve against.
+  // Coder: the repository GitLab's project-relative `/uploads/…` links resolve against.
   repositoryUrl: string | null;
   threadRef: ScopedThreadRef | null;
 } | null>(null);
@@ -21,14 +21,13 @@ export const PullRequestMarkdownContext = createContext<{
 /**
  * Upstream's change-request body renderer: recognized GitLab navigation stays internal, videos play
  * inline from their host, and other uploads open there. Relative GitLab uploads resolve against the
- * repository's host. Coder: no source control host's credentialed media fetch is carried.
+ * repository. Coder: no source control host's credentialed media fetch is carried.
  */
 export function PullRequestMarkdown({
   text,
   cwd,
   environmentId,
   threadRef,
-  hostUrl,
   className,
 }: {
   text: string;
@@ -36,15 +35,13 @@ export function PullRequestMarkdown({
   environmentId: EnvironmentId;
   /** Thread the body is shown beside, so its merge request links open in that thread's panel. */
   threadRef?: ScopedThreadRef | null;
-  /** Overrides the context's repository as the origin of relative GitLab uploads. */
-  hostUrl?: string | null;
   className?: string;
 }) {
   const context = useContext(PullRequestMarkdownContext);
   const autolinks = context?.autolinks;
   const repositoryUrl = context?.repositoryUrl ?? null;
   const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
-  const segments = splitPullRequestBody(text, hostUrl ?? repositoryUrl);
+  const segments = splitPullRequestBody(text, repositoryUrl);
   const extraRemarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = autolinks
     ? [[remarkPullRequestAutolinks, { autolinks }]]
     : [];
