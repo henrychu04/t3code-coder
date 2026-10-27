@@ -108,7 +108,7 @@ custom name is invalid or already taken, the temporary branch name remains.
 
 Open **Settings → Threads → New threads** to choose the default model and checkout mode.
 **Settings → Source control → Repositories** contains automatic pull. These controls save
-immediately for the selected scope. **Settings → Threads → Default actions** contains the
+immediately for the selected scope. **Settings → Projects → Actions** contains the
 workspace's default scripts when All projects is selected. Use **Add action**, or the edit button beside an existing action;
 **Save action** or **Save changes** saves the dialog.
 Choose a workspace and, optionally, a project using the shared scope menus. Only edited settings

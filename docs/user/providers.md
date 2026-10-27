@@ -141,7 +141,7 @@ project folder.
 **Provider update checks** is on by default. For each enabled provider installed through an
 identifiable package manager, the workspace helper checks the npm registry (`registry.npmjs.org`)
 for its latest version. Manual installations are not checked. To turn these checks off, disable
-**Settings → General → Provider update checks** for the workspace.
+**Settings → Maintenance → Provider update checks** for the workspace.
 
 **Update all** in the sidebar updates outdated Codex, Claude, and Pi installations on connected Coder
 workspaces by running each provider’s identified installer inside its workspace. Hover it to see
