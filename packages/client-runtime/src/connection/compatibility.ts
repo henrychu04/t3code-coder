@@ -14,12 +14,13 @@ export function orchestrationProtocolCompatibilityError(
   if (serverProtocolVersion === ORCHESTRATION_PROTOCOL_VERSION) {
     return null;
   }
+  // Coder: no server self-update, so an older helper is never marked `serverUpdateRequired`.
   return new ConnectionBlockedError({
     reason: "unsupported",
     detail:
       serverProtocolVersion > ORCHESTRATION_PROTOCOL_VERSION
         ? `This client is not supported by this server. Update your app or use a compatible release to connect to ${descriptor.label}.`
-        : `This client requires a newer server. Update T3 Code on ${descriptor.label} to connect.`,
+        : `This client requires a newer server. Update T3 Coder on ${descriptor.label} to connect.`,
   });
 }
 

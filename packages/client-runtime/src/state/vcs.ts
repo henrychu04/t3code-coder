@@ -367,13 +367,6 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
-    preparePullRequestThread: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:git:prepare-pull-request-thread",
-      tag: WS_METHODS.gitPreparePullRequestThread,
-      scheduler: vcsCommandScheduler,
-      concurrency: vcsCommandConcurrency,
-      onSettled: invalidateRefs,
-    }),
   };
 }
 

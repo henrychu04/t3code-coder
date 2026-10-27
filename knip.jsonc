@@ -119,7 +119,6 @@
     "packages/shared/src/thirdPartyLicenses.ts": ["exports", "nsExports"],
     "packages/shared/src/threadLinks.ts": ["exports", "nsExports"],
     "packages/shared/src/threadSearch.ts": ["exports", "nsExports"],
-    "packages/source-control-core/src/client/definition.ts": ["exports", "nsExports"],
     "packages/source-control-core/src/server/SourceControlProvider.ts": ["exports", "nsExports"],
     "packages/source-control-core/src/server/SourceControlRateLimit.ts": ["exports", "nsExports"],
     "packages/source-control-core/src/server/discovery.ts": ["exports", "nsExports"],

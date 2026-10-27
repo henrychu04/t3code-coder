@@ -52,7 +52,9 @@ interface PullRequestDiffFileContentsSource {
   readonly cacheKey: string;
 }
 
+// Bounds the browser memory held by expanded review files across a session.
 const DIFF_FILE_CONTENTS_CACHE_BYTES = 64 * 1024 * 1024;
+// Caps how many expanded files stay cached, however small each one is.
 const DIFF_FILE_CONTENTS_CACHE_ENTRIES = 128;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
