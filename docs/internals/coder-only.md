@@ -974,8 +974,8 @@ listed here is drift to remove rather than fork behavior to keep.
   URL needs for such an install. The link dialog also accepts `!123`, the form "Copy MR number"
   copies (client-runtime `pullRequestLinkInput.ts`). A plain click opens the panel or page, and a
   modifier or middle click or an MR no workspace project can read goes to the system browser.
-  Upstream's "Open pull requests in T3 Code" client setting lives on the Integrations page, which
-  is not carried, so it keeps its default and MR links always open in the app.
+  Upstream's "Open pull requests in T3 Code" row is defined on the Integrations page, which is not
+  carried, so `SettingsPanels.tsx`'s Diffs page defines it in place, with MR and "T3 Coder" wording.
   Upstream's delete-branch action, panel entries, and menu items are carried with merge-request
   wording; GitLab does not declare `deleteBranch`, so they never show, and `PullRequestService`
   runs the action without upstream's verified-credential wrapper. In Markdown

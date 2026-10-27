@@ -36,6 +36,7 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
+import { useClientSettings, useUpdatePrimarySettings } from "~/hooks/useSettings";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
@@ -1123,9 +1124,39 @@ export function DiffsSettingsPanel() {
             />
           }
         />
-        {/* Coder: no "Open pull requests in T3 Code" row; MR links always open in the app. */}
+        <PullRequestLinksOpenInAppSetting />
       </SettingsSection>
     </SettingsPageContainer>
+  );
+}
+
+// Coder: upstream's row from `IntegrationsSettings.tsx`, which is not carried, with MR wording.
+function PullRequestLinksOpenInAppSetting() {
+  const openInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
+  const updateSettings = useUpdatePrimarySettings();
+
+  return (
+    <SettingsRow
+      {...searchableSetting("pull-request-links-open-in-app")}
+      description="Clicking a merge request link opens it in T3 Coder. Turn off to open merge request links like any other link, on GitLab."
+      resetAction={
+        openInApp ? null : (
+          <SettingResetButton
+            label="open merge requests in T3 Coder"
+            onClick={() => updateSettings({ pullRequestLinksOpenInApp: true })}
+          />
+        )
+      }
+      control={
+        <Switch
+          checked={openInApp}
+          onCheckedChange={(checked) =>
+            updateSettings({ pullRequestLinksOpenInApp: Boolean(checked) })
+          }
+          aria-label="Open merge requests in T3 Coder"
+        />
+      }
+    />
   );
 }
 

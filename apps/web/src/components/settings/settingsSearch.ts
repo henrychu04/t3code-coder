@@ -487,6 +487,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["automatically open diff merge request mr right panel agent completion"],
   },
   {
+    id: "pull-request-links-open-in-app",
+    title: "Open merge requests in T3 Coder",
+    to: "/settings/diffs",
+    searchTerms: ["mr links gitlab browser external click default merge request view panel"],
+  },
+  {
     id: "skills-in-slash-menu",
     title: "Show skills in slash menu",
     to: "/settings/chat",
