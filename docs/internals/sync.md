@@ -164,7 +164,8 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
 - Relay (`apps/server/src/relay`, `infra`, `packages/ssh`, `packages/tailscale`); telemetry
   (`apps/server/src/{telemetry,resourceTelemetry,usage,diagnostics}`, web `components/usage`).
 - Upstream repository tooling (`.github`, `.repos`, `oxlint-plugin-t3code`, `docs/operations`,
-  `apps/server/integration`, `evals`, `.coderabbit.config.ts`).
+  `apps/server/integration`, `evals`, `.coderabbit.config.ts`) and upstream's CI-only checks
+  (`AgentContextBudget.test.ts`, `verify-built-boot.ts`).
 
 Re-derive the list, and update the script's data, when the fork cuts or restores a surface:
 

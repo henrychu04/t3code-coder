@@ -924,7 +924,7 @@ listed here is drift to remove rather than fork behavior to keep.
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
   The active workspace stands in for upstream's primary environment, and drafts read their
   route workspace's config. The Files surface opens for drafts as on main. `chatCanvasLayout.ts` has no preview obstacles (it accepts upstream's `findBar` and ignores it),
-  and `ChatCanvas.test.tsx` covers only the details card inset below Find. Pieces upstream
+  and `chatCanvasLayout.test.ts` and `canvasStore.test.ts` carry no preview cases. Pieces upstream
   moved out of `ChatView` carry the same cuts (each marked `Coder:`): `RightPanelSurfaceContent`
   renders nothing for browser and device surfaces and names merge requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
   confirmation; `useQueuedRunEdit` carries no preview annotations; `useThreadLinkedPullRequest` names merge requests; `useSystemComposerBanners`
@@ -1053,7 +1053,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `canonicalizeGitCafePullRequestUrl` is an identity function, since GitCafe is not carried. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    becf853def):
+    e9236274a3):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
@@ -1196,7 +1196,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `coder ssh`. `connection/driver.ts`'s `checkHost` never answers, because the gateway answers
     whether or not the workspace does; the silent socket check then ends only on a frame, and the
     probe timeout decides. `connectedLeaseEnd` ends a lease only on a disconnect (no better routes
-    or relay credentials). `connection/registry.ts` starts every registered workspace's supervisor
+    or relay credentials). Upstream's `connection/supervisor.test.ts` is not carried; its harness
+    builds the multi-route driver, routes, and relay credentials the fork cuts. `connection/registry.ts` starts every registered workspace's supervisor
     desired (upstream starts only enabled ones), since the Coder config owns registration. Its entries
     carry no cached unsupported-host rejection, so web `state/server.ts`'s shortcut-keybinding
     fallback presents each workspace's connection state as is.
@@ -1234,7 +1235,11 @@ listed here is drift to remove rather than fork behavior to keep.
   `Coder:`).
 - **Build tooling.** `scripts/lib/third-party-licenses.ts` never fetches during a build: SPDX
   texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
-  ones. It reads no device tool version pins, because device tools are not carried.
+  ones. It reads no device tool version pins, because device tools are not carried. Upstream's
+  CI-only checks are not carried, since the fork has no CI: the built web boot check
+  (`apps/web/scripts/verify-built-boot.ts`) and the agent context budget test
+  (`apps/server/src/provider/AgentContextBudget.test.ts` and `agentContextBudget.json`), which
+  measures MCP tool context the file bridge replaces.
   `pnpm-workspace.yaml` sets `supportedArchitectures` (Linux x64 glibc) on every host, because
   the helper bundle ships those native modules to the workspace; upstream sets it only on Windows
   in `.pnpmfile.cjs`, which is not carried. Its `overrides` pin only the patched packages the
@@ -1292,9 +1297,8 @@ listed here is drift to remove rather than fork behavior to keep.
   upstream's new publish-push, local-remote, display-casing, partial-clone, and missing-parent
   clone cases on GitLab remotes with the fork's mocks. `ProviderRegistry.test.ts` runs upstream's
   startup settings-change hydration tests without the uncarried Antigravity and OpenCode layers.
-  `ThreadDetailsPrRows.browser.test.tsx` checks the run context, not the editor picker. `CommandPalette.focus.browser.test.tsx`
-  mocks `useCoder` and sends `mod+p` with the platform's modifier (upstream's Ctrl+P matches only
-  off macOS), and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
+  `ThreadDetailsPrRows.browser.test.tsx` checks the run context, not the editor picker. `CommandPalette.browser.test.tsx`
+  mocks `useCoder`, and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
   `SourceControlProviderRegistry.test.ts` is upstream's fake-driver file, with its unknown-host
   fallback on a GitLab remote and a GitHub URL among the URLs no host claims.
   `SourceControlRepositoryService.test.ts` does not carry upstream's two new lookup-detail tests. `DatabaseStorage.test.ts` omits upstream's two `t3 doctor` status tests,
