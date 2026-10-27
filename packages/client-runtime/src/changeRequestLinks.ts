@@ -19,7 +19,7 @@ interface ChangeRequestProject {
  * (including self-hosted remotes whose provider could not be named) can resolve a link. The
  * registry reads every other kind as the generic host, which would still match by host and path.
  */
-export function isGitLabProject(project: ChangeRequestProject): boolean {
+function isGitLabProject(project: ChangeRequestProject): boolean {
   const provider = project.repositoryIdentity?.provider;
   return provider === "gitlab" || provider === "unknown";
 }
