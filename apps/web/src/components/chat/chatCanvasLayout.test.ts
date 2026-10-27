@@ -56,7 +56,7 @@ describe("workspace card beside chat", () => {
         maxChatWidth: 736,
         detailsCard: { left: width - 292, right: width - 12, bottom: 339 },
         preview: null,
-        }).chat.left;
+      }).chat.left;
     for (let width = 1300; width < 1800; width += 1) {
       expect(Math.abs(leftAt(width + 1) - leftAt(width))).toBeLessThanOrEqual(1);
     }
