@@ -216,6 +216,18 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   `git checkout --ours` works only on a conflicted path). Resolve the lockfile and every
   `package.json` before running any `pnpm <script>`, the `typecheck:*` scripts included: pnpm
   checks dependencies first and installs when a manifest disagrees with the lockfile.
+  Re-resolving from ours picks the newest version of each package new to the lockfile, while
+  upstream's lockfile and `third-party-licenses.config.json` overrides name the version upstream
+  resolved (7df7cb9999: `@nodable/entities` 2.2.0 against upstream's 2.1.1 failed the web build's
+  license step). List the newly added package versions that differ from upstream's lockfile and
+  replace their `packages:` and `snapshots:` entries and references with upstream's, then confirm
+  `pnpm install --frozen-lockfile` passes.
+- New upstream code can import a dependency the fork had removed with an old cut (7df7cb9999:
+  `yauzl` for document text, `jszip` for office previews). Typecheck reports the missing module;
+  restore upstream's dependency entry rather than adapting the code.
+- `apps/coder-gateway/src/server.ts`'s CSP pins the hash of `apps/web/index.html`'s inline boot
+  script. When upstream edits that script (comment pruning counts), recompute the hash;
+  `server.test.ts` fails until then.
 - A package that gains a dependency on deleted host packages (this batch: client-runtime on every
   `source-control-*` client definition) keeps only `source-control-core` and `-gitlab`.
 
@@ -310,6 +322,28 @@ git diff --name-only --diff-filter=AM "$MB" "$SHA" -- apps packages ':!*.test.*'
   git diff -U0 "$MB" "$SHA" -- "$f" | sed -n 's/^+[[:space:]]*//p' | grep -v '^++ ' | awk 'length > 3' |
     while IFS= read -r line; do grep -qF -- "$line" "$f" || printf '%s: %s\n' "$f" "$line"; done
 done
+```
+
+Then list lines that both `$PREV` and `$SHA` have but the result lacks: neither side deleted them,
+so each is a merge loss unless the line moved (7df7cb9999 lost `projectScriptEditor.tsx`'s
+run-on-settle switch this way; the check above misses it because the line predates `$MB`):
+
+```sh
+python3 - "$PREV" "$SHA" <<'PY'
+import subprocess, sys; from collections import Counter
+prev, sha = sys.argv[1:3]
+show = lambda r, f: subprocess.run(["git", "show", f"{r}:{f}"], capture_output=True, text=True)
+lines = lambda s: Counter(l.strip() for l in s.splitlines() if len(l.strip()) > 3)
+files = subprocess.run(["git", "diff", "--name-only", "--diff-filter=AM", prev, "--", "apps", "packages"], capture_output=True, text=True).stdout.split()
+for f in files:
+    a, b = show(prev, f), show(sha, f)
+    if a.returncode or b.returncode: continue
+    try: res = lines(open(f).read())
+    except FileNotFoundError: continue
+    pa, pb = lines(a.stdout), lines(b.stdout)
+    for l, n in pa.items():
+        if res[l] < min(n, pb[l]): print(f"{f}: {l}")
+PY
 ```
 
 Check that no `patch` backup or reject file was staged:
