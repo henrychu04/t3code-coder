@@ -40,13 +40,22 @@ function isWebUrl(url: string): boolean {
   }
 }
 
-// GitLab serves `/uploads/…` below the project (`https://host/group/project/uploads/…`), not the
-// host root.
-function resolveAttachmentUrl(url: string, repositoryUrl?: string | null): string | null {
-  if (isWebUrl(url)) return url;
-  if (!url.startsWith("/uploads/") || repositoryUrl == null || !isWebUrl(repositoryUrl))
+/**
+ * Coder: GitLab serves a root-relative `/uploads/…` link below the project
+ * (`https://host/group/project/uploads/…`), not the host root. Null for any other URL.
+ */
+export function resolveGitLabUploadUrl(
+  url: string,
+  repositoryUrl: string | null | undefined,
+): string | null {
+  if (!url.startsWith("/uploads/") || repositoryUrl == null || !isWebUrl(repositoryUrl)) {
     return null;
+  }
   return `${repositoryUrl.replace(/\/+$/u, "")}${url}`;
+}
+
+function resolveAttachmentUrl(url: string, repositoryUrl?: string | null): string | null {
+  return isWebUrl(url) ? url : resolveGitLabUploadUrl(url, repositoryUrl);
 }
 
 function attachmentHostLabel(url: string): string {

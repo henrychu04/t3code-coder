@@ -1,4 +1,5 @@
 import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
+import { resolveGitLabUploadUrl } from "@t3tools/client-runtime/pull-request-markdown";
 import type { ReferenceAutolink } from "@t3tools/client-runtime/source-control-clients";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { createContext, useContext } from "react";
@@ -17,6 +18,21 @@ export const PullRequestMarkdownContext = createContext<{
   repositoryUrl: string | null;
   threadRef: ScopedThreadRef | null;
 } | null>(null);
+
+type MarkdownUrlNode = { type: string; url?: string; children?: MarkdownUrlNode[] };
+
+const UPLOAD_URL_NODE_TYPES = new Set(["image", "link", "definition"]);
+
+/** Coder: GitLab writes pasted files into Markdown as `/uploads/…` images and links. */
+function remarkGitLabUploads(options: { readonly repositoryUrl: string }) {
+  const visit = (node: MarkdownUrlNode): void => {
+    if (UPLOAD_URL_NODE_TYPES.has(node.type) && node.url !== undefined) {
+      node.url = resolveGitLabUploadUrl(node.url, options.repositoryUrl) ?? node.url;
+    }
+    node.children?.forEach(visit);
+  };
+  return (tree: MarkdownUrlNode) => visit(tree);
+}
 
 /**
  * Upstream's change-request body renderer: recognized GitLab navigation stays internal, videos play
@@ -45,6 +61,7 @@ export function PullRequestMarkdown({
   const extraRemarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = autolinks
     ? [[remarkPullRequestAutolinks, { autolinks }]]
     : [];
+  if (repositoryUrl !== null) extraRemarkPlugins.push([remarkGitLabUploads, { repositoryUrl }]);
   return (
     <div
       className={cn(

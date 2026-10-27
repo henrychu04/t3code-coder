@@ -909,9 +909,10 @@ listed here is drift to remove rather than fork behavior to keep.
   used. Label RPCs exist but GitLab does not advertise label editing, and native stack actions are
   never advertised. Video uploads play inline, other uploads link as on main, and `/uploads/`
   links resolve below the repository, where GitLab serves them (client-runtime
-  `pullRequestMarkdown.ts`, which also names a GitLab or self-hosted upload's host; the markdown
-  context carries `repositoryUrl` beside
-  upstream's `autolinks` for that). `!123`, `#123`, and commit autolinks come from GitLab's
+  `pullRequestMarkdown.ts`'s `resolveGitLabUploadUrl`; the same file names a GitLab or self-hosted
+  upload's host). The markdown context carries `repositoryUrl` beside upstream's `autolinks` for
+  that, and `PullRequestMarkdown.tsx`'s `remarkGitLabUploads` applies it to the images, links, and
+  reference definitions inside the prose. `!123`, `#123`, and commit autolinks come from GitLab's
   definition (`referenceAutolinks`), which the web's upstream `pullRequestMarkdown.logic.ts` calls.
   Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
