@@ -131,7 +131,6 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
           historyCursor: bounded.historyCursor,
           hasMoreHistory: bounded.hasMoreHistory,
           latestLocalTurnOrdinal: bounded.latestLocalTurnOrdinal,
-          payloadBudgetExceeded: bounded.payloadBudgetExceeded,
         };
         if (exceedsHelperStdioFrame(result)) {
           return yield* new OrchestrationV2GetThreadProjectionError({

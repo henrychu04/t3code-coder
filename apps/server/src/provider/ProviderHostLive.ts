@@ -1,6 +1,7 @@
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { ProviderCredentialError } from "@t3tools/provider-core/server/errors";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
@@ -8,6 +9,7 @@ import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as DocumentText from "./DocumentText.ts";
 
 export const layer = Layer.effect(
   ProviderHost.ProviderHost,
@@ -15,6 +17,7 @@ export const layer = Layer.effect(
     const config = yield* ServerConfig.ServerConfig;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
     const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
+    const fileSystem = yield* FileSystem.FileSystem;
     return ProviderHost.ProviderHost.of({
       paths: {
         cwd: config.cwd,
@@ -32,6 +35,10 @@ export const layer = Layer.effect(
       shouldRunBackgroundWork: backgroundPolicy.shouldRunScopeWork,
       resolveAttachmentPath: (attachment) =>
         resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment }),
+      resolveExtractedTextPath: (path) =>
+        DocumentText.resolveExtractedTextPath(path).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+        ),
       // Coder: providers authenticate through the workspace's own configuration, and T3 Coder
       // never stores provider credentials: nothing is stored and writes fail.
       credentials: (namespace, bindingId) =>

@@ -188,7 +188,6 @@ export const environmentServerStatesAtom = Atom.make(
   },
 ).pipe(Atom.withLabel("web-environment-server-states"));
 
-/** Providers for views that do not show `checkedAt`; see {@link reuseProvidersIgnoringCheckedAt}. */
 export const providersIgnoringCheckedAtAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get): ReadonlyArray<ServerProvider> =>
     reuseProvidersIgnoringCheckedAt(

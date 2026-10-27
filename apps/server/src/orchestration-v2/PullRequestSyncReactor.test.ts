@@ -332,17 +332,22 @@ function runUpdated(
   };
 }
 
-function commandRan(threadId: ThreadId, input: string): OrchestrationV2DomainEvent {
+function commandRan(
+  threadId: ThreadId,
+  input: string,
+  output?: string,
+  name = "command",
+): OrchestrationV2DomainEvent {
   const runId = RunId.make(`run:${threadId}:1`);
   const at = DateTime.makeUnsafe(NOW);
   return {
     type: "turn-item.updated",
-    id: EventId.make(`event:${threadId}:command`),
+    id: EventId.make(`event:${threadId}:${name}`),
     threadId,
     runId,
     occurredAt: at,
     payload: {
-      id: TurnItemId.make(`item:${threadId}:command`),
+      id: TurnItemId.make(`item:${threadId}:${name}`),
       threadId,
       runId,
       nodeId: null,
@@ -358,6 +363,7 @@ function commandRan(threadId: ThreadId, input: string): OrchestrationV2DomainEve
       updatedAt: at,
       type: "command_execution",
       input,
+      ...(output === undefined ? {} : { output }),
     },
   };
 }
@@ -465,6 +471,30 @@ const requestAndApply = Effect.fn("requestPullRequestSyncHarness")(function* (
   yield* reactor.drain;
   yield* applyRecordedSyncs(fixture);
 });
+
+/** A thread with an open pull request whose merge command marks the end of earlier events. */
+const MERGING_THREAD = ThreadId.make("merging");
+
+/** The link commands `events` dispatch, read once the reactor has handled them all. */
+const linksFrom = Effect.fn("linksFrom")(function* (
+  fixture: Harness,
+  reactor: PullRequestSyncReactor.PullRequestSyncReactor["Service"],
+  events: ReadonlyArray<OrchestrationV2DomainEvent>,
+) {
+  yield* Ref.set(fixture.linkCommands, []);
+  yield* Queue.offerAll(fixture.domainEvents, [
+    ...events,
+    // Coder: a GitLab merge command, since GitLab is the only host definition.
+    commandRan(MERGING_THREAD, "glab mr merge 7", undefined, "merge"),
+  ]);
+  yield* Queue.take(fixture.snapshotReads);
+  yield* Queue.take(fixture.snapshotReads);
+  yield* reactor.drain;
+  return yield* Ref.get(fixture.linkCommands);
+});
+
+const mergingSnapshot = () =>
+  makeSnapshot([makeThread(MERGING_THREAD, { pullRequests: [makeLink(7, { state: "open" })] })]);
 
 describe("PullRequestSyncReactor", () => {
   it.effect("retries a failed stack read after the summary becomes terminal", () =>
@@ -834,7 +864,6 @@ describe("PullRequestSyncReactor", () => {
         yield* Effect.gen(function* () {
           const reactor = yield* startAndSweep(fixture);
           const firstSweep = yield* Ref.get(fixture.syncCommands);
-          // The held merged summary is dropped so the read reaches the host.
           assert.deepStrictEqual(yield* Ref.get(invalidated), [1]);
           assert.strictEqual(firstSweep.at(-1)?.snapshot.mergedAt, "2026-08-27T00:00:00.000Z");
           yield* Ref.update(fixture.snapshots, (snapshot) => applySync(snapshot, firstSweep));
@@ -1254,16 +1283,71 @@ describe("PullRequestSyncReactor", () => {
   );
 
   // Coder: GitLab is the only host definition, so only its close command marks a run's links.
-  it.effect.each(["glab mr merge 7 --squash 2>&1 | tail -3", "glab mr close 7"])("reads open links fresh only when a run that ran `%s` ends", (mergeCommand) =>
+  it.effect.each(["glab mr merge 7 --squash 2>&1 | tail -3", "glab mr close 7"])(
+    "reads open links fresh only for a thread that ran `%s`",
+    (mergeCommand) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(Date.parse(NOW));
+          const state = yield* Ref.make<PullRequestSummary["state"]>("open");
+          const invalidated = yield* Ref.make<ReadonlyArray<number>>([]);
+          const fixture = yield* makeHarness({
+            snapshot: makeSnapshot([
+              makeThread("agent", { pullRequests: [makeLink(7, { state: "open" })] }),
+              makeThread("other", { pullRequests: [makeLink(9, { state: "open" })] }),
+            ]),
+            summary: (input) =>
+              Ref.get(state).pipe(
+                Effect.map((current) =>
+                  makeSummary(input, current === "merged" ? { state: current, mergedAt: NOW } : {}),
+                ),
+              ),
+            invalidate: ({ reference }) =>
+              Ref.update(invalidated, (numbers) => [...numbers, reference?.number ?? -1]),
+          });
+
+          yield* Effect.gen(function* () {
+            const reactor = yield* startAndSweep(fixture);
+            yield* Ref.set(state, "merged");
+            yield* Ref.set(fixture.summaryCalls, []);
+
+            yield* Queue.offerAll(fixture.domainEvents, [
+              commandRan(ThreadId.make("other"), "gh pr view 9"),
+              runUpdated(ThreadId.make("other"), "completed"),
+              commandRan(ThreadId.make("agent"), mergeCommand),
+              runUpdated(ThreadId.make("agent"), "completed"),
+            ]);
+            yield* Queue.take(fixture.snapshotReads);
+            yield* Queue.take(fixture.snapshotReads);
+            yield* reactor.drain;
+
+            assert.deepStrictEqual(yield* Ref.get(invalidated), [7]);
+            assert.deepStrictEqual(
+              (yield* Ref.get(fixture.summaryCalls)).map((call) => call.number),
+              [7],
+            );
+            assert.deepStrictEqual(
+              (yield* Ref.get(fixture.syncCommands)).map((command) => [
+                command.number,
+                command.snapshot.state,
+              ]),
+              [[7, "merged"]],
+            );
+          }).pipe(Effect.provide(fixture.layer));
+        }),
+      ),
+  );
+
+  // Coder: GitLab is the only host definition, so these upstream tests run `glab mr` commands
+  // and print GitLab merge request URLs.
+  it.effect("reads open links again when the run ends, after `merge --auto` left them open", () =>
     Effect.scoped(
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
         const state = yield* Ref.make<PullRequestSummary["state"]>("open");
-        const invalidated = yield* Ref.make<ReadonlyArray<number>>([]);
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([
             makeThread("agent", { pullRequests: [makeLink(7, { state: "open" })] }),
-            makeThread("other", { pullRequests: [makeLink(9, { state: "open" })] }),
           ]),
           summary: (input) =>
             Ref.get(state).pipe(
@@ -1271,30 +1355,25 @@ describe("PullRequestSyncReactor", () => {
                 makeSummary(input, current === "merged" ? { state: current, mergedAt: NOW } : {}),
               ),
             ),
-          invalidate: ({ reference }) =>
-            Ref.update(invalidated, (numbers) => [...numbers, reference?.number ?? -1]),
         });
 
         yield* Effect.gen(function* () {
           const reactor = yield* startAndSweep(fixture);
+          yield* Queue.offer(
+            fixture.domainEvents,
+            commandRan(ThreadId.make("agent"), "glab mr merge 7 --auto-merge"),
+          );
+          yield* Queue.take(fixture.snapshotReads);
+          yield* Queue.take(fixture.snapshotReads);
+          yield* reactor.drain;
           yield* Ref.set(state, "merged");
-          yield* Ref.set(fixture.summaryCalls, []);
+          yield* Ref.set(fixture.syncCommands, []);
 
-          yield* Queue.offerAll(fixture.domainEvents, [
-            commandRan(ThreadId.make("other"), "gh pr view 9"),
-            runUpdated(ThreadId.make("other"), "completed"),
-            commandRan(ThreadId.make("agent"), mergeCommand),
-            runUpdated(ThreadId.make("agent"), "completed"),
-          ]);
+          yield* Queue.offer(fixture.domainEvents, runUpdated(ThreadId.make("agent"), "completed"));
           yield* Queue.take(fixture.snapshotReads);
           yield* Queue.take(fixture.snapshotReads);
           yield* reactor.drain;
 
-          assert.deepStrictEqual(yield* Ref.get(invalidated), [7]);
-          assert.deepStrictEqual(
-            (yield* Ref.get(fixture.summaryCalls)).map((call) => call.number),
-            [7],
-          );
           assert.deepStrictEqual(
             (yield* Ref.get(fixture.syncCommands)).map((command) => [
               command.number,
@@ -1302,6 +1381,229 @@ describe("PullRequestSyncReactor", () => {
             ]),
             [[7, "merged"]],
           );
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("reads open links fresh as soon as a merge command ends, before its run ends", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const state = yield* Ref.make<PullRequestSummary["state"]>("open");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            makeThread("agent", { pullRequests: [makeLink(7, { state: "open" })] }),
+          ]),
+          summary: (input) =>
+            Ref.get(state).pipe(
+              Effect.map((current) =>
+                makeSummary(input, current === "merged" ? { state: current, mergedAt: NOW } : {}),
+              ),
+            ),
+        });
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* startAndSweep(fixture);
+          yield* Ref.set(state, "merged");
+          yield* Ref.set(fixture.summaryCalls, []);
+
+          yield* Queue.offer(
+            fixture.domainEvents,
+            commandRan(ThreadId.make("agent"), "glab mr merge 7"),
+          );
+          yield* Queue.take(fixture.snapshotReads);
+          yield* Queue.take(fixture.snapshotReads);
+          yield* reactor.drain;
+
+          assert.deepStrictEqual(
+            (yield* Ref.get(fixture.syncCommands)).map((command) => [
+              command.number,
+              command.snapshot.state,
+            ]),
+            [[7, "merged"]],
+          );
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect.each([
+    {
+      name: "a plain create",
+      input:
+        'glab mr create --base main --head feature --title "fix: 7 things" --body-file /tmp/body.md',
+      output: "https://gitlab.com/owner/repository/-/merge_requests/124\n",
+      linked: [124],
+    },
+    {
+      name: "a Codex shell wrapper after a push",
+      input: '/bin/zsh -lc "git push -u origin feature 2>&1 | tail -2 && glab mr create --fill"',
+      output: [
+        "remote: Create a pull request for 'feature' on GitHub by visiting:",
+        "remote:      https://gitlab.com/owner/repository/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature",
+        "https://gitlab.com/owner/repository/-/merge_requests/124",
+      ].join("\n"),
+      linked: [124],
+    },
+    {
+      name: "a Codex script quoted in pieces around a heredoc",
+      input:
+        "/bin/zsh -lc \"cat > /tmp/body.md <<'EOF'\nSet the \"'`hidden`'\" flag.\nEOF\nglab mr create --fill --body-file /tmp/body.md\"",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/62\n",
+      linked: [62],
+    },
+    {
+      name: "an older pull request read in the same command",
+      input: "glab mr view 120 --json url --jq .url && glab mr create --fill",
+      output:
+        "https://gitlab.com/owner/repository/-/merge_requests/120\nhttps://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [124],
+    },
+    {
+      name: "both layers of a stack",
+      input:
+        "glab mr create --base main --head a --fill && glab mr create --base a --head b --fill",
+      output:
+        "https://gitlab.com/owner/repository/-/merge_requests/124\nhttps://gitlab.com/owner/repository/-/merge_requests/125",
+      linked: [124, 125],
+    },
+    {
+      name: "the first pull request of a new repository",
+      input: "cargo test 2>&1 | tail -1 && timeout 60 glab mr create -R owner/repository --fill",
+      output: "test result: ok\nhttps://gitlab.com/owner/repository/-/merge_requests/1",
+      linked: [1],
+    },
+    {
+      name: "a GitLab merge request",
+      input: "glab mr create --fill --yes",
+      output:
+        "!3 Fix the thing (feature)\n https://gitlab.com/owner/repository/-/merge_requests/3\n",
+      linked: [3],
+    },
+    {
+      name: "a new pull request whose number appears in the create command",
+      input: "timeout 60 glab mr create --fill",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/60",
+      linked: [60],
+    },
+    {
+      name: "a create subcommand that does not end its shell word",
+      input: "glab mr create#typo; glab mr view --json url --jq .url",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [],
+    },
+    {
+      name: "a create after an empty heredoc",
+      input: "cat > /tmp/notes.md <<'EOF'\nEOF\nglab mr create --fill",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [124],
+    },
+    {
+      name: "a read with no create",
+      input: "glab mr view 124 --json url --jq .url",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [],
+    },
+    {
+      name: "a create command quoted in another program's query",
+      input: `sqlite3 audit.db "select output from items where input like '%glab mr create%'"`,
+      output: "https://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [],
+    },
+    {
+      name: "a create command with a separator inside quotes",
+      input:
+        "echo 'example: glab mr create; glab mr create --fill' && glab mr view --json url --jq .url",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [],
+    },
+    {
+      name: "more URLs than create commands",
+      input: "glab mr view --json url --jq .url && glab mr create --fill",
+      output:
+        "https://gitlab.com/owner/repository/-/merge_requests/120\nhttps://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [],
+    },
+    {
+      name: "a create command only in heredoc text",
+      input:
+        "cat > notes.md <<'EOF'\nOpen it with glab mr create.\nEOF\nglab mr list --json url --jq '.[].url'",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [],
+    },
+    {
+      name: "a create command after a comment that starts at a separator",
+      input: "glab mr view --json url --jq .url;# note; glab mr create --fill",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/124",
+      linked: [],
+    },
+    {
+      name: "a create beside a command that lists other pull requests",
+      input: "glab mr list --json url --jq '.[].url' && glab mr create --fill > /dev/null",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/120",
+      linked: [],
+    },
+    {
+      name: "another host's URL beside a create command",
+      input: "glab mr create --fill",
+      output: "https://github.com/owner/repository/pull/3",
+      linked: [],
+    },
+    {
+      name: "an existing pull request quoted in another command",
+      input:
+        "printf '%s\\n' 'https://gitlab.com/owner/repository/-/merge_requests/120'; glab mr create --fill > /dev/null",
+      output: "https://gitlab.com/owner/repository/-/merge_requests/120",
+      linked: [],
+    },
+  ])("links what the command created: $name", ({ input, output, linked }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const fixture = yield* makeHarness({ snapshot: mergingSnapshot() });
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* startAndSweep(fixture);
+          const child = ThreadId.make("delegated-child");
+          const links = yield* linksFrom(fixture, reactor, [commandRan(child, input, output)]);
+
+          assert.deepStrictEqual(
+            links.map((command) => [command.threadId, command.number, command.source]),
+            linked.map((number) => [child, number, "created"]),
+          );
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("links a created pull request once its command settles, with one command id", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const fixture = yield* makeHarness({ snapshot: mergingSnapshot() });
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* startAndSweep(fixture);
+          const settled = commandRan(
+            ThreadId.make("agent"),
+            "glab mr create --fill",
+            "https://gitlab.com/owner/repository/-/merge_requests/124",
+          );
+          assert.strictEqual(settled.type, "turn-item.updated");
+          if (settled.type !== "turn-item.updated") return;
+
+          const links = yield* linksFrom(fixture, reactor, [
+            { ...settled, payload: { ...settled.payload, status: "running" } },
+            settled,
+            settled,
+          ]);
+
+          assert.deepStrictEqual(
+            links.map((command) => command.number),
+            [124, 124],
+          );
+          assert.strictEqual(links[0]!.commandId, links[1]!.commandId);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

@@ -42,7 +42,7 @@ binding in Settings if one does not reach the app.
 
 ## Copy merge request references
 
-With a merge request open in the right panel or on the Merge Requests page, use `mod+shift+c`
+With a merge request open in the right panel or on the Merge requests page, use `mod+shift+c`
 to copy its URL and `mod+shift+k` to copy its number with a `!` prefix.
 Both shortcuts can be changed in Settings. Search for “Copy Link or Thread ID”
 or “Copy Number”. They copy the selected merge request and leave terminal input alone.

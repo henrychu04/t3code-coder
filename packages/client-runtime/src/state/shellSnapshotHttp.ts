@@ -8,6 +8,7 @@ import type { PreparedConnection } from "../connection/model.ts";
 export class ShellSnapshotLoader extends Context.Reference<{
   readonly load: (
     prepared: PreparedConnection,
+    options?: { readonly omitIdleSubagents?: boolean; readonly omitOlderSettled?: boolean },
   ) => Effect.Effect<Option.Option<DeferredShellSnapshot>>;
 }>("@t3tools/client-runtime/state/shellSnapshotHttp/ShellSnapshotLoader", {
   defaultValue: () => ({ load: () => Effect.succeed(Option.none()) }),

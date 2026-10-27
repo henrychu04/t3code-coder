@@ -1,4 +1,8 @@
-import { ORCHESTRATION_V2_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
+import {
+  ORCHESTRATION_V2_WS_METHODS,
+  WS_METHODS,
+  type OrchestrationGetTurnDiffResult,
+} from "@t3tools/contracts";
 import * as Stream from "effect/Stream";
 import { Atom } from "effect/reactivity";
 
@@ -8,12 +12,24 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
+  type QueryAnswerHandler,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 
 export function createOrchestrationEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+  options: {
+    /** Runs on each turn-range and full-thread diff the server answers. */
+    readonly onCheckpointDiffAnswer?: QueryAnswerHandler<
+      { readonly ignoreWhitespace?: boolean },
+      OrchestrationGetTurnDiffResult
+    >;
+  } = {},
 ) {
+  const onCheckpointDiffAnswer =
+    options.onCheckpointDiffAnswer === undefined
+      ? {}
+      : { onAnswer: options.onCheckpointDiffAnswer };
   return {
     // Coder: upstream's authenticated HTTP transcript fetch, read over helper stdio instead.
     threadTranscript: createEnvironmentRpcCommand(runtime, {
@@ -57,6 +73,7 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
     turnDiff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:turn-diff",
       tag: ORCHESTRATION_V2_WS_METHODS.getTurnDiff,
+      ...onCheckpointDiffAnswer,
     }),
     workflowScript: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:workflow-script",
@@ -77,6 +94,7 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
     fullThreadDiff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:full-thread-diff",
       tag: ORCHESTRATION_V2_WS_METHODS.getFullThreadDiff,
+      ...onCheckpointDiffAnswer,
     }),
     threadFind: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:thread-find",
@@ -99,6 +117,13 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
     archivedShellSnapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:archived-shell-snapshot",
       tag: ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot,
+    }),
+    // Read right before deleting a worktree, so never served from cache.
+    worktreeThreadIds: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:worktree-thread-ids",
+      tag: ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds,
+      staleTimeMs: 0,
+      idleTtlMs: 0,
     }),
   };
 }

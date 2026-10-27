@@ -45,11 +45,7 @@ const ManifestProviderCatalog = Schema.Struct({
 
 const ModelManifestEnvelopeSchema = Schema.Struct({
   version: Schema.Literal(1),
-  /**
-   * A release bundles its manifest, and a disk cache of an older edit must not
-   * outrank it. Optional so older remote files still decode; they count as
-   * older than any dated bundle.
-   */
+  /** Older disk caches must not override bundled manifests; absent dates rank below any dated bundle. */
   updatedAt: Schema.optional(Schema.String),
   compatibility: Schema.optional(Schema.Array(ProviderCompatibilityPolicy)),
   currentModels: Schema.Record(Schema.String, Schema.Array(Schema.String)),
@@ -128,9 +124,7 @@ export class ModelManifest extends Context.Service<
     readonly current: Effect.Effect<ModelManifestData>;
     readonly refresh: Effect.Effect<ModelManifestData>;
     readonly forceRefresh: Effect.Effect<ModelManifestData>;
-    /** Drivers call this from
-     * provider checks: the fetch is process-shared state, so it must survive
-     * the teardown of whichever instance happened to trigger it. */
+    /** Process-shared fetches must survive the triggering instance's teardown. */
     readonly refreshInBackground: Effect.Effect<void>;
   }
 >()("t3/provider/ModelManifest") {}

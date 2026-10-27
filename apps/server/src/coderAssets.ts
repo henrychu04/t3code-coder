@@ -36,6 +36,7 @@ import { layerAssetRoute, layerAttachmentUploadRoute } from "./http.ts";
 import type * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import type * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import type * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import type * as DocumentText from "./provider/DocumentText.ts";
 
 const ASSET_REQUEST_ORIGIN = "http://helper.invalid";
 /** How long a body may wait for its request, or a finished body's id is remembered. */
@@ -125,6 +126,7 @@ export const makeServeAsset = Effect.gen(function* () {
     | ServerSecretStore.ServerSecretStore
     | ProjectFaviconResolver.ProjectFaviconResolver
     | WorkspacePaths.WorkspacePaths
+    | DocumentText.DocumentText
   >();
   const platform = yield* Layer.build(NodeHttpPlatform.layer);
   const serve = (input: CoderServeAssetInput): Stream.Stream<CoderServeAssetPart> =>

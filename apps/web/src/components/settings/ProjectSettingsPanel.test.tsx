@@ -42,6 +42,10 @@ vi.mock("../../localApi", () => ({
   readLocalApi: () => ({ dialogs: { confirm: mocks.confirm } }),
 }));
 vi.mock("@tanstack/react-router", () => ({
+  Navigate: (props: unknown) => {
+    mocks.navigate(props);
+    return null;
+  },
   useNavigate: () => mocks.navigate,
   useLocation: ({ select }: { select: (value: unknown) => unknown }) =>
     select({ pathname: "/settings/projects" }),
@@ -177,7 +181,7 @@ it("follows the selected physical project when grouping changes", async () => {
     renderer!.update(<ProjectSettingsPanel projectKey="group" checkoutKey="one" />),
   );
   const navigation = mocks.navigate.mock.calls[0]![0];
-  expect(navigation.search()).toEqual({
+  expect(navigation.search).toEqual({
     project: "new-group",
     machine: undefined,
     checkout: "one",

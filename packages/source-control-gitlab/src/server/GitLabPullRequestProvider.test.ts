@@ -1,4 +1,4 @@
-import { describe, expect, it, assert } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -65,6 +65,26 @@ describe("getChangeRequest base freshness", () => {
     reviewerIds: [],
   };
 
+  // Coder: summaries read through the CLI's batched `getMergeRequestSummary` instead.
+  it.effect.each(["getChangeRequestPreview"] as const)(
+    "%s preserves merge request fields without fetching project settings",
+    (operation) =>
+      Effect.gen(function* () {
+        const provider = yield* make.pipe(
+          Effect.provide(
+            Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({
+              getMergeRequestDetail: () => Effect.succeed(detail),
+            }),
+          ),
+        );
+        const read = provider[operation];
+        assert.isDefined(read);
+        expect(
+          yield* read({ cwd: "/w", repository: "acme/web", host: "gitlab.com", number: 7 }),
+        ).toEqual(detail);
+      }),
+  );
+
   const readWith = (divergence: { readonly divergedCommits?: number }) =>
     Effect.gen(function* () {
       const provider = yield* make;
@@ -83,36 +103,6 @@ describe("getChangeRequest base freshness", () => {
         }),
       ),
     );
-
-  it.effect("reads a hover preview from the merge request alone", () =>
-    Effect.gen(function* () {
-      const provider = yield* make;
-      assert.isDefined(provider.getChangeRequestPreview);
-      const preview = yield* provider.getChangeRequestPreview({
-        cwd: "/w",
-        repository: "acme/web",
-        host: "gitlab.com",
-        number: 7,
-      });
-
-      expect(preview).toEqual({
-        number: 7,
-        title: "Merge request 7",
-        url: "https://gitlab.com/acme/web/-/merge_requests/7",
-        author: null,
-        state: "open",
-        isDraft: false,
-        createdAt: "2026-07-01T00:00:00Z",
-      });
-    }).pipe(
-      Effect.provide(
-        // No merge settings: only the merge request read is mocked.
-        Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({
-          getMergeRequestDetail: () => Effect.succeed(detail),
-        }),
-      ),
-    ),
-  );
 
   it.effect("reads a counted divergence as a branch that has fallen behind", () =>
     Effect.gen(function* () {

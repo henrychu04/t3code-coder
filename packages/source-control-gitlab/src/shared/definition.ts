@@ -55,6 +55,7 @@ export const definition = defineSourceControl({
   ] as const),
   checkoutCommand: ({ number }) => `glab mr checkout ${number}`,
   changeRequestCloseCommand: /\bglab\s+mr\s+(?:merge|close)\b/u,
+  changeRequestCreateCommand: /\bglab\s+mr\s+create\b/u,
   // Coder: GitLab profiles live at the host root, so comment authors link there.
   authorProfileUrl: (login, repositoryUrl) =>
     login.endsWith("[bot]")

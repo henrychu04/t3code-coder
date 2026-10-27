@@ -111,8 +111,8 @@ linked-review panel state remain in browser memory while displayed.
 ### Agent-managed links
 
 Agents can link their merge requests with the `link_pull_request` tool, and list or unlink them
-with `list_thread_pull_requests` and `unlink_pull_request`. After creating an MR with `glab`, the
-agent registers its GitLab URL so T3 tracks it alongside the thread. These tools change T3's
+with `list_thread_pull_requests` and `unlink_pull_request`. An MR an agent creates with
+`glab mr create` is linked to the thread automatically. These tools change T3's
 associations; they do not create, close, merge, or rebase GitLab MRs. Plan mode allows listing
 only.
 
@@ -169,7 +169,7 @@ you can review them again. GitLab authentication continues to use the workspace'
 
 ## Review guides
 
-Review guides are in beta. Turn on **Review guides** in Settings → Source Control to add the
+Review guides are in beta. Turn on **Review guides** in Settings → Source control to add the
 **Guide** tab to merge requests in that workspace.
 
 The **Guide** tab gives you a tour of a merge request without reading it line by line: stops
@@ -179,7 +179,7 @@ snapshots are grouped at the end, and every changed file appears somewhere on th
 Conversations already resolved in review are left out. For a merge request in a stack, the guide
 covers that layer only, and may point out what a lower layer introduced or what a higher one uses.
 
-Choose **Write guide** to have the review guide model from Settings → Source Control read the
+Choose **Write guide** to have the review guide model from Settings → Source control read the
 change in a temporary checkout in the workspace; without one set, the source control writer model
 is used. Nothing in the checkout is changed, and a large merge request takes a few minutes; you can
 go elsewhere in the app, and you are told when the guide is ready. Claude Code and Codex can write
@@ -196,6 +196,6 @@ are on. **Finish review** on the last stop opens the review with everything you 
 Agents can write guides too: ask one to prepare guides for a set of merge requests, and it starts
 them for you. Each is read through the project whose checkout has that repository.
 
-To shape guides to your taste, write **Review guide instructions** in Settings → Source Control,
+To shape guides to your taste, write **Review guide instructions** in Settings → Source control,
 such as what to show first or what to skip; projects can override them. They change emphasis and
 ordering, not the guide's layout or which files it covers.

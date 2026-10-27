@@ -45,7 +45,7 @@ choose **All checkouts** to edit the selected project group.
 The name saves when you leave its field or press Enter. Group edits apply to the selected
 checkouts; all selected workspaces must be connected for name and icon changes. Model, permissions,
 and checkout defaults live in **General**. Automatic pull and merge preferences live in
-**Source Control**. Those same controls edit project overrides while a project is selected.
+**Source control**. Those same controls edit project overrides while a project is selected.
 
 ## Default merge method
 
@@ -94,7 +94,7 @@ authentication and GitLab preferences remain under global settings.
 
 ## Worktree branch names
 
-In **Settings → Source Control → Worktree branch naming**, choose a static prefix, a model-selected semantic prefix such as
+In **Settings → Source control → Worktree branch naming**, choose a static prefix, a model-selected semantic prefix such as
 `feat/` or `fix/`, or custom instructions for the complete name. The static prefix defaults to
 `t3code/`; a trailing slash is optional, and an empty prefix adds nothing. Invalid characters in a
 static prefix are replaced with hyphens. Custom instructions are appended to the naming prompt and
@@ -107,7 +107,7 @@ custom name is invalid or already taken, the temporary branch name remains.
 ## Workspace defaults
 
 Open **Settings → General → New threads** to choose the default model and checkout mode.
-**Settings → Source Control → Repositories** contains automatic pull. These controls save
+**Settings → Source control → Repositories** contains automatic pull. These controls save
 immediately for the selected scope. **Settings → General → Default actions** contains the
 workspace's default scripts when All projects is selected. Use **Add action**, or the edit button beside an existing action;
 **Save action** or **Save changes** saves the dialog.

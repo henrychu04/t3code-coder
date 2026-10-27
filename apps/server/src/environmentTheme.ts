@@ -40,7 +40,7 @@ const isEnvironmentThemeId = Schema.is(EnvironmentThemeId);
 const THEME_FILE_SUFFIX = ".json";
 
 const MAX_THEME_FILES = 32;
-/** Exported so the publish path cannot accept a file the watcher will skip. */
+/** Shared with publishing so it cannot accept files the watcher skips. */
 export const MAX_THEME_FILE_BYTES = 32 * 1024;
 const MAX_THEME_TOTAL_BYTES = 192 * 1024;
 
@@ -54,10 +54,7 @@ export class EnvironmentThemeService extends Context.Service<
   {
     readonly current: Effect.Effect<ReadonlyArray<EnvironmentTheme>>;
 
-    /**
-     * The subscription is acquired before the current set is read, so a publish
-     * landing while a client connects is delivered rather than lost.
-     */
+    /** Subscribes before reading to retain changes during connection. */
     readonly streamChanges: Stream.Stream<ReadonlyArray<EnvironmentTheme>>;
   }
 >()("t3/environmentTheme/EnvironmentThemeService") {}
@@ -90,13 +87,10 @@ export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
   for (const entry of entries.toSorted()) {
     if (!entry.endsWith(THEME_FILE_SUFFIX)) continue;
     const id = entry.slice(0, -THEME_FILE_SUFFIX.length);
-    // A reserved id is either shadowed by a built-in on the client or captures
-    // clients that never chose it, so it is not publishable.
+    // Reserved ids shadow built-ins or capture clients that never chose them.
     if (!isEnvironmentThemeId(id) || UNPUBLISHABLE_THEME_IDS.has(id)) continue;
 
-    // Counts files examined, not themes accepted: capping the output would
-    // let a directory of malformed files be opened, read, and decoded in full
-    // on every refresh and every client connect.
+    // Cap examined files, not accepted themes, to bound work on malformed directories.
     examined += 1;
     if (examined > MAX_THEME_FILES) {
       yield* Effect.logWarning(
@@ -146,21 +140,10 @@ export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
 const make = Effect.gen(function* () {
   const { environmentThemesDir } = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
-  /**
-   * Every observed set carries a sequence number, so a subscriber can drop
-   * queued events that predate the snapshot it started from. Without it a
-   * publish landing between subscribing and reading replays after the newer
-   * value and walks clients backwards onto stale colors.
-   */
+  // Sequence numbers let subscribers drop queued events older than their initial snapshot.
   const changes = yield* PubSub.sliding<PublishedThemes>(1);
   const published = yield* Ref.make<PublishedThemes>({ seq: 0, themes: [] });
-  /**
-   * Guards the whole read/compare/publish, not just the state update. The
-   * directory read is async, so two concurrent refreshes can finish out of
-   * order and a slower read of an older set would publish under a higher
-   * sequence -- which the subscriber filter, ordering publications rather than
-   * observations, could not then drop.
-   */
+  // Serialize read/compare/publish so slow older reads cannot publish with newer sequence numbers.
   const refreshSemaphore = yield* Semaphore.make(1);
   const watcherScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(watcherScope, Exit.void));
@@ -170,8 +153,7 @@ const make = Effect.gen(function* () {
       const themes = yield* readPublishedThemes(environmentThemesDir).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
       );
-      // Structural equality over the whole decoded value: a hand-rolled field
-      // list here silently drops republishes for any field it forgets.
+      // Compare the whole value so new fields cannot silently miss republishes.
       const [changed, next] = yield* Ref.modify(
         published,
         (previous): readonly [readonly [boolean, PublishedThemes], PublishedThemes] => {
@@ -185,8 +167,6 @@ const make = Effect.gen(function* () {
     }),
   );
 
-  // The directory is created up front so the watcher has something to attach
-  // to before the first publisher writes into it.
   yield* fs.makeDirectory(environmentThemesDir, { recursive: true }).pipe(Effect.ignoreCause());
 
   const watchable = yield* Effect.sync(() => {
@@ -200,9 +180,7 @@ const make = Effect.gen(function* () {
     }
   });
 
-  // Debounced for the same reason settings watching is: a theme script emits
-  // several events per save and `fs.watch` can fire before the content is
-  // flushed.
+  // A save emits several events, and fs.watch can fire before content is flushed.
   const watchEvents = watchable
     ? fs.watch(environmentThemesDir).pipe(Stream.debounce(Duration.millis(100)))
     : Stream.empty;
