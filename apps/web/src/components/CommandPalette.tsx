@@ -1186,9 +1186,7 @@ function OpenCommandPaletteDialog(props: {
 
   // Coder: continue a discovered workspace's Add project once its environment connects, unless
   // the user has left the picker. Reopening Add project clears the pending connection.
-  const isAddProjectEnvironmentView =
-    currentView?.groups[0]?.value === "environments" ||
-    currentView?.groups[0]?.value === ADD_PROJECT_ENTRY_GROUP;
+  const isAddProjectEnvironmentView = currentView?.groups[0]?.value === ADD_PROJECT_ENTRY_GROUP;
   useEffect(() => {
     if (pendingAddProjectEnvironmentId === null || !isAddProjectEnvironmentView) return;
     const environment = environments.find(

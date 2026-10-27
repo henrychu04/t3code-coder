@@ -168,8 +168,12 @@ const DELETED_PATHS = {
     ".repos/",
     ".vite-hooks/",
     ".vscode/",
-    // Transfer-budget CI harness.
+    // CI-only checks: the transfer budget harness, the agent context budget test, and the built
+    // web boot check.
     "apps/server/integration/",
+    "apps/server/src/provider/AgentContextBudget.test.ts",
+    "apps/server/src/provider/agentContextBudget.json",
+    "apps/web/scripts/verify-built-boot.ts",
     "docs/operations/",
     // CodeRabbit's configuration and upstream's MCP tool-use evals.
     ".coderabbit.config.ts",
