@@ -13,10 +13,10 @@ export interface ActiveProjectTarget {
 }
 
 export function useActiveProjectTarget(): ActiveProjectTarget | null {
-  const { activeThread } = useHandleNewThread();
+  const { activeDraftThread, activeThread } = useHandleNewThread();
   const projects = useProjects();
-  const thread = activeThread;
-  const threadId = activeThread?.id;
+  const thread = activeThread ?? activeDraftThread;
+  const threadId = activeThread?.id ?? activeDraftThread?.threadId;
   const project = thread
     ? projects.find(
         (candidate) =>
