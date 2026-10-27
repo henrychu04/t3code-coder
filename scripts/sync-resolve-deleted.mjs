@@ -83,18 +83,21 @@ const DELETED_PATHS = {
   ],
   // Other provider packages: Codex, Claude Code, Pi, and Kilo Code are the only providers.
   "other provider packages": [
+    "apps/server/scripts/record-fx-acp-replay-fixture.ts",
     "apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts",
+    "apps/server/src/orchestration-v2/Adapters/FxAdapterV2.ts",
     "apps/server/src/provider/acp/",
     "packages/provider-cursor/",
+    "packages/provider-fx/",
     "packages/provider-grok/",
     "packages/provider-muse/",
     "packages/provider-opencode/",
     // Their orchestrator replay fixtures: whole fixture directories, transcripts and assertions
     // in shared fixture directories (except the three the ACP Registry entries reuse), and
     // per-driver test files.
-    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?:grok|muse|opencode|skill_invocation)[^/]*\//,
-    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?!message_steering\/grok_output\.ts$|todo_list\/grok_output\.ts$|tool_call_read_only\/cursor_output\.ts$)[^/]+\/(?:cursor|grok|muse|opencode)_[^/]+$/,
-    /^apps\/server\/src\/orchestration-v2\/testkit\/(?:Cursor|Grok|Muse|OpenCode)ReplayFixtures\./,
+    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?:fx|grok|muse|opencode|skill_invocation)[^/]*\//,
+    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?!message_steering\/grok_output\.ts$|todo_list\/grok_output\.ts$|tool_call_read_only\/cursor_output\.ts$)[^/]+\/(?:cursor|fx|grok|muse|opencode)_[^/]+$/,
+    /^apps\/server\/src\/orchestration-v2\/testkit\/(?:Cursor|Fx|Grok|Muse|OpenCode)ReplayFixtures\./,
   ],
   // Kilo Code runs upstream's ACP Registry driver from its local command only: no registry
   // installs, agent sign-in, per-agent flavors, or native protocol logging.
@@ -165,7 +168,12 @@ const DELETED_PATHS = {
     ".repos/",
     ".vite-hooks/",
     ".vscode/",
+    // Transfer-budget CI harness.
+    "apps/server/integration/",
     "docs/operations/",
+    // CodeRabbit's configuration and upstream's MCP tool-use evals.
+    ".coderabbit.config.ts",
+    "evals/",
     "oxlint-plugin-t3code/",
   ],
 };

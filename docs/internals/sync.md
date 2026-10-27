@@ -152,7 +152,7 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
 - HTTP routes and assets (`apps/server/src/assets`, `http.ts` route files).
 - Forgejo, GitHub, Azure DevOps, Bitbucket, and GitCafe (`packages/source-control-*` except core,
   gitlab, and testing).
-- Other provider packages (`packages/provider-{cursor,grok,muse,opencode}`,
+- Other provider packages (`packages/provider-{cursor,fx,grok,muse,opencode}`,
   `apps/server/src/provider/acp`) and their orchestrator replay fixtures (matched by pattern;
   upstream's new entries for them in `testkit/fixtures/index.ts` still merge in, and typecheck
   reports their imports of the deleted files).
@@ -163,7 +163,8 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
   (`apps/marketing`, `apps/server/src/cloud`, web `cloud`, `components/clerk`).
 - Relay (`apps/server/src/relay`, `infra`, `packages/ssh`, `packages/tailscale`); telemetry
   (`apps/server/src/{telemetry,resourceTelemetry,usage,diagnostics}`, web `components/usage`).
-- Upstream repository tooling (`.github`, `.repos`, `oxlint-plugin-t3code`, `docs/operations`).
+- Upstream repository tooling (`.github`, `.repos`, `oxlint-plugin-t3code`, `docs/operations`,
+  `apps/server/integration`, `evals`, `.coderabbit.config.ts`).
 
 Re-derive the list, and update the script's data, when the fork cuts or restores a surface:
 
