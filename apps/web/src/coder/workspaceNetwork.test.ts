@@ -1,10 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  removeCoderWorkspaceEnvironment,
-  setCoderWorkspaceEnvironment,
-} from "./environmentStore";
+import { removeCoderWorkspaceEnvironment, setCoderWorkspaceEnvironment } from "./environmentStore";
 import {
   FAST_PROBE_INTERVAL_MS,
   NOMINAL_PROBE_INTERVAL_MS,

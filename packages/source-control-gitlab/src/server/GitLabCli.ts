@@ -528,8 +528,8 @@ export const make = Effect.gen(function* () {
 
   return GitLabCli.of({
     execute,
-    listMergeRequests: (input) =>
-      execute({
+    listMergeRequests: Effect.fn("GitLabCli.listMergeRequests")(function (input) {
+      return execute({
         cwd: input.cwd,
         args: [
           "mr",
@@ -564,9 +564,10 @@ export const make = Effect.gen(function* () {
                 }),
               ),
         ),
-      ),
-    getMergeRequest: (input) =>
-      executeMergeRequest({
+      );
+    }),
+    getMergeRequest: Effect.fn("GitLabCli.getMergeRequest")(function (input) {
+      return executeMergeRequest({
         cwd: input.cwd,
         reference: input.reference,
         args: (() => {
@@ -594,9 +595,10 @@ export const make = Effect.gen(function* () {
             }),
           ),
         ),
-      ),
-    getRepositoryCloneUrls: (input) =>
-      execute({
+      );
+    }),
+    getRepositoryCloneUrls: Effect.fn("GitLabCli.getRepositoryCloneUrls")(function (input) {
+      return execute({
         cwd: input.cwd,
         args: ["api", `projects/${encodeURIComponent(input.repository)}`],
       }).pipe(
@@ -616,8 +618,9 @@ export const make = Effect.gen(function* () {
           ),
         ),
         Effect.map(normalizeRepositoryCloneUrls),
-      ),
-    createRepository: (input) => {
+      );
+    }),
+    createRepository: Effect.fn("GitLabCli.createRepository")(function (input) {
       const { namespacePath, projectPath } = parseRepositoryPath(input.repository);
       const namespaceId: Effect.Effect<number | null, GitLabCliError> = namespacePath
         ? execute({
@@ -681,63 +684,62 @@ export const make = Effect.gen(function* () {
         ),
         Effect.map(normalizeRepositoryCloneUrls),
       );
-    },
+    }),
     // Coder: upstream sends the repository text as `source_project_id`, which GitLab rejects. A
     // merge request between projects posts to the source project with a numeric
     // `target_project_id`.
-    createMergeRequest: (input) =>
-      Effect.gen(function* () {
-        const hasProjectSelector =
-          input.source?.repository !== undefined ||
-          input.source?.owner !== undefined ||
-          input.target?.repository !== undefined ||
-          input.target?.owner !== undefined;
-        const currentProject = hasProjectSelector
-          ? yield* readProjectIdentity({ cwd: input.cwd })
-          : null;
-        const selectedRepository = (
-          selector: SourceControlProvider.SourceControlRefSelector | undefined,
-        ) =>
-          selector?.repository ??
-          (selector?.owner && currentProject ? `${selector.owner}/${currentProject.path}` : null);
-        const sourceRepository = selectedRepository(input.source);
-        const targetRepository = selectedRepository(input.target);
-        const sourceIsCurrent =
-          sourceRepository === null ||
-          sourceRepository.toLowerCase() === currentProject?.path_with_namespace.toLowerCase();
-        const targetProjectId = targetRepository
-          ? targetRepository.toLowerCase() === currentProject?.path_with_namespace.toLowerCase()
-            ? currentProject.id
-            : (yield* readProjectIdentity({ cwd: input.cwd, repository: targetRepository })).id
-          : sourceIsCurrent
-            ? null
-            : currentProject?.id;
+    createMergeRequest: Effect.fn("GitLabCli.createMergeRequest")(function* (input) {
+      const hasProjectSelector =
+        input.source?.repository !== undefined ||
+        input.source?.owner !== undefined ||
+        input.target?.repository !== undefined ||
+        input.target?.owner !== undefined;
+      const currentProject = hasProjectSelector
+        ? yield* readProjectIdentity({ cwd: input.cwd })
+        : null;
+      const selectedRepository = (
+        selector: SourceControlProvider.SourceControlRefSelector | undefined,
+      ) =>
+        selector?.repository ??
+        (selector?.owner && currentProject ? `${selector.owner}/${currentProject.path}` : null);
+      const sourceRepository = selectedRepository(input.source);
+      const targetRepository = selectedRepository(input.target);
+      const sourceIsCurrent =
+        sourceRepository === null ||
+        sourceRepository.toLowerCase() === currentProject?.path_with_namespace.toLowerCase();
+      const targetProjectId = targetRepository
+        ? targetRepository.toLowerCase() === currentProject?.path_with_namespace.toLowerCase()
+          ? currentProject.id
+          : (yield* readProjectIdentity({ cwd: input.cwd, repository: targetRepository })).id
+        : sourceIsCurrent
+          ? null
+          : currentProject?.id;
 
-        yield* execute({
-          cwd: input.cwd,
-          args: [
-            "api",
-            "--method",
-            "POST",
-            sourceIsCurrent
-              ? "projects/:fullpath/merge_requests"
-              : `projects/${encodeURIComponent(sourceRepository!)}/merge_requests`,
-            "--raw-field",
-            `source_branch=${sourceRefName(input)}`,
-            "--raw-field",
-            `target_branch=${input.target?.refName ?? input.baseBranch}`,
-            ...(targetProjectId === null || targetProjectId === undefined
-              ? []
-              : ["--raw-field", `target_project_id=${targetProjectId}`]),
-            "--raw-field",
-            `title=${input.title}`,
-            "--field",
-            `description=@${input.bodyFile}`,
-          ],
-        });
-      }),
-    getDefaultBranch: (input) =>
-      execute({
+      yield* execute({
+        cwd: input.cwd,
+        args: [
+          "api",
+          "--method",
+          "POST",
+          sourceIsCurrent
+            ? "projects/:fullpath/merge_requests"
+            : `projects/${encodeURIComponent(sourceRepository!)}/merge_requests`,
+          "--raw-field",
+          `source_branch=${sourceRefName(input)}`,
+          "--raw-field",
+          `target_branch=${input.target?.refName ?? input.baseBranch}`,
+          ...(targetProjectId === null || targetProjectId === undefined
+            ? []
+            : ["--raw-field", `target_project_id=${targetProjectId}`]),
+          "--raw-field",
+          `title=${input.title}`,
+          "--field",
+          `description=@${input.bodyFile}`,
+        ],
+      });
+    }),
+    getDefaultBranch: Effect.fn("GitLabCli.getDefaultBranch")(function (input) {
+      return execute({
         cwd: input.cwd,
         args: ["api", "projects/:fullpath"],
       }).pipe(
@@ -756,9 +758,10 @@ export const make = Effect.gen(function* () {
           ),
         ),
         Effect.map((value) => value.default_branch ?? null),
-      ),
-    checkoutMergeRequest: (input) =>
-      executeMergeRequest({
+      );
+    }),
+    checkoutMergeRequest: Effect.fn("GitLabCli.checkoutMergeRequest")(function (input) {
+      return executeMergeRequest({
         cwd: input.cwd,
         reference: input.reference,
         // Coder: upstream ignores `branch` and `force`, and passes MR URLs straight through.
@@ -774,7 +777,8 @@ export const make = Effect.gen(function* () {
             selector.reference,
           ];
         })(),
-      }).pipe(Effect.asVoid),
+      }).pipe(Effect.asVoid);
+    }),
   });
 });
 

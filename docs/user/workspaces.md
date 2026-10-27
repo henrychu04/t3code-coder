@@ -1,11 +1,11 @@
 # Coder workspaces
 
-T3 Coder runs everything inside Linux Coder workspaces. The **Settings → Connections** page
+T3 Coder runs everything inside Linux Coder workspaces. The **Settings → Environments** page
 is where you manage domains, sign-ins, workspaces, port forwards, and connection diagnostics.
 
 ## Domains and sign-in
 
-Add each Coder deployment you use under **Settings → Connections**. Each domain gets its own
+Add each Coder deployment you use under **Settings → Environments**. Each domain gets its own
 isolated Coder sign-in, so a work deployment and a personal one can stay signed in side by side.
 A domain's URL is fixed once saved so that sign-in never reaches another host; add a different
 domain as a new one.
@@ -53,7 +53,7 @@ kept in memory only and contains no command output.
 A port forward lets a local tool reach a service inside a workspace — a dev server, a database
 panel — without any other network path.
 
-Create a rule under **Settings → Connections → Port forwarding** (**Add forward**):
+Create a rule under **Settings → Environments → Port forwarding** (**Add forward**):
 
 1. Pick the workspace.
 2. Choose **TCP** or **UDP**.

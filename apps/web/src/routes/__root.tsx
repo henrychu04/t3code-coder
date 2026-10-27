@@ -1,11 +1,5 @@
-import { useEnvironmentThemeSync } from "../hooks/useEnvironmentTheme";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
-import type {
-  EnvironmentId,
-  ServerConfig,
-  ServerConfigStreamEvent,
-  ServerLifecycleWelcomePayload,
-} from "@t3tools/contracts";
+import type { ServerConfig, ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   Outlet,
@@ -25,18 +19,11 @@ import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
-import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
-import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { Button } from "../components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
-import {
-  AnchoredToastProvider,
-  stackedThreadToast,
-  ToastProvider,
-  toastManager,
-} from "../components/ui/toast";
+import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -44,14 +31,9 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { useUiStateStore } from "../uiStateStore";
-import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentServerStatesAtom } from "../state/server";
 import { initializeActiveEnvironmentId, readProject } from "../state/entities";
-import {
-  createKeybindingsUpdateToastController,
-  type KeybindingsUpdateToastController,
-} from "../components/KeybindingsUpdateToast.logic";
 
 import { Check } from "lucide";
 import { Copy } from "lucide";
@@ -82,9 +64,6 @@ function RootRouteNotFoundView() {
 }
 
 function RootRouteView() {
-  useEnvironmentThemeSync();
-  const pathname = useLocation({ select: (location) => location.pathname });
-
   const appShell = (
     <CommandPalette>
       <AppSidebarLayout>
@@ -96,32 +75,16 @@ function RootRouteView() {
   return (
     <ToastProvider>
       <AnchoredToastProvider>
-        <BrowserChromeThemeSync key={pathname} />
         <ReopenClosedViewShortcut />
         <ConfirmDialogHost />
         <CustomSnoozeDialogHost />
         <ProjectCloneToastCoordinator />
-        <PullRequestGuideRunCoordinator />
-        <SlowRpcRequestToastCoordinator />
         <EventRouter />
         {appShell}
         <ThemeEditorHost />
       </AnchoredToastProvider>
     </ToastProvider>
   );
-}
-
-// Each route paints its own surface for browser chrome to sample.
-function BrowserChromeThemeSync() {
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      syncBrowserChromeTheme();
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, []);
-  return null;
 }
 
 function RootRouteErrorView({ error }: ErrorComponentProps) {
@@ -217,8 +180,8 @@ function errorReport(error: unknown, pathname: string): string {
   return lines.join("\n");
 }
 /**
- * Coder: every workspace sends its own welcome and config events. The first welcome picks the
- * active (primary) workspace, so events are read per workspace rather than from the primary.
+ * Coder: every workspace sends its own welcome. The first welcome picks the active (primary)
+ * workspace, so welcomes are read per workspace rather than from the primary.
  */
 function EventRouter() {
   const navigate = useNavigate();
@@ -228,10 +191,6 @@ function EventRouter() {
   const readPathname = useEffectEvent(() => pathname);
   const handledBootstrapThreadsRef = useRef(new Set<string>());
   const rootBootstrapNavigationStartedRef = useRef(false);
-  const handledConfigEventsRef = useRef(new Map<EnvironmentId, ServerConfigStreamEvent | null>());
-  const keybindingsToastControllersRef = useRef(
-    new Map<EnvironmentId, KeybindingsUpdateToastController>(),
-  );
 
   const handleWelcome = useEffectEvent(
     (payload: ServerLifecycleWelcomePayload | null, serverConfig: ServerConfig | null) => {
@@ -280,65 +239,9 @@ function EventRouter() {
     },
   );
 
-  const handleServerConfigUpdated = useEffectEvent(
-    (environmentId: EnvironmentId, serverConfigEvent: ServerConfigStreamEvent) => {
-      let controller = keybindingsToastControllersRef.current.get(environmentId);
-      if (!controller) {
-        controller = createKeybindingsUpdateToastController({});
-        keybindingsToastControllersRef.current.set(environmentId, controller);
-      }
-      const decision = controller.handle(serverConfigEvent);
-      if (!decision) {
-        return;
-      }
-
-      if (decision._tag === "Success") {
-        toastManager.add({
-          type: "success",
-          title: "Keybindings updated",
-          description: "Keybindings configuration reloaded successfully.",
-        });
-        return;
-      }
-
-      toastManager.add(
-        stackedThreadToast({
-          type: "warning",
-          title: "Invalid keybindings configuration",
-          description: decision.message,
-        }),
-      );
-    },
-  );
-
   useEffect(() => {
     for (const { config, welcome } of serverStates.values()) {
       handleWelcome(welcome, config);
-    }
-  }, [serverStates]);
-
-  useEffect(() => {
-    for (const [environmentId, state] of serverStates) {
-      const latestEvent = state.latestEvent;
-      if (!handledConfigEventsRef.current.has(environmentId)) {
-        handledConfigEventsRef.current.set(environmentId, latestEvent);
-        continue;
-      }
-      if (
-        latestEvent === null ||
-        handledConfigEventsRef.current.get(environmentId) === latestEvent
-      ) {
-        continue;
-      }
-      handledConfigEventsRef.current.set(environmentId, latestEvent);
-      handleServerConfigUpdated(environmentId, latestEvent);
-    }
-
-    for (const environmentId of handledConfigEventsRef.current.keys()) {
-      if (!serverStates.has(environmentId)) {
-        handledConfigEventsRef.current.delete(environmentId);
-        keybindingsToastControllersRef.current.delete(environmentId);
-      }
     }
   }, [serverStates]);
 

@@ -101,19 +101,28 @@ const platformConnectionSourceLayer = Layer.effect(
 const environmentOwnedDataCleanupLayer = Layer.succeed(
   Persistence.EnvironmentOwnedDataCleanup,
   Persistence.EnvironmentOwnedDataCleanup.of({
-    clear: (environmentId) => Effect.sync(() => clearComposerDraftsEnvironment(environmentId)),
+    clear: Effect.fn("Persistence.EnvironmentOwnedDataCleanup.clear")(function (environmentId) {
+      return Effect.sync(() => {
+        clearComposerDraftsEnvironment(environmentId);
+      });
+    }),
   }),
 );
 
 const rpcRequestObserverLayer = Layer.succeed(
   EnvironmentRpcRequestObserver,
   EnvironmentRpcRequestObserver.of({
-    observe: ({ environmentId, environmentLabel, method }) =>
-      Effect.sync(() => {
-        const requestId = `${environmentId}:${++nextObservedRpcRequestId}`;
+    // Every RPC passes through this observer; the request owns its span.
+    observe: Effect.fnUntraced(function* ({ environmentId, environmentLabel, method }) {
+      return yield* Effect.sync(() => {
+        nextObservedRpcRequestId += 1;
+        const requestId = `${environmentId}:${nextObservedRpcRequestId}`;
         trackRpcRequestSent(requestId, method, `${method} · ${environmentLabel}`);
-        return Effect.sync(() => acknowledgeRpcRequest(requestId));
-      }),
+        return Effect.sync(() => {
+          acknowledgeRpcRequest(requestId);
+        });
+      });
+    }),
   }),
 );
 

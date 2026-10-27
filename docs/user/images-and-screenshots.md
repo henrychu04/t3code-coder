@@ -71,7 +71,7 @@ workspace copies and survive reload while those copies exist; unsent drafts disa
 
 Conversations from before the current orchestration no longer show the screenshots they saved.
 Those legacy copies stay in `$HOME/.t3-coder/artifacts`, outside worktrees, until you remove
-them; opt-in saved-artifact retention under **Settings → Storage** can delete expired copies.
+them; opt-in saved-artifact retention under **Settings → Maintenance** can delete expired copies.
 Retention is off by default and excludes submitted attachments and current workspace source images.
 
 The flow follows [main's image previews](https://github.com/henrychu04/t3code-coder/blob/f328db30da063a7bce9a9d038fc583d3ff83673a/docs/user/composer.md#images-and-videos-in-messages).
