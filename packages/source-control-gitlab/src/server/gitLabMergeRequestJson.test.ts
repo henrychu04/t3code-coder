@@ -2,7 +2,6 @@ import * as Result from "effect/Result";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  buildMergeRequestSummariesGraphQlQuery,
   decodeAwardEmojiJson,
   decodeRepositoryBlobsJson,
   decodeCommitsJson,
@@ -175,6 +174,28 @@ describe("decodeMergeRequestDetailJson", () => {
     expect(armed({ auto_merge_enabled: true })).toBe(true);
     expect(armed({ merge_when_pipeline_succeeds: false })).toBe(false);
     expect(armed({})).toBeUndefined();
+  });
+
+  it("keeps the squash choice stored with auto-merge", () => {
+    expect(
+      expectSuccess(
+        decodeMergeRequestDetailJson(
+          detailJson({ auto_merge_enabled: true, squash_on_merge: true }),
+        ),
+      ),
+    ).toMatchObject({ autoMergeEnabled: true, autoMergeMethod: "squash" });
+
+    expect(
+      expectSuccess(
+        decodeMergeRequestDetailJson(
+          detailJson({
+            auto_merge_enabled: true,
+            squash: true,
+            squash_on_merge: false,
+          }),
+        ),
+      ).autoMergeMethod,
+    ).toBeUndefined();
   });
 
   it("keeps a divergence GitLab did not count apart from a divergence of none", () => {
@@ -597,21 +618,5 @@ describe("decodeRepositoryBlobsJson", () => {
         ),
       ),
     ).toEqual(new Map());
-  });
-});
-
-describe("buildMergeRequestSummariesGraphQlQuery", () => {
-  it("aliases each merge request and refuses paths GraphQL should not see", () => {
-    const query = buildMergeRequestSummariesGraphQlQuery([
-      { repository: "group/sub/web", number: 7 },
-      { repository: "acme/api", number: 12 },
-    ]);
-    expect(query).toContain('m0: project(fullPath: "group/sub/web") { mergeRequest(iid: "7")');
-    expect(query).toContain('m1: project(fullPath: "acme/api") { mergeRequest(iid: "12")');
-    expect(
-      buildMergeRequestSummariesGraphQlQuery([{ repository: 'acme/web") { x', number: 7 }]),
-    ).toBeNull();
-    expect(buildMergeRequestSummariesGraphQlQuery([{ repository: "web", number: 7 }])).toBeNull();
-    expect(buildMergeRequestSummariesGraphQlQuery([])).toBeNull();
   });
 });

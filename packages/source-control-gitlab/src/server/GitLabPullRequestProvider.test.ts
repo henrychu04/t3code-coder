@@ -65,8 +65,7 @@ describe("getChangeRequest base freshness", () => {
     reviewerIds: [],
   };
 
-  // Coder: summaries read through the CLI's batched `getMergeRequestSummary` instead.
-  it.effect.each(["getChangeRequestPreview"] as const)(
+  it.effect.each(["getChangeRequestPreview", "getChangeRequestSummary"] as const)(
     "%s preserves merge request fields without fetching project settings",
     (operation) =>
       Effect.gen(function* () {

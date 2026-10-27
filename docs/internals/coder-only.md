@@ -92,8 +92,7 @@ multiple explicit MR links. Link commands validate
 the URL and its host against workspace GitLab metadata at the helper RPC boundary. The helper
 refreshes link snapshots and serves linked-thread lookups over the existing stdio connection.
 Recent MR summaries are cached beneath the workspace provider-status cache directory. Background summary reads
-that arrive together share one aliased `glab api graphql` request per checkout and fall back to
-individual REST reads. Settled-thread
+are upstream's: one merge request detail read each. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
 Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP, because work
@@ -1022,9 +1021,7 @@ listed here is drift to remove rather than fork behavior to keep.
     merge requests, `#N` issues, and full commit SHAs below the project with GitLab's `/-/`
     routes, where upstream's GitLab defines none. The package exports upstream's two entry
     points plus `server/GitLabCli`, which `ws.projects.test.ts` stubs.
-  - GitLab's hover preview is upstream's (#22583). Its summary read stays the fork's, batched
-    through aliased GraphQL (`getMergeRequestSummary`) where upstream's GitLab driver asks once per
-    merge request, so the background sync shares requests. `source-control-definitions`'
+  - GitLab's hover preview and summary reads are upstream's (#22583). `source-control-definitions`'
     `canonicalizeGitCafePullRequestUrl` is an identity function, since GitCafe is not carried. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
