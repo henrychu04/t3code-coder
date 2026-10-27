@@ -81,7 +81,13 @@ export function createEnvironmentPresentationAtoms<E>(input: {
         () => AVAILABLE_CONNECTION_STATE,
       );
       const previous = Option.getOrNull(get.self<EnvironmentPresentation | null>());
-      const connection: EnvironmentConnectionPresentation = presentEnvironmentConnection(state);
+      // The supervisor never publishes this placeholder; an enabled one starts out connecting.
+      // Coder: every configured workspace is enabled, and entries carry no cached
+      // unsupported-host rejection.
+      const connection: EnvironmentConnectionPresentation =
+        state === AVAILABLE_CONNECTION_STATE
+          ? { phase: "connecting", error: null, traceId: null }
+          : presentEnvironmentConnection(state);
       const next = {
         entry,
         connection:

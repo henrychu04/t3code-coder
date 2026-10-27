@@ -6,7 +6,7 @@ import {
 } from "@t3tools/client-runtime/pull-request-link-input";
 import { useAtomValue } from "@effect/atom-react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { gitLabMergeRequestBrowserUrl } from "~/lib/openPullRequestLink";
 import { useProjects, useThreadShell } from "~/state/entities";
@@ -98,11 +98,6 @@ function LinkPullRequestDialog({
       setSubmitError(null);
     }
   }
-  useEffect(() => {
-    if (!open) return;
-    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
-  }, [open]);
 
   const resolved = resolveLinkPullRequestInput({
     reference,
@@ -139,7 +134,7 @@ function LinkPullRequestDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (pending ? undefined : onOpenChange(next))}>
-      <DialogPopup className="max-w-xl">
+      <DialogPopup className="max-w-xl" initialFocus={inputRef}>
         <DialogHeader>
           <DialogTitle>Link merge request</DialogTitle>
           <DialogDescription>

@@ -32,7 +32,7 @@ T3 Coder prints an ephemeral `127.0.0.1` URL and opens it in your default browse
 
 ## Connect to Coder
 
-1. Open **Settings → Connections**.
+1. Open **Settings → Environments**.
 2. Add the Coder domain. Use an explicit Coder executable path only when `coder` is not on the
    local `PATH`.
 3. Select **Sign in**.

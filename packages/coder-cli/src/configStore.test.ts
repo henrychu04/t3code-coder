@@ -125,10 +125,7 @@ describe("Coder profile config store", () => {
     throws(() =>
       parseCoderProfileConfig({
         ...base,
-        portForwards: [
-          config.portForwards[0],
-          { ...config.portForwards[0], id: "duplicate" },
-        ],
+        portForwards: [config.portForwards[0], { ...config.portForwards[0], id: "duplicate" }],
       }),
     );
     throws(() =>

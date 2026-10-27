@@ -6,7 +6,7 @@ multiple messages, then send again in the same thread.
 
 In an existing thread, scrolling a conversation that overflows the viewport can rest the composer
 into one line. Losing focus does not collapse it, and multiline drafts remain expanded. Control
-scroll collapse with **Collapse composer on scroll** under **Settings → General → Behavior**. When the thread-context strip has room, the
+scroll collapse with **Collapse composer on scroll** under **Settings → Chat**. When the thread-context strip has room, the
 model and mode controls remain available beside it; otherwise they return when the composer is
 focused. Focus the composer or start typing to expand it again. New-thread layouts keep the full
 composer.
@@ -29,7 +29,7 @@ conversation.
 ## Rich text and multiple models
 
 The composer formats supported Markdown as you type. Turn off **Rich text composer** in
-**Settings → General → Behavior** to show formatting markers literally. File mentions, skills, images,
+**Settings → Chat** to show formatting markers literally. File mentions, skills, images,
 terminal context, and review comments remain editable context chips in either mode.
 
 In a new draft, select multiple models to send the same prompt to separate background threads.
@@ -40,10 +40,10 @@ When delivery is uncertain, open the reported thread before explicitly allowing 
 
 ## Send while the agent is working
 
-Choose **Settings → General → Follow-up behavior** to queue new messages for a later turn or
+Choose **Settings → Chat → Follow-up behavior** to queue new messages for a later turn or
 steer the running turn immediately. The setting applies to this browser; already queued messages
 keep their place. Queued messages are saved in the workspace and can be edited, reordered, or
-removed above the composer. When Enter sends, `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and
+removed before they send. When Enter sends, `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and
 Linux uses the opposite action: it steers when your default is Queue and queues when your default
 is Steer. If your **Send shortcut** requires `Cmd+Enter` or `Ctrl+Enter`, that shortcut uses your
 default follow-up behavior; add **Shift** to use the opposite action. This applies only to
@@ -68,19 +68,19 @@ Steer. Click it or press your send shortcut to use that action. Hold `Cmd` on ma
 Windows and Linux to switch the button to the opposite action, then click, or use the opposite-action
 shortcut described above.
 
-Queued messages appear above the composer. Rows show a thumbnail of any attached image alongside
-the text. Drag a row by its handle to reorder it, use the handle's arrow keys, promote the message
-to a steer, or remove it.
+Queued messages appear at the end of the thread under **Up next**, as dashed messages that have
+not been sent yet. Each shows its text and any attached images. Drag a message by its handle to
+reorder it, use the handle's arrow keys, promote the message to a steer, or remove it.
 
 If you stop the agent or the workspace helper restarts, queued messages keep their order and are
 held. Press **Resume** in an empty composer to continue. Sending a new message also resumes the
 queue, unless it steers a turn that is already running. You can edit, reorder, or remove held
 messages without starting them.
 
-The pencil on a queued row opens that message in the composer for editing. The original message
-stays in the queue until you save, and its row is highlighted while you edit. The message's images
-appear above the text with a remove control, and new images can be added the usual way. The
-checkmark saves the queued message in place; **Cancel** on its row leaves it unchanged. Whatever you
+The pencil on a queued message opens it in the composer for editing. The original message stays
+in the queue until you save, and it is highlighted while you edit. The message's images appear
+above the text with a remove control, and new images can be added the usual way. The checkmark
+saves the queued message in place; **Cancel** next to it leaves it unchanged. Whatever you
 had typed in the composer before starting the edit is restored afterwards. If the queued message
 starts or is removed while you are editing, the edit ends: changed content moves into the composer
 when it is empty, and is discarded otherwise.
@@ -242,7 +242,7 @@ Vertex.
 
 ## Response streaming
 
-Under **Settings → General → Behavior → Response streaming**, choose **Completed turn**, **Completed paragraphs**, or
+Under **Settings → Threads → Response streaming**, choose **Completed turn**, **Completed paragraphs**, or
 **Live tokens**. Completed paragraphs is the default and also waits for complete code blocks.
 Projects can override this preference on their settings page. The former legacy-token-streaming
 switch is replaced by this setting; upgrading starts in paragraph mode unless the new setting

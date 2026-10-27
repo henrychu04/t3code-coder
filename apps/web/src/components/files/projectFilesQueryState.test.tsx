@@ -1,6 +1,6 @@
 import { EnvironmentId, type ProjectReadFileResult } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const projectMocks = vi.hoisted(() => ({
@@ -71,7 +71,7 @@ vi.mock("~/state/queries", () => ({
 }));
 
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
-import { useProjectFileQuery } from "./projectFilesQueryState";
+import { useProjectEntriesQuery, useProjectFileQuery } from "./projectFilesQueryState";
 
 const environmentId = EnvironmentId.make("environment-1");
 
@@ -104,6 +104,31 @@ describe("project query refresh", () => {
     projectMocks.optimisticFile.mockReset();
     projectMocks.readFile.mockReset();
     reactHooks.reset();
+  });
+
+  it("refetches a listing when the workspace mutation changes, not when it is first read", () => {
+    let fetches = 0;
+    const listing = Atom.make(() => {
+      fetches += 1;
+      return AsyncResult.success({ entries: [], truncated: false });
+    }).pipe(Atom.keepAlive);
+    projectMocks.listEntries.mockReturnValue(listing);
+    const registry = AtomRegistry.make();
+    atomHooks.registry = registry;
+    const read = (mutationId: string | null) =>
+      useProjectEntriesQuery(environmentId, "/repo", "src", mutationId);
+
+    try {
+      read("mutation-1");
+      read("mutation-1");
+      expect(fetches).toBe(1);
+
+      read("mutation-2");
+      expect(fetches).toBe(2);
+    } finally {
+      registry.dispose();
+      atomHooks.registry = null;
+    }
   });
 
   it("replaces an in-flight initial read when a workspace mutation arrives", async () => {

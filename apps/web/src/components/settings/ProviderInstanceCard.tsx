@@ -865,7 +865,6 @@ export function ProviderInstanceCard({
                 displayName={displayName}
                 value={accentColor}
                 onCommit={updateAccentColor}
-                commitDelayMs={120}
               />
               <DraftInput
                 id={`provider-instance-${instanceId}-display-name`}

@@ -92,8 +92,7 @@ multiple explicit MR links. Link commands validate
 the URL and its host against workspace GitLab metadata at the helper RPC boundary. The helper
 refreshes link snapshots and serves linked-thread lookups over the existing stdio connection.
 Recent MR summaries are cached beneath the workspace provider-status cache directory. Background summary reads
-that arrive together share one aliased `glab api graphql` request per checkout and fall back to
-individual REST reads. Settled-thread
+are upstream's: one merge request detail read each. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
 Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP, because work
@@ -408,7 +407,8 @@ listed here is drift to remove rather than fork behavior to keep.
   `primaryServer*Atom`s, `usePrimaryEnvironmentId`, and `usePrimaryEnvironment` then work unchanged,
   so keybindings, primary settings, providers, the app title, and environment themes follow that
   workspace. Because the welcome picks the primary, `__root.tsx`'s `EventRouter` reads welcome
-  and config events per workspace. There is no available-editors atom, and the hosted-app case
+  events per workspace, while upstream's primary-only `startKeybindingsUpdateToasts` reports
+  keybinding reloads. There is no available-editors atom, and the hosted-app case
   of `usePrimarySettingsAvailable` does not exist.
 - **Transport and RPC handlers.** `ws.ts`, `server.ts`, and `serverRuntimeStartup.ts` keep
   upstream's paths, and so do client-runtime's `threadSnapshotHttp.ts` and `shellSnapshotHttp.ts`,
@@ -452,7 +452,7 @@ listed here is drift to remove rather than fork behavior to keep.
     incremental-vacuum reclaim, built beside `StorageCleanup` once startup completes. Its
     file-size status, which tells the user to run `t3 doctor`, is not carried because the helper
     has no CLI: `server.getDatabaseStorage` is omitted from `CoderWsRpcGroup`, `databaseStorage`
-    is in `CODER_OMITTED_CAPABILITIES`, and Settings → Storage has no database notice
+    is in `CODER_OMITTED_CAPABILITIES`, and Settings → Maintenance has no database notice
     (upstream's `DatabaseStorageNotice` and client-runtime's `databaseStorage` atom are not
     carried). Upstream's `persistence/DatabaseMaintenance.ts`, which only `t3 doctor` uses, is
     not carried either, so `orchestration-v2/messageSearchIndex.ts`'s `rebuildMessageSearch` has
@@ -741,7 +741,8 @@ listed here is drift to remove rather than fork behavior to keep.
   return granted for a known workspace, and client-runtime `commandPermissions` authorizes every
   command and installs the `RpcPermissionGuard` that upstream's guarded RPCs require. Settings
   sync writes to every connected workspace without grant checks, and worktree removal is always
-  offered.
+  offered. `state/terminalSessions.ts` reads terminal scopes through `readEnvironmentScope`
+  instead of upstream's session-state atom, which the fork does not carry.
 - **Agent secret requests.** Upstream's `request_secret` tool, card, and one-use secret store,
   with the value sent only to the workspace store over `secrets.answerRequest`; it never enters
   browser storage, the transcript, projections, model context, or logs.
@@ -868,8 +869,18 @@ listed here is drift to remove rather than fork behavior to keep.
   inside `CoderBootstrap` and installs `consoleDiagnostics`, with no Electron shell, managed auth,
   or provider auth delivery. It starts upstream's `appInit.tsx` services, trimmed to the browser
   ones: no provider auth delivery, Electron, default-theme adoption, agent-opened previews, SSH
-  prompt, host-freeze toast, legacy-permission re-pair notice (`PermissionUpdateNotice`), or
-  desktop update notice. `__root.tsx` keeps the fork's minimal shell, and `_chat.tsx` carries
+  prompt, host-freeze toast, legacy-permission re-pair notice (`PermissionUpdateNotice`),
+  desktop update notice, Electron browser host, preview title recording, browser profile
+  reporting, favorite-editor command (OpenInPicker is not carried), or desktop paste-as-text.
+  The keybindings reload toast (`KeybindingsUpdateToast.tsx`) shows the reload's message without
+  upstream's config-warning actions, which open the desktop editor. `shortcuts/chatRouteCommands.ts`
+  has no preview commands or legacy-sidebar check, `state/entities.ts` keeps only
+  `initializeActiveEnvironmentId` (the first welcome sets the primary), and client-runtime's
+  `state/presentation.ts` shows an available placeholder as connecting without upstream's
+  `entry.enabled` and `unsupportedReason`, which Coder entries lack. The "failed to start" screen
+  (`lib/bootError.ts`, #25345) keeps reload and copyable error details, without the desktop update
+  button, download link, `t3 triage` command, or upstream issue link, since the browser client has
+  no desktop bridge or local CLI and T3 Coder bugs are not upstream's. `__root.tsx` keeps the fork's minimal shell, and `_chat.tsx` carries
   upstream's Settings-over-thread modal layout (#24847) with a `beforeLoad` that has no auth gate
   and no prompt-link card; upstream's `_chat.settings.tsx` no longer gates on pairing, so it is
   taken as is. `shortcuts/dispatcher.ts` registers no desktop menu actions or preview focus.
@@ -975,8 +986,8 @@ listed here is drift to remove rather than fork behavior to keep.
   URL needs for such an install. The link dialog also accepts `!123`, the form "Copy MR number"
   copies (client-runtime `pullRequestLinkInput.ts`). A plain click opens the panel or page, and a
   modifier or middle click or an MR no workspace project can read goes to the system browser.
-  Upstream's "Open pull requests in T3 Code" client setting lives on the Integrations page, which
-  is not carried, so it keeps its default and MR links always open in the app.
+  Upstream's "Open pull requests in T3 Code" row is defined on the Integrations page, which is not
+  carried, so `SettingsPanels.tsx`'s Diffs page defines it in place, with MR and "T3 Coder" wording.
   Upstream's delete-branch action, panel entries, and menu items are carried with merge-request
   wording; GitLab does not declare `deleteBranch`, so they never show, and `PullRequestService`
   runs the action without upstream's verified-credential wrapper. In Markdown
@@ -1022,13 +1033,11 @@ listed here is drift to remove rather than fork behavior to keep.
     merge requests, `#N` issues, and full commit SHAs below the project with GitLab's `/-/`
     routes, where upstream's GitLab defines none. The package exports upstream's two entry
     points plus `server/GitLabCli`, which `ws.projects.test.ts` stubs.
-  - GitLab's hover preview is upstream's (#22583). Its summary read stays the fork's, batched
-    through aliased GraphQL (`getMergeRequestSummary`) where upstream's GitLab driver asks once per
-    merge request, so the background sync shares requests. `source-control-definitions`'
+  - GitLab's hover preview and summary reads are upstream's (#22583). `source-control-definitions`'
     `canonicalizeGitCafePullRequestUrl` is an identity function, since GitCafe is not carried. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    7df7cb9999):
+    becf853def):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
@@ -1085,8 +1094,12 @@ listed here is drift to remove rather than fork behavior to keep.
     policy to the runtime as upstream's `layerBackground` does. `server.ts` provides upstream's `layerAutomaticFetchInterval`, so the remote refresh interval follows the background-activity profile as upstream's does.
   - Startup auto-pull (`vcs/projectAutoPull.ts`) is upstream's `autoPullProjects` from
     `serverRuntimeStartup.ts`, with the same per-project enablement.
-- **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
-  GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
+- **Settings.** Upstream's layout, pages (#25651), navigation, and search, with Coder's Connections
+  ("Environments"), Providers, GitLab, and background-activity panels. The access, browser,
+  devices, SnapShot, and diagnostics pages are not carried, and `movedSettingsPath` never points at
+  them; Labs has no Beta (guest links) section; About has no mobile app row or privacy policy link;
+  storage cleanup lives on Maintenance and Worktrees as upstream's. `hooks/useEnvironmentDisconnectDelay.ts`
+  keeps only upstream's `useEnvironmentStateHeldFor`. No Integrations, SnapShot, desktop, diagnostics,
   pairing, mobile app links (`MobileAppSettingsRow`), or `keybindings.json` editor. Settings
   search carries upstream's `sourceControlHostSearchItems` but not `SOURCE_CONTROL_HOST_LABELS`,
   whose only rows (routing, MR link target, agent credits) are not carried. Appearance's **Add theme** is upstream's

@@ -40,7 +40,7 @@ it in your default browser.
 
 The full interface opens even before any workspace is configured.
 
-1. Open **Settings → Connections**.
+1. Open **Settings → Environments**.
 2. **Add domain** and enter your Coder deployment URL.
 3. Choose **Sign in** for that domain. Coder prints its login URL and a hidden token prompt in the
    terminal where `npm start` is running — complete the sign-in there. T3 Coder never asks for the
@@ -60,7 +60,7 @@ anything starts:
 After preflight, T3 Coder installs a version-matched helper, including its native terminal runtime,
 into the workspace and runs it for the duration of the connection. This one-time setup can take a
 minute; later connections reuse it and are quick. Progress for every phase is visible in
-**Settings → Connections**.
+**Settings → Environments**.
 
 ## Day to day
 
@@ -68,7 +68,7 @@ minute; later connections reuse it and are quick. Progress for every phase is vi
   your work; the session reattaches. Nothing is stored on your computer, so any browser can pick
   the session back up.
 - **Workspace stopped?** T3 Coder never starts a stopped workspace behind your back. Start it from
-  **Settings → Connections** or from the workspace controls. See
+  **Settings → Environments** or from the workspace controls. See
   [Coder workspaces](./workspaces.md).
 - **Signing in to more than one domain** works; each domain keeps its own isolated Coder sign-in.
   See [Coder workspaces](./workspaces.md).

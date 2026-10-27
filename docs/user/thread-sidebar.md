@@ -96,8 +96,8 @@ continues to use settlement time.
 To generate a fresh title from the conversation, open a thread's menu and choose
 **Regenerate title**. The action is unavailable while title generation is in progress.
 
-To change how titles are written, add **Thread title instructions** in **Settings → General →
-Text generation**, such as a length limit or an identifier to put first. They apply to new and
+To change how titles are written, add **Thread title instructions** in **Settings → Threads →
+Text generation**, under Advanced, such as a length limit or an identifier to put first. They apply to new and
 regenerated titles. Select a project to give it its own instructions.
 
 Agents can use T3 Coder's thread tools to rename a thread, regenerate its title, or
@@ -114,7 +114,7 @@ there. A thread returns to the top of the active list when it finishes, fails, o
 answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
 the pinned section.
 
-This is on by default. Turn it off with **Settings → Beta → Working section**. Each browser keeps
+This is on by default. Turn it off with **Settings → General → Working section**. Each browser keeps
 its own choice.
 
 While this is on, the active list is ordered by when each thread last came back to you, so you
@@ -147,7 +147,7 @@ threads whose merge request merged. A closed merge request can also settle an id
 thread. An empty thread's inactivity counts from when it was created.
 Work in progress, pending questions or approvals, and background work the agent
 is waiting on prevent automatic settlement. An open merge request does not prevent inactivity
-settlement unless you turn on **Keep threads with an MR** in **Settings → General**,
+settlement unless you turn on **Keep threads with an MR** in **Settings → Threads**,
 but an old closed or merged merge request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a merge request watch starts on its own does not.
@@ -157,7 +157,7 @@ choose **Auto-settle behavior**, and pick **Disabled**. The current option is ch
 **Enabled** to return to the usual rules. Manual settle, snooze, and archive still work while it
 is disabled.
 
-Change these rules in **Settings → General**. They continue to run in the workspace
+Change these rules in **Settings → Threads**. They continue to run in the workspace
 when your browser is closed. Choose a workspace at the top to change only its rules,
 or **All workspaces** to update connected workspaces together. Mixed values show where
 the selected workspaces disagree. Disconnected workspaces keep their previous values.
@@ -200,7 +200,7 @@ the continuation finishes. If the queue was held by a restart, resume it then.
 
 When the provider reports a reset time, choose **Resume at reset** to schedule a
 continuation. You can cancel it from the thread. Enable **Resume after
-usage limits** in **Settings → General** to schedule limit stops by default.
+usage limits** in **Settings → Threads** to schedule limit stops by default.
 The workspace helper must be running when the reset arrives; it resumes overdue
 continuations after it restarts. Stopping the thread, sending a new message,
 archiving, or settling it prevents a pending continuation from starting.

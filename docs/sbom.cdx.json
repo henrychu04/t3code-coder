@@ -5202,28 +5202,19 @@
     },
     {
       "ref": "pkg:npm/%40effect/platform-node@4.0.0-beta.103",
-      "dependsOn": [
-        "pkg:npm/%40effect/platform-node-shared@4.0.0-beta.103",
-        "pkg:npm/mime@4.1.0"
-      ]
+      "dependsOn": ["pkg:npm/%40effect/platform-node-shared@4.0.0-beta.103", "pkg:npm/mime@4.1.0"]
     },
     {
       "ref": "pkg:npm/%40effect/platform-node-shared@4.0.0-beta.103",
-      "dependsOn": [
-        "pkg:npm/%40types/ws@8.18.1"
-      ]
+      "dependsOn": ["pkg:npm/%40types/ws@8.18.1"]
     },
     {
       "ref": "pkg:npm/%40types/ws@8.18.1",
-      "dependsOn": [
-        "pkg:npm/%40types/node@24.12.4"
-      ]
+      "dependsOn": ["pkg:npm/%40types/node@24.12.4"]
     },
     {
       "ref": "pkg:npm/%40types/node@24.12.4",
-      "dependsOn": [
-        "pkg:npm/undici-types@7.16.0"
-      ]
+      "dependsOn": ["pkg:npm/undici-types@7.16.0"]
     },
     {
       "ref": "pkg:npm/undici-types@7.16.0",
@@ -5253,9 +5244,7 @@
     },
     {
       "ref": "pkg:npm/fast-check@4.9.0",
-      "dependsOn": [
-        "pkg:npm/pure-rand@8.4.0"
-      ]
+      "dependsOn": ["pkg:npm/pure-rand@8.4.0"]
     },
     {
       "ref": "pkg:npm/pure-rand@8.4.0",
@@ -5275,9 +5264,7 @@
     },
     {
       "ref": "pkg:npm/msgpackr@2.0.4",
-      "dependsOn": [
-        "pkg:npm/msgpackr-extract@3.0.4"
-      ]
+      "dependsOn": ["pkg:npm/msgpackr-extract@3.0.4"]
     },
     {
       "ref": "pkg:npm/msgpackr-extract@3.0.4",
@@ -5293,9 +5280,7 @@
     },
     {
       "ref": "pkg:npm/node-gyp-build-optional-packages@5.2.2",
-      "dependsOn": [
-        "pkg:npm/detect-libc@2.1.2"
-      ]
+      "dependsOn": ["pkg:npm/detect-libc@2.1.2"]
     },
     {
       "ref": "pkg:npm/detect-libc@2.1.2",
@@ -5465,22 +5450,15 @@
     },
     {
       "ref": "pkg:npm/%40pierre/theming@0.0.2",
-      "dependsOn": [
-        "pkg:npm/%40shikijs/themes@4.2.0"
-      ]
+      "dependsOn": ["pkg:npm/%40shikijs/themes@4.2.0"]
     },
     {
       "ref": "pkg:npm/%40shikijs/themes@4.2.0",
-      "dependsOn": [
-        "pkg:npm/%40shikijs/types@4.2.0"
-      ]
+      "dependsOn": ["pkg:npm/%40shikijs/types@4.2.0"]
     },
     {
       "ref": "pkg:npm/%40shikijs/types@4.2.0",
-      "dependsOn": [
-        "pkg:npm/%40shikijs/vscode-textmate@10.0.2",
-        "pkg:npm/%40types/hast@3.0.4"
-      ]
+      "dependsOn": ["pkg:npm/%40shikijs/vscode-textmate@10.0.2", "pkg:npm/%40types/hast@3.0.4"]
     },
     {
       "ref": "pkg:npm/%40shikijs/vscode-textmate@10.0.2",
@@ -5488,9 +5466,7 @@
     },
     {
       "ref": "pkg:npm/%40types/hast@3.0.4",
-      "dependsOn": [
-        "pkg:npm/%40types/unist@3.0.3"
-      ]
+      "dependsOn": ["pkg:npm/%40types/unist@3.0.3"]
     },
     {
       "ref": "pkg:npm/%40types/unist@3.0.3",
@@ -5498,15 +5474,11 @@
     },
     {
       "ref": "pkg:npm/%40shikijs/transformers@4.2.0",
-      "dependsOn": [
-        "pkg:npm/%40shikijs/core@4.2.0"
-      ]
+      "dependsOn": ["pkg:npm/%40shikijs/core@4.2.0"]
     },
     {
       "ref": "pkg:npm/%40shikijs/core@4.2.0",
-      "dependsOn": [
-        "pkg:npm/%40shikijs/primitive@4.2.0"
-      ]
+      "dependsOn": ["pkg:npm/%40shikijs/primitive@4.2.0"]
     },
     {
       "ref": "pkg:npm/%40shikijs/primitive@4.2.0",
@@ -5569,9 +5541,7 @@
     },
     {
       "ref": "pkg:npm/devlop@1.1.0",
-      "dependsOn": [
-        "pkg:npm/dequal@2.0.3"
-      ]
+      "dependsOn": ["pkg:npm/dequal@2.0.3"]
     },
     {
       "ref": "pkg:npm/dequal@2.0.3",
@@ -5579,10 +5549,7 @@
     },
     {
       "ref": "pkg:npm/micromark-util-sanitize-uri@2.0.1",
-      "dependsOn": [
-        "pkg:npm/micromark-util-encode@2.0.1",
-        "pkg:npm/micromark-util-symbol@2.0.1"
-      ]
+      "dependsOn": ["pkg:npm/micromark-util-encode@2.0.1", "pkg:npm/micromark-util-symbol@2.0.1"]
     },
     {
       "ref": "pkg:npm/micromark-util-encode@2.0.1",
@@ -5602,10 +5569,7 @@
     },
     {
       "ref": "pkg:npm/unist-util-visit@5.1.0",
-      "dependsOn": [
-        "pkg:npm/unist-util-is@6.0.1",
-        "pkg:npm/unist-util-visit-parents@6.0.2"
-      ]
+      "dependsOn": ["pkg:npm/unist-util-is@6.0.1", "pkg:npm/unist-util-visit-parents@6.0.2"]
     },
     {
       "ref": "pkg:npm/unist-util-is@6.0.1",
@@ -5617,15 +5581,11 @@
     },
     {
       "ref": "pkg:npm/vfile@6.0.3",
-      "dependsOn": [
-        "pkg:npm/vfile-message@4.0.3"
-      ]
+      "dependsOn": ["pkg:npm/vfile-message@4.0.3"]
     },
     {
       "ref": "pkg:npm/vfile-message@4.0.3",
-      "dependsOn": [
-        "pkg:npm/unist-util-stringify-position@4.0.0"
-      ]
+      "dependsOn": ["pkg:npm/unist-util-stringify-position@4.0.0"]
     },
     {
       "ref": "pkg:npm/unist-util-stringify-position@4.0.0",
@@ -5672,9 +5632,7 @@
     },
     {
       "ref": "pkg:npm/%40shikijs/engine-javascript@4.2.0",
-      "dependsOn": [
-        "pkg:npm/oniguruma-to-es@4.3.6"
-      ]
+      "dependsOn": ["pkg:npm/oniguruma-to-es@4.3.6"]
     },
     {
       "ref": "pkg:npm/oniguruma-to-es@4.3.6",
@@ -5690,9 +5648,7 @@
     },
     {
       "ref": "pkg:npm/regex@6.1.0",
-      "dependsOn": [
-        "pkg:npm/regex-utilities@2.3.0"
-      ]
+      "dependsOn": ["pkg:npm/regex-utilities@2.3.0"]
     },
     {
       "ref": "pkg:npm/regex-utilities@2.3.0",
@@ -5712,9 +5668,7 @@
     },
     {
       "ref": "pkg:npm/node-pty@1.2.0-beta.14",
-      "dependsOn": [
-        "pkg:npm/node-addon-api@7.1.1"
-      ]
+      "dependsOn": ["pkg:npm/node-addon-api@7.1.1"]
     },
     {
       "ref": "pkg:npm/node-addon-api@7.1.1",
@@ -5741,9 +5695,7 @@
     },
     {
       "ref": "pkg:npm/%40base-ui/utils@0.2.9",
-      "dependsOn": [
-        "pkg:npm/reselect@5.2.0"
-      ]
+      "dependsOn": ["pkg:npm/reselect@5.2.0"]
     },
     {
       "ref": "pkg:npm/reselect@5.2.0",
@@ -5751,15 +5703,11 @@
     },
     {
       "ref": "pkg:npm/%40floating-ui/react-dom@2.1.8",
-      "dependsOn": [
-        "pkg:npm/%40floating-ui/dom@1.7.6"
-      ]
+      "dependsOn": ["pkg:npm/%40floating-ui/dom@1.7.6"]
     },
     {
       "ref": "pkg:npm/%40floating-ui/dom@1.7.6",
-      "dependsOn": [
-        "pkg:npm/%40floating-ui/core@1.7.5"
-      ]
+      "dependsOn": ["pkg:npm/%40floating-ui/core@1.7.5"]
     },
     {
       "ref": "pkg:npm/%40floating-ui/core@1.7.5",
@@ -5775,9 +5723,7 @@
     },
     {
       "ref": "pkg:npm/%40types/react@19.2.16",
-      "dependsOn": [
-        "pkg:npm/csstype@3.2.3"
-      ]
+      "dependsOn": ["pkg:npm/csstype@3.2.3"]
     },
     {
       "ref": "pkg:npm/csstype@3.2.3",
@@ -5785,10 +5731,7 @@
     },
     {
       "ref": "pkg:npm/%40dnd-kit/core@6.3.1",
-      "dependsOn": [
-        "pkg:npm/%40dnd-kit/accessibility@3.1.1",
-        "pkg:npm/tslib@2.8.1"
-      ]
+      "dependsOn": ["pkg:npm/%40dnd-kit/accessibility@3.1.1", "pkg:npm/tslib@2.8.1"]
     },
     {
       "ref": "pkg:npm/%40dnd-kit/accessibility@3.1.1",
@@ -5812,9 +5755,7 @@
     },
     {
       "ref": "pkg:npm/%40effect/atom-react@4.0.0-beta.103",
-      "dependsOn": [
-        "pkg:npm/scheduler@0.27.0"
-      ]
+      "dependsOn": ["pkg:npm/scheduler@0.27.0"]
     },
     {
       "ref": "pkg:npm/scheduler@0.27.0",
@@ -5853,9 +5794,7 @@
     },
     {
       "ref": "pkg:npm/%40floating-ui/react@0.27.19",
-      "dependsOn": [
-        "pkg:npm/tabbable@6.4.0"
-      ]
+      "dependsOn": ["pkg:npm/tabbable@6.4.0"]
     },
     {
       "ref": "pkg:npm/tabbable@6.4.0",
@@ -5863,15 +5802,11 @@
     },
     {
       "ref": "pkg:npm/%40lexical/devtools-core@0.41.0",
-      "dependsOn": [
-        "pkg:npm/%40lexical/html@0.41.0"
-      ]
+      "dependsOn": ["pkg:npm/%40lexical/html@0.41.0"]
     },
     {
       "ref": "pkg:npm/%40lexical/html@0.41.0",
-      "dependsOn": [
-        "pkg:npm/%40lexical/selection@0.41.0"
-      ]
+      "dependsOn": ["pkg:npm/%40lexical/selection@0.41.0"]
     },
     {
       "ref": "pkg:npm/%40lexical/selection@0.41.0",
@@ -5883,9 +5818,7 @@
     },
     {
       "ref": "pkg:npm/%40lexical/extension@0.41.0",
-      "dependsOn": [
-        "pkg:npm/%40preact/signals-core@1.14.2"
-      ]
+      "dependsOn": ["pkg:npm/%40preact/signals-core@1.14.2"]
     },
     {
       "ref": "pkg:npm/%40preact/signals-core@1.14.2",
@@ -5913,15 +5846,11 @@
     },
     {
       "ref": "pkg:npm/%40lexical/markdown@0.41.0",
-      "dependsOn": [
-        "pkg:npm/%40lexical/code@0.41.0"
-      ]
+      "dependsOn": ["pkg:npm/%40lexical/code@0.41.0"]
     },
     {
       "ref": "pkg:npm/%40lexical/code@0.41.0",
-      "dependsOn": [
-        "pkg:npm/prismjs@1.30.0"
-      ]
+      "dependsOn": ["pkg:npm/prismjs@1.30.0"]
     },
     {
       "ref": "pkg:npm/prismjs@1.30.0",
@@ -5933,9 +5862,7 @@
     },
     {
       "ref": "pkg:npm/%40lexical/plain-text@0.41.0",
-      "dependsOn": [
-        "pkg:npm/%40lexical/clipboard@0.41.0"
-      ]
+      "dependsOn": ["pkg:npm/%40lexical/clipboard@0.41.0"]
     },
     {
       "ref": "pkg:npm/%40lexical/clipboard@0.41.0",
@@ -5959,9 +5886,7 @@
     },
     {
       "ref": "pkg:npm/%40lexical/yjs@0.41.0",
-      "dependsOn": [
-        "pkg:npm/%40lexical/offset@0.41.0"
-      ]
+      "dependsOn": ["pkg:npm/%40lexical/offset@0.41.0"]
     },
     {
       "ref": "pkg:npm/%40lexical/offset@0.41.0",
@@ -5973,10 +5898,7 @@
     },
     {
       "ref": "pkg:npm/%40pierre/trees@1.0.0-beta.4",
-      "dependsOn": [
-        "pkg:npm/preact@11.0.0-beta.0",
-        "pkg:npm/preact-render-to-string@6.6.5"
-      ]
+      "dependsOn": ["pkg:npm/preact@11.0.0-beta.0", "pkg:npm/preact-render-to-string@6.6.5"]
     },
     {
       "ref": "pkg:npm/preact@11.0.0-beta.0",
@@ -5988,10 +5910,7 @@
     },
     {
       "ref": "pkg:npm/%40tanstack/react-pacer@0.19.4",
-      "dependsOn": [
-        "pkg:npm/%40tanstack/pacer@0.18.0",
-        "pkg:npm/%40tanstack/react-store@0.8.1"
-      ]
+      "dependsOn": ["pkg:npm/%40tanstack/pacer@0.18.0", "pkg:npm/%40tanstack/react-store@0.8.1"]
     },
     {
       "ref": "pkg:npm/%40tanstack/pacer@0.18.0",
@@ -6027,9 +5946,7 @@
     },
     {
       "ref": "pkg:npm/%40tanstack/react-store@0.9.3",
-      "dependsOn": [
-        "pkg:npm/%40tanstack/store@0.9.3"
-      ]
+      "dependsOn": ["pkg:npm/%40tanstack/store@0.9.3"]
     },
     {
       "ref": "pkg:npm/%40tanstack/store@0.9.3",
@@ -6061,9 +5978,7 @@
     },
     {
       "ref": "pkg:npm/class-variance-authority@0.7.1",
-      "dependsOn": [
-        "pkg:npm/clsx@2.1.1"
-      ]
+      "dependsOn": ["pkg:npm/clsx@2.1.1"]
     },
     {
       "ref": "pkg:npm/clsx@2.1.1",
@@ -6146,9 +6061,7 @@
     },
     {
       "ref": "pkg:npm/decode-named-character-reference@1.3.0",
-      "dependsOn": [
-        "pkg:npm/character-entities@2.0.2"
-      ]
+      "dependsOn": ["pkg:npm/character-entities@2.0.2"]
     },
     {
       "ref": "pkg:npm/character-entities@2.0.2",
@@ -6173,9 +6086,7 @@
     },
     {
       "ref": "pkg:npm/%40types/debug@4.1.13",
-      "dependsOn": [
-        "pkg:npm/%40types/ms@2.1.0"
-      ]
+      "dependsOn": ["pkg:npm/%40types/ms@2.1.0"]
     },
     {
       "ref": "pkg:npm/%40types/ms@2.1.0",
@@ -6183,9 +6094,7 @@
     },
     {
       "ref": "pkg:npm/debug@4.4.3",
-      "dependsOn": [
-        "pkg:npm/ms@2.1.3"
-      ]
+      "dependsOn": ["pkg:npm/ms@2.1.3"]
     },
     {
       "ref": "pkg:npm/ms@2.1.3",
@@ -6264,10 +6173,7 @@
     },
     {
       "ref": "pkg:npm/mdast-util-to-markdown@2.1.2",
-      "dependsOn": [
-        "pkg:npm/longest-streak@3.1.0",
-        "pkg:npm/mdast-util-phrasing@4.1.0"
-      ]
+      "dependsOn": ["pkg:npm/longest-streak@3.1.0", "pkg:npm/mdast-util-phrasing@4.1.0"]
     },
     {
       "ref": "pkg:npm/longest-streak@3.1.0",
@@ -6279,9 +6185,7 @@
     },
     {
       "ref": "pkg:npm/mdast-util-mdx-jsx@3.2.0",
-      "dependsOn": [
-        "pkg:npm/parse-entities@4.0.2"
-      ]
+      "dependsOn": ["pkg:npm/parse-entities@4.0.2"]
     },
     {
       "ref": "pkg:npm/parse-entities@4.0.2",
@@ -6303,9 +6207,7 @@
     },
     {
       "ref": "pkg:npm/is-alphanumerical@2.0.1",
-      "dependsOn": [
-        "pkg:npm/is-alphabetical@2.0.1"
-      ]
+      "dependsOn": ["pkg:npm/is-alphabetical@2.0.1"]
     },
     {
       "ref": "pkg:npm/is-alphabetical@2.0.1",
@@ -6325,15 +6227,11 @@
     },
     {
       "ref": "pkg:npm/style-to-js@1.1.21",
-      "dependsOn": [
-        "pkg:npm/style-to-object@1.0.14"
-      ]
+      "dependsOn": ["pkg:npm/style-to-object@1.0.14"]
     },
     {
       "ref": "pkg:npm/style-to-object@1.0.14",
-      "dependsOn": [
-        "pkg:npm/inline-style-parser@0.2.7"
-      ]
+      "dependsOn": ["pkg:npm/inline-style-parser@0.2.7"]
     },
     {
       "ref": "pkg:npm/inline-style-parser@0.2.7",
@@ -6349,9 +6247,7 @@
     },
     {
       "ref": "pkg:npm/rehype-raw@7.0.0",
-      "dependsOn": [
-        "pkg:npm/hast-util-raw@9.1.0"
-      ]
+      "dependsOn": ["pkg:npm/hast-util-raw@9.1.0"]
     },
     {
       "ref": "pkg:npm/hast-util-raw@9.1.0",
@@ -6364,16 +6260,11 @@
     },
     {
       "ref": "pkg:npm/hast-util-from-parse5@8.0.3",
-      "dependsOn": [
-        "pkg:npm/hastscript@9.0.1",
-        "pkg:npm/vfile-location@5.0.3"
-      ]
+      "dependsOn": ["pkg:npm/hastscript@9.0.1", "pkg:npm/vfile-location@5.0.3"]
     },
     {
       "ref": "pkg:npm/hastscript@9.0.1",
-      "dependsOn": [
-        "pkg:npm/hast-util-parse-selector@4.0.0"
-      ]
+      "dependsOn": ["pkg:npm/hast-util-parse-selector@4.0.0"]
     },
     {
       "ref": "pkg:npm/hast-util-parse-selector@4.0.0",
@@ -6389,9 +6280,7 @@
     },
     {
       "ref": "pkg:npm/parse5@7.3.0",
-      "dependsOn": [
-        "pkg:npm/entities@6.0.1"
-      ]
+      "dependsOn": ["pkg:npm/entities@6.0.1"]
     },
     {
       "ref": "pkg:npm/entities@6.0.1",
@@ -6403,9 +6292,7 @@
     },
     {
       "ref": "pkg:npm/rehype-sanitize@6.0.0",
-      "dependsOn": [
-        "pkg:npm/hast-util-sanitize@5.0.2"
-      ]
+      "dependsOn": ["pkg:npm/hast-util-sanitize@5.0.2"]
     },
     {
       "ref": "pkg:npm/hast-util-sanitize@5.0.2",
@@ -6413,21 +6300,15 @@
     },
     {
       "ref": "pkg:npm/remark-breaks@4.0.0",
-      "dependsOn": [
-        "pkg:npm/mdast-util-newline-to-break@2.0.0"
-      ]
+      "dependsOn": ["pkg:npm/mdast-util-newline-to-break@2.0.0"]
     },
     {
       "ref": "pkg:npm/mdast-util-newline-to-break@2.0.0",
-      "dependsOn": [
-        "pkg:npm/mdast-util-find-and-replace@3.0.2"
-      ]
+      "dependsOn": ["pkg:npm/mdast-util-find-and-replace@3.0.2"]
     },
     {
       "ref": "pkg:npm/mdast-util-find-and-replace@3.0.2",
-      "dependsOn": [
-        "pkg:npm/escape-string-regexp@5.0.0"
-      ]
+      "dependsOn": ["pkg:npm/escape-string-regexp@5.0.0"]
     },
     {
       "ref": "pkg:npm/escape-string-regexp@5.0.0",
@@ -6465,9 +6346,7 @@
     },
     {
       "ref": "pkg:npm/mdast-util-gfm-table@2.0.0",
-      "dependsOn": [
-        "pkg:npm/markdown-table@3.0.4"
-      ]
+      "dependsOn": ["pkg:npm/markdown-table@3.0.4"]
     },
     {
       "ref": "pkg:npm/markdown-table@3.0.4",

@@ -147,10 +147,8 @@ export const make = Effect.gen(function* () {
     getChangeRequestPreview: (input) =>
       cli.getMergeRequestDetail(input).pipe(Effect.mapError(fail("getChangeRequestPreview"))),
 
-    // Coder: summaries go through the CLI's batched GraphQL reads (`getMergeRequestSummary`), so
-    // the background sync's reads of every linked merge request share requests.
     getChangeRequestSummary: (input) =>
-      cli.getMergeRequestSummary(input).pipe(Effect.mapError(fail("getChangeRequestSummary"))),
+      cli.getMergeRequestDetail(input).pipe(Effect.mapError(fail("getChangeRequestSummary"))),
 
     getChangeRequest: (input) =>
       Effect.all(

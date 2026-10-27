@@ -596,8 +596,18 @@ describe("ChatMarkdown skill chips", () => {
             cwd="/tmp/project"
             text={text}
             skills={[
-              { name: "2spec", displayName: "2Spec" },
-              { name: "20k", displayName: "MoneySkill" },
+              {
+                name: "2spec",
+                displayName: "2Spec",
+                path: "/skills/2spec/SKILL.md",
+                enabled: true,
+              },
+              {
+                name: "20k",
+                displayName: "MoneySkill",
+                path: "/skills/20k/SKILL.md",
+                enabled: true,
+              },
             ]}
           />,
         );
@@ -1289,7 +1299,14 @@ it.each([
 ])(
   "highlights the indexed occurrences of $query in $text",
   async ({ text, query, count, lineBreaks, user, withTemplate }) => {
-    const skills = [{ name: "test-t3-app", displayName: "T3 App Testing" }];
+    const skills = [
+      {
+        name: "test-t3-app",
+        displayName: "T3 App Testing",
+        path: "/skills/test-t3-app/SKILL.md",
+        enabled: true,
+      },
+    ];
     const highlights = new Map<string, Set<Range>>();
     vi.stubGlobal(
       "Highlight",

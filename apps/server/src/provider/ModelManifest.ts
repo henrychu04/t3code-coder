@@ -4,7 +4,9 @@ import {
   TrimmedNonEmptyString,
   type ProviderDriverKind,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -13,6 +15,8 @@ import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
 import bundledManifestJson from "./model-manifest.json" with { type: "json" };
 import { ProviderCompatibilityPolicy } from "./providerCompatibility.ts";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
+
+const MODEL_NEW_BADGE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 const ManifestModelStatus = Schema.Literals(["current", "legacy"]);
 
@@ -28,7 +32,8 @@ const ManifestProviderModel = Schema.Struct({
   subProvider: Schema.optional(TrimmedNonEmptyString),
   aliases: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   status: ManifestModelStatus,
-  badge: Schema.optional(Schema.Literal("new")),
+  /** ISO date or timestamp of the model's public release, as published by its provider. */
+  releasedAt: Schema.optional(Schema.String),
   profile: Schema.optional(TrimmedNonEmptyString),
   adapter: Schema.optional(Schema.Unknown),
 });
@@ -85,6 +90,7 @@ export const BUNDLED_MODEL_MANIFEST: ModelManifestData =
 export function resolveProviderCatalog(
   manifest: ModelManifestData,
   driverKind: ProviderDriverKind,
+  nowMs = DateTime.toEpochMillis(DateTime.nowUnsafe()),
 ): ModelCatalog.ProviderCatalog | null {
   const catalog = manifest.providers?.[driverKind];
   if (!catalog) return null;
@@ -98,13 +104,19 @@ export function resolveProviderCatalog(
     const profile = entry.profile ? catalog.profiles[entry.profile] : undefined;
     if (entry.profile && !profile) return null;
 
+    const releasedAtMs = entry.releasedAt === undefined ? NaN : Date.parse(entry.releasedAt);
+    const showNewBadge =
+      entry.status === "current" &&
+      nowMs >= releasedAtMs &&
+      nowMs - releasedAtMs < MODEL_NEW_BADGE_DURATION_MS;
+
     models.push({
       slug: entry.slug,
       name: entry.name,
       ...(entry.shortName ? { shortName: entry.shortName } : {}),
       ...(entry.subProvider ? { subProvider: entry.subProvider } : {}),
       ...(entry.aliases ? { aliases: entry.aliases } : {}),
-      ...(entry.badge ? { badge: entry.badge } : {}),
+      ...(showNewBadge ? { badge: "new" as const } : {}),
       status: entry.status,
       capabilities: profile?.capabilities ?? null,
       adapter: entry.adapter,
@@ -152,10 +164,11 @@ export const layerModelCatalog = Layer.effect(
   Effect.gen(function* () {
     const manifest = yield* ModelManifest;
     return ModelCatalog.ModelCatalog.of({
-      current: (driverKind) =>
-        manifest.current.pipe(
-          Effect.map((data) => resolveProviderCatalog(data, driverKind) ?? undefined),
-        ),
+      current: Effect.fn("ModelCatalog.current")(function* (driverKind: ProviderDriverKind) {
+        const data = yield* manifest.current;
+        const nowMs = yield* Clock.currentTimeMillis;
+        return resolveProviderCatalog(data, driverKind, nowMs) ?? undefined;
+      }),
       bundled: (driverKind) =>
         resolveProviderCatalog(BUNDLED_MODEL_MANIFEST, driverKind) ?? undefined,
       refreshInBackground: manifest.refreshInBackground,

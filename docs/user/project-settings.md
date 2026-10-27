@@ -63,7 +63,7 @@ built-in default. Leave a setting on **Inherit** to let the next tier decide.
 
 New worktrees initialize git submodules recursively from submodules already available in the
 workspace. If that step is slow because the repository declares many nested submodules, set
-**Submodules** in **Settings → General → New threads** (with the project selected to override it there) to
+**Submodules** in **Settings → Worktrees** under Advanced (with the project selected to override it there) to
 **Top level only** to stop at the ones the repository declares itself, or **Skip** to leave them
 for a setup script. It resolves in the same order: a `"worktreeSubmodules"` value in the `t3.json`
 of the branch being checked out applies when the project and workspace are both on **Inherit**.
@@ -94,7 +94,7 @@ authentication and GitLab preferences remain under global settings.
 
 ## Worktree branch names
 
-In **Settings → Source control → Worktree branch naming**, choose a static prefix, a model-selected semantic prefix such as
+In **Settings → Worktrees → Worktree branch naming**, choose a static prefix, a model-selected semantic prefix such as
 `feat/` or `fix/`, or custom instructions for the complete name. The static prefix defaults to
 `t3code/`; a trailing slash is optional, and an empty prefix adds nothing. Invalid characters in a
 static prefix are replaced with hyphens. Custom instructions are appended to the naming prompt and
@@ -106,9 +106,9 @@ custom name is invalid or already taken, the temporary branch name remains.
 
 ## Workspace defaults
 
-Open **Settings → General → New threads** to choose the default model and checkout mode.
+Open **Settings → Threads → New threads** to choose the default model and checkout mode.
 **Settings → Source control → Repositories** contains automatic pull. These controls save
-immediately for the selected scope. **Settings → General → Default actions** contains the
+immediately for the selected scope. **Settings → Threads → Default actions** contains the
 workspace's default scripts when All projects is selected. Use **Add action**, or the edit button beside an existing action;
 **Save action** or **Save changes** saves the dialog.
 Choose a workspace and, optionally, a project using the shared scope menus. Only edited settings
@@ -191,7 +191,7 @@ published themes change. Published cards cannot be edited or removed through the
 
 ## Coder connections
 
-**Settings → Connections** lists Coder domains, workspace connections, and port forwards.
+**Settings → Environments** lists Coder domains, workspace connections, and port forwards.
 Use **Add domain** or **Add forward** to open an editor. Existing entries have an actions menu
 with edit and removal controls. Changes apply when you save the dialog; a failed save keeps your
 entries available for correction and retry. Domain sign-in still takes place in the terminal
@@ -215,7 +215,8 @@ workspace is connected.
 
 ## Storage cleanup
 
-Open **Settings → Storage** to configure retention for selected Coder workspaces. Cleanup is off
+Open **Settings → Worktrees → Cleanup** for worktree rules and **Settings → Maintenance** for
+artifact and log retention on selected Coder workspaces. Cleanup is off
 by default. Enabled policies run when the helper starts, when settings change, and hourly while
 the helper is running. Offline workspaces retain their settings and resume cleanup on reconnect.
 

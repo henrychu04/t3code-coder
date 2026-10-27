@@ -6,21 +6,28 @@ import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables } from "./appearanceFonts";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
+import { startKeybindingsUpdateToasts } from "./components/KeybindingsUpdateToast";
 import { startLegacyThreadMigrationToast } from "./components/LegacyThreadMigrationToast";
 import { startMainAppLocationTracking } from "./components/sidebar/mainAppLocation";
+import { startSlowRpcRequestToasts } from "./components/SlowRpcRequestToastCoordinator";
 import { startThreadNotifications } from "./components/ThreadNotificationCoordinator";
+import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
-import { useComposerDraftStore } from "./composerDraftStore";
+import { subscribeDraftThreadPromotion, useComposerDraftStore } from "./composerDraftStore";
+import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
 import {
   getClientSettings,
   startModelPreferencesMigration,
   subscribeClientSettings,
 } from "./hooks/useSettings";
+import { syncBrowserChromeTheme } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
 import { getRouter, type AppRouter } from "./router";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { primaryServerConfigAtom } from "./state/server";
+import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
+import { environmentThreadShells } from "./state/threads";
 import { resolveThreadRouteTarget } from "./threadRoutes";
 
 /** Writes appearance settings onto the document, touching only the groups that changed. */
@@ -90,6 +97,17 @@ function startDocumentTitle(): void {
   );
 }
 
+/**
+ * Each route paints its own surface, which the browser chrome samples once it is on screen.
+ * onRendered only fires for a new href; onResolved also covers `router.invalidate()`, which
+ * can swap the root between the bare outlet and the shell at the same address.
+ */
+function startBrowserChromeThemeSync(router: AppRouter): void {
+  const resync = () => window.requestAnimationFrame(syncBrowserChromeTheme);
+  router.subscribe("onRendered", resync);
+  router.subscribe("onResolved", resync);
+}
+
 /** Chat overlays belong to the thread they were opened in, so leaving its route drops them. */
 function startThreadOverlayRetention(router: AppRouter): void {
   router.subscribe("onResolved", () => {
@@ -114,20 +132,33 @@ function startThreadOverlayRetention(router: AppRouter): void {
  */
 export function startAppServices(): AppRouter {
   // Coder: a browser behind the loopback gateway only. There is no provider auth delivery,
-  // Electron shell, default-theme adoption, agent-opened browser preview, SSH password prompt,
-  // host-freeze toast, pairing-permission notice, or desktop update notice.
+  // Electron shell or desktop paste-as-text, default-theme adoption, agent-opened browser preview,
+  // preview title recording or browser profile reporting, Open in editor command, SSH password
+  // prompt, host-freeze toast, pairing-permission notice, or desktop update notice.
   const router = getRouter(createBrowserHistory());
 
   startClientAppearance();
   startDocumentTitle();
+  startEnvironmentThemeRepaint();
+  startBrowserChromeThemeSync(router);
   startModelPreferencesMigration();
+  installChatRouteCommands(router);
   startThreadOverlayRetention(router);
+  // Drafts promote as their server threads arrive, wherever the user is.
+  subscribeDraftThreadPromotion({
+    registry: appAtomRegistry,
+    threadShellAtom: environmentThreadShells.quietThreadShellAtom,
+    threadRefsAtom: environmentThreadShells.threadRefsAtom,
+  });
   startMainAppLocationTracking(router);
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
   startThreadVisitedMigration(appAtomRegistry);
 
+  startKeybindingsUpdateToasts();
+  startSlowRpcRequestToasts();
   startLegacyThreadMigrationToast();
   startThreadNotifications(appAtomRegistry, router);
+  startGuideRunNotifications(appAtomRegistry, router);
 
   return router;
 }

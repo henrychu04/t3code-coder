@@ -76,25 +76,11 @@ const EMPTY_THREAD_HISTORY_ATOM = Atom.make<ThreadHistoryMeta>(EMPTY_THREAD_HIST
   Atom.withLabel("web-thread-history:empty"),
 );
 
-// Coder: the active workspace is also upstream's primary environment; see primaryEnvironment.ts.
-const activeEnvironmentIdAtom = primaryEnvironmentIdAtom;
-
-export function useActiveEnvironmentId(): EnvironmentId | null {
-  return useAtomValue(activeEnvironmentIdAtom);
-}
-
-export function setActiveEnvironmentId(environmentId: EnvironmentId | null): void {
-  appAtomRegistry.set(activeEnvironmentIdAtom, environmentId);
-}
-
-// Coder: the first workspace to send its welcome becomes active (and primary).
-export function readActiveEnvironmentId(): EnvironmentId | null {
-  return appAtomRegistry.get(activeEnvironmentIdAtom);
-}
-
+// Coder: the active workspace is upstream's primary environment; the first workspace to send its
+// welcome becomes primary (see primaryEnvironment.ts and __root.tsx's EventRouter).
 export function initializeActiveEnvironmentId(environmentId: EnvironmentId): void {
-  if (readActiveEnvironmentId() !== null) return;
-  setActiveEnvironmentId(environmentId);
+  if (appAtomRegistry.get(primaryEnvironmentIdAtom) !== null) return;
+  appAtomRegistry.set(primaryEnvironmentIdAtom, environmentId);
 }
 
 export function useThreadRefs(enabled = true): ReadonlyArray<ScopedThreadRef> {

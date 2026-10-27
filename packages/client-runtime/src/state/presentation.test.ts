@@ -91,3 +91,20 @@ describe("environment summary subscriptions", () => {
 
 // Coder: upstream's "presentations with providers" tests cover disabled and unsupported saved
 // connections; Coder workspaces have neither, so every catalog entry counts.
+
+describe("connection presentation", () => {
+  // Coder: workspaces cannot be disabled, so the disabled-entry step is not carried.
+  it("presents an enabled environment as connecting until its supervisor reports", () => {
+    const h = harness();
+    const phase = () => h.registry.get(h.full.presentationAtom(FIRST))?.connection.phase;
+    const stop = h.registry.subscribe(h.full.presentationAtom(FIRST), () => {});
+    try {
+      expect(phase()).toBe("connecting");
+      h.registry.set(h.state, AsyncResult.success({ ...AVAILABLE_CONNECTION_STATE }));
+      expect(phase()).toBe("available");
+    } finally {
+      stop();
+      h.registry.dispose();
+    }
+  });
+});

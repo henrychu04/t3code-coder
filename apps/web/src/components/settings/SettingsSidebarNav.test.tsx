@@ -20,7 +20,10 @@ vi.mock("../ui/sidebar", () => ({
     setOpen: mocks.setOpen,
     setOpenMobile: mocks.setOpenMobile,
   }),
-  SidebarInput: ({ nativeInput: _nativeInput, ...props }: React.ComponentProps<"input"> & {
+  SidebarInput: ({
+    nativeInput: _nativeInput,
+    ...props
+  }: React.ComponentProps<"input"> & {
     nativeInput?: boolean;
   }) => <input {...props} />,
   SidebarFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

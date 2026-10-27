@@ -21,7 +21,6 @@ vi.mock("./useSettings", () => ({
 }));
 vi.mock("@tanstack/react-router", () => ({ useRouter: () => ({ navigate: vi.fn() }) }));
 vi.mock("../state/entities", () => ({
-  useActiveEnvironmentId: () => null,
   useProjects: () => [],
   readEnvironmentSupportsAutoSettleOptOut: () => true,
   readEnvironmentSupportsPinning: () => true,

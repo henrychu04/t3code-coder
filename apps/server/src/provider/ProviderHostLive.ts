@@ -35,14 +35,17 @@ export const layer = Layer.effect(
       shouldRunBackgroundWork: backgroundPolicy.shouldRunScopeWork,
       resolveAttachmentPath: (attachment) =>
         resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment }),
-      resolveExtractedTextPath: (path) =>
-        DocumentText.resolveExtractedTextPath(path).pipe(
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-        ),
+      // DocumentText owns the path-resolution span.
+      resolveExtractedTextPath: Effect.fnUntraced(
+        function* (path) {
+          return yield* DocumentText.resolveExtractedTextPath(path);
+        },
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+      ),
       // Coder: providers authenticate through the workspace's own configuration, and T3 Coder
       // never stores provider credentials: nothing is stored and writes fail.
-      credentials: (namespace, bindingId) =>
-        Effect.succeed({
+      credentials: Effect.fn("ProviderHost.credentials")(function (namespace, bindingId) {
+        return Effect.succeed({
           binding: { owner: "t3" as const, key: `${namespace}:${bindingId}` },
           get: Effect.succeed(Option.none<Uint8Array>()),
           set: (_credentials: Uint8Array) =>
@@ -58,7 +61,8 @@ export const layer = Layer.effect(
               cause: "T3 Coder does not store provider credentials.",
             }),
           ),
-        }),
+        });
+      }),
     });
   }),
 );

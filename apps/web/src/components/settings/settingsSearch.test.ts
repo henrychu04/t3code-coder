@@ -12,6 +12,7 @@ import {
   getSettingsSearchTargetScope,
   getThreadAutoSettlementSearchAvailability,
   isSettingsSearchScopeAvailable,
+  movedSettingsPath,
   searchSettings,
   SETTINGS_SEARCH_ITEMS,
   sourceControlHostSearchItems,
@@ -29,6 +30,7 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
   {
     id: "network-access",
     title: "Network access",
+    // Coder: there is no sharing and access page; the fixture lives on Environments.
     to: "/settings/connections",
     searchTerms: ["remote pairing backend"],
   },
@@ -54,7 +56,9 @@ describe("searchSettings", () => {
   it("matches titles, sections, and remembered setting details", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
-    expect(searchSettings("connections", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
+    expect(searchSettings("environments", ITEMS).map((item) => item.id)).toEqual([
+      "network-access",
+    ]);
     expect(searchSettings("claude", ITEMS).map((item) => item.id)).toEqual(["providers"]);
     expect(searchSettings("long lines", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
   });
@@ -191,6 +195,7 @@ describe("auto-settlement search availability", () => {
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
       "days-before-auto-settle",
+      "keep-threads-with-pull-requests",
     ]);
   });
 
@@ -264,5 +269,28 @@ describe("source control host search items", () => {
   // Coder: GitLab is the only built-in host, and it declares no host settings form.
   it("finds the built-in hosts by their own words", () => {
     expect(searchSettings("gitlab").map((item) => item.id)).toContain("source-control");
+  });
+});
+
+describe("movedSettingsPath", () => {
+  it("sends old links to the page their row moved to", () => {
+    expect(movedSettingsPath("/settings/general", "text-generation-model")).toBe(
+      "/settings/threads",
+    );
+    // Coder: no sharing and access, browser, or devices pages, so nothing moves to them.
+    expect(movedSettingsPath("/settings/source-control", "worktree-branch-naming")).toBe(
+      "/settings/worktrees",
+    );
+    expect(movedSettingsPath("/settings/appearance", "diff-color-scheme")).toBe("/settings/diffs");
+    expect(movedSettingsPath("/settings/storage", "storage-worktrees")).toBe("/settings/worktrees");
+    expect(movedSettingsPath("/settings/storage", "")).toBe("/settings/maintenance");
+    expect(movedSettingsPath("/settings/beta", "")).toBe("/settings/labs");
+  });
+
+  it("leaves current pages alone", () => {
+    expect(movedSettingsPath("/settings/general", "time-format")).toBeNull();
+    expect(movedSettingsPath("/settings/projects", "project-defaults")).toBeNull();
+    expect(movedSettingsPath("/settings/connections", "remote-environments")).toBeNull();
+    expect(movedSettingsPath("/settings/appearance", "theme")).toBeNull();
   });
 });
