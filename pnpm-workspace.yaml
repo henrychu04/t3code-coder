@@ -35,6 +35,9 @@ catalog:
   "@effect/vitest": 4.0.5
   "@legendapp/list": 3.3.5
   "@pierre/diffs": 1.6.1
+  "@tailwindcss/node": 4.3.3
+  "@tailwindcss/oxide": 4.3.3
+  "@tailwindcss/vite": 4.3.3
   "@types/node": 24.12.4
   "@types/react": ~19.3.0
   "@types/react-dom": ~19.3.0
@@ -42,6 +45,8 @@ catalog:
   react-dom: 19.3.0
   typescript: 7.0.2
   effect: 4.0.5
+  lightningcss: 1.33.0
+  tailwindcss: 4.3.3
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vite-plus: 1.4.0
   yaml: 2.9.0
@@ -94,8 +99,15 @@ overrides:
   # Resolve below remark-math so Vite, Metro and Node use the same tokenizer.
   "remark-math>micromark-extension-math": npm:micromark-extension-llm-math@3.1.0
   micromark-extension-gfm-table: 2.1.1
+  # Keep one copy of these native-binary packages. lightningcss ships 11 platform binaries per
+  # version, and the workspaces' tailwindcss ^4 ranges drift into two 4.3.x copies of the family.
+  "@tailwindcss/node": "catalog:"
+  "@tailwindcss/oxide": "catalog:"
+  "@tailwindcss/vite": "catalog:"
   "@types/node": "catalog:"
   effect: "catalog:"
+  lightningcss: "catalog:"
+  tailwindcss: "catalog:"
   vite: "catalog:"
   vite-plus: "catalog:"
   yaml: "catalog:"

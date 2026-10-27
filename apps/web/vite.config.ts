@@ -117,7 +117,7 @@ export default defineConfig({
         { bundle: "gateway", path: new URL("../coder-gateway/package.json", import.meta.url) },
       ],
     }),
-    tanstackRouter(),
+    tanstackRouter({ autoCodeSplitting: true }),
     react({ compiler: true }),
     tailwindcss(),
   ],
