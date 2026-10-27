@@ -749,7 +749,8 @@ listed here is drift to remove rather than fork behavior to keep.
   command and installs the `RpcPermissionGuard` that upstream's guarded RPCs require. Settings
   sync writes to every connected workspace without grant checks, and worktree removal is always
   offered. `state/terminalSessions.ts` reads terminal scopes through `readEnvironmentScope`
-  instead of upstream's session-state atom, which the fork does not carry.
+  instead of upstream's session-state atom, which the fork does not carry, and
+  `files/fileSaveSessions.ts` subscribes to no write-scope changes for the same reason.
 - **Agent secret requests.** Upstream's `request_secret` tool, card, and one-use secret store,
   with the value sent only to the workspace store over `secrets.answerRequest`; it never enters
   browser storage, the transcript, projections, model context, or logs.
@@ -814,7 +815,9 @@ listed here is drift to remove rather than fork behavior to keep.
     which the CLI transport cannot host.
   - The web provider list and client-runtime `state/server.ts` stay limited to the methods the
     helper serves and to Codex, Claude, Pi, and Kilo Code (`acpRegistry`) driver instances
-    (`isCoderProviderDriver`).
+    (`isCoderProviderDriver`). Client-runtime's `providerClients.ts` (#24205) registers only those
+    four, so web's `providerDriverMeta.ts` re-exports it as upstream's does, and the Add provider
+    dialog shows all four as first-class with no "Show more" fold or ACP Registry search (#25753).
   - Client settings keep `providerPreferencesByEnvironment`, the per-workspace favorites and model
     order the browser stored before upstream moved them into server settings, read only as the
     legacy lists each workspace migrates (see [Persistence](#upstream-seams)).
@@ -838,7 +841,10 @@ listed here is drift to remove rather than fork behavior to keep.
   keybindings; every workspace is remote; Add project always shows the workspace picker, which
   also lists each domain's unconnected workspaces and connects the chosen one; there is no desktop or WSL folder picker, browser
   preview, usage page, or file manager action (the footer holds only the message search notice);
-  and review actions say merge request. Clone sources, host icons, and
+  and review actions say merge request. Opening the palette to add a project runs workspace
+  discovery once; with no Coder domain it opens connection settings. The usage, preview, and
+  `usage.open` cuts sit in `shortcuts/commandPaletteCommands.ts`, where upstream moved the
+  palette's shortcuts (#25733). Clone sources, host icons, and
   publish targets come from the GitLab-only client registry (see Source control below).
   Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
@@ -1152,8 +1158,9 @@ listed here is drift to remove rather than fork behavior to keep.
   stays exported (upstream made it private) for the Coder legacy-history tests.
 - **Persistence.** Upstream's offline query persistence, which only its mobile app
   provides a store for, is not carried: client-runtime's `state/runtime.ts` query atoms take no
-  `persistence` option and `state/pullRequests.ts` passes none. Its query key normalizer drops
-  upstream's `expectedAccountId`, which the contract does not carry. Model favorites, visibility, and order are upstream's server
+  `persistence` option and `state/pullRequests.ts` passes none. Its query key normalizer and web
+  `pullRequest/filesViewedStore.ts`'s scope key drop upstream's `expectedAccountId`, which the
+  contract does not carry. Model favorites, visibility, and order are upstream's server
   settings, so each workspace keeps its own. Upstream migrates a browser's saved lists into an
   environment whose settings have none; here the legacy lists are the workspace's own
   `providerPreferencesByEnvironment` entry, falling back to the global lists
@@ -1184,8 +1191,13 @@ listed here is drift to remove rather than fork behavior to keep.
     client-runtime's `connection/driver.ts`, `connection/index.ts`, `connection/wakeups.ts`, and
     `platform/persistence.ts` drop upstream's multi-route checks, credential and profile stores,
     saved targets, onboarding, GitHub routing, host updates, and the mobile `network-changed`
-    wakeup. `connection/registry.ts` starts every registered workspace's supervisor desired
-    (upstream starts only enabled ones), since the Coder config owns registration. Its entries
+    wakeup. `connection/supervisor.ts` gives the one route no route kind, so upstream's probe
+    timeouts treat it as remote (#25824): the gateway is on loopback, but every RPC crosses
+    `coder ssh`. `connection/driver.ts`'s `checkHost` never answers, because the gateway answers
+    whether or not the workspace does; the silent socket check then ends only on a frame, and the
+    probe timeout decides. `connectedLeaseEnd` ends a lease only on a disconnect (no better routes
+    or relay credentials). `connection/registry.ts` starts every registered workspace's supervisor
+    desired (upstream starts only enabled ones), since the Coder config owns registration. Its entries
     carry no cached unsupported-host rejection, so web `state/server.ts`'s shortcut-keybinding
     fallback presents each workspace's connection state as is.
     `state/shell.ts` treats every workspace as remote (no primary local target).

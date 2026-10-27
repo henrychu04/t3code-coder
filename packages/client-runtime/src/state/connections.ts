@@ -11,7 +11,11 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
 import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
-import { createRuntimeCommand, followStreamInEnvironment } from "./runtime.ts";
+import {
+  createRuntimeCommand,
+  environmentSessionGenerationAtom,
+  followStreamInEnvironment,
+} from "./runtime.ts";
 
 export interface EnvironmentCatalogState {
   readonly isReady: boolean;
@@ -73,6 +77,8 @@ export function createEnvironmentCatalogAtoms<R, E>(
     ),
   );
 
+  const sessionGenerationAtom = (environmentId: EnvironmentIdType) =>
+    environmentSessionGenerationAtom(runtime, environmentId);
   const retryNow = createRuntimeCommand(runtime, {
     label: "environment-catalog:retry-now",
     execute: (environmentId: EnvironmentIdType) =>
@@ -87,6 +93,7 @@ export function createEnvironmentCatalogAtoms<R, E>(
     networkStatusAtom,
     networkStatusValueAtom,
     stateAtom,
+    sessionGenerationAtom,
     retryNow,
   };
 }

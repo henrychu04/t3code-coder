@@ -4,6 +4,7 @@ import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { CheckIcon } from "lucide-react";
 import { useState } from "react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { ProviderClientDefinition } from "@t3tools/provider-core/client";
 import {
   ProviderInstanceId,
   ProviderDriverKind,
@@ -42,7 +43,8 @@ import { AddProviderInstanceWizardSteps } from "./AddProviderInstanceWizardSteps
 // Coder: only Codex, Claude, Pi, and Kilo Code instances can be added, configured manually
 // against the workspace's CLI. Kilo Code is a plain choice beside the others, running its local
 // command: there is no ACP registry search, ChatGPT account connection, managed Codex install,
-// or post-create sign-in step; API credentials are configured in the workspace.
+// or post-create sign-in step; API credentials are configured in the workspace. All four are
+// first-class, so upstream's Show more fold (#25753) has nothing to hold.
 
 /** Limit the slug to 48 chars so the composed ProviderInstanceId fits its 64-char cap. */
 function slugifyLabel(value: string): string {
@@ -71,6 +73,59 @@ function validateInstanceId(id: string, existing: ReadonlySet<string>): string |
   }
   if (existing.has(id)) return `An instance named '${id}' already exists.`;
   return null;
+}
+
+function ProviderOptionGrid({
+  options,
+  value,
+  disabled,
+  onValueChange,
+  ...labelProps
+}: {
+  readonly options: ReadonlyArray<ProviderClientDefinition>;
+  readonly value: ProviderDriverKind;
+  readonly disabled: boolean;
+  readonly onValueChange: (value: string) => void;
+  readonly "aria-label"?: string;
+  readonly "aria-labelledby"?: string;
+}) {
+  return (
+    <RadioGroup
+      {...labelProps}
+      disabled={disabled}
+      value={value}
+      onValueChange={onValueChange}
+      className="grid grid-cols-1 sm:grid-cols-2"
+    >
+      {options.map((option) => (
+        <RadioPrimitive.Root
+          key={option.driverKind}
+          value={option.driverKind}
+          className="relative flex cursor-pointer items-center gap-3 rounded-lg bg-card px-3 py-3 text-left text-muted-foreground outline-none ring-1 ring-black/5 hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-checked:bg-primary/8 data-checked:text-foreground data-checked:ring-2 data-checked:ring-inset data-checked:ring-primary data-checked:hover:bg-primary/8 dark:bg-white/3 dark:ring-white/5 dark:hover:bg-white/5 dark:data-checked:bg-primary/15 dark:data-checked:ring-primary dark:data-checked:hover:bg-primary/15"
+        >
+          <ProviderInstanceIcon
+            driverKind={option.driverKind}
+            displayName={option.label}
+            iconClassName="size-4"
+          />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+            {option.label}
+          </span>
+          <RadioPrimitive.Indicator
+            className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground"
+            aria-hidden
+          >
+            <CheckIcon className="size-3.5 shrink-0" />
+          </RadioPrimitive.Indicator>
+          {option.badgeLabel ? (
+            <Badge variant="warning" size="sm">
+              {option.badgeLabel}
+            </Badge>
+          ) : null}
+        </RadioPrimitive.Root>
+      ))}
+    </RadioGroup>
+  );
 }
 
 interface AddProviderInstanceDialogProps {
@@ -145,6 +200,10 @@ export function AddProviderInstanceDialog({
       }
       return next;
     });
+  };
+  const selectDriver = (value: string) => {
+    setDriver(ProviderDriverKind.make(value));
+    setHasAttemptedSubmit(false);
   };
   const setIdentityDraft = (update: Partial<ProviderIdentityDraft>) => {
     setIdentityByDriver((existing) => ({
@@ -236,45 +295,13 @@ export function AddProviderInstanceDialog({
               <div id="add-instance-driver-label" className="text-sm font-medium text-foreground">
                 Provider
               </div>
-              <RadioGroup
+              <ProviderOptionGrid
+                options={providerClients.definitions}
                 value={driver}
-                onValueChange={(value) => {
-                  setDriver(ProviderDriverKind.make(value));
-                  setHasAttemptedSubmit(false);
-                }}
+                disabled={false}
+                onValueChange={selectDriver}
                 aria-labelledby="add-instance-driver-label"
-                className="grid grid-cols-1 sm:grid-cols-2"
-              >
-                {providerClients.definitions.map((option) => {
-                  return (
-                    <RadioPrimitive.Root
-                      key={option.driverKind}
-                      value={option.driverKind}
-                      className="relative flex cursor-pointer items-center gap-3 rounded-lg bg-card px-3 py-3 text-left text-muted-foreground outline-none ring-1 ring-black/5 hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-checked:bg-primary/8 data-checked:text-foreground data-checked:ring-2 data-checked:ring-inset data-checked:ring-primary data-checked:hover:bg-primary/8 dark:bg-white/3 dark:ring-white/5 dark:hover:bg-white/5 dark:data-checked:bg-primary/15 dark:data-checked:ring-primary dark:data-checked:hover:bg-primary/15"
-                    >
-                      <ProviderInstanceIcon
-                        driverKind={option.driverKind}
-                        displayName={option.label}
-                        iconClassName="size-4"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                        {option.label}
-                      </span>
-                      <RadioPrimitive.Indicator
-                        className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground"
-                        aria-hidden
-                      >
-                        <CheckIcon className="size-3.5 shrink-0" />
-                      </RadioPrimitive.Indicator>
-                      {option.badgeLabel ? (
-                        <Badge variant="warning" size="sm">
-                          {option.badgeLabel}
-                        </Badge>
-                      ) : null}
-                    </RadioPrimitive.Root>
-                  );
-                })}
-              </RadioGroup>
+              />
             </div>
 
             <SettingsGroup variant="plain" className={cn(wizardStep !== identityStep && "hidden")}>

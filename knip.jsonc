@@ -61,6 +61,7 @@
     "packages/client-runtime/src/operations/projects.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/operations/threadTitle.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/platform/threadCacheEncoding.ts": ["exports", "nsExports"],
+    "packages/client-runtime/src/providerClients.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/rpc/client.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/scheduledTaskWebhook.ts": ["exports", "nsExports"],
     "packages/client-runtime/src/sourceControlClients.ts": ["exports", "nsExports"],

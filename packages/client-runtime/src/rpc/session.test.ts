@@ -351,6 +351,23 @@ describe("RpcSessionFactory", () => {
     ),
   );
   // Coder: the direct case only; there is no relay connection target.
+  it.effect("counts every inbound frame, including ones that answer no request", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect(PREPARED);
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(socket);
+      yield* Fiber.join(readyFiber);
+      const before = yield* session.inboundFrames;
+
+      socket.serverMessage(encodeJson({ _tag: "Pong" }));
+
+      expect(yield* session.inboundFrames).toBe(before + 1);
+    }),
+  );
+
   it.effect("closes the session after 15 seconds without a frame from the server", () =>
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();
