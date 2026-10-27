@@ -137,10 +137,9 @@ export function linkedPullRequestSnapshotStatus(
 ): LinkedThreadPullRequestStatus | null {
   const snapshot = link.snapshot;
   if (snapshot === null) return null;
-  // Coder: GitLab is the only hosted provider; other hosts' links have no status snapshot.
-  const host = sourceControlClients.findByChangeRequestUrl(link.url);
-  if (host === undefined) return null;
-  const kind = host.kind;
+  const kind = (
+    sourceControlClients.findByChangeRequestUrl(link.url) ?? sourceControlClients.get(undefined)
+  ).kind;
   return {
     pr: {
       number: link.number,

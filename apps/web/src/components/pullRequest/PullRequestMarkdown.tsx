@@ -1,4 +1,5 @@
 import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
+import { resolveGitLabUploadUrl } from "@t3tools/client-runtime/pull-request-markdown";
 import type { ReferenceAutolink } from "@t3tools/client-runtime/source-control-clients";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { createContext, useContext } from "react";
@@ -13,22 +14,36 @@ import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestM
 
 export const PullRequestMarkdownContext = createContext<{
   autolinks: ((text: string) => ReadonlyArray<ReferenceAutolink>) | null;
-  // Coder: the repository GitLab's root-relative `/uploads/…` links resolve against.
+  // Coder: the repository GitLab's project-relative `/uploads/…` links resolve against.
   repositoryUrl: string | null;
   threadRef: ScopedThreadRef | null;
 } | null>(null);
 
+type MarkdownUrlNode = { type: string; url?: string; children?: MarkdownUrlNode[] };
+
+const UPLOAD_URL_NODE_TYPES = new Set(["image", "link", "definition"]);
+
+/** Coder: GitLab writes pasted files into Markdown as `/uploads/…` images and links. */
+function remarkGitLabUploads(options: { readonly repositoryUrl: string }) {
+  const visit = (node: MarkdownUrlNode): void => {
+    if (UPLOAD_URL_NODE_TYPES.has(node.type) && node.url !== undefined) {
+      node.url = resolveGitLabUploadUrl(node.url, options.repositoryUrl) ?? node.url;
+    }
+    node.children?.forEach(visit);
+  };
+  return (tree: MarkdownUrlNode) => visit(tree);
+}
+
 /**
  * Upstream's change-request body renderer: recognized GitLab navigation stays internal, videos play
  * inline from their host, and other uploads open there. Relative GitLab uploads resolve against the
- * repository's host. Coder: no source control host's credentialed media fetch is carried.
+ * repository. Coder: no source control host's credentialed media fetch is carried.
  */
 export function PullRequestMarkdown({
   text,
   cwd,
   environmentId,
   threadRef,
-  hostUrl,
   className,
 }: {
   text: string;
@@ -36,18 +51,17 @@ export function PullRequestMarkdown({
   environmentId: EnvironmentId;
   /** Thread the body is shown beside, so its merge request links open in that thread's panel. */
   threadRef?: ScopedThreadRef | null;
-  /** Overrides the context's repository as the origin of relative GitLab uploads. */
-  hostUrl?: string | null;
   className?: string;
 }) {
   const context = useContext(PullRequestMarkdownContext);
   const autolinks = context?.autolinks;
   const repositoryUrl = context?.repositoryUrl ?? null;
   const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
-  const segments = splitPullRequestBody(text, hostUrl ?? repositoryUrl);
+  const segments = splitPullRequestBody(text, repositoryUrl);
   const extraRemarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = autolinks
     ? [[remarkPullRequestAutolinks, { autolinks }]]
     : [];
+  if (repositoryUrl !== null) extraRemarkPlugins.push([remarkGitLabUploads, { repositoryUrl }]);
   return (
     <div
       className={cn(
