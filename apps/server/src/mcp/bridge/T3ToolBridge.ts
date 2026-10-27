@@ -19,6 +19,7 @@ import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
 
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
+import { advertisedJsonSchema } from "../advertisedJsonSchema.ts";
 import * as McpInvocationContext from "../McpInvocationContext.ts";
 import * as McpToolAccess from "../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../OrchestratorMcpService.ts";
@@ -98,13 +99,16 @@ const TASK_STATUS_ENTRY: FileBridgeCatalogEntry = {
 
 const isReadOnly = (tool: Tool.Any) => Context.get(tool.annotations, Tool.Readonly);
 
-/** What `--list` and `--schema` show; built from the tool definitions alone. */
+/**
+ * What `--list` and `--schema` show; built from the tool definitions alone. Schemas are the compact
+ * ones upstream's MCP server advertises.
+ */
 export const T3_TOOL_CATALOG: ReadonlyArray<FileBridgeCatalogEntry> = [
   ...Object.values(BridgedToolkit.tools as Record<string, Tool.Any>).map((tool) => ({
     name: tool.name,
     description: Tool.getDescription(tool) ?? "",
     readOnly: isReadOnly(tool),
-    inputSchema: Tool.getJsonSchema(tool),
+    inputSchema: advertisedJsonSchema(tool),
   })),
   ...(Object.hasOwn(BridgedToolkit.tools, "task_status") ? [] : [TASK_STATUS_ENTRY]),
 ];

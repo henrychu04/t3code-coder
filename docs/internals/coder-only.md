@@ -583,6 +583,10 @@ listed here is drift to remove rather than fork behavior to keep.
     - `mcp/bridge/T3ToolBridge.ts` runs upstream's toolkit handlers by name with the credential's
       `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
       its inline budget into `bridge-job:` tasks. `coderServer.ts` binds it once the orchestrator runs.
+      `--schema` prints upstream's compact `advertisedJsonSchema`, as its MCP server advertises
+      (#25790). Plan mode follows the tool annotation: upstream's action tools (#25423, such as
+      `t3_queue` and `t3_pending_request`) are not read-only, so their read actions are refused there,
+      as upstream's Claude plan-mode allowlist dropped them.
     - `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of upstream's
       `ServerEnvironment`.
     - provider-core's `server/t3ToolBridgeInstructions.ts` reuses upstream's orchestration
