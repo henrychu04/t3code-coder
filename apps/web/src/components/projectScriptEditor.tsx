@@ -276,8 +276,8 @@ function ProjectScriptEditorForm({
   const [waitForSetup, setWaitForSetup] = useState(request.initial.waitForSetup);
   const [runOnSettle, setRunOnSettle] = useState(request.initial.runOnSettle);
   const [keybinding, setKeybinding] = useState(request.initial.keybinding ?? "");
-  const [previewUrl, setPreviewUrl] = useState(request.initial.previewUrl ?? "");
-  const [autoOpenPreview, setAutoOpenPreview] = useState(request.initial.autoOpenPreview);
+  const [previewUrl] = useState(request.initial.previewUrl ?? "");
+  const [autoOpenPreview] = useState(request.initial.autoOpenPreview);
   const [isSaving, setIsSaving] = useState(false);
   const pendingSubmissionRef = useRef<object | null>(null);
   // A save that settles after this form is replaced must not close or error
@@ -500,6 +500,13 @@ function ProjectScriptEditorForm({
                 checked={waitForSetup}
                 disabled={!runOnWorktreeCreate}
                 onCheckedChange={(checked) => setWaitForSetup(Boolean(checked))}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+              <span>Run in the thread's worktree when the thread settles</span>
+              <Switch
+                checked={runOnSettle}
+                onCheckedChange={(checked) => setRunOnSettle(Boolean(checked))}
               />
             </label>
             {validationError && <p className="text-sm text-destructive">{validationError}</p>}
