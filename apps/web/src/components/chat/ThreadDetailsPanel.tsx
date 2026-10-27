@@ -128,10 +128,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 />
               ) : null}
 
-              {density === "full" ? (
-                <BranchToolbar layout="panel" panelSection="workspace" {...branchToolbarProps} />
-              ) : null}
-
               {props.activeProjectScripts ? (
                 <ProjectScriptsControl
                   environmentId={props.environmentId}

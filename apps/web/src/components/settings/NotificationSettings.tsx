@@ -9,7 +9,7 @@ import {
 } from "../../threadNotifications";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingsRow } from "./settingsLayout";
-
+import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 export function NotificationSettings() {
@@ -20,8 +20,7 @@ export function NotificationSettings() {
 
   return (
     <SettingsRow
-      id="thread-notifications"
-      title="System notifications"
+      {...searchableSetting("thread-notifications")}
       description={
         permissionMessage ??
         "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Coder is open."
@@ -42,6 +41,7 @@ export function NotificationSettings() {
             if (hasNotificationSound(value)) unlockNotificationAudio();
             if (hasDesktopNotifications(value)) {
               if (typeof Notification === "undefined" || !window.isSecureContext) {
+                // Coder: there is no desktop app to fall back to.
                 setPermissionMessage(
                   "System notifications are unavailable in this browser. Sound only is still available.",
                 );
