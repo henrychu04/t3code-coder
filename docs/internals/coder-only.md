@@ -277,7 +277,7 @@ literal other than `coder`, `open`, `xdg-open`, or `explorer.exe`, or `shell: tr
 Provider version checks are workspace-originated network requests: the helper queries
 `registry.npmjs.org` for the latest version of each enabled provider whose installer it can
 identify; manual installations are not checked. The workspace setting `enableProviderUpdateChecks`
-is on by default; disabling **Settings → General → Provider update checks** opts that workspace
+is on by default; disabling **Settings → Maintenance → Provider update checks** opts that workspace
 out. Explicit provider updates run the installation's identified installer inside the workspace.
 Versions marked broken or unsupported by the bundled compatibility policy are not offered. The
 model manifest and compatibility policy remain bundled-only and are never refreshed over HTTP.
@@ -496,9 +496,10 @@ listed here is drift to remove rather than fork behavior to keep.
     routes and T3 Connect, neither of which exists here. `apps/server/src/guest/**`, its HTTP
     route, the share RPC handler, web `components/guest/**`, `routes/guest.tsx`, `guestPage.ts`,
     the share controls, menu and palette entries, the guest-message footer and bubbles
-    (`ChatView.tsx`, `TimelineUserMessageRow.tsx`, `QueuedRunsControl.tsx`, where every queued
-    message is the owner's and editable), the sidebar's guest-request pill and badge
-    (`Sidebar.logic.ts`, `SidebarThreadRow.tsx`), `BetaSettingsPanel.tsx`'s guest-links row,
+    (`ChatView.tsx`'s timeline footer, `TimelineUserMessageRow.tsx`, and `QueuedRunsControl.tsx`,
+    which has no guest names or per-item `editable` flag), the sidebar's guest-request pill and
+    badge (`Sidebar.logic.ts`, `SidebarThreadRow.tsx`), Labs' Beta section with its guest-links row
+    (`LabsSettingsPanel.tsx`),
     `mainAppLocation.ts`'s guest page, and the `--guest*` CSS tokens are cut.
     `runtimeLayer.ts` provides no `GuestShareService`. The contracts and upstream's
     orchestration-v2 guest decider, commands, and projection columns stay, because the contract
@@ -509,7 +510,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `coderEnvironment.ts` advertises `providerWorkspaceSnapshotsOnDemand`.
   - Office document text for provider input (#21358) runs upstream's `DocumentText.ts` worker in a
     child process of the helper's own entry point: `apps/coder-helper/src/bin.ts` dispatches
-    upstream's `__document-text` argument (upstream's server `bin.ts` is not carried), and
+    upstream's `__document-text` argument (upstream's server `bin.ts` is not carried) and, like
+    upstream's, imports only the worker on that path; the stdio runtime lives in `helper.ts` and is
+    imported lazily on the other branch.
     `DocumentText.ts` runs that `bin.ts` from source or the bundle itself (`import.meta.url`).
     `coderServer.ts` provides `DocumentText.layer` at the bottom of the runtime services, where
     upstream's `layerPlatformServices` provides it; `ProviderHostLive` carries upstream's
@@ -837,7 +840,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
   element captures, SnapShot (with its open question-draft tracker in `questionAttachments.ts`),
-  upstream's large-paste-to-file folding, and remote icons. Draft file and video attachments
+  upstream's large-paste-to-file folding, and remote icons. `work-log/presentation.ts` formats
+  token counts inline, since upstream's `@t3tools/shared/usageFormat` belongs to the omitted usage
+  dashboard. Draft file and video attachments
   preview as on main. A context fragment pasted from another workspace downloads its attachments from the
   source workspace's signed asset URLs, as upstream does.
   A thread dropped from another workspace attaches its saved transcript (see Transport and RPC
@@ -887,8 +892,9 @@ listed here is drift to remove rather than fork behavior to keep.
   `hooks/useSettings.ts` runs upstream's `startModelPreferencesMigration` with the per-workspace
   legacy model lists inside it, and client-runtime's `state/runtime.ts` calls `onAnswer` on the
   non-persisted query path as well. The web Vite config carries upstream's office/pdf asset
-  handling (the `@betteroffice/fonts-cjk` alias, pdfjs asset names, ES workers) but not the render
-  scenarios project or `VITE_RELEASE_CHANNEL`.
+  handling (the `@betteroffice/fonts-cjk` alias, pdfjs asset names, ES workers) and route code
+  splitting, but not the render scenarios project, `VITE_RELEASE_CHANNEL`, source maps, or the
+  build manifest.
 - **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
   deltas: there is no legacy sidebar (or its Settings switch), usage page, desktop app-update
   pills, desktop window bridge (fullscreen insets and the open-settings menu action), or preview
@@ -1102,9 +1108,11 @@ listed here is drift to remove rather than fork behavior to keep.
   keeps only upstream's `useEnvironmentStateHeldFor`. No Integrations, SnapShot, desktop, diagnostics,
   pairing, mobile app links (`MobileAppSettingsRow`), or `keybindings.json` editor. Settings
   search carries upstream's `sourceControlHostSearchItems` but not `SOURCE_CONTROL_HOST_LABELS`,
-  whose only rows (routing, MR link target, agent credits) are not carried. Appearance's **Add theme** is upstream's
+  whose routing and agent-credit rows are not carried; the MR link target row lives on Diffs (see
+  the merge request seam) with GitLab search terms. Appearance's **Add theme** is upstream's
   `ThemeImportDialog` without its remote theme catalog search or desktop file picker: the browser
-  reads picked, dropped, or pasted theme files itself. Connections holds the Coder deployments,
+  reads picked, dropped, or pasted theme files itself. `settingsLayout.tsx`'s `SettingsSection` takes a
+  `description` for the Coder panels below. Connections holds the Coder deployments,
   workspaces, and TCP/UDP port forwards in place of pairing and network access. Each workspace
   row's menu carries upstream's `EnvironmentIconMenu`; the helper reports no `platform.machine`
   (no hardware detection), so a workspace shows the generic server icon until one is picked.
@@ -1214,7 +1222,10 @@ listed here is drift to remove rather than fork behavior to keep.
   `pnpm-workspace.yaml` sets `supportedArchitectures` (Linux x64 glibc) on every host, because
   the helper bundle ships those native modules to the workspace; upstream sets it only on Windows
   in `.pnpmfile.cjs`, which is not carried. Its `overrides` pin only the patched packages the
-  fork carries, where upstream pins every one of its own.
+  fork carries, where upstream pins every one of its own, plus upstream's single-copy pins for
+  Tailwind and lightningcss. `@effect/platform-node>undici` is removed because nothing the fork
+  carries uses platform-node's HTTP client, and the gateway pins its own `ws`/`@types/ws`
+  instead of upstream's `ws@^8` collapse.
   Packages typecheck with `tsc --noEmit` from Microsoft's TypeScript 7 (`typescript: 7.0.2` in
   the catalog). Upstream's catalog makes `typescript` the `@tsc-rs/typescript` drop-in, whose
   Windows `tsc.exe` is an unsigned third-party binary that the laptop's endpoint security may

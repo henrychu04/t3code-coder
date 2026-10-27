@@ -68,7 +68,7 @@ browser. T3 Coder does not register GitHub, Bitbucket, Azure DevOps, or another 
 
 ## Merge-request list
 
-The **Pull requests** page can keep several merge requests open as right-panel tabs. Authored work
+The **Merge requests** page can keep several merge requests open as right-panel tabs. Authored work
 appears before review requests. The default ordering ranks merge-ready work first within each
 group, with explicit alternatives for update time, creation time, and change size. Filter loaded
 results by author or labels. The list's controls, including sort order, filters, search text,

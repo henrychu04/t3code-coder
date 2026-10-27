@@ -1243,7 +1243,7 @@ function KeybindingsGroups(props: KeybindingsGroupsProps) {
 
 function BrowserKeybindingNotice() {
   // Coder: browser only; there is no desktop app.
-  const message = "Some shortcuts may be claimed by the browser before T3 Code sees them.";
+  const message = "Some shortcuts may be claimed by the browser before T3 Coder sees them.";
   return (
     <Tooltip>
       <TooltipTrigger

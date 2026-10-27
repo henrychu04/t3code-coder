@@ -421,7 +421,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           className="me-1 text-2xs text-muted-foreground/70"
           data-user-message-attribution="t3code"
         >
-          Sent by T3 Code
+          {/* Coder: messages T3 sent are attributed under the T3 Coder name. */}
+          Sent by T3 Coder
         </p>
       ) : null}
       {row.message.inputIntent === "steer" ||

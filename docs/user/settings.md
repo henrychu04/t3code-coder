@@ -6,8 +6,8 @@ workspace; browser preferences follow the browser's existing preference storage.
 
 ## Composer
 
-**General → Plan mode** restores Build/Plan, `/plan`, `/default`, and Shift+Tab. Off uses build mode.
-**Context window indicator** controls the token-usage meter. It remains enabled by default in
+**Labs → Legacy → Plan mode** restores Build/Plan, `/plan`, `/default`, and Shift+Tab. Off uses build mode.
+**Labs → Legacy → Context window indicator** controls the token-usage meter. It remains enabled by default in
 T3 Coder, preserving the fork's existing behavior.
 
 Git-backed projects show branch and worktree controls below the composer while you create a

@@ -216,7 +216,8 @@ export const ChatHeader = memo(function ChatHeader({
     if (isTrailingDoubleClick(event.detail)) return;
     const clickedChevron =
       (event.target as HTMLElement).closest("[data-thread-title-chevron]") !== null;
-    if (event.detail === 0 || clickedChevron) {
+    // Coder: the fork's Window type has no `desktopBridge`; the browser opens at once, as upstream's web build does.
+    if (event.detail === 0 || clickedChevron || !("desktopBridge" in window)) {
       openTitleMenuNow();
       return;
     }

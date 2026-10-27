@@ -1132,14 +1132,14 @@ export function PullRequestsPage() {
   const listBody = (
     <>
       {!capabilityKnown ? (
-        <PullRequestListGhost rows={7} caption="Loading pull requests…" />
+        <PullRequestListGhost rows={7} caption="Loading merge requests…" />
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
           title="Merge requests unavailable"
-          error="Update your T3 Code servers to browse merge requests."
+          error="Update your T3 Coder workspaces to browse merge requests."
         />
       ) : firstLoad ? (
-        <PullRequestListGhost rows={7} caption="Loading pull requests…" />
+        <PullRequestListGhost rows={7} caption="Loading merge requests…" />
       ) : listQuery.error && shownCount === 0 ? (
         <PullRequestsUnavailableState
           error={listQuery.error}
