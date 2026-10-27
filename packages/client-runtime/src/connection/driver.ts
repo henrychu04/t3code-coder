@@ -1,5 +1,6 @@
 // Coder: each environment has one route, the loopback gateway's WebSocket for a Coder workspace,
-// so upstream's multi-route checks, preflight, and descriptor fetches are absent.
+// so upstream's multi-route checks, preflight, and descriptor fetches are absent, and
+// `checkHost` never answers (see below).
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -13,6 +14,8 @@ import type {
 } from "./model.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import * as RpcSession from "../rpc/session.ts";
+
+export type RouteCheck = "answered" | "silent" | "unchecked";
 
 export type ConnectionDriverProgress =
   | {
@@ -35,6 +38,8 @@ export class ConnectionDriver extends Context.Service<
       entry: ConnectionCatalogEntry,
       reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
     ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope>;
+    /** Asks the host behind a live session to answer a fresh request on the session's own origin. */
+    readonly checkHost: (prepared: PreparedConnection) => Effect.Effect<RouteCheck>;
   }
 >()("@t3tools/client-runtime/connection/driver/ConnectionDriver") {}
 
@@ -42,6 +47,11 @@ export class ConnectionDriver extends Context.Service<
 export const make = Effect.gen(function* () {
   const resolver = yield* ConnectionResolver.ConnectionResolver;
   const sessions = yield* RpcSession.RpcSessionFactory;
+
+  // Coder: the session's origin is the loopback gateway, which answers whether or not the
+  // workspace behind `coder ssh` does, so no fresh request shows a silent socket is dead. The
+  // supervisor's silent socket check then ends only on a frame, and the probe timeout decides.
+  const checkHost = (_prepared: PreparedConnection) => Effect.succeed<RouteCheck>("unchecked");
 
   const connect = Effect.fn("ConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
@@ -61,7 +71,7 @@ export const make = Effect.gen(function* () {
     return { prepared, session } satisfies EnvironmentConnectionLease;
   });
 
-  return ConnectionDriver.of({ connect });
+  return ConnectionDriver.of({ connect, checkHost });
 });
 
 export const layer = Layer.effect(ConnectionDriver, make);
