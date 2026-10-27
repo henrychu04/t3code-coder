@@ -33,6 +33,7 @@ export interface McpCredentialRequest {
   readonly providerInstanceId: ProviderInstanceId;
   readonly browserToolsAvailable?: boolean;
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
+  readonly subagent?: boolean;
 }
 
 export interface McpIssuedCredential {
@@ -133,6 +134,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           threadId: ThreadId.make(request.threadId),
           providerSessionId,
           providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
+          subagent: request.subagent === true,
         },
         client: undefined,
         // Upstream's scope, so credential reuse sees the capabilities it compares. Preview and
@@ -262,4 +264,6 @@ export const layer = Layer.effect(McpSessionRegistry, make);
 export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.touch(threadId) : Effect.void;
 
-export const __testing = { make: makeWithOptions };
+export const __testing = {
+  make: makeWithOptions,
+};

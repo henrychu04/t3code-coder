@@ -181,7 +181,7 @@ export function PullRequestsColumn({
         {condensed ? (
           <WorkspaceBreadcrumb ariaLabel="Merge request scope" className="overflow-hidden">
             <WorkspaceBreadcrumbItem current className={cn(searchExpanded && "sr-only")}>
-              <h1 className="truncate">Merge Requests</h1>
+              <h1 className="truncate">Merge requests</h1>
             </WorkspaceBreadcrumbItem>
             {searchExpanded ? null : <WorkspaceBreadcrumbSeparator />}
             <WorkspaceBreadcrumbItem className="shrink gap-1.5">
@@ -211,7 +211,7 @@ export function PullRequestsColumn({
         ) : (
           <WorkspaceBreadcrumb ariaLabel="Merge requests breadcrumb">
             <WorkspaceBreadcrumbItem current>
-              <h1 className="truncate">Merge Requests</h1>
+              <h1 className="truncate">Merge requests</h1>
             </WorkspaceBreadcrumbItem>
           </WorkspaceBreadcrumb>
         )}

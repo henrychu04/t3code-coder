@@ -1,30 +1,23 @@
 /**
- * Coder: how an agent reaches T3 tools over the workspace file bridge. Upstream describes the
- * same tools as a `t3-code` MCP server; here they run as one shell command per thread, so only
- * upstream's transport paragraphs change. Upstream's sections stay separate so Codex can take
- * each as its own size-limited entry.
+ * Coder: how an agent reaches T3 tools over the workspace file bridge. Upstream reaches the
+ * same tools as a `t3-code` MCP server; here they run as one shell command per thread. Upstream's
+ * sections stay separate so Codex can take each as its own size-limited entry.
  *
  * @module t3ToolBridgeInstructions
  */
 import { T3_CODE_ORCHESTRATION_SECTIONS } from "./orchestrationInstructions.ts";
 
-const UPSTREAM_MCP_INTRO = "The `t3-code` MCP server provides app-owned orchestration.";
-const UPSTREAM_MCP_TRANSPORT = /^Tool names may include a harness-normalized MCP prefix[^\n]*\n/mu;
-const UPSTREAM_ACP_FALLBACK = /^ACP fallback:[^\n]*\n\n/mu;
-// `html_preview` is not carried; pages publish with `html_render` alone.
-const UPSTREAM_HTML_PREVIEW_STEP = ", check it with `html_preview`, then publish it with";
+// `html_preview` and the `preview_*` browser are not carried; pages publish with `html_render` alone.
+const UPSTREAM_HTML_PREVIEW_STEP = "pass its HTML to `html_preview`, then `html_render`";
+const UPSTREAM_PREVIEW_TOOLS = /^- Never use `preview_\*`[^\n]*\n?/mu;
 
-/** Upstream's orchestration sections without their MCP and ACP transport paragraphs. */
+/** Upstream's orchestration sections without the steps that use the uncarried browser tools. */
 const T3_BRIDGE_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = T3_CODE_ORCHESTRATION_SECTIONS.map(
   (section) =>
     section
-      .replace(UPSTREAM_MCP_INTRO, "T3 tools provide app-owned orchestration.")
-      .replace(
-        UPSTREAM_MCP_TRANSPORT,
-        "Keep polling/wait loops bounded, do not duplicate active work, and use stable `clientRequestId` values when retrying tools that accept them.\n",
-      )
-      .replace(UPSTREAM_ACP_FALLBACK, "")
-      .replace(UPSTREAM_HTML_PREVIEW_STEP, ", then publish it with"),
+      .replace(UPSTREAM_HTML_PREVIEW_STEP, "pass its HTML to `html_render`")
+      .replace(UPSTREAM_PREVIEW_TOOLS, "")
+      .trimEnd(),
 );
 
 export const T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS = T3_BRIDGE_ORCHESTRATION_SECTIONS.join("\n\n");

@@ -203,6 +203,8 @@ it.layer(layerTest)("ProjectService", (it) => {
     }),
   );
 
+  // Coder: upstream's command metrics test is cut; orchestration metrics are not carried.
+
   it.effect("auto-bootstraps a workspace exactly once", () =>
     Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;

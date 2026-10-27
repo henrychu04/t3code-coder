@@ -75,6 +75,19 @@ export const coderHelperStdioLayer = RpcServer.layer(
   Layer.provide(Layer.succeed(Logger.LogToStderr)(true)),
 );
 
-if (import.meta.main) {
+// Coder: upstream's `bin.ts` dispatch for `DocumentText.ts`, which runs office document text
+// extraction in a child process of the server's own entry point; here that is the helper bundle.
+if (import.meta.main && process.argv[2] === "__document-text") {
+  const { extractDocumentText } = await import("t3/src/provider/documentTextWorker.ts");
+  try {
+    process.stdout.write(await extractDocumentText(process.argv[3]!, process.argv[4]!));
+  } catch (error) {
+    if (error instanceof Error && "code" in error && /^E[A-Z0-9]+$/.test(String(error.code))) {
+      throw error;
+    }
+    // Exit 2 identifies document rejections; OS and process failures remain retryable.
+    process.exitCode = 2;
+  }
+} else if (import.meta.main) {
   Layer.launch(coderHelperStdioLayer).pipe(NodeRuntime.runMain);
 }

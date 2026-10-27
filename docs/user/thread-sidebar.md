@@ -106,11 +106,16 @@ without the originating browser staying open.
 
 ### Fold working threads (beta)
 
-Turn on **Settings → General → Working section (beta)** to move threads that are working or
-monitoring into a collapsed **Working** section below the active list. A thread returns to the top
-of the active list when it finishes, fails, or needs an approval or answer. The Working section
-lists the thread you last sent work to first. Pinned threads stay in the pinned section. Each
-browser keeps its own choice.
+Threads that are working or waiting on work they will resume from move into a collapsed
+**Working** section below the active list.
+That includes subagents, watched merge requests, and background commands or monitors the agent
+says it is waiting on. A dev server or other process an agent leaves running does not keep a thread
+there. A thread returns to the top of the active list when it finishes, fails, or needs an approval or
+answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
+the pinned section.
+
+This is on by default. Turn it off with **Settings → Beta → Working section**. Each browser keeps
+its own choice.
 
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
@@ -140,8 +145,8 @@ Press `Escape` while dragging to cancel.
 By default, workspaces settle inactive threads after three days and settle
 threads whose merge request merged. A closed merge request can also settle an idle
 thread. An empty thread's inactivity counts from when it was created.
-Work in progress, pending questions or approvals, and live background work
-prevent automatic settlement. An open merge request does not prevent inactivity
+Work in progress, pending questions or approvals, and background work the agent
+is waiting on prevent automatic settlement. An open merge request does not prevent inactivity
 settlement unless you turn on **Keep threads with an MR** in **Settings → General**,
 but an old closed or merged merge request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
@@ -194,8 +199,8 @@ Queued messages stay saved while the limit blocks the thread. They run after
 the continuation finishes. If the queue was held by a restart, resume it then.
 
 When the provider reports a reset time, choose **Resume at reset** to schedule a
-continuation. You can cancel it from the thread. Enable **Auto-resume limited
-threads** in **Settings → General** to schedule limit stops by default.
+continuation. You can cancel it from the thread. Enable **Resume after
+usage limits** in **Settings → General** to schedule limit stops by default.
 The workspace helper must be running when the reset arrives; it resumes overdue
 continuations after it restarts. Stopping the thread, sending a new message,
 archiving, or settling it prevents a pending continuation from starting.
@@ -203,7 +208,7 @@ archiving, or settling it prevents a pending continuation from starting.
 Choose **Snooze until reset** to hide the thread until its allowance returns.
 Snooze and auto-resume are independent: snooze alone wakes the thread without
 sending a message; enabling both wakes and continues it. **Wake now** cancels
-the snooze. Enable **Snooze limited threads** in thread behavior settings to
+the snooze. Enable **Snooze until limits reset** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 

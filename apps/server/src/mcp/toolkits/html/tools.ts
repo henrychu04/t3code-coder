@@ -22,21 +22,18 @@ const Html = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512_0
 // Coder: `html_render` only. `html_preview` screenshots pages in a downloaded headless browser,
 // which T3 Coder does not install, so the render description does not point agents at it. The
 // height caps a frame only on upstream's mobile app, so the description omits that case.
-const PAGE_RULES =
-  'Write one self-contained document with inline <style> and <script>. Local images written as absolute file paths (src="/abs/shot.png", CSS url(/abs/bg.webp), or a JS string) are inlined automatically; remote http(s) URLs, such as a CDN chart library, load as-is.';
 
-// Read-only in the MCP sense: it shows a page in the caller's own thread and
-// touches no workspace, so plan mode and read-only sandboxes can use it.
+// This affects only the caller's thread, not its workspace, so read-only sandboxes and plan mode may use it.
 const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
-  description: `Show a finished HTML page (chart, table, diagram, collage, mockup) inline in this thread, above your final text reply; call it before writing that reply. The reader already sees the page, so the reply should not announce it, say where it is, or restate it: add only what the page doesn't say. T3 fits the frame to the page's height at each reader's width, up to ${HTML_RENDER_MAX_FIT_HEIGHT}px. ${PAGE_RULES} ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
+  description: `Show a finished HTML page inline in this thread, above your final reply. Do not announce or restate the page. Frame fits height to ${HTML_RENDER_MAX_FIT_HEIGHT}px. ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
   parameters: Schema.Struct({
     html: Html,
     title: Schema.String.check(
       Schema.isMinLength(1),
       Schema.isMaxLength(HTML_RENDER_MAX_TITLE_LENGTH),
-    ).annotate({ description: "Short name for the page." }),
+    ),
     height: Schema.Int.annotate({
-      description: `The frame height in CSS pixels, ${HTML_RENDER_MIN_HEIGHT}-${HTML_RENDER_MAX_HEIGHT}. Use the page's full height.`,
+      description: `Frame height in CSS pixels, ${HTML_RENDER_MIN_HEIGHT} to ${HTML_RENDER_MAX_HEIGHT}. Use the page's full height.`,
     }),
   }),
   success: Schema.Struct({

@@ -102,7 +102,19 @@ interface EnvironmentQueryAtomOptions<Input, A, E, R> extends Omit<
     readonly input: Input;
   }) => Atom.Atom<unknown> | undefined;
   readonly isFinal?: (value: A) => boolean;
+  /**
+   * Runs where each server answer lands, before readers see it, so derived records (summaries,
+   * snapshots, watches) come from the producer instead of from components watching the data.
+   * Cached and emitted provisional values are not answers.
+   */
+  readonly onAnswer?: QueryAnswerHandler<Input, A>;
 }
+
+export type QueryAnswerHandler<Input, A> = (
+  target: { readonly environmentId: EnvironmentIdType; readonly input: Input },
+  value: A,
+  registry: AtomRegistry.AtomRegistry,
+) => Effect.Effect<void>;
 
 interface EnvironmentSubscriptionAtomOptions<Input, A, E, R> {
   readonly sensitiveInput?: boolean;
@@ -622,6 +634,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
             // inside the build) so the settled result arrives asynchronously.
             Effect.andThen(Effect.promise(() => Promise.resolve())),
           );
+        const onAnswer = options.onAnswer;
         switch (connectionState.phase) {
           case "connected":
             return Option.isSome(session)
@@ -630,7 +643,12 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
                   options
                     .execute(target.input, emit)
                     .pipe(pendingOnceSessionReplaced(session.value)),
-                ).pipe(Effect.map(share))
+                ).pipe(
+                  Effect.map(share),
+                  Effect.tap((value) =>
+                    onAnswer === undefined ? Effect.void : onAnswer(target, value, get.registry),
+                  ),
+                )
               : Effect.never;
           case "connecting":
           case "backoff":
@@ -753,6 +771,7 @@ export function createEnvironmentRpcQueryAtomFamily<
       readonly input: EnvironmentRpcInput<TTag>;
     }) => Atom.Atom<unknown> | undefined;
     readonly isFinal?: (value: EnvironmentRpcSuccess<TTag>) => boolean;
+    readonly onAnswer?: QueryAnswerHandler<EnvironmentRpcInput<TTag>, EnvironmentRpcSuccess<TTag>>;
   },
 ) {
   return createEnvironmentQueryAtomFamily(runtime, {
@@ -764,6 +783,7 @@ export function createEnvironmentRpcQueryAtomFamily<
       : { refreshIntervalMs: options.refreshIntervalMs }),
     ...(options.refreshTrigger === undefined ? {} : { refreshTrigger: options.refreshTrigger }),
     ...(options.isFinal === undefined ? {} : { isFinal: options.isFinal }),
+    ...(options.onAnswer === undefined ? {} : { onAnswer: options.onAnswer }),
     execute: (
       input: EnvironmentRpcInput<TTag>,
       emit: (value: EnvironmentRpcSuccess<TTag>) => Effect.Effect<void>,

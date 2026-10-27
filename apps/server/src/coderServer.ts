@@ -1,6 +1,7 @@
 // Coder: the helper's runtime layer. It composes the layers `server.ts` carries from upstream with
 // the Coder provider, orchestration, startup, and RPC wiring that replace upstream's HTTP server.
 import * as ModelManifest from "./provider/ModelManifest.ts";
+import * as DocumentText from "./provider/DocumentText.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import { FetchHttpClient } from "effect/http";
 import * as StorageCleanup from "./storageCleanup.ts";
@@ -334,6 +335,9 @@ export const makeCoderRuntimeLayer = () => {
     Layer.provideMerge(VcsProcess.layer),
     // Every agent and terminal spawn reads this, so it sits below everything.
     Layer.provideMerge(AgentScopeLive.layer),
+    // As upstream's platform services: attachment uploads, agent attachments, and the project
+    // toolkit read office documents' extracted text.
+    Layer.provideMerge(DocumentText.layer),
   );
   // Upstream provides the agent-session scanner beside its WS layer; the helper RPC layer
   // takes it here.

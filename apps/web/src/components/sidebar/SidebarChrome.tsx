@@ -156,7 +156,7 @@ function SidebarUtilityItem({
 }
 
 // Coder: no usage page and no desktop app-update pills.
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -205,7 +205,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
-              label="Merge Requests"
+              label="Merge requests"
               onClick={handlePullRequestsClick}
             />
           ) : null}

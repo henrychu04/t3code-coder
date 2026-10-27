@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
+import {
+  findProjectForChangeRequest,
+  findProjectOnChangeRequestHost,
+} from "@t3tools/client-runtime/change-request-links";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import type { RepositoryIdentity } from "@t3tools/contracts";
 
-import {
-  findProjectOnChangeRequestHost,
-  gitLabMergeRequestBrowserUrl,
-} from "./openPullRequestLink";
+import { gitLabMergeRequestBrowserUrl } from "./openPullRequestLink";
 
 function repositoryIdentity(
   provider: string,
@@ -23,44 +23,6 @@ function repositoryIdentity(
 
 const parseChangeRequestUrl = (url: string) =>
   sourceControlClients.parseChangeRequestUrl(url)?.link ?? null;
-
-describe("findProjectOnChangeRequestHost", () => {
-  const project = (id: string, identity: Record<string, unknown>) =>
-    ({ id, repositoryIdentity: identity }) as never;
-  // Coder: GitLab fixtures; other providers' checkouts never resolve a link.
-  const frontend = project("frontend", {
-    canonicalKey: "gitlab.com/acme/frontend",
-    provider: "gitlab",
-    owner: "acme",
-    name: "frontend",
-  });
-  const backend = project("backend", {
-    canonicalKey: "gitlab.com/acme/backend",
-    provider: "gitlab",
-    owner: "acme",
-    name: "backend",
-  });
-
-  it("prefers the project checked out from the link's own repository", () => {
-    expect(
-      findProjectOnChangeRequestHost([frontend, backend], {
-        host: "gitlab.com",
-        repository: "acme/backend",
-        number: 7,
-      }),
-    ).toBe(backend);
-  });
-
-  it("lends any project on the host to a repository nobody has checked out", () => {
-    expect(
-      findProjectOnChangeRequestHost([frontend], {
-        host: "gitlab.com",
-        repository: "acme/backend",
-        number: 7,
-      }),
-    ).toBe(frontend);
-  });
-});
 
 // Coder: merge requests resolve only through GitLab checkouts, and fallback links keep a
 // self-hosted install's origin and path prefix.

@@ -8,7 +8,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   findProjectForChangeRequest,
+  findProjectOnChangeRequestHost,
   projectChangeRequestUrl,
+  resolveChangeRequestLinkTarget,
   resolvePullRequestPreviewTarget,
 } from "./changeRequestLinks.ts";
 
@@ -51,6 +53,112 @@ describe("findProjectForChangeRequest", () => {
         number: 1,
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("findProjectOnChangeRequestHost", () => {
+  const project = (id: string, identity: Record<string, unknown>) =>
+    ({ id, repositoryIdentity: identity }) as never;
+  // Coder: GitLab fixtures; other providers' checkouts never resolve a link.
+  const frontend = project("frontend", {
+    canonicalKey: "gitlab.com/acme/frontend",
+    provider: "gitlab",
+    owner: "acme",
+    name: "frontend",
+  });
+  const backend = project("backend", {
+    canonicalKey: "gitlab.com/acme/backend",
+    provider: "gitlab",
+    owner: "acme",
+    name: "backend",
+  });
+
+  it("prefers the project checked out from the link's own repository", () => {
+    expect(
+      findProjectOnChangeRequestHost([frontend, backend], {
+        host: "gitlab.com",
+        repository: "acme/backend",
+        number: 7,
+      }),
+    ).toBe(backend);
+  });
+
+  it("lends any project on the host to a repository nobody has checked out", () => {
+    expect(
+      findProjectOnChangeRequestHost([frontend], {
+        host: "gitlab.com",
+        repository: "acme/backend",
+        number: 7,
+      }),
+    ).toBe(frontend);
+  });
+});
+
+describe("resolveChangeRequestLinkTarget", () => {
+  const local = EnvironmentId.make("local");
+  const remote = EnvironmentId.make("remote");
+  const project = (id: string, environmentId: EnvironmentId, canonicalKey: string) => ({
+    id: ProjectId.make(id),
+    environmentId,
+    repositoryIdentity: {
+      canonicalKey,
+      // Coder: GitLab fixtures; a mirror is a GitLab checkout on another host.
+      provider: SourceControlProviderKind.make("gitlab"),
+      displayName: canonicalKey.split("/").slice(1).join("/"),
+      locator: { source: "git-remote", remoteName: "origin", remoteUrl: `https://${canonicalKey}` },
+    } satisfies RepositoryIdentity,
+  });
+  const mirrored = project("mirrored", local, "gitlab.example.com/acme/app");
+  const sibling = project("sibling", local, "gitlab.com/acme/tools");
+  const elsewhere = project("elsewhere", remote, "gitlab.com/acme/app");
+  const projects = [mirrored, sibling, elsewhere];
+  const hostReads = () => ({ pullRequests: true, threadPullRequests: true });
+  const url = "https://gitlab.com/acme/app/-/merge_requests/7";
+
+  it("opens a mirror's link in its own environment under a project on the link's host", () => {
+    expect(
+      resolveChangeRequestLinkTarget({
+        url,
+        projects,
+        capabilities: hostReads,
+        environmentId: local,
+        projectId: mirrored.id,
+        lendHostProject: true,
+      }),
+    ).toEqual({ project: sibling, host: "gitlab.com", repository: "acme/app", number: 7 });
+  });
+
+  it("only borrows a host project for views that can show any repository on the host", () => {
+    const resolve = (capabilities: typeof hostReads, lendHostProject: boolean) =>
+      resolveChangeRequestLinkTarget({
+        url,
+        projects,
+        capabilities,
+        environmentId: local,
+        lendHostProject,
+      });
+    expect(resolve(hostReads, false)).toBeNull();
+    expect(resolve(() => ({ pullRequests: true, threadPullRequests: false }), true)).toBeNull();
+  });
+
+  it("finds the checked-out repository in any environment that reads change requests", () => {
+    expect(
+      resolveChangeRequestLinkTarget({
+        url,
+        projects,
+        capabilities: hostReads,
+        primaryEnvironmentId: local,
+        lendHostProject: false,
+      })?.project,
+    ).toBe(elsewhere);
+    expect(
+      resolveChangeRequestLinkTarget({
+        url,
+        projects,
+        capabilities: (environmentId) => (environmentId === remote ? undefined : hostReads()),
+        lendHostProject: false,
+      }),
+    ).toBeNull();
   });
 });
 

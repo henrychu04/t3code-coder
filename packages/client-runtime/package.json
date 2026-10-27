@@ -71,6 +71,14 @@
       "types": "./src/state/attachments.ts",
       "default": "./src/state/attachments.ts"
     },
+    "./queued-run-edit": {
+      "types": "./src/queuedRunEdit.ts",
+      "default": "./src/queuedRunEdit.ts"
+    },
+    "./clock": {
+      "types": "./src/clock.ts",
+      "default": "./src/clock.ts"
+    },
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"
@@ -266,6 +274,10 @@
       "types": "./src/state/threadSubagents.ts",
       "default": "./src/state/threadSubagents.ts"
     },
+    "./state/thread-visits": {
+      "types": "./src/state/threadVisits.ts",
+      "default": "./src/state/threadVisits.ts"
+    },
     "./state/turn-item-presentation": {
       "types": "./src/state/turnItemPresentation.ts",
       "default": "./src/state/turnItemPresentation.ts"
@@ -329,6 +341,18 @@
     "./pull-request-markdown": {
       "types": "./src/pullRequestMarkdown.ts",
       "default": "./src/pullRequestMarkdown.ts"
+    },
+    "./pull-request-checks": {
+      "types": "./src/pullRequestChecks.ts",
+      "default": "./src/pullRequestChecks.ts"
+    },
+    "./pull-request-editing": {
+      "types": "./src/pullRequestEditing.ts",
+      "default": "./src/pullRequestEditing.ts"
+    },
+    "./pull-request-reactions": {
+      "types": "./src/pullRequestReactions.ts",
+      "default": "./src/pullRequestReactions.ts"
     },
     "./pull-request-query": {
       "types": "./src/pullRequestQuery.ts",

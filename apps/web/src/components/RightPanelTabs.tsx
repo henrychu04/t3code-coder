@@ -178,11 +178,7 @@ export function surfaceShortcutActionForKey<
   );
 }
 
-/**
- * The `:not` clause lets `closest` see past non-editable islands
- * (`contenteditable="false"`) to an editable host around them, matching
- * ComposerPendingUserInputPanel's typing guard.
- */
+/** Skip contenteditable=false islands to find their editable host, matching the composer typing guard. */
 export function surfaceShortcutTargetsTypingContext(
   target: { closest(selectors: string): unknown } | null,
 ): boolean {
@@ -551,6 +547,7 @@ function PullRequestSurfaceIcon({
               : {}),
             repository: surface.repository,
             number: surface.number,
+            allowStale: false,
           },
         }),
   ).data;
@@ -559,7 +556,7 @@ function PullRequestSurfaceIcon({
     repository: surface.repository,
     number: surface.number,
   };
-  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference, null);
+  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference);
   const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
     return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
@@ -571,8 +568,6 @@ function PullRequestSurfaceIcon({
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
-// Module-level so React only runs this callback ref on mount and unmount;
-// a fresh function would re-attach and re-focus on every render.
 function focusOnMount(node: HTMLDivElement | null) {
   node?.focus();
 }

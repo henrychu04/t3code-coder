@@ -41,6 +41,7 @@ import {
   createRuntimeCommand,
   scheduleAtomCommandEffect,
   executeAtomQuery,
+  type QueryAnswerHandler,
 } from "./runtime.ts";
 
 const QUERY_ENVIRONMENT = new ConnectionTarget({
@@ -86,8 +87,10 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
     refreshTrigger,
     idleTtlMs,
     isFinal,
+    onAnswer,
   }: {
     readonly refreshTrigger?: Atom.Atom<unknown>;
+    readonly onAnswer?: QueryAnswerHandler<undefined, A>;
     readonly isFinal?: (value: A) => boolean;
     readonly idleTtlMs?: number;
   } = {},
@@ -130,6 +133,7 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
     ...(refreshTrigger === undefined ? {} : { refreshTrigger: () => refreshTrigger }),
     ...(idleTtlMs === undefined ? {} : { idleTtlMs }),
     ...(isFinal === undefined ? {} : { isFinal }),
+    ...(onAnswer === undefined ? {} : { onAnswer }),
   });
 
   return {
@@ -978,4 +982,37 @@ describe("runtime command runner", () => {
     expect(executed).toEqual([1, 3]);
     registry.dispose();
   });
+});
+
+// Coder: upstream's persisted-query tests are not carried (no query persistence); onAnswer's
+// own test stays.
+describe("environment query answers", () => {
+  it.effect("hands each server answer to onAnswer before readers see it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const answers: Array<readonly [string, string | null]> = [];
+        let served = 0;
+        const recorded = Atom.make<string | null>(null).pipe(Atom.keepAlive);
+        const harness = yield* makeEnvironmentQueryHarness(
+          Effect.sync(() => `answer-${++served}`),
+          {
+            onAnswer: (_target, value, registry) =>
+              Effect.sync(() => {
+                answers.push([value, registry.get(recorded)]);
+                registry.set(recorded, value);
+              }),
+          },
+        );
+        const registry = yield* mountEnvironmentQuery(harness.atom);
+        expect(yield* readEnvironmentQuery(registry, harness.atom)).toBe("answer-1");
+        expect(registry.get(recorded)).toBe("answer-1");
+        registry.refresh(harness.atom);
+        expect(yield* readEnvironmentQuery(registry, harness.atom)).toBe("answer-2");
+        expect(answers).toEqual([
+          ["answer-1", null],
+          ["answer-2", "answer-1"],
+        ]);
+      }),
+    ),
+  );
 });

@@ -80,7 +80,7 @@ interface EnvironmentServiceScope {
   readonly scope: Scope.Closeable;
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const cache = yield* Persistence.EnvironmentCacheStore;
   const ownedDataCleanup = yield* Persistence.EnvironmentOwnedDataCleanup;

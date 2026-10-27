@@ -34,7 +34,7 @@ Scheduling profiles update Git refresh and provider health-check intervals toget
 | Battery saver | Disabled    | 15 minutes      |
 
 Choose a profile in **General → Background activity**; its **Advanced** dialog sets custom
-intervals. The Git interval is also in Source Control and the provider interval in **Providers →
+intervals. The Git interval is also in Source control and the provider interval in **Providers →
 Advanced**. Custom intervals display **Advanced**. Zero disables scheduled work; explicit refreshes still run.
 Git polling exists only while a repository has subscribers. These profiles do not monitor desktop
 battery, power modes, or screen locks. Existing interval settings are preserved until changed.

@@ -184,7 +184,8 @@ Pi uses its RPC mode (`pi --mode rpc`) over stdin/stdout; Kilo Code speaks ACP o
 (`kilo acp`).
 No provider executable or Anthropic Agent SDK runtime is bundled. The Agent SDK is a type-only
 development dependency; pnpm's `ignoredOptionalDependencies` keeps its bundled Claude Code
-binaries from ever installing. T3 does not inject its removed
+binaries from ever installing, and also skips `@napi-rs/canvas`, pdfjs-dist's Node-only renderer
+that the browser PDF viewer never loads, so no native binary lands on the laptop. T3 does not inject its removed
 preview MCP server or a local-host transport into Codex. Codex authentication and other
 configuration remain workspace-owned and subject to workspace policy, including the MCP servers
 and app integrations each provider loads from workspace configuration, as upstream. Each provider
@@ -487,7 +488,35 @@ listed here is drift to remove rather than fork behavior to keep.
     branch/worktree rename with `moveWorktree`, chunked review files, the gateway's asset
     stream (`coder.serveAsset`), fixed project-config reads, merge-request diffs, and upstream's HTTP bounded thread snapshot,
     history page, and thread transcript over stdio. The method set stays `CoderWsRpcGroup`;
-    unsupported upstream methods stay omitted.
+    unsupported upstream methods stay omitted. Upstream's thread-family, worktree-thread-id, and
+    older-settled-thread reads (`WsOrchestrationV2GetThreadFamilyRpc`,
+    `WsOrchestrationV2GetWorktreeThreadIdsRpc`, `WsOrchestrationV2GetOlderSettledThreadsRpc`) are
+    served as upstream's handlers; `WsGuestShareCreateRpc` is omitted (see the guest-sharing cut).
+  - Guest thread sharing (#24104) is not carried: guests reach a share over upstream's server HTTP
+    routes and T3 Connect, neither of which exists here. `apps/server/src/guest/**`, its HTTP
+    route, the share RPC handler, web `components/guest/**`, `routes/guest.tsx`, `guestPage.ts`,
+    the share controls, menu and palette entries, the guest-message footer and bubbles
+    (`ChatView.tsx`, `TimelineUserMessageRow.tsx`, `QueuedRunsControl.tsx`, where every queued
+    message is the owner's and editable), the sidebar's guest-request pill and badge
+    (`Sidebar.logic.ts`, `SidebarThreadRow.tsx`), `BetaSettingsPanel.tsx`'s guest-links row,
+    `mainAppLocation.ts`'s guest page, and the `--guest*` CSS tokens are cut.
+    `runtimeLayer.ts` provides no `GuestShareService`. The contracts and upstream's
+    orchestration-v2 guest decider, commands, and projection columns stay, because the contract
+    unions need them (`knip.jsonc` ignores their unused exports); with no service nothing creates
+    a share, so the sidebar `"request"` status and its notification title never fire.
+  - `ws.ts` strips workspace snapshots from provider config when a client asks for them on demand
+    (`workspaceSnapshotsOnDemand`) without upstream's usage-limit commands, and
+    `coderEnvironment.ts` advertises `providerWorkspaceSnapshotsOnDemand`.
+  - Office document text for provider input (#21358) runs upstream's `DocumentText.ts` worker in a
+    child process of the helper's own entry point: `apps/coder-helper/src/bin.ts` dispatches
+    upstream's `__document-text` argument (upstream's server `bin.ts` is not carried), and
+    `DocumentText.ts` runs that `bin.ts` from source or the bundle itself (`import.meta.url`).
+    `coderServer.ts` provides `DocumentText.layer` at the bottom of the runtime services, where
+    upstream's `layerPlatformServices` provides it; `ProviderHostLive` carries upstream's
+    `resolveExtractedTextPath`.
+  - `Orchestrator.ts` and `ProjectService.ts` have no `withCommandMetrics` wrapper (#23966), and
+    `RunExecutionService.ts` reports no browser-preview agent activity (`PreviewAgentActivity`,
+    #25184), since metrics and the browser preview are not carried.
   - A thread dropped on the composer from another workspace attaches upstream's saved transcript
     file, read over `orchestration.getThreadTranscript` in place of upstream's authenticated HTTP
     route; client-runtime's `threadTranscript` is an RPC command, so the orchestration atoms
@@ -554,8 +583,9 @@ listed here is drift to remove rather than fork behavior to keep.
     - `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of upstream's
       `ServerEnvironment`.
     - provider-core's `server/t3ToolBridgeInstructions.ts` reuses upstream's orchestration
-      sections without their MCP and ACP transport paragraphs or the `html_preview` step; its
-      test fails if upstream rewords them.
+      sections (which no longer carry MCP or ACP transport paragraphs since #24850), rewriting
+      only "`html_preview`, then `html_render`" to "`html_render`" and dropping the `preview_*`
+      bullet; its test fails if upstream rewords them.
     - `CodexAdapterV2.ts` configures no `mcp_servers`, attaches T3 context only when the bridge
       exists, and never advertises preview or device tools; `CodexDeveloperInstructions.ts` and
       `ClaudeAdapterV2.ts` describe the bridge command (`t3ToolBridgeInstructions.ts`) in
@@ -563,8 +593,13 @@ listed here is drift to remove rather than fork behavior to keep.
       additional-context entry per section like upstream's, so each stays under Codex's
       `CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES`. Claude pre-approves the command as a Bash
       prefix, limited to read-only tools in a read-only sandbox, as upstream pre-approves its MCP
-      tools. provider-core's `runtimeInstructions.ts` keeps upstream's `link_pull_request` block,
-      worded for T3 tools.
+      tools. provider-core's `runtimeInstructions.ts` is upstream's.
+    - `ClaudeAdapterV2.ts` gives bridge sessions upstream's `t3_background_wait` guidance without
+      its ToolSearch sentence (`CLAUDE_BRIDGE_BACKGROUND_WAIT_INSTRUCTIONS`). Pasted images still
+      go through `resolvePastedImageAttachments`, now counted toward upstream's PDF and
+      attachment budget by `sizeBytes`, and forks carry `claudeAttachmentBudget` beside
+      `claudeFork`. Upstream's out-of-process `runClaudeWorker` fork is not carried (forks use
+      the CLI transport); only its `encodeClaudeJson` helper stays.
     - Preview, device, and attachment-upload toolkits are not carried.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
@@ -831,11 +866,22 @@ listed here is drift to remove rather than fork behavior to keep.
 - **App entry.** `index.html`, `bootstrap.ts`, and `main.tsx`'s startup (stale-chunk reload,
   splash held until the first route loads, boot error) are upstream's. `main.tsx` renders the app
   inside `CoderBootstrap` and installs `consoleDiagnostics`, with no Electron shell, managed auth,
-  or provider auth delivery.
+  or provider auth delivery. It starts upstream's `appInit.tsx` services, trimmed to the browser
+  ones: no provider auth delivery, Electron, default-theme adoption, agent-opened previews, SSH
+  prompt, host-freeze toast, legacy-permission re-pair notice (`PermissionUpdateNotice`), or
+  desktop update notice. `__root.tsx` keeps the fork's minimal shell, and `_chat.tsx` carries
+  upstream's Settings-over-thread modal layout (#24847) with a `beforeLoad` that has no auth gate
+  and no prompt-link card; upstream's `_chat.settings.tsx` no longer gates on pairing, so it is
+  taken as is. `shortcuts/dispatcher.ts` registers no desktop menu actions or preview focus.
+  `hooks/useSettings.ts` runs upstream's `startModelPreferencesMigration` with the per-workspace
+  legacy model lists inside it, and client-runtime's `state/runtime.ts` calls `onAnswer` on the
+  non-persisted query path as well. The web Vite config carries upstream's office/pdf asset
+  handling (the `@betteroffice/fonts-cjk` alias, pdfjs asset names, ES workers) but not the render
+  scenarios project or `VITE_RELEASE_CHANNEL`.
 - **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
   deltas: there is no legacy sidebar (or its Settings switch), usage page, desktop app-update
-  pills, desktop window bridge (fullscreen insets and menu actions), or preview keybinding
-  context; the active workspace supplies keybindings and the pill's providers. Without
+  pills, desktop window bridge (fullscreen insets and the open-settings menu action), or preview
+  keybinding context (`readUsagePageOpen` is always false); the active workspace supplies keybindings and the pill's providers. Without
   upstream's "Update everything" (server self-update), `ProviderUpdatesAction.tsx`'s Update all
   has no `quiet` option or returned runs and `ProviderUpdateRun` no environment id. `index.css` is
   upstream's minus the `wco` window-controls variant, drag regions, and desktop resize inset.
@@ -918,7 +964,8 @@ listed here is drift to remove rather than fork behavior to keep.
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
   upstream's `lib/openPullRequestLink.ts`. The GitLab-only registry claims only GitLab's
   `/-/merge_requests/` URLs, and project matching (client-runtime `changeRequestLinks.ts`'s
-  `isGitLabProject`, also used by `findProjectOnChangeRequestHost`) uses upstream's host
+  `isGitLabProject`, also used by `findProjectOnChangeRequestHost`, which #24738 moved there from
+  the web's `openPullRequestLink.ts`; the web keeps only `gitLabMergeRequestBrowserUrl`) uses upstream's host
   resolvers but skips checkouts whose provider is neither GitLab nor unknown (the registry reads
   other kinds as the generic host, which would still match by host and path).
   `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL (and GitLab's
@@ -926,9 +973,7 @@ listed here is drift to remove rather than fork behavior to keep.
   client-runtime's `pullRequestLinkProject`) and keeps a self-hosted install's origin and path
   prefix; it stays because nothing sets `RepositoryIdentity.webUrl`, which GitLab's definition
   URL needs for such an install. The link dialog also accepts `!123`, the form "Copy MR number"
-  copies (client-runtime `pullRequestLinkInput.ts`). Hover previews read upstream's
-  `pullRequests.preview` (the merge request alone) instead of the detail view's read with its
-  merge settings (`PullRequestLinkPreview.tsx`). A plain click opens the panel or page, and a
+  copies (client-runtime `pullRequestLinkInput.ts`). A plain click opens the panel or page, and a
   modifier or middle click or an MR no workspace project can read goes to the system browser.
   Upstream's "Open pull requests in T3 Code" client setting lives on the Integrations page, which
   is not carried, so it keeps its default and MR links always open in the app.
@@ -946,7 +991,7 @@ listed here is drift to remove rather than fork behavior to keep.
     text the server writes says "merge request", `!123`, and "T3 Coder" too: the merge-request
     watch wakes and their notification summaries (`pullRequestWatch.ts`,
     `PullRequestWatchReactor.ts`), the merge-request T3 tool descriptions and errors
-    (`mcp/toolkits/pullRequests/tools.ts`, with GitLab example URLs), and `GitManager`'s
+    (`mcp/toolkits/pullRequests/tools.ts`), the orchestrator's unconfirmed-answer error, and `GitManager`'s
     merge-request ref fetch error. `runtimeInstructions.ts` stays upstream's. Identifiers, wire
     names, and search haystacks keep upstream's spelling, and the composer trigger stays `#`.
     GitLab's definition supplies "MR" and "merge request" wherever upstream reads a host's
@@ -977,11 +1022,13 @@ listed here is drift to remove rather than fork behavior to keep.
     merge requests, `#N` issues, and full commit SHAs below the project with GitLab's `/-/`
     routes, where upstream's GitLab defines none. The package exports upstream's two entry
     points plus `server/GitLabCli`, which `ws.projects.test.ts` stubs.
-  - GitLab implements upstream's optional hover-preview and summary (batched through aliased
-    GraphQL) reads, which upstream implements only for GitHub. Diff output is capped
+  - GitLab's hover preview is upstream's (#22583). Its summary read stays the fork's, batched
+    through aliased GraphQL (`getMergeRequestSummary`) where upstream's GitLab driver asks once per
+    merge request, so the background sync shares requests. `source-control-definitions`'
+    `canonicalizeGitCafePullRequestUrl` is an identity function, since GitCafe is not carried. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    be1d066732):
+    7df7cb9999):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
@@ -1102,9 +1149,10 @@ listed here is drift to remove rather than fork behavior to keep.
   fallback, and the file menu is `fileContextMenu.ts`'s (see Files and search UI) with the route
   thread passed in. Review diffs (`review/ReviewService.ts`) keep upstream's cwd check, which
   admits the server cwd, managed worktrees, and registered project roots.
-- **Diff renderer patch.** `patches/@pierre%2Fdiffs@1.5.2.patch` is upstream's patch plus a guard
+- **Diff renderer patch.** `patches/@pierre%2Fdiffs@1.6.1.patch` is upstream's patch plus a guard
   that ignores loaded file contents unless the current diff is still the partial diff that asked
-  for them.
+  for them, and lets a contents loader return `null` (`FileDiffContentsLoader` and
+  `LoadedPartialDiffContents` types), which 1.6.1 still lacks.
 - **Browser shell and connections.** Each marked `Coder:`:
   - `connection/platform.ts` registers only the configured Coder workspaces, reached through the
     loopback gateway; removing a workspace from the Coder config clears its drafts and caches.

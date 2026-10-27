@@ -342,7 +342,7 @@ describe("ChatMarkdown streaming", () => {
 
   it("does not retokenize completed lines when streaming finishes", async () => {
     const highlighter = await getSyntaxHighlighterPromise("typescript");
-    const highlight = vi.spyOn(highlighter, "codeToHast");
+    const highlight = vi.spyOn(highlighter, "codeToTokens");
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     let renderer: ReactTestRenderer | undefined;
     const text = "```typescript\nconst completed = 1;\nconst current = 2;";
@@ -365,11 +365,11 @@ describe("ChatMarkdown streaming", () => {
 
   it("recovers highlighting after a failed fence changes without resetting its controls", async () => {
     const highlighter = await getSyntaxHighlighterPromise("text");
-    const codeToHast = highlighter.codeToHast.bind(highlighter);
+    const codeToTokens = highlighter.codeToTokens.bind(highlighter);
     let fail = true;
-    vi.spyOn(highlighter, "codeToHast").mockImplementation((...args) => {
+    vi.spyOn(highlighter, "codeToTokens").mockImplementation((...args) => {
       if (fail) throw new Error("Temporary highlighter failure");
-      return codeToHast(...args);
+      return codeToTokens(...args);
     });
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -409,7 +409,8 @@ describe("ChatMarkdown streaming", () => {
 
   it("preserves code controls and details without highlighting an unchanged fence again", async () => {
     const highlighter = await getSyntaxHighlighterPromise("text");
-    const highlight = vi.spyOn(highlighter, "codeToHast");
+    // Streaming fences tokenize through a stream tokenizer, which an edit replaces.
+    const highlight = vi.spyOn(highlighter, "createStreamTokenizer");
     const writeText = vi.fn(async (_text: string) => {});
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

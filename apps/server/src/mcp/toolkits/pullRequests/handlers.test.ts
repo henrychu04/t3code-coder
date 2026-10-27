@@ -356,6 +356,8 @@ describe("pull request toolkit handlers", () => {
     }),
   );
 
+  // Coder: GitCafe is not a host definition, so upstream's GitCafe canonicalization test (#22634) is cut.
+
   it.effect("builds the URL in the project host's own shape", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({

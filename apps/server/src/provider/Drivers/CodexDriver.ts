@@ -55,12 +55,7 @@ function isCodexStandaloneCommandPath(commandPath: string): boolean {
   return normalizeCommandPath(commandPath).includes("/packages/standalone/");
 }
 
-/**
- * `codex update` replaces the standalone tree under `CODEX_HOME`. That tree
- * lives in the shared home even when an auth-overlay shadow home is in use
- * (the overlay only carries auth and a few local entries), so the updater
- * runs against `sharedHomePath` rather than the instance's effective home.
- */
+/** `codex update` owns the shared home's standalone tree; auth-overlay homes do not carry it. */
 function makeCodexMaintenanceResolver(sharedHomePath: string) {
   return makePackageManagedProviderMaintenanceResolver({
     provider: DRIVER_KIND,

@@ -18,15 +18,12 @@ import {
 } from "./assets/AttachmentUpload.ts";
 
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
-// The sandbox gives the document an opaque origin: scripts run, but same-origin
-// cookies, storage, and API calls are out of reach. No modals: agent HTML can
-// open without a click (inline renders, and mobile loads it as the top document),
-// and must not raise blocking dialogs.
+// Opaque origin blocks cookies, storage and API access while allowing scripts.
+// Agent HTML can open without a click, so disallow blocking modals.
 const HTML_CONTENT_SECURITY_POLICY =
   "sandbox allow-scripts allow-forms allow-popups allow-downloads";
 
-// Types a browser may render as a document if a proxy strips the disposition
-// header. Downloads of these fall back to octet-stream.
+// Proxies may strip disposition; force document-capable downloads to octet-stream.
 const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
 const isSafeDownloadMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
@@ -156,15 +153,13 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
   const isMedia = /^(?:audio|video)\//i.test(headers["Content-Type"] ?? "");
   if (isMedia) {
-    // Do not invite conditional range requests with validators that cannot establish
-    // byte-for-byte identity. Attachment media carries no `file`, and must not
-    // outlive the signed URL that granted it either.
+    // Without file identity, validators cannot guarantee byte equality; attachments must also expire with their URL.
     headers["Cache-Control"] = "private, no-store";
   }
   let status = 200;
   let offset = 0n;
   let bytesToRead: bigint | undefined;
-  if (isMedia) {
+  {
     headers["Accept-Ranges"] = "bytes";
     // If-Range requires a matching validator. A full response is safe when we cannot validate it.
     if (method === "GET" && rangeHeader && ifRangeHeader === undefined) {

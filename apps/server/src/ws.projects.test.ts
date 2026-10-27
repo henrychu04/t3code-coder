@@ -22,6 +22,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "./config.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
+import * as DocumentText from "./provider/DocumentText.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as CoderWs from "./ws.ts";
@@ -223,6 +224,7 @@ const harness = (
       stub(CommandOutputHub.CommandOutputHub),
       stub(ServerSecretStore.ServerSecretStore),
       stub(ProjectFaviconResolver.ProjectFaviconResolver),
+      stub(DocumentText.DocumentText),
       ServerConfig.layer(config),
       WorkspacePaths.layer,
     ).pipe(Layer.provideMerge(NodeServices.layer));

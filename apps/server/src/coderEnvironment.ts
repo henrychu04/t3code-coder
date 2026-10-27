@@ -58,6 +58,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   projectProviderInstanceOverrides: true,
   threadSnooze: true,
   environmentThemes: true,
+  providerWorkspaceSnapshotsOnDemand: true,
   threadPinning: true,
   threadPinReorder: true,
   threadActiveReorder: true,

@@ -37,21 +37,12 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
   const resolvedHomePath = yield* resolveClaudeHomePath(config);
   return {
     ...resolvedBaseEnv,
-    // Overriding HOME also relocates the macOS login keychain lookup
-    // ($HOME/Library/Keychains), so the spawned CLI can't find its stored
-    // OAuth credentials and reports "Not logged in". CLAUDE_CONFIG_DIR points
-    // Claude Code at its config dir directly while leaving HOME (and the
-    // keychain) intact.
+    // Changing HOME hides macOS Keychain credentials; use CLAUDE_CONFIG_DIR to keep login access.
     CLAUDE_CONFIG_DIR: resolvedHomePath,
   };
 });
 
-/**
- * While it exists Claude refuses `--strict-mcp-config` and exits before
- * initializing, but it already ignores user, project and `--mcp-config` servers
- * on its own, so callers that pass the flag for isolation can drop it. Paths
- * match the ones Claude Code checks.
- */
+/** managed-mcp.json excludes other MCP config and forbids --strict-mcp-config; omit the flag when present. */
 export const hasClaudeManagedMcpConfig = Effect.fn("hasClaudeManagedMcpConfig")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const platform = yield* HostProcess.Platform;

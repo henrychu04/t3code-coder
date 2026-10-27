@@ -18,14 +18,11 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef } from "react";
 
-import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, APP_VERSION } from "../branding";
-import { resolveServerBackedAppDisplayName } from "../branding.logic";
+import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
-import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
-import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
@@ -40,8 +37,6 @@ import {
   ToastProvider,
   toastManager,
 } from "../components/ui/toast";
-import { applyAppearanceFontVariables } from "~/appearanceFonts";
-import { applyAppearanceContrast } from "~/appearanceContrast";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -51,7 +46,7 @@ import {
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { useAtomValue } from "@effect/atom-react";
-import { environmentServerStatesAtom, primaryServerConfigAtom } from "../state/server";
+import { environmentServerStatesAtom } from "../state/server";
 import { initializeActiveEnvironmentId, readProject } from "../state/entities";
 import {
   createKeybindingsUpdateToastController,
@@ -101,19 +96,13 @@ function RootRouteView() {
   return (
     <ToastProvider>
       <AnchoredToastProvider>
-        <DocumentTitleSync />
         <BrowserChromeThemeSync key={pathname} />
-        <ContrastAppearanceSync />
-        <GlassAppearanceSync />
-        <FontAppearanceSync />
         <ReopenClosedViewShortcut />
         <ConfirmDialogHost />
         <CustomSnoozeDialogHost />
         <ProjectCloneToastCoordinator />
         <PullRequestGuideRunCoordinator />
         <SlowRpcRequestToastCoordinator />
-        <LegacyThreadMigrationToast />
-        <ThreadNotificationCoordinator />
         <EventRouter />
         {appShell}
         <ThemeEditorHost />
@@ -122,75 +111,7 @@ function RootRouteView() {
   );
 }
 
-function ContrastAppearanceSync() {
-  const appearanceContrast = useClientSettings((settings) => settings.appearanceContrast);
-  const diffColorScheme = useClientSettings((settings) => settings.diffColorScheme);
-
-  useEffect(() => {
-    document.documentElement.dataset.diffColorScheme = diffColorScheme;
-  }, [diffColorScheme]);
-
-  const chatWidth = useClientSettings((settings) => settings.chatWidth);
-  useEffect(() => {
-    document.documentElement.dataset.chatWidth = chatWidth;
-  }, [chatWidth]);
-
-  useEffect(() => {
-    applyAppearanceContrast(document.documentElement, appearanceContrast);
-  }, [appearanceContrast]);
-
-  return null;
-}
-
-function GlassAppearanceSync() {
-  const glassOpacity = useClientSettings((settings) => settings.glassOpacity);
-
-  useEffect(() => {
-    const style = document.documentElement.style;
-    style.setProperty("--glass-opacity", `${glassOpacity}%`);
-    if (glassOpacity === 100) {
-      style.setProperty("--glass-blur", "0px");
-    } else {
-      style.removeProperty("--glass-blur");
-    }
-  }, [glassOpacity]);
-
-  return null;
-}
-
-function FontAppearanceSync() {
-  const fontFamilySans = useClientSettings((settings) => settings.fontFamilySans);
-  const fontFamilyCode = useClientSettings((settings) => settings.fontFamilyCode);
-  const fontFamilyComposer = useClientSettings((settings) => settings.fontFamilyComposer);
-  const fontSizeInterface = useClientSettings((settings) => settings.fontSizeInterface);
-  const fontSizePrompt = useClientSettings((settings) => settings.fontSizePrompt);
-  const fontSizeCode = useClientSettings((settings) => settings.fontSizeCode);
-  const fontSmoothing = useClientSettings((settings) => settings.fontSmoothing);
-
-  useEffect(() => {
-    applyAppearanceFontVariables(document.documentElement, {
-      sans: fontFamilySans,
-      code: fontFamilyCode,
-      composer: fontFamilyComposer,
-      sizeInterface: fontSizeInterface,
-      sizePrompt: fontSizePrompt,
-      sizeCode: fontSizeCode,
-      smoothing: fontSmoothing,
-    });
-  }, [
-    fontFamilyCode,
-    fontFamilyComposer,
-    fontFamilySans,
-    fontSizeCode,
-    fontSizeInterface,
-    fontSizePrompt,
-    fontSmoothing,
-  ]);
-
-  return null;
-}
-
-/** Keyed by pathname: each route paints its own surface, which the browser chrome samples. */
+// Each route paints its own surface for browser chrome to sample.
 function BrowserChromeThemeSync() {
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -200,23 +121,6 @@ function BrowserChromeThemeSync() {
       window.cancelAnimationFrame(frame);
     };
   }, []);
-  return null;
-}
-
-function DocumentTitleSync() {
-  const primaryServerVersion =
-    useAtomValue(primaryServerConfigAtom)?.environment.serverVersion ?? null;
-  const title = resolveServerBackedAppDisplayName({
-    baseName: APP_BASE_NAME,
-    fallbackDisplayName: APP_DISPLAY_NAME,
-    fallbackStageLabel: APP_STAGE_LABEL,
-    primaryServerVersion,
-  });
-
-  useEffect(() => {
-    document.title = title;
-  }, [title]);
-
   return null;
 }
 
@@ -296,9 +200,7 @@ function errorDetails(error: unknown): string {
 
 const MAX_ERROR_CAUSE_DEPTH = 5;
 
-/**
- * Takes the pathname only so tokens in the query never land on the clipboard.
- */
+// Use only pathname to keep query tokens off the clipboard.
 function errorReport(error: unknown, pathname: string): string {
   const lines = [
     `${APP_DISPLAY_NAME} ${APP_VERSION}`,

@@ -1285,7 +1285,8 @@ it.effect("replays a thread.create receipt without changing the thread", () =>
     const before = yield* projections.getThread(threadId);
     const replayed = yield* orchestrator.dispatch(create);
     assert.equal(replayed.sequence, original.sequence);
-    assert.deepEqual(replayed, original);
+    // Marked so client analytics do not count the retry again.
+    assert.deepEqual(replayed, { ...original, replayed: true });
     assert.deepEqual(yield* projections.getThread(threadId), before);
     assert.equal(yield* orchestrator.getThreadEventSequence(threadId), original.sequence);
   }).pipe(Effect.provide(layerTest)),
@@ -1367,3 +1368,5 @@ it.effect("explicit settle clears snooze atomically and stays idempotent after r
     assert.deepInclude((yield* projections.getThreadProjection(threadId)).thread, active);
   }).pipe(Effect.provide(layerTest)),
 );
+
+// Coder: orchestration metrics are not carried, so upstream's dispatch-metrics test (#23966) is cut.

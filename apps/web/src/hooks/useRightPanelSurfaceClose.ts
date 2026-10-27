@@ -4,6 +4,7 @@ import { AuthTerminalOperateScope, type ScopedThreadRef } from "@t3tools/contrac
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { useThreadTerminalActions } from "../components/terminal/useThreadTerminalActions";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
+import { focusPanelTerminalAfterClose } from "../lib/terminalFocus";
 import {
   selectThreadRightPanelState,
   useRightPanelStore,
@@ -51,6 +52,7 @@ export function useRightPanelSurfaceClose(input: {
       releaseSurfaceResources(threadRef, surface);
       store.closeSurface(threadRef, surface.id);
     }
+    focusPanelTerminalAfterClose(threadRef, activeId);
   };
   const labelFor = (terminalId: string) =>
     terminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
