@@ -1,83 +1,7 @@
-import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeStdio from "@effect/platform-node/NodeStdio";
-import { CoderWsRpcGroup } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Logger from "effect/Logger";
-import * as Path from "effect/Path";
-import * as RpcSerialization from "effect/rpc/RpcSerialization";
-import * as RpcServer from "effect/rpc/RpcServer";
-
-import {
-  CODER_HELPER_INFO_METHOD,
-  CODER_HELPER_PROTOCOL_VERSION,
-  CoderHelperProtocolError,
-  CoderHelperRpcGroup,
-} from "@t3tools/coder-cli/rpc";
-import * as ServerConfig from "t3/src/config.ts";
-import * as DefectReporter from "t3/src/observability/DefectReporter.ts";
-import { withTerminalOutputWindow } from "t3/src/terminal/OutputProtocol.ts";
-import { makeCoderRuntimeLayer } from "t3/src/coderServer.ts";
-import { WS_RPC_SERVER_OPTIONS } from "t3/src/ws.ts";
-
-export const coderHelperHandlers = CoderHelperRpcGroup.toLayer({
-  [CODER_HELPER_INFO_METHOD]: ({ protocolVersion }) =>
-    protocolVersion === CODER_HELPER_PROTOCOL_VERSION
-      ? Effect.succeed({
-          protocolVersion: CODER_HELPER_PROTOCOL_VERSION,
-          platform: process.platform,
-          architecture: process.arch,
-        })
-      : Effect.fail(
-          new CoderHelperProtocolError({
-            message: `Unsupported protocol version ${protocolVersion}.`,
-            supportedVersion: CODER_HELPER_PROTOCOL_VERSION,
-          }),
-        ),
-});
-
-const coderServerConfigLayer = Layer.effect(
-  ServerConfig.ServerConfig,
-  Effect.gen(function* () {
-    const path = yield* Path.Path;
-    const baseDir =
-      process.env.T3_CODER_HOME?.trim() || path.join(process.env.HOME ?? ".", ".t3-coder");
-    const cwd = process.env.T3_CODER_CWD?.trim() || process.env.HOME?.trim() || process.cwd();
-    const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir);
-    yield* ServerConfig.ensureServerDirectories(derivedPaths);
-    return ServerConfig.ServerConfig.of({
-      ...derivedPaths,
-      cwd,
-      baseDir,
-    });
-  }),
-);
-
-export const CoderWorkspaceRpcGroup = CoderHelperRpcGroup.merge(CoderWsRpcGroup);
-
-export const coderHelperStdioLayer = RpcServer.layer(
-  CoderWorkspaceRpcGroup,
-  WS_RPC_SERVER_OPTIONS,
-).pipe(
-  Layer.provide(Layer.mergeAll(coderHelperHandlers, makeCoderRuntimeLayer(), DefectReporter.layer)),
-  Layer.provide(
-    Layer.effect(RpcServer.Protocol, Effect.map(RpcServer.Protocol, withTerminalOutputWindow)).pipe(
-      Layer.provide(RpcServer.layerProtocolStdio),
-    ),
-  ),
-  Layer.provide(RpcSerialization.layerNdjson),
-  Layer.provide(NodeStdio.layer),
-  Layer.provide(coderServerConfigLayer),
-  Layer.provide(NodeServices.layer),
-  // Keep Effect logs, including DefectReporter's, off stdout, which carries the NDJSON RPC
-  // transport. The helper launch discards stderr, so these logs are not kept anywhere.
-  Layer.provide(Layer.succeed(Logger.LogToStderr)(true)),
-);
-
 // Coder: upstream's `bin.ts` dispatch for `DocumentText.ts`, which runs office document text
 // extraction in a child process of the server's own entry point; here that is the helper bundle.
-if (import.meta.main && process.argv[2] === "__document-text") {
+// Both branches import lazily so the extraction child loads only its worker, as upstream's does.
+if (process.argv[2] === "__document-text") {
   const { extractDocumentText } = await import("t3/src/provider/documentTextWorker.ts");
   try {
     process.stdout.write(await extractDocumentText(process.argv[3]!, process.argv[4]!));
@@ -88,6 +12,11 @@ if (import.meta.main && process.argv[2] === "__document-text") {
     // Exit 2 identifies document rejections; OS and process failures remain retryable.
     process.exitCode = 2;
   }
-} else if (import.meta.main) {
+} else {
+  const [{ coderHelperStdioLayer }, Layer, NodeRuntime] = await Promise.all([
+    import("./helper.ts"),
+    import("effect/Layer"),
+    import("@effect/platform-node/NodeRuntime"),
+  ]);
   Layer.launch(coderHelperStdioLayer).pipe(NodeRuntime.runMain);
 }
