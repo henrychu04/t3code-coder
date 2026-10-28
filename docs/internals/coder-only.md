@@ -522,8 +522,8 @@ listed here is drift to remove rather than fork behavior to keep.
     task read, wait, delegate, and cancel paths, `ThreadManagementService`'s remote task stop, and
     `ProjectionStore`'s `getOpenRemoteDelegatedTasks`. `McpToolAccess.toLayer` refuses any tool
     call whose `environmentId` names another environment with upstream's "This environment
-    cannot reach linked environments." error, and `delegate_task` refuses `target.environmentId`
-    the same way. Migrations 070 and 071 keep their IDs and create nothing; 072's index stays,
+    cannot reach linked environments." error, and `delegate_task` refuses a `target.environmentId`
+    naming another environment the same way. Migrations 070 and 071 keep their IDs and create nothing; 072's index stays,
     because `ProjectionStore`'s waiting-card reads name it. `peerLinks`, `mcpModeLimitHeader`, and
     `linkFence` are in `CODER_OMITTED_CAPABILITIES`. The contracts (`peerLink.ts`, the
     `environmentId` tool fields the bridge advertises, `remoteChild`, `linkOrigin`,
