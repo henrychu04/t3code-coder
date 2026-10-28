@@ -194,8 +194,7 @@ import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDeta
 import {
   getComposerPromptInjectionState,
   getComposerReasoningStep,
-  resolveAvailableRuntimeModes,
-  resolveComposerRuntimeMode,
+  resolveComposerRuntimeModes,
 } from "./composerProviderState";
 import { readPromptUltrathink } from "./TraitsPicker";
 import {
@@ -892,16 +891,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
-  const availableRuntimeModes = resolveAvailableRuntimeModes(
-    selectedProviderStatus?.status,
+  // Coder: offer only the provider-reported modes, and only safe modes until the provider is
+  // ready; show an unsupported selection as the mode the run gets.
+  const { modes: availableRuntimeModes, mode: compatibleRuntimeMode } = resolveComposerRuntimeModes(
+    runtimeMode,
+    selectedProviderStatus,
     composerProviderState.supportedRuntimeModes,
   );
-  // Coder: offer only the provider-reported modes, and only safe modes until the provider is
-  // ready; an unsupported selection falls back to the most permissive supported mode.
   const compatibleRuntimeModeOptions: ReadonlyArray<RuntimeModeOption> = availableRuntimeModes.map(
     (mode) => ({ mode, ...runtimeModeConfig[mode] }),
   );
-  const compatibleRuntimeMode = resolveComposerRuntimeMode(runtimeMode, availableRuntimeModes);
   const { enabled: planModeUiEnabled, interactionMode } = resolveComposerInteractionMode({
     planModeEnabled: settings.planModeEnabled,
     provider: selectedProviderStatus,

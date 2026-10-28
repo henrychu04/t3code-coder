@@ -862,6 +862,10 @@ listed here is drift to remove rather than fork behavior to keep.
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
   selection falls back to the most permissive supported mode. `RuntimePolicy` applies the same
   per-model clamp when it starts a run, so the provider receives the mode the composer shows.
+  Providers whose models report no modes (Pi, Kilo Code) keep upstream's provider-level modes in
+  both places; the composer uses upstream's `resolveCompatibleRuntimeMode` (`runtimeModeConfig.ts`,
+  ported ahead of sync from upstream bd84b1781a), which shows an unsupported mode as the least
+  permissive one, as it runs.
 - **Contracts.** `packages/contracts` follows upstream, including dormant schemas for surfaces Coder
   does not serve (auth, provider setup, other providers' settings, browser, device, preview, usage
   sources, agent sessions, filesystem browse, background policy). Coder deltas:
