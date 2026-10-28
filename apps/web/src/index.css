@@ -1,3 +1,5 @@
+/* Clerk injects its component styles into the clerk layer (clerkAppearance.cssLayerName). */
+@layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
 /* Coder: no Electron window controls, drag regions, or desktop resize insets. */
 
@@ -2536,4 +2538,10 @@ code {
       );
     }
   }
+}
+
+/* A workspace area with no control of its own takes F6 focus itself; keep that visible. */
+[data-workspace-area]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }

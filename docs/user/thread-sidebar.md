@@ -185,8 +185,10 @@ one word of three or more letters, or two for Chinese, Japanese, and Korean.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files
 and copying a thread reference. A copied reference uses the thread's merge request
-link when available, otherwise its thread ID. See [keybindings](./keybindings.md)
-for custom configuration.
+link when available, otherwise the thread itself, which pastes into a composer as
+a thread chip. To copy the thread even when it has a merge request, choose **Copy → Thread**
+from its context menu. **Thread ID** copies the bare ID for scripts. See
+[keybindings](./keybindings.md) for custom configuration.
 
 ## Inspect agent work
 
@@ -224,6 +226,12 @@ Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
 ## Snooze until later
+
+To change the choices in the snooze menu, open **Settings → Threads → Snooze options**.
+Each option is a duration, such as 3 hours, or a time on a day, such as 9:00 PM
+tomorrow. A weekday means the next one after today. Menus list the options soonest
+first and hide a today option after its time passes. Saved with **All environments**
+selected, the options apply to every connected environment.
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
 local time zone, or a duration in minutes, hours, or days. Durations start when

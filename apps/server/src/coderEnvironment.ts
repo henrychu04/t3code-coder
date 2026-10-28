@@ -93,6 +93,8 @@ export const CODER_OMITTED_CAPABILITIES = {
   peerLinks: "No linked environments: they need server-to-server /mcp and pairing.",
   mcpModeLimitHeader: "No /mcp HTTP server; agents reach T3 tools over the workspace file bridge.",
   linkFence: "No linked environments, so no work starts here from another one.",
+  localServerStop: "No dev-server port discovery: the browser preview is not carried.",
+  triage: "No in-app triage: it clones upstream T3 Code to help file upstream issues.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 
 const platformArch = (): ExecutionEnvironmentDescriptor["platform"]["arch"] => {

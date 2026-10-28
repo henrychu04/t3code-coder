@@ -705,6 +705,9 @@ importers:
       effect:
         specifier: 4.0.5
         version: 4.0.5
+      jszip:
+        specifier: 3.10.1
+        version: 3.10.1
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.5

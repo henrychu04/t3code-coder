@@ -492,7 +492,9 @@ listed here is drift to remove rather than fork behavior to keep.
     older-settled-thread reads (`WsOrchestrationV2GetThreadFamilyRpc`,
     `WsOrchestrationV2GetWorktreeThreadIdsRpc`, `WsOrchestrationV2GetOlderSettledThreadsRpc`) are
     served as upstream's handlers; `WsGuestShareCreateRpc` is omitted (see the guest-sharing cut),
-    as are the four `WsPeerLinks*` RPCs (see the linked-environments cut).
+    as are the four `WsPeerLinks*` RPCs (see the linked-environments cut),
+    `WsServerPrepareTriageRpc` (see the triage cut), and `WsPreviewStopLocalServerRpc` (see the
+    dev-servers cut).
   - Guest thread sharing (#24104) is not carried: guests reach a share over upstream's server HTTP
     routes and T3 Connect, neither of which exists here. `apps/server/src/guest/**`, its HTTP
     route, the share RPC handler, web `components/guest/**`, `routes/guest.tsx`, `guestPage.ts`,
@@ -550,6 +552,30 @@ listed here is drift to remove rather than fork behavior to keep.
     `UserMessageContextChips.tsx`, because both registries require every contract kind; shared
     `composerContextReferences.ts` parses it as upstream does. The planned gateway-hub delegation
     follow-up restores `RemoteDelegation` and the lineage UI over the gateway instead of HTTP.
+  - In-app triage (#22753) is not carried: it clones upstream T3 Code's source into the server's
+    cache and starts an agent to help file an upstream issue, which T3 Coder bugs are not.
+    `apps/server/src/triage/**`, its layer in `server.ts`, and the `server.prepareTriage` handler
+    are cut; `triage` is in `CODER_OMITTED_CAPABILITIES`. Its contracts stay. In the web client,
+    `hooks/useStartTriage.ts`, `lib/triageTarget.ts`, `chat/TriageDraftHero.tsx`, the palette's
+    "Triage an issue" entry (`CommandPalette.tsx`), the triage draft hero
+    (`DraftHeroHeadline.tsx`), `useHandleNewThread`'s `prompt` option (only triage passes it),
+    client-runtime's `prepareTriage`, and `docs/user/triage.md` are cut.
+  - The thread dev-servers panel (#22542) is not carried: it lists and stops servers that
+    upstream's preview `PortScanner` discovers, and the browser preview is not carried.
+    `ClaudeAdapterV2.ts`'s query runner gives the CLI's jobs no agent-thread variable and counts
+    no agent for port discovery, so it and `ProviderInstanceRegistryHydration.ts` need no
+    `PortDiscovery`; the `preview.stopLocalServer` handler is cut, and `localServerStop` is in
+    `CODER_OMITTED_CAPABILITIES`. Web `chat/ThreadServersPanel.tsx`, its `ThreadDetailsPanel.tsx`
+    section, and its `thread-sidebar.md` paragraph are cut.
+  - The `@` picker lists no threads on linked machines (#26201): `composerThreadItems.ts`, shared
+    `composerContextReferences.ts` (`strandedThreadContexts`), and the composer hooks keep the
+    same-server rules from before #26201. Copy thread (#26202) is upstream's.
+  - F6 workspace navigation (#25877) is upstream's without the desktop menu-action forwarding in
+    `AppSidebarLayout.tsx`; the Merge requests page's area is labelled "Merge requests"
+    (`PullRequestsColumn.tsx`). `ui/standalone-page.tsx`'s wordmark (#25281) reads "T3 Coder".
+    `QueuedRunsControl.tsx` (#26159) says "Sent by T3 Coder" and shows no guest name or border.
+    The replay provider (#26207) has no `DevReplayHost.tsx`, `__root.tsx` mount, or `window.t3dev`
+    type.
   - `ws.ts` strips workspace snapshots from provider config when a client asks for them on demand
     (`workspaceSnapshotsOnDemand`) without upstream's usage-limit commands, and
     `coderEnvironment.ts` advertises `providerWorkspaceSnapshotsOnDemand`.
@@ -682,7 +708,9 @@ listed here is drift to remove rather than fork behavior to keep.
     path, to stay close to upstream. It is dormant: every Coder MCP session carries a bridge
     `toolCommand`, so `buildPiRpcLaunch` never sets `T3_MCP_URL` and the extension opens no HTTP
     connection. Upstream's other provider packages
-    (Cursor, OpenCode, Muse, Grok, Antigravity) are not carried. Their replay
+    (Cursor, OpenCode, Muse, Grok, Antigravity) are not carried, nor is the dev-only "Replay
+    (dev)" provider (#26207): `ProviderInstanceRegistryHydration.ts` seeds no replay instance
+    and `apps/server/scripts/dev-replay*` is not carried. Their replay
     fixtures (`orchestration-v2/testkit/fixtures/{grok_*,muse_*,opencode*}`) and
     `testkit/DormantProviderCapabilities.ts` are kept on purpose: orchestrator tests replay them
     to exercise those capability combinations, and no driver for them is registered.
@@ -696,8 +724,8 @@ listed here is drift to remove rather than fork behavior to keep.
       `client.ts` labels the driver "Kilo Code", inlines Kilo's ACP Registry icon so the browser
       never loads it from the registry CDN, and has a default instance.
     - `AcpRegistrySupport.ts` keeps only upstream's local-command `inspect` and `resolve`; the
-      registry index, search, and binary, npx, and uvx installs (and `@noble/hashes`) are not
-      carried, and `acpRegistryManagedBinaryDirectories` is gone, so terminals add no managed
+      registry index, search (with #26248's index reuse), and binary, npx, and uvx installs (and
+      `@noble/hashes`) are not carried, and `acpRegistryManagedBinaryDirectories` is gone, so terminals add no managed
       agent directories to `PATH`.
     - `driver.ts` reports only local readiness, with no registry icon, documentation link, or
       sign-in (`canAuthenticate` is false; an authentication failure tells the user to sign in to

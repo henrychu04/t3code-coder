@@ -36,6 +36,7 @@ vi.mock("../../provider/Drivers/ClaudeAgentSdk.ts", { spy: true });
 
 // Coder: upstream's fork tests copy the transcript through the Agent SDK; the CLI transport
 // forks natively on the fork's first query (`ClaudeAdapterV2.forkThread`), so they are not carried.
+// The runner does no port-discovery agent tracking (#22542), so that test is not carried either.
 const realQueryRunner = layerQueryRunner.pipe(
   Layer.provide(
     Layer.succeed(ProviderEventLoggers, {
