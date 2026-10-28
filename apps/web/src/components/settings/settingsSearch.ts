@@ -398,6 +398,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
   },
+  // Coder: no guest links entry; guest links are not carried.
+  {
+    id: "linked-environments-beta",
+    title: "Linked environments",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["beta link another machine vps peer agents work there delegate"],
+  },
   {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
@@ -784,6 +792,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Port forwarding",
     to: "/settings/connections",
     searchTerms: ["ports tcp udp localhost loopback forward local remote restart"],
+  },
+  {
+    id: "workspace-links",
+    scope: "connections",
+    title: "Linked workspaces",
+    to: "/settings/connections",
+    searchTerms: ["link linked environments another workspace agents work there delegate access"],
   },
   {
     id: "archive",

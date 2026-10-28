@@ -235,6 +235,14 @@ function CoderWorkspaceRow({
                 (entry) => entry.workspaceId !== workspace.id,
               ),
             }),
+        // Coder: a link to or from a removed workspace goes with it.
+        ...(current.workspaceLinks === undefined
+          ? {}
+          : {
+              workspaceLinks: current.workspaceLinks.filter(
+                (entry) => entry.from !== workspace.id && entry.to !== workspace.id,
+              ),
+            }),
       }));
     });
 
