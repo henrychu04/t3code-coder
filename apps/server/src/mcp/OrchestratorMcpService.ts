@@ -2052,8 +2052,12 @@ const make = Effect.gen(function* () {
       };
     }),
     delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (callerScope, input) {
-      // Coder: peer links are not carried, so a task cannot run in another environment.
-      if (input.target?.environmentId !== undefined) {
+      // Coder: peer links are not carried, so a task cannot run in another environment; naming
+      // this one runs it here, as upstream's remoteTarget does.
+      if (
+        input.target?.environmentId !== undefined &&
+        input.target.environmentId !== callerScope.environmentId
+      ) {
         return yield* failure(
           "invalid_request",
           "This environment cannot reach linked environments.",
