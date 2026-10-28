@@ -354,7 +354,7 @@ type MarkdownServerConfigFields = ReturnType<typeof markdownServerConfigFields>;
 function markdownServerConfigFields(config: ServerConfig | null) {
   // Coder: no local editor or file-manager actions, so only the pull request flag is read.
   return {
-    pullRequestsEnabled: config?.environment.capabilities.pullRequests === true,
+    pullRequestsEnabled: config !== null,
   };
 }
 

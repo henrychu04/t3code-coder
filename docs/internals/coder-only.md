@@ -710,10 +710,9 @@ listed here is drift to remove rather than fork behavior to keep.
     connection. Upstream's other provider packages
     (Cursor, OpenCode, Muse, Grok, Antigravity) are not carried, nor is the dev-only "Replay
     (dev)" provider (#26207): `ProviderInstanceRegistryHydration.ts` seeds no replay instance
-    and `apps/server/scripts/dev-replay*` is not carried. Their replay
-    fixtures (`orchestration-v2/testkit/fixtures/{grok_*,muse_*,opencode*}`) and
-    `testkit/DormantProviderCapabilities.ts` are kept on purpose: orchestrator tests replay them
-    to exercise those capability combinations, and no driver for them is registered.
+    and `apps/server/scripts/dev-replay*` is not carried. Their replay fixtures are not carried
+    either; `testkit/DormantProviderCapabilities.ts` is kept on purpose, so orchestrator tests
+    can exercise those capability combinations without a registered driver.
   - Kilo Code is upstream's ACP Registry driver (`@t3tools/provider-acp-registry`, driver kind
     `acpRegistry`) on upstream's `effect-acp` and `@t3tools/provider-acp`, limited to the local
     command, as Pi is limited to the workspace's own `pi`. Coder deltas, each marked in the file:
@@ -1019,7 +1018,10 @@ listed here is drift to remove rather than fork behavior to keep.
   (#22638) has no prompt link.
   `RightPanelTabs.tsx` stays the fork's version without upstream's per-tab memoization (#20853);
   `ChatOverlayHosts.tsx` has no device setup dialog host, and `ProviderSettingsPanel`'s
-  `ProviderInstanceRow` passes no ACP sign-in, managed Codex runtime, or provider setup section.
+  `ProviderInstanceRow` passes no ACP sign-in, managed Codex runtime, or provider setup section;
+  its `RemoteSessionGatedProviderSettings` (which absorbed upstream's
+  `SelectedEnvironmentProviderSettings` in #26238) grants operate access without upstream's
+  remote-session check, since the gateway has no auth scopes.
 - **Markdown.** `ChatMarkdown.tsx` and the modules upstream split from it (`chat/ChatMarkdownMedia.tsx`
   for images and videos, `chat/MarkdownFileLink.tsx` and its `.logic.ts` for file chips) are
   upstream's, with these differences (each marked `Coder:` in the files):
@@ -1175,14 +1177,16 @@ listed here is drift to remove rather than fork behavior to keep.
     GitLab does not define.
   - `GitWorkflowService` adds `moveWorktree` and `localRefStatus` pass-throughs.
   - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
-    auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
+    auto-pull with `resolveProjectAutoPull`, which honors legacy project auto-pull opt-ins
+    (`project.autoPull`); upstream deleted that resolver from shared's `serverSettings.ts` in
+    #26238, so `vcs/projectAutoPull.ts` keeps it. Its `BackgroundPolicy` dependency is a
     Coder-owned stub that always allows work, because polling already stops when the last
     status subscription ends. Its `shouldRunOpportunisticWork` is always true too, so
     `ThreadPullRequestService`'s minute-by-minute merge request sweep runs whenever the workspace
     server does, which is only while the gateway holds its helper; `coderServer.ts` provides the
     policy to the runtime as upstream's `layerBackground` does. `server.ts` provides upstream's `layerAutomaticFetchInterval`, so the remote refresh interval follows the background-activity profile as upstream's does.
   - Startup auto-pull (`vcs/projectAutoPull.ts`) is upstream's `autoPullProjects` from
-    `serverRuntimeStartup.ts`, with the same per-project enablement.
+    `serverRuntimeStartup.ts`, enabled per project by the same `resolveProjectAutoPull`.
 - **Settings.** Upstream's layout, pages (#25651), navigation, and search, with Coder's Connections
   ("Environments"), Providers, GitLab, and background-activity panels. The access, browser,
   devices, SnapShot, and diagnostics pages are not carried, and `movedSettingsPath` never points at
@@ -1282,9 +1286,10 @@ listed here is drift to remove rather than fork behavior to keep.
     `ThreadNotificationCoordinator.tsx` focuses the tab on a notification click without
     upstream's desktop window reveal.
   - client-runtime `errors/diagnostics.ts` is the `[t3-error]` DevTools reporting described in
-    [Authentication](#authentication). `errors/network.ts` keeps only `UNRESPONSIVE_HOST_HINT`
-    for upstream's "stopped responding" message (#22212); there is no relay network hint, T3
-    Connect connection diagnosis (#22172), or host-freeze toast.
+    [Authentication](#authentication); `state/runtime.ts` still exports `executeAtomCommand`
+    (private upstream since #26238) for its test. `errors/network.ts` keeps only
+    `UNRESPONSIVE_HOST_HINT` for upstream's "stopped responding" message (#22212); there is no
+    relay network hint, T3 Connect connection diagnosis (#22172), or host-freeze toast.
   - The server's `config.ts` is paths under the workspace state directory only.
   - A thread whose workspace is not connected shows `WorkspaceConnectionStatus`, and so does
     `_chat.index.tsx` after upstream's draft branch (#20183) while workspaces are pending or
@@ -1430,7 +1435,7 @@ show the preflight, any installation, and helper negotiation as separate phases.
 ### Workspace retention
 
 The helper runs upstream's opt-in storage cleanup policies. Worktree cleanup holds the same
-workspace lease as provider startup and terminal open/restart, rechecks sessions and Git state,
+workspace lease as provider startup and terminal open, rechecks sessions and Git state,
 and preserves branches and thread history. Artifact retention maps upstream's browser-artifact
 store to the legacy `screenshotArtifactsDir`; it never visits `attachmentsDir` or current image
 source paths. Artifact, worktree, and rotated-log policies are disabled by default.

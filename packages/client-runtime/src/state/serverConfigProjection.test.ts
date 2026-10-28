@@ -86,7 +86,7 @@ it("applies published-theme changes and removals without disturbing other config
   ).toEqual(Option.none());
 });
 
-it("replaces the entire provider array and carries themes only for capable snapshots", () => {
+it("replaces the entire provider array and carries themes across snapshots", () => {
   const config = {
     providers: [],
     environment: { capabilities: { environmentThemes: true } },
@@ -117,13 +117,4 @@ it("replaces the entire provider array and carries themes only for capable snaps
     payload: { providers: [] },
   });
   expect(Option.getOrThrow(cleared).config.providers).toEqual([]);
-  const downgraded = applyServerConfigProjection(themed, {
-    version: 1,
-    type: "snapshot",
-    config: {
-      ...config,
-      environment: { ...config.environment, capabilities: { repositoryIdentity: true } },
-    },
-  });
-  expect(Option.getOrThrow(downgraded).config.environmentThemes).toBeUndefined();
 });

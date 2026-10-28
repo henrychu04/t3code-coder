@@ -6,7 +6,7 @@ import { readBrowserClientSettings, writeBrowserClientSettings } from "./clientP
 
 let cachedApi: LocalApi | undefined;
 
-function createBrowserLocalApi(): LocalApi {
+export function createLocalApi(): LocalApi {
   return {
     shell: {
       // Coder: only HTTP(S) links open, in a new tab without opener or referrer.
@@ -47,10 +47,6 @@ function createBrowserLocalApi(): LocalApi {
       },
     },
   };
-}
-
-export function createLocalApi(): LocalApi {
-  return createBrowserLocalApi();
 }
 
 export function readLocalApi(): LocalApi | undefined {

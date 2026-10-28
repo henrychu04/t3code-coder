@@ -11,7 +11,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
-import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { rpcInitialItems } from "./rpcInitialItems.ts";
 import {
@@ -70,11 +69,9 @@ import * as DocumentText from "./provider/DocumentText.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import {
-  archivedShellStreamItemFromThreadShell,
   buildActiveShellSnapshot,
   bufferShellLiveStream,
   coalesceShellApplicationEvents,
-  coalesceStoredThreadEvents,
   composeShellStreamWithEnrichment,
   dedupeShellEnrichment,
   loadOlderSettledThreadsPage,
@@ -90,7 +87,6 @@ import {
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
 import { ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION } from "./orchestration-v2/ProjectionStore.ts";
-import { bufferLiveStream } from "./orchestration-v2/LiveStreamBudget.ts";
 import { coalesceThreadLiveStream } from "./orchestration-v2/ThreadLiveEventCoalescer.ts";
 import {
   buildBoundedThreadStreamSnapshot,
@@ -1021,42 +1017,6 @@ const layerWsRpc = () =>
         },
       );
 
-      const subscribeOrchestrationV2ArchivedShell = Effect.fn(
-        "ws.orchestrationV2.subscribeArchivedShell",
-      )(function* () {
-        const snapshot = yield* getOrchestrationV2ArchivedShellSnapshot;
-        const live = threadManagement
-          .streamStoredEventsFrom({ afterSequence: snapshot.snapshotSequence })
-          .pipe(
-            Stream.groupedWithin(512, Duration.millis(50)),
-            Stream.mapEffect((events) =>
-              Effect.forEach(
-                coalesceStoredThreadEvents(Array.from(events)),
-                (stored) =>
-                  threadManagement
-                    .getThreadShell(stored.event.threadId)
-                    .pipe(
-                      Effect.map((shell) =>
-                        archivedShellStreamItemFromThreadShell({ stored, shell }),
-                      ),
-                    ),
-                { concurrency: 8 },
-              ),
-            ),
-            Stream.flatMap(Stream.fromIterable),
-            Stream.filterMap((item) => (item === null ? Result.failVoid : Result.succeed(item))),
-            (stream) => bufferLiveStream(stream),
-            Stream.mapError(
-              (cause) =>
-                new OrchestrationV2GetShellSnapshotError({
-                  message: "Failed while streaming archived threads",
-                  cause,
-                }),
-            ),
-          );
-        return Stream.concat(rpcInitialItems([{ kind: "snapshot" as const, snapshot }]), live);
-      });
-
       const mutateProject = Effect.fn("ws.projects.mutate")(function* (mutation: ProjectMutation) {
         const result = yield* projectMutationOperation(projectService, mutation);
         if (mutation.type === "project.delete")
@@ -1291,8 +1251,6 @@ const layerWsRpc = () =>
               ),
             ),
           ),
-        [ORCHESTRATION_V2_WS_METHODS.subscribeArchivedShell]: (_input) =>
-          Stream.unwrap(subscribeOrchestrationV2ArchivedShell()),
         // Coder: the stream takes its services from `streamContext`.
         [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: (input) =>
           Stream.unwrap(subscribeOrchestrationV2Shell(input).pipe(Effect.provide(streamContext))),
@@ -1311,8 +1269,6 @@ const layerWsRpc = () =>
               Effect.as(commandOutputHub.subscribe(input)),
             ),
           ),
-        // Coder: helper stdio has no session scopes, so every webhook URL is visible.
-        [WS_METHODS.scheduledTasksList]: (_input) => scheduledTasks.list(),
         // Coder: helper stdio has no session scopes, so every webhook URL is visible.
         [WS_METHODS.scheduledTasksSubscribe]: (_input) => scheduledTasks.subscribeList(),
         [WS_METHODS.scheduledTasksUpsert]: (input) => scheduledTasks.upsert(input),
@@ -1417,8 +1373,6 @@ const layerWsRpc = () =>
           }),
         [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
-        [WS_METHODS.serverGetSettings]: (_input) =>
-          serverSettings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
         // Coder: workspace settings have no device hosts to resolve.
         [WS_METHODS.serverUpdateSettings]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
@@ -1838,7 +1792,6 @@ const layerWsRpc = () =>
         [WS_METHODS.terminalWrite]: (input) => terminalManager.write(input),
         [WS_METHODS.terminalResize]: (input) => terminalManager.resize(input),
         [WS_METHODS.terminalClear]: (input) => terminalManager.clear(input),
-        [WS_METHODS.terminalRestart]: (input) => terminalManager.restart(input),
         [WS_METHODS.terminalClose]: (input) => terminalManager.close(input),
         [WS_METHODS.terminalObserve]: (input) =>
           terminalOutputStream(
@@ -1847,8 +1800,6 @@ const layerWsRpc = () =>
             (listener, registerCleanup) =>
               terminalManager.resyncStream(input, listener, registerCleanup),
           ),
-        [WS_METHODS.subscribeTerminalEvents]: (_input) =>
-          terminalOutputStream(terminalManager.subscribe),
         [WS_METHODS.subscribeTerminalMetadata]: (_input) =>
           Stream.callback<TerminalMetadataStreamEvent>((queue) =>
             Effect.acquireRelease(

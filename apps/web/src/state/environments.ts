@@ -75,10 +75,6 @@ export function usePrimaryEnvironment(): EnvironmentPresentation | null {
   return useEnvironment(usePrimaryEnvironmentId());
 }
 
-export function useEnvironmentIds() {
-  return useAtomValue(environmentSummaries.environmentIdsAtom);
-}
-
 export function useEnvironmentIdentities() {
   return useAtomValue(environmentSummaries.identitiesAtom);
 }

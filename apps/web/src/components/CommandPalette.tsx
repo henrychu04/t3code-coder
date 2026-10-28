@@ -98,7 +98,6 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
-import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -110,9 +109,10 @@ import {
   hasTrailingPathSeparator,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
+  isScratchProject,
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
-} from "../lib/projectPaths";
+} from "@t3tools/client-runtime/state/projects";
 import {
   dispatchCommandPalette,
   getCommandPaletteReturnFocus,
@@ -120,7 +120,7 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
-import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
+import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
@@ -386,9 +386,6 @@ function OpenCommandPaletteDialog(props: {
     reportFailure: false,
     reportDefect: false,
   });
-  const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
-    reportFailure: false,
-  });
   const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
     reportFailure: false,
   });
@@ -406,9 +403,7 @@ function OpenCommandPaletteDialog(props: {
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
-      ? environments.some(
-          (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-        )
+      ? environments.some((environment) => environment.serverConfig !== null)
         ? PULL_REQUESTS_PANEL_REF
         : null
       : activeThread
@@ -1304,19 +1299,17 @@ function OpenCommandPaletteDialog(props: {
         openLinkPullRequestDialog(threadRef);
       },
     });
-    if (activeThreadServerConfig?.environment.capabilities.threadPullRequests === true) {
-      actionItems.push({
-        kind: "action",
-        value: "action:open-thread-pull-requests",
-        searchTerms: ["merge requests", "linked", "stack", "mrs"],
-        title: "Show linked merge requests",
-        disabled: visibleThreadPullRequests(activeThread.pullRequests).length === 0,
-        icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
-        run: async () => {
-          useRightPanelStore.getState().open(threadRef, "pull-requests");
-        },
-      });
-    }
+    actionItems.push({
+      kind: "action",
+      value: "action:open-thread-pull-requests",
+      searchTerms: ["merge requests", "linked", "stack", "mrs"],
+      title: "Show linked merge requests",
+      disabled: visibleThreadPullRequests(activeThread.pullRequests).length === 0,
+      icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        useRightPanelStore.getState().open(threadRef, "pull-requests");
+      },
+    });
   }
 
   if (activeThread !== null) {
@@ -1431,11 +1424,7 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push(themeEditorItem);
 
-  if (
-    environments.some(
-      (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-    )
-  ) {
+  if (environments.some((environment) => environment.serverConfig !== null)) {
     actionItems.push({
       kind: "action",
       value: "action:pull-requests",
@@ -1911,33 +1900,6 @@ function OpenCommandPaletteDialog(props: {
       currentProjectCwdForBrowse,
     );
     if (destinationPath.length === 0) {
-      return;
-    }
-
-    // Older servers lack clone tracking; wait for the blocking clone before adding the project.
-    if (browseEnvironment?.serverConfig?.environment.capabilities.projectCloneTracking !== true) {
-      setIsRemoteProjectCloning(true);
-      const cloneResult = await cloneRepository({
-        environmentId: addProjectCloneFlow.environmentId,
-        input: {
-          remoteUrl: addProjectCloneFlow.remoteUrl,
-          destinationPath,
-        },
-      });
-      setIsRemoteProjectCloning(false);
-      if (cloneResult._tag === "Failure") {
-        if (!isAtomCommandInterrupted(cloneResult)) {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Clone failed",
-              description: errorMessage(squashAtomCommandFailure(cloneResult)),
-            }),
-          );
-        }
-        return;
-      }
-      await handleAddProject(cloneResult.value.cwd);
       return;
     }
 

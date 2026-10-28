@@ -1,11 +1,28 @@
-import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
 import {
   DEFAULT_SERVER_SETTINGS,
   type OrchestrationProjectShell,
+  type ProjectId,
   type ServerSettings,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
+
+// Coder: upstream deleted this resolver (#26238) once its own callers moved to
+// `resolveProjectSettings`; the fork keeps it to honor legacy project auto-pull opt-ins.
+export function resolveProjectAutoPull(
+  settings: Pick<
+    ServerSettings,
+    "defaultAutoPull" | "projectAutoPullOverrides" | "projectSettingsOverrides"
+  >,
+  projectId: ProjectId,
+  legacyAutoPull: boolean | undefined,
+): boolean {
+  return (
+    settings.projectSettingsOverrides[projectId]?.defaultAutoPull ??
+    settings.projectAutoPullOverrides[projectId] ??
+    (legacyAutoPull === true || settings.defaultAutoPull)
+  );
+}
 
 export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   projects: ReadonlyArray<OrchestrationProjectShell>,
