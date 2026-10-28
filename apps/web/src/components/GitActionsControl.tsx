@@ -1721,7 +1721,13 @@ export default function GitActionsControl({
                                 <button
                                   type="button"
                                   className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left enabled:cursor-pointer"
-                                  onClick={() => onOpenFile?.(changedFileOpenPath(file.path))}
+                                  aria-label={`Open ${file.path} in Files`}
+                                  onClick={() => {
+                                    onOpenFile?.(changedFileOpenPath(file.path));
+                                    // Coder: the file opens in the right panel behind this dialog,
+                                    // so the dialog closes; its message stays for the next open.
+                                    setIsCommitDialogOpen(false);
+                                  }}
                                   disabled={!onOpenFile}
                                 >
                                   <StartTruncatedPath

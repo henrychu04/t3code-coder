@@ -3380,6 +3380,8 @@ export default function ChatView(props: ChatViewProps) {
               {...(isServerThread && isGitRepo
                 ? { onOpenChanges: openChangesFromThreadPanelStable }
                 : {})}
+              // Coder: changed files in the Git actions dialog open in the Files surface.
+              {...(isServerThread ? { onOpenFile: openFileSurfaceStable } : {})}
               onRunProjectScript={runProjectScriptStable}
               onAddProjectScript={saveProjectScriptStable}
               onUpdateProjectScript={updateProjectScriptStable}
