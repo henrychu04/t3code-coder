@@ -336,6 +336,7 @@ export function DraftHeroHeadline({
       </Tooltip>
     ) : null;
 
+  // Coder: no triage draft hero; "Triage an issue" is not carried.
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       {hasResolvedProject && !isScratchDraft ? (

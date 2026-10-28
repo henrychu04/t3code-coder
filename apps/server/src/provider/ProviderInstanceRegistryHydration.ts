@@ -67,6 +67,8 @@ export const deriveProviderInstanceConfigMap = (
   return merged as ProviderInstanceConfigMap;
 };
 
+// Coder: upstream's dev replay provider (#26207, `seedDevReplayInstance`) is not carried, and the
+// Claude runner reports no agents to port discovery (#22542), so hydration needs neither.
 const layerSettingsWatcher = (settingsChanges: Stream.Stream<ServerSettings>) =>
   Layer.effectDiscard(
     Effect.gen(function* () {

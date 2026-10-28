@@ -61,6 +61,7 @@ import {
   PaletteIcon,
   RotateCcwIcon,
   SettingsIcon,
+  MonitorIcon,
   SquarePenIcon,
   TextSearchIcon,
 } from "lucide-react";
@@ -79,7 +80,11 @@ import { useAtomValue } from "@effect/atom-react";
 
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { copyThreadReference } from "../lib/copyThreadReference";
+import {
+  queueWorkspaceFocusFromPalette,
+  restoreWorkspaceFocusFromPalette,
+} from "../lib/workspaceFocus";
 import { useClientSettings } from "../hooks/useSettings";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { filesystemEnvironment } from "../state/filesystem";
@@ -110,6 +115,7 @@ import {
 } from "../lib/projectPaths";
 import {
   dispatchCommandPalette,
+  getCommandPaletteReturnFocus,
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
@@ -298,8 +304,12 @@ function CommandPaletteDialog(props: {
       data-palette-mode={props.mode}
       data-testid="command-palette"
       finalFocus={() => {
+        if (restoreWorkspaceFocusFromPalette()) return false;
+        const returnFocus = getCommandPaletteReturnFocus();
+        if (returnFocus === false) return false;
         const composer = composerHandleRef?.current;
-        if (!composer) return true;
+        // Behind the Settings modal the composer is inert and cannot take focus.
+        if (!composer || document.querySelector("[data-app-modal]")) return returnFocus;
         composer.focusAtEnd();
         return false;
       }}
@@ -412,33 +422,16 @@ function OpenCommandPaletteDialog(props: {
     referenceThreadRef === null || (pathname === "/pull-requests" && !openPanelPullRequestUrl)
       ? null
       : resolveThreadReferenceCopyTarget({
-          threadId: referenceThreadRef.threadId,
+          threadRef: referenceThreadRef,
+          title: activeThread?.title ?? "",
           openPanelPullRequestUrl,
           pullRequests: activeThread?.pullRequests,
           linkedPullRequestUrl:
             activeThread?.linkedPullRequest?.url ?? activeThread?.branchPullRequest?.url ?? null,
         });
   const copyActiveThreadReference = async () => {
-    const target = activeThreadReferenceCopyTarget;
-    if (target === null) return;
-    try {
-      const didCopy = await writeTextToClipboard(target.value, target.clipboardTarget);
-      if (!didCopy) return;
-      toastManager.add({
-        type: "success",
-        title: target.successTitle,
-        description: target.value,
-      });
-    } catch (error) {
-      console.error(error);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: target.failureTitle,
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
-    }
+    if (activeThreadReferenceCopyTarget === null) return;
+    await copyThreadReference(activeThreadReferenceCopyTarget);
   };
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -668,6 +661,7 @@ function OpenCommandPaletteDialog(props: {
     });
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates the browse navigation coordinator and in-flight clone lookups when the palette session unmounts
   useEffect(
     () => () => {
       browseNavigation.invalidate();
@@ -1262,6 +1256,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  // Coder: no "Triage an issue"; it files T3 Code issues from a clone of upstream's repository.
   if (activeThreadKey !== null && supportsThreadFind) {
     actionItems.push({
       kind: "action",
@@ -1284,10 +1279,10 @@ function OpenCommandPaletteDialog(props: {
       searchTerms:
         activeThreadReferenceCopyTarget.kind === "pull-request"
           ? ["copy", "merge request", "mr link", "reference"]
-          : ["copy", "thread id", "reference"],
+          : ["copy", "thread", "thread id", "reference"],
       title:
-        activeThreadReferenceCopyTarget.kind === "pull-request" ? "Copy MR link" : "Copy thread ID",
-      description: activeThreadReferenceCopyTarget.value,
+        activeThreadReferenceCopyTarget.kind === "pull-request" ? "Copy MR link" : "Copy thread",
+      description: activeThreadReferenceCopyTarget.description,
       icon: <LinkIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "thread.copyReference",
       run: copyActiveThreadReference,
@@ -1465,6 +1460,21 @@ function OpenCommandPaletteDialog(props: {
       icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
       run: async () => {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+      },
+    });
+  }
+
+  for (const direction of [1, -1] as const) {
+    const title = direction === 1 ? "Focus Next Workspace Area" : "Focus Previous Workspace Area";
+    actionItems.push({
+      kind: "action",
+      value: `action:workspace-focus:${direction}`,
+      title,
+      searchTerms: [title, "accessibility", "navigation", "focus", "F6"],
+      icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: direction === 1 ? "workspace.focusNext" : "workspace.focusPrevious",
+      run: async () => {
+        queueWorkspaceFocusFromPalette(direction);
       },
     });
   }

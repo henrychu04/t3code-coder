@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./zip/bounded-zip": {
+      "types": "./src/zip/boundedZip.ts",
+      "default": "./src/zip/boundedZip.ts"
+    },
+    "./zip/directory": {
+      "types": "./src/zip/zipDirectory.ts",
+      "default": "./src/zip/zipDirectory.ts"
+    },
     "./file-preview": {
       "types": "./src/filePreview.ts",
       "default": "./src/filePreview.ts"
@@ -380,7 +388,8 @@
     "@t3tools/shared": "workspace:*",
     "@t3tools/source-control-core": "workspace:*",
     "@t3tools/source-control-definitions": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "jszip": "3.10.1"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

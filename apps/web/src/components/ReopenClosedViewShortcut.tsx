@@ -131,6 +131,7 @@ export function ReopenClosedViewShortcut() {
       });
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown and the desktop menu action for the reopen closed view shortcut
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (

@@ -41,6 +41,7 @@ import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeConte
 import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
+import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import {
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
@@ -210,6 +211,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
       ? ["Snooze until limits reset"]
       : []),
+    ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
+      ? ["Snooze options"]
+      : []),
     ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
     ...(settings.persistComposerContextStrip !==
     DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -366,6 +370,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -1224,7 +1229,8 @@ export function ThreadsSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { environment, connectedEnvironments, target } = useSettingsScope();
+  const { environment, connectedEnvironments, target, scope } = useSettingsScope();
+  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
   const mixedResponseStreamingMode = useScopedSettingsMixed(["responseStreamingMode"]);
@@ -1320,6 +1326,12 @@ export function ThreadsSettingsPanel() {
       </SettingsSection>
 
       <ProjectDefaultsSettings category="general" />
+
+      {!isProjectScope ? (
+        <SettingsSection id="snooze" title="Snooze">
+          <SnoozePresetsRow />
+        </SettingsSection>
+      ) : null}
 
       <SettingsSection id="usage-limits" title="Usage limits">
         <SettingsRow

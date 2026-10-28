@@ -113,3 +113,6 @@ describe("deriveProviderInstanceConfigMap", () => {
     expect(instances[CLAUDE_INSTANCE_ID]?.driver).toBe("claudeAgent");
   });
 });
+
+// Coder: upstream's `seedDevReplayInstance` tests are not carried with the dev replay provider
+// (#26207).

@@ -44,8 +44,10 @@ binding in Settings if one does not reach the app.
 
 With a merge request open in the right panel or on the Merge requests page, use `mod+shift+c`
 to copy its URL and `mod+shift+k` to copy its number with a `!` prefix.
-Both shortcuts can be changed in Settings. Search for “Copy Link or Thread ID”
+Both shortcuts can be changed in Settings. Search for “Copy Link or Thread”
 or “Copy Number”. They copy the selected merge request and leave terminal input alone.
+Without a merge request, `mod+shift+c` copies the thread itself, which pastes into a
+composer as a thread chip.
 
 ## Edit the configuration file
 
