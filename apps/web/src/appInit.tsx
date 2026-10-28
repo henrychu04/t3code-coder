@@ -14,7 +14,11 @@ import { startThreadNotifications } from "./components/ThreadNotificationCoordin
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
-import { subscribeDraftThreadPromotion, useComposerDraftStore } from "./composerDraftStore";
+import {
+  subscribeComposerDraftModelReconciliation,
+  subscribeDraftThreadPromotion,
+  useComposerDraftStore,
+} from "./composerDraftStore";
 import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
 import {
   getClientSettings,
@@ -26,6 +30,7 @@ import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
 import { getRouter, type AppRouter } from "./router";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { primaryServerConfigAtom } from "./state/server";
+import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { environmentThreadShells } from "./state/threads";
@@ -148,6 +153,12 @@ export function startAppServices(): AppRouter {
     registry: appAtomRegistry,
     threadShellAtom: environmentThreadShells.quietThreadShellAtom,
     threadRefsAtom: environmentThreadShells.threadRefsAtom,
+  });
+  subscribeComposerDraftModelReconciliation({
+    registry: appAtomRegistry,
+    threadShellAtom: environmentThreadShells.threadShellAtom,
+    threadRefsAtom: environmentThreadShells.threadRefsAtom,
+    shellStateAtom: environmentShell.stateAtom,
   });
   startMainAppLocationTracking(router);
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
