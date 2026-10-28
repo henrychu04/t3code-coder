@@ -537,8 +537,10 @@ listed here is drift to remove rather than fork behavior to keep.
     `linkOrigin.test.ts`, `PeerLinks.testkit.ts`) are not carried because they pair two HTTP
     servers; `coderHub.test.ts` and the gateway's `hub.test.ts` test the transport. Migrations 070
     and 071 keep their IDs and create nothing; 072's index stays. `peerLinks` and `linkFence` are
-    advertised; `mcpModeLimitHeader` is in `CODER_OMITTED_CAPABILITIES`. Still cut in the
-    clients, and restored by the lineage follow-up: web `EnvironmentContextChip.tsx`,
+    advertised; `mcpModeLimitHeader` is in `CODER_OMITTED_CAPABILITIES`. Remote-task lineage from
+    `remoteChild` and `delegatedFrom` (the task row, the delegated thread's parent link and "From"
+    badge, the sidebar's tasks under their parent, and subagent request flags across
+    environments) is upstream's. Still cut in the clients: web `EnvironmentContextChip.tsx`,
     `chat/LinkRequestCard.tsx`, `settings/LinkAccessPicker.tsx`, `LinkMachineSelect.tsx`,
     `LinkedEnvironmentsSettings.tsx`, `state/peerLinks.ts`, `state/peerPairingCode.ts`;
     client-runtime `linkRequest.ts`, `state/peerLinks.ts`, `state/peerPairingCode.ts` and their
@@ -546,16 +548,13 @@ listed here is drift to remove rather than fork behavior to keep.
     (`useComposerMenuItems.ts`, `ComposerCommandMenu.tsx`, `composerThreadItems.ts`,
     `composerDraftStore.ts`, `composerContextRecords.ts`, `composerContextPresentation.tsx`,
     `useComposerSend.ts`, `chatViewSend.ts`, `useQueuedRunEdit.ts`); the link-request timeline
-    card (`TimelineV2EventRow.tsx`, `session-logic.ts`); remote-task lineage from `remoteChild`
-    and `delegatedFrom` (`ThreadRelationshipsControl.tsx`, `V2LifecycleRow.tsx`,
-    `MessagesTimeline.tsx`, `ChatView.tsx`'s parent link, `ChatHeader.tsx`'s "From" badge,
-    `Sidebar.logic.ts`, `Sidebar.tsx`, `routeReveal.ts`, `useSidebarProjectGroups.ts`,
-    `ThreadNotificationCoordinator.tsx`, `state/entities.ts`, client-runtime `threadShell.ts` and
-    `models.ts`); and the `t3_environment_link`/`unlink` tool presentations
-    (`t3McpToolPresentation.ts`, `t3ToolSummary.ts`). The contract's `environment` record kind
-    keeps upstream's definition in `contextPresentationRegistry.ts` and an unavailable-chip
-    handler in `UserMessageContextChips.tsx`, because both registries require every contract kind;
-    shared `composerContextReferences.ts` parses it as upstream does.
+    card (`TimelineV2EventRow.tsx`, `session-logic.ts`); and the `t3_environment_link`/`unlink`
+    tool presentations (`t3McpToolPresentation.ts`, `t3ToolSummary.ts`). The contract's
+    `environment` record kind keeps upstream's definition in `contextPresentationRegistry.ts` and
+    an unavailable-chip handler in `UserMessageContextChips.tsx`, because both registries require
+    every contract kind; shared `composerContextReferences.ts` parses it as upstream does.
+    `threadShell.test.ts`'s linked-task case drops upstream's switched-off parent step, since
+    environments have no per-environment switch here.
   - In-app triage (#22753) is not carried: it clones upstream T3 Code's source into the server's
     cache and starts an agent to help file an upstream issue, which T3 Coder bugs are not.
     `apps/server/src/triage/**`, its layer in `server.ts`, and the `server.prepareTriage` handler
