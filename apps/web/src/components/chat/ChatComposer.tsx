@@ -2660,6 +2660,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   useThreadContextDrop(composerFormRef, environmentId, attachmentTargetKey, (refs, isActive) => {
     const records = refs.flatMap((ref) => {
+      // Coder: a thread from another environment is imported, as before #26201's linked machines.
       if (ref.environmentId !== environmentId) {
         void importDroppedThread(
           ref,

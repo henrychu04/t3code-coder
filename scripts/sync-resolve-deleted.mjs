@@ -156,6 +156,21 @@ const DELETED_PATHS = {
     "packages/contracts/src/resourceTelemetry.ts",
     "packages/contracts/src/usage.ts",
   ],
+  // Triage, dev servers, and dev replay: no in-app triage of upstream issues, no dev-server panel
+  // (it needs the preview port scanner), and no dev-only replay provider.
+  "triage, dev servers, and dev replay": [
+    "apps/server/src/triage/",
+    "apps/server/scripts/dev-replay/",
+    "apps/server/scripts/dev-replay-agent.ts",
+    "apps/server/scripts/dev-replay-agent.test.ts",
+    "apps/web/src/components/DevReplayHost.tsx",
+    "apps/web/src/components/chat/ThreadServersPanel.tsx",
+    "apps/web/src/components/chat/TriageDraftHero.tsx",
+    "apps/web/src/hooks/useStartTriage.ts",
+    "apps/web/src/lib/triageTarget.ts",
+    "apps/web/src/lib/triageTarget.test.ts",
+    "docs/user/triage.md",
+  ],
   // Upstream repository tooling: vendored sources, CI, hooks, editor and agent configuration,
   // and operations docs. The fork's .github/ keeps only SECURITY.md.
   "upstream repository tooling": [

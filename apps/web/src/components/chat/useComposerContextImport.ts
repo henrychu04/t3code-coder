@@ -312,6 +312,7 @@ export function useComposerContextImport(input: {
         }
         case "thread": {
           // The agent can only read threads on its own server; a pasted foreign one is dropped.
+          // Coder: no linked-machine exception (#26201 is not carried).
           if (record.environmentId !== environmentId) break;
           addComposerDraftThreadContexts(threadDraftTarget, [record], {
             appendReference: false,

@@ -132,3 +132,6 @@ an available shortcut such as `alt+w`.
 
 Many defaults include `!terminalFocus` so they do not intercept terminal input.
 Keep that condition when remapping them if you want the same behavior.
+
+See [Keyboard focus](./keyboard-focus.md) for how focus moves between workspace areas (`F6`)
+and through the sidebar.
