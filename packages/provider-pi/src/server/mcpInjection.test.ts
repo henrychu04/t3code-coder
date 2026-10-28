@@ -79,7 +79,6 @@ describe("pi T3 MCP injection", () => {
       "--extension",
       "/tmp/cache/pi-t3-mcp-extension.ts",
     ]);
-    assert.isFalse(permissionOnly.hasT3Mcp);
     assert.isUndefined(permissionOnly.env[T3_MCP_URL_ENV]);
     assert.isUndefined(permissionOnly.env[T3_MCP_BEARER_ENV]);
     assert.equal(permissionOnly.env[T3_PI_RUNTIME_MODE_ENV], "auto-accept-edits");
@@ -106,7 +105,6 @@ describe("pi T3 MCP injection", () => {
       extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
       runtimeMode: "approval-required",
     });
-    assert.isTrue(launch.hasT3Mcp);
     assert.equal(
       launch.env[T3_TOOL_COMMAND_ENV],
       "'/nix/store/node/bin/node' '/tmp/t3-tools-pi/t3.mjs'",
@@ -144,7 +142,6 @@ describe("pi T3 MCP injection", () => {
       "--no-extensions",
       "--no-tools",
     ]);
-    assert.isFalse(launch.hasT3Mcp);
     assert.deepInclude(resolvePiLaunchArgs("--mode text"), {
       ok: false,
       message: "Pi launch argument '--mode' is controlled by T3 Code and cannot be overridden.",

@@ -10,7 +10,6 @@ export class ConnectionTarget extends Schema.TaggedClass<ConnectionTarget>()("Co
   wsBaseUrl: Schema.String,
 }) {}
 
-export type ConnectionTargetKind = ConnectionTarget["_tag"];
 export type NetworkStatus = "unknown" | "offline" | "online";
 
 export const ConnectionTransientReason = Schema.Literals([

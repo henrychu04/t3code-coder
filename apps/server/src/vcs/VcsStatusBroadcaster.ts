@@ -28,14 +28,14 @@ import type {
 import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { mergeGitStatusParts } from "@t3tools/shared/git";
-// Coder: honor the fork settings model, including legacy project auto-pull opt-ins.
-import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
+// Coder: honor the fork settings model, including legacy project auto-pull opt-ins.
+import { resolveProjectAutoPull } from "./projectAutoPull.ts";
 
 const VCS_STATUS_REFRESH_FAILURE_BASE_DELAY = Duration.seconds(30);
 const VCS_STATUS_REFRESH_FAILURE_MAX_DELAY = Duration.minutes(15);

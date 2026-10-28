@@ -11,7 +11,7 @@ import {
 } from "@t3tools/contracts";
 import {
   AVAILABLE_CONNECTION_STATE,
-  presentEnvironmentConnection,
+  presentConnectionState,
   type EnvironmentPresentation,
 } from "@t3tools/client-runtime/connection";
 import { createServerEnvironmentAtoms } from "@t3tools/client-runtime/state/server";
@@ -137,7 +137,7 @@ const environmentConnectionsAtom = Atom.make((get) => {
     );
     environments.set(environmentId, {
       // Coder: Coder workspace entries carry no cached unsupported-host rejection.
-      connection: presentEnvironmentConnection(state),
+      connection: presentConnectionState(state),
       serverConfig: get(serverEnvironment.configValueAtom(environmentId)),
     });
   }

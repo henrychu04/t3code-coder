@@ -29,7 +29,7 @@ import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKeyFromPath,
   selectProjectGroupingSettings,
-} from "../logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import { useUiStateStore } from "../uiStateStore";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentServerStatesAtom } from "../state/server";

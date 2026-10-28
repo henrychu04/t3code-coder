@@ -372,7 +372,7 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
       ) : null}
 
       {selectedEnvironment ? (
-        <SelectedEnvironmentProviderSettings
+        <RemoteSessionGatedProviderSettings
           key={selectedEnvironment.environmentId}
           environment={selectedEnvironment}
           deviceTabs={deviceTabs}
@@ -389,8 +389,9 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
   );
 }
 
-// Coder: the gateway has no auth scopes, so every connected workspace's providers are editable.
-function SelectedEnvironmentProviderSettings({
+// Coder: the gateway has no auth scopes, so every connected workspace's providers are editable
+// without upstream's remote-session check.
+function RemoteSessionGatedProviderSettings({
   environment,
   deviceTabs,
   targetInstanceId,
@@ -1194,10 +1195,8 @@ function ProviderInstanceRow({
       modelOrder={modelOrder}
       onHiddenModelsChange={(next, affectedModels) => {
         const hidden = new Set(next);
-        const models =
-          affectedModels ?? modelListChanges(hiddenModels, next).map((change) => change.model);
         void actions.updateModelPreferences({
-          setModelsHidden: models.map((model) => ({
+          setModelsHidden: affectedModels.map((model) => ({
             provider: instanceId,
             model,
             hidden: hidden.has(model),

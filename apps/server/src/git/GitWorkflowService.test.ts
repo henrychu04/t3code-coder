@@ -57,9 +57,8 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
   );
 });
 
-// Coder: the two helper passthroughs retain Git-only routing.
+// Coder: the two helper passthroughs route through the Git command guard.
 it.effect("routes worktree moves and lightweight ref reads through the Git command guard", () => {
-  let kind: "git" | "jj" = "git";
   let moves = 0;
   let reads = 0;
   const move = vi.fn(() =>
@@ -83,15 +82,6 @@ it.effect("routes worktree moves and lightweight ref reads through the Git comma
     });
     expect(move).toHaveBeenCalledExactlyOnceWith(input);
     expect(ref).toHaveBeenCalledExactlyOnceWith("/repo");
-    kind = "jj";
-    expect(yield* workflow.moveWorktree(input).pipe(Effect.flip)).toMatchObject({
-      _tag: "GitCommandError",
-      command: "vcs-route",
-    });
-    expect(yield* workflow.localRefStatus({ cwd: "/repo" }).pipe(Effect.flip)).toMatchObject({
-      _tag: "GitCommandError",
-      command: "vcs-route",
-    });
     expect(moves).toBe(1);
     expect(reads).toBe(1);
   }).pipe(
@@ -99,7 +89,7 @@ it.effect("routes worktree moves and lightweight ref reads through the Git comma
       GitWorkflowService.layer.pipe(
         Layer.provide(
           Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-            resolve: () => Effect.succeed({ kind } as VcsDriverRegistry.VcsDriverHandle),
+            resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
           }),
         ),
         Layer.provide(

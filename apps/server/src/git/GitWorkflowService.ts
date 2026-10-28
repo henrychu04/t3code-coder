@@ -205,13 +205,6 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    if (handle.kind !== "git") {
-      return yield* new GitManagerError({
-        operation,
-        cwd,
-        detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
-      });
-    }
     return handle;
   });
 
@@ -231,14 +224,6 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    if (handle.kind !== "git") {
-      return yield* new GitCommandError({
-        operation,
-        command: "vcs-route",
-        cwd,
-        detail: `The ${operation} command currently supports Git repositories only; detected ${handle.kind}.`,
-      });
-    }
     return handle;
   });
 
@@ -257,13 +242,6 @@ export const make = Effect.gen(function* () {
       );
       if (!handle) {
         return false;
-      }
-      if (handle.kind !== "git") {
-        return yield* new GitManagerError({
-          operation,
-          cwd,
-          detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
-        });
       }
       return true;
     },
@@ -286,14 +264,6 @@ export const make = Effect.gen(function* () {
     );
     if (!handle) {
       return false;
-    }
-    if (handle.kind !== "git") {
-      return yield* new GitCommandError({
-        operation,
-        command: "vcs-route",
-        cwd,
-        detail: `The ${operation} command currently supports Git repositories only; detected ${handle.kind}.`,
-      });
     }
     return true;
   });
@@ -380,7 +350,7 @@ export const make = Effect.gen(function* () {
     invalidateLocalStatus: gitManager.invalidateLocalStatus,
     invalidateRemoteStatus: gitManager.invalidateRemoteStatus,
     invalidateStatus: gitManager.invalidateStatus,
-    // Coder: route these driver seams through the same Git-only command guard.
+    // Coder: route these driver seams through the same command guard.
     moveWorktree: Effect.fn("GitWorkflowService.moveWorktree")(function (input) {
       return ensureGitCommand("GitWorkflowService.moveWorktree", input.cwd).pipe(
         Effect.andThen(git.moveWorktree(input)),

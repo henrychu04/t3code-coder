@@ -96,6 +96,7 @@ it("opens a recognized MR in the page panel and updates its URL selection", asyn
     pullRequestSurface({
       environmentId: "workspace",
       projectId: "project",
+      host: "gitlab.example",
       repository: "group/project",
       number: 42,
       url: "https://gitlab.example/group/project/-/merge_requests/42",

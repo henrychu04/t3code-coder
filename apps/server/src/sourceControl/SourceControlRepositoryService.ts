@@ -528,7 +528,6 @@ export const make = Effect.gen(function* () {
         remoteName,
         remoteUrl,
         branch: pushResult.branch,
-        ...(pushResult.upstreamBranch ? { upstreamBranch: pushResult.upstreamBranch } : {}),
         status: "pushed" as const,
       };
     },
