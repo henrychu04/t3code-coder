@@ -46,6 +46,8 @@ export interface ProjectSetupScriptOutputLine {
   readonly line: string;
 }
 
+// Coder: upstream's `skipped-for-link` result, for threads a fenced peer link started, is not
+// carried; peer links are not.
 export type ProjectSetupScriptRunnerResult =
   | ProjectSetupScriptRunnerResultNoScript
   | ProjectSetupScriptRunnerResultStarted;

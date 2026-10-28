@@ -86,6 +86,7 @@
     "packages/contracts/src/environment.ts": ["exports", "nsExports"],
     "packages/contracts/src/guestShare.ts": ["exports", "nsExports"],
     "packages/contracts/src/model.ts": ["exports", "nsExports"],
+    "packages/contracts/src/orchestrationV2.ts": ["exports", "nsExports"],
     "packages/contracts/src/preview.ts": ["exports", "nsExports"],
     "packages/contracts/src/previewAutomation.ts": ["exports", "nsExports"],
     "packages/contracts/src/rpc.ts": ["exports", "nsExports"],

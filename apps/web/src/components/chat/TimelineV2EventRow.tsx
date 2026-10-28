@@ -37,6 +37,7 @@ export function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
       />
     );
   }
+  // Coder: no link-request card; agents cannot ask to link environments here.
   if (isV2LifecycleItem(item)) {
     return (
       <V2LifecycleRow

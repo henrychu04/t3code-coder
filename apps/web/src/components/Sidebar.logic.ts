@@ -582,6 +582,7 @@ export function resolveSidebarRowThreadId(
   return thread?.id ?? threadId;
 }
 
+// Coder: no `delegatedUnderParent`; tasks from linked environments are not carried.
 export function filterSidebarV2VisibleThreads<
   T extends Pick<SidebarThreadSummary, "archivedAt" | "lineage"> & {
     environmentId: string;

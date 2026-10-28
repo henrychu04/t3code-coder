@@ -491,7 +491,8 @@ listed here is drift to remove rather than fork behavior to keep.
     unsupported upstream methods stay omitted. Upstream's thread-family, worktree-thread-id, and
     older-settled-thread reads (`WsOrchestrationV2GetThreadFamilyRpc`,
     `WsOrchestrationV2GetWorktreeThreadIdsRpc`, `WsOrchestrationV2GetOlderSettledThreadsRpc`) are
-    served as upstream's handlers; `WsGuestShareCreateRpc` is omitted (see the guest-sharing cut).
+    served as upstream's handlers; `WsGuestShareCreateRpc` is omitted (see the guest-sharing cut),
+    as are the four `WsPeerLinks*` RPCs (see the linked-environments cut).
   - Guest thread sharing (#24104) is not carried: guests reach a share over upstream's server HTTP
     routes and T3 Connect, neither of which exists here. `apps/server/src/guest/**`, its HTTP
     route, the share RPC handler, web `components/guest/**`, `routes/guest.tsx`, `guestPage.ts`,
@@ -505,6 +506,50 @@ listed here is drift to remove rather than fork behavior to keep.
     orchestration-v2 guest decider, commands, and projection columns stay, because the contract
     unions need them (`knip.jsonc` ignores their unused exports); with no service nothing creates
     a share, so the sidebar `"request"` status and its notification title never fire.
+  - Linked environments (peer links, #16653–#17130) are not carried: upstream links two servers
+    with pairing and OAuth and forwards T3 tool calls over server-to-server HTTP `/mcp`, which
+    breaks `AGENTS.md` boundaries 2, 3, and 6. Cut on the server: `apps/server/src/peer/**`
+    (`PeerLinks`, `PeerMcpClient`, `PeerForwarding`, `PeerLinkRequests`, `RemoteDelegation`) and
+    its layers in `server.ts`, the `WsPeerLinks*` handlers, `mcp/linkOrigin.ts` and its fence
+    (`McpToolAccess`'s `linkedCallers`/`linked` options, `ProjectSetupScriptRunner`'s
+    `skipped-for-link`, `WorktreeMcpService`'s `skipped` status), `McpInvocationContext`'s
+    `T3-Mode-Limit` narrowing and `hiddenWhileLinksOff`, the `t3_environment_links`,
+    `t3_environment_link`, and `t3_environment_unlink` tools, the linked-machine lines of
+    provider-core's `orchestrationInstructions.ts`, `t3_thread_launch`'s `delegatedFrom` parameter,
+    `ThreadLaunchService`'s `linkOrigin`/`delegatedFrom` inputs, `OrchestratorMcpService`'s remote
+    task read, wait, delegate, and cancel paths, `ThreadManagementService`'s remote task stop, and
+    `ProjectionStore`'s `getOpenRemoteDelegatedTasks`. `McpToolAccess.toLayer` refuses any tool
+    call whose `environmentId` names another environment with upstream's "This environment
+    cannot reach linked environments." error, and `delegate_task` refuses `target.environmentId`
+    the same way. Migrations 070 and 071 keep their IDs and create nothing; 072's index stays,
+    because `ProjectionStore`'s waiting-card reads name it. `peerLinks`, `mcpModeLimitHeader`, and
+    `linkFence` are in `CODER_OMITTED_CAPABILITIES`. The contracts (`peerLink.ts`, the
+    `environmentId` tool fields the bridge advertises, `remoteChild`, `linkOrigin`,
+    `delegatedFrom`, the `link_request` turn item, and the `delegated_task.remote.*` and
+    `link_request.record` commands), the orchestration-v2 decider cases for them, their projection
+    decoding and shell fields, `ThreadManagementService`'s client provenance strip, and
+    `ProviderRuntimeRecoveryService`'s remote-task and link-card checks stay, because the contract
+    unions need them; with no peer service nothing creates a remote task or a link card. Cut in
+    the clients: web `EnvironmentContextChip.tsx`, `chat/LinkRequestCard.tsx`,
+    `settings/LinkAccessPicker.tsx`, `LinkMachineSelect.tsx`, `LinkedEnvironmentsSettings.tsx`,
+    `state/peerLinks.ts`, `state/peerPairingCode.ts`; client-runtime `linkRequest.ts`,
+    `state/peerLinks.ts`, `state/peerPairingCode.ts` and their exports; Labs' linked-environments
+    row (`LabsSettingsPanel.tsx` has no Beta section) and its settings-search entries; the `@`
+    machine menu items and machine chips in the composer and drafts (`useComposerMenuItems.ts`,
+    `ComposerCommandMenu.tsx`, `composerThreadItems.ts`, `composerDraftStore.ts`,
+    `composerContextRecords.ts`, `composerContextPresentation.tsx`, `useComposerSend.ts`,
+    `chatViewSend.ts`, `useQueuedRunEdit.ts`); the link-request timeline card
+    (`TimelineV2EventRow.tsx`, `session-logic.ts`); remote-task lineage from `remoteChild` and
+    `delegatedFrom` (`ThreadRelationshipsControl.tsx`, `V2LifecycleRow.tsx`, `MessagesTimeline.tsx`,
+    `ChatView.tsx`'s parent link, `ChatHeader.tsx`'s "From" badge, `Sidebar.logic.ts`,
+    `Sidebar.tsx`, `routeReveal.ts`, `useSidebarProjectGroups.ts`,
+    `ThreadNotificationCoordinator.tsx`, `state/entities.ts`, client-runtime `threadShell.ts` and
+    `models.ts`); and the `t3_environment_*` tool presentations (`t3McpToolPresentation.ts`,
+    `t3ToolSummary.ts`). The contract's `environment` record kind keeps upstream's definition in
+    `contextPresentationRegistry.ts` and an unavailable-chip handler in
+    `UserMessageContextChips.tsx`, because both registries require every contract kind; shared
+    `composerContextReferences.ts` parses it as upstream does. The planned gateway-hub delegation
+    follow-up restores `RemoteDelegation` and the lineage UI over the gateway instead of HTTP.
   - `ws.ts` strips workspace snapshots from provider config when a client asks for them on demand
     (`workspaceSnapshotsOnDemand`) without upstream's usage-limit commands, and
     `coderEnvironment.ts` advertises `providerWorkspaceSnapshotsOnDemand`.
