@@ -334,6 +334,9 @@ importers:
       '@ff-labs/fff-node':
         specifier: 0.11.0
         version: 0.11.0(patch_hash=765c192f75289d2a65d54011f65e3c9397603298eefb7203e7e05260352e47c8)
+      '@t3tools/coder-cli':
+        specifier: workspace:*
+        version: link:../../packages/coder-cli
       '@t3tools/provider-acp':
         specifier: workspace:*
         version: link:../../packages/provider-acp

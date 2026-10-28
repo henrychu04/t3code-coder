@@ -149,7 +149,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
     const jobs = new Map<string, BridgeJob>();
 
     const run = (
-      scope: McpInvocationContext.McpThreadInvocationScope,
+      scope: McpInvocationContext.McpInvocationScope,
       request: FileBridgeRequest,
     ): Effect.Effect<unknown, FileBridgeToolFailure> =>
       (
@@ -247,7 +247,14 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
         };
       });
 
-    return { catalog: T3_TOOL_CATALOG, dispatch } satisfies T3ToolBinding;
+    // A call another workspace forwards through the gateway hub runs inline as its caller; the
+    // hub waits for it, so it takes no task id.
+    const invoke: T3ToolBinding["invoke"] = (scope, request) =>
+      T3_TOOL_CATALOG.some((entry) => entry.name === request.tool)
+        ? run(scope, request)
+        : failure("UnknownTool", "Unknown T3 tool.");
+
+    return { catalog: T3_TOOL_CATALOG, dispatch, invoke } satisfies T3ToolBinding;
   });
 
 export const makeBinding = makeBindingWith();

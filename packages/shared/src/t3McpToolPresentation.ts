@@ -51,6 +51,7 @@ export type T3McpToolSummaryAction =
   | "project-delete"
   | "project-clone"
   | "environment-read"
+  | "environment-links"
   | "environment-update"
   | "attachment-prepare"
   | "attachment-discard"
@@ -321,8 +322,12 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Read", "Reading", "Read", "environment preferences"],
     "environment-read",
   ),
-  // Coder: no t3_environment_links, t3_environment_link, or t3_environment_unlink; linked
-  // environments are not carried.
+  t3_environment_links: tool(
+    ["List", "Listing", "Listed", "linked environments"],
+    "environment-links",
+  ),
+  // Coder: no t3_environment_link or t3_environment_unlink; the user sets workspace link
+  // rules in T3 Coder instead of pairing.
   t3_environment_preferences_update: tool(
     ["Update", "Updating", "Updated", "environment preferences"],
     "environment-update",

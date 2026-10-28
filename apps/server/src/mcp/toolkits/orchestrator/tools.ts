@@ -2,6 +2,7 @@ import {
   OrchestratorMcpCapabilitiesInput,
   OrchestratorMcpCapabilitiesResult,
   OrchestrationV2StopWorkflowInput,
+  OrchestratorMcpEnvironmentLinksResult,
   OrchestratorMcpCreateThreadsInput,
   OrchestratorMcpCreateThreadsResult,
   OrchestratorMcpDelegateTaskInput,
@@ -33,11 +34,12 @@ import {
   ThreadMetadataMcpUpdateResult,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
@@ -47,6 +49,8 @@ const dependencies = [
   ThreadManagementService.ThreadManagementService,
   OrchestratorMcpService.OrchestratorMcpService,
 ];
+/** Listing this environment's links. */
+const linkDependencies = [...dependencies, PeerForwarding.PeerForwarding];
 const threadMetadataDependencies = [
   McpInvocationContext.McpInvocationContext,
   ThreadManagementService.ThreadManagementService,
@@ -289,8 +293,24 @@ const ThreadInterruptTool = Tool.make("t3_thread_interrupt", {
   .annotate(Tool.Title, "Interrupt a T3 thread")
   .annotate(Tool.Destructive, true);
 
-// Coder: upstream's t3_environment_links, t3_environment_link, and t3_environment_unlink
-// tools are not carried, since peer links are not.
+const EnvironmentLinksTool = Tool.make("t3_environment_links", {
+  description:
+    // Coder: links are the user's workspace link rules in T3 Coder, not pairings an agent asks for.
+    "List linked environments (the user's other workspaces) and whether each answers now. Pass one's `environmentId` to a tool to act there; `delegate_task` takes `target.environmentId`.",
+  success: OrchestratorMcpEnvironmentLinksResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: linkDependencies,
+})
+  .annotate(Tool.Title, "List linked environments")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenWhileLinksOff);
+
+// Coder: upstream's t3_environment_link and t3_environment_unlink, which pair and forget
+// environments, are not carried; the user sets workspace link rules in T3 Coder.
+
 export const OrchestratorToolkit = Toolkit.make(
   OrchestratorCapabilitiesTool,
   DelegateTaskTool,
@@ -309,4 +329,5 @@ export const OrchestratorToolkit = Toolkit.make(
   ThreadSendTool,
   ThreadWaitTool,
   ThreadInterruptTool,
+  EnvironmentLinksTool,
 );

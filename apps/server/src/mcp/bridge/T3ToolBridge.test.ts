@@ -28,6 +28,7 @@ import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapter
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
+import * as RemoteDelegation from "../../peer/RemoteDelegation.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
@@ -136,6 +137,7 @@ const harness = (options: {
       Layer.mock(GitWorkflowService.GitWorkflowService)({}),
       Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
       Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
+      Layer.mock(RemoteDelegation.RemoteDelegation)({}),
       Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
       Layer.mock(ProviderRegistry.ProviderRegistry)({}),

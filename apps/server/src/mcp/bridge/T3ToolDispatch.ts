@@ -30,6 +30,11 @@ export interface T3ToolBinding {
     scope: McpInvocationContext.McpThreadInvocationScope,
     request: FileBridgeRequest,
   ) => Effect.Effect<unknown, FileBridgeToolFailure>;
+  /** Runs a tool for a caller that is not one of this workspace's agents (the gateway hub). */
+  readonly invoke: (
+    scope: McpInvocationContext.McpInvocationScope,
+    request: FileBridgeRequest,
+  ) => Effect.Effect<unknown, FileBridgeToolFailure>;
 }
 
 export class T3ToolDispatch extends Context.Service<

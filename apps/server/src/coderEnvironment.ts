@@ -72,6 +72,9 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadStop: true,
   environmentIcon: true,
   projectCloneTracking: true,
+  // Links are the gateway's workspace link rules; calls between workspaces go through its hub.
+  peerLinks: true,
+  linkFence: true,
 } satisfies ExecutionEnvironmentCapabilities;
 
 export const CODER_OMITTED_CAPABILITIES = {
@@ -90,12 +93,19 @@ export const CODER_OMITTED_CAPABILITIES = {
   databaseStorage: "No `t3 doctor` in the workspace helper; it compacts and reclaims space itself.",
   ignoredFileListing:
     "No Add to another machine: ignored files such as .env would pass through the laptop browser.",
-  peerLinks: "No linked environments: they need server-to-server /mcp and pairing.",
-  mcpModeLimitHeader: "No /mcp HTTP server; agents reach T3 tools over the workspace file bridge.",
-  linkFence: "No linked environments, so no work starts here from another one.",
+  mcpModeLimitHeader:
+    "No /mcp HTTP server; the gateway hub carries a linked call's mode limits with the call.",
   localServerStop: "No dev-server port discovery: the browser preview is not carried.",
   triage: "No in-app triage: it clones upstream T3 Code to help file upstream issues.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
+
+/** Upstream's environment identity, from this workspace's descriptor. */
+export const layerIdentity = Layer.effect(
+  ServerEnvironmentIdentity,
+  Effect.map(CoderEnvironment, ({ descriptor }) =>
+    ServerEnvironmentIdentity.of({ getEnvironmentId: Effect.succeed(descriptor.environmentId) }),
+  ),
+);
 
 const platformArch = (): ExecutionEnvironmentDescriptor["platform"]["arch"] => {
   if (process.arch === "arm64" || process.arch === "x64") return process.arch;

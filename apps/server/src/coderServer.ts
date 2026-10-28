@@ -53,6 +53,11 @@ import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
 import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
+import * as CoderHub from "./coderHub.ts";
+import * as PeerForwarding from "./peer/PeerForwarding.ts";
+import * as PeerLinks from "./peer/PeerLinks.ts";
+import * as PeerMcpClient from "./peer/PeerMcpClient.ts";
+import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ProviderRuntimeRecovery from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
@@ -165,6 +170,16 @@ const PullRequestReviewGuideLive = PullRequestReviewGuideService.layer.pipe(
   Layer.provide(layerPullRequestService),
 );
 
+// Coder: upstream's linked-environment forwarding and delegated tasks, over the gateway hub
+// instead of HTTP `/mcp` (`coderHub.ts`, `peer/PeerMcpClient.ts`, `peer/PeerLinks.ts`).
+const CoderLinkedWorkspacesLive = RemoteDelegation.layer.pipe(
+  Layer.provide(ProjectionStoreV2.layer),
+  Layer.provideMerge(PeerForwarding.layer),
+  Layer.provideMerge(PeerMcpClient.layer),
+  Layer.provideMerge(PeerLinks.layer),
+  Layer.provideMerge(CoderHub.layer),
+);
+
 const CoderRuntimeCoreLive = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
@@ -174,6 +189,7 @@ const CoderRuntimeCoreLive = Layer.mergeAll(
   DelegatedTaskQuestionWorkerLive,
   layerPullRequestService,
   PullRequestReviewGuideLive,
+  CoderLinkedWorkspacesLive,
   // As upstream: catches project provider overrides left behind by a project deleted before
   // ProjectService.delete cleared them, or by a cleanup write that failed.
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
@@ -206,6 +222,8 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   // As upstream's `layerBackground`: periodic merge request discovery asks the (always-allow)
   // background policy before each sweep.
   Layer.provideMerge(BackgroundPolicy.layer),
+  // Linked-workspace forwarding and the hub name this workspace by upstream's identity service.
+  Layer.provideMerge(CoderEnvironment.layerIdentity),
   Layer.provideMerge(CoderEnvironment.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
   // Coder: credentials are workspace file bridges that carry upstream's T3 toolkits.
@@ -242,6 +260,7 @@ const CoderRuntimeStartupLive = Layer.effect(
     const projectStore = yield* ProjectStore.ProjectStoreV2;
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const t3Tools = yield* T3ToolDispatch.T3ToolDispatch;
+    const remoteDelegation = yield* RemoteDelegation.RemoteDelegation;
     const runtimeScope = yield* Scope.make("sequential");
     const effectWorkerContext =
       yield* Effect.context<Effect.Services<typeof EffectWorker.runDaemon>>();
@@ -278,6 +297,9 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* providerRuntimeRecovery.recover;
     // Settles delegated tasks whose runs recovery just terminalized, as upstream's startup does.
     yield* orchestrator.recoverDelegatedTasks;
+    // Follows delegated tasks running in linked workspaces, including after a restart, as
+    // upstream's routes layer does.
+    yield* remoteDelegation.start().pipe(Scope.provide(runtimeScope));
     const effectWorker: Fiber.Fiber<void, never> = yield* EffectWorker.runDaemon.pipe(
       Effect.provide(effectWorkerContext),
       Effect.forkIn(runtimeScope),
@@ -343,5 +365,6 @@ export const makeCoderRuntimeLayer = () => {
   // takes it here.
   const rpcServices = AgentSessionScanner.layer.pipe(Layer.provideMerge(services));
 
-  return CoderWs.layer.pipe(Layer.provide(rpcServices));
+  // Coder: the gateway hub methods (helper protocol v3) share the runtime's CoderHub.
+  return Layer.mergeAll(CoderWs.layer, CoderHub.handlersLayer).pipe(Layer.provide(rpcServices));
 };
