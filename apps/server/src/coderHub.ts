@@ -232,10 +232,12 @@ export const makeHandlers = Effect.gen(function* () {
     if (!enabled) {
       return {
         _tag: "Failure",
+        // As upstream's PeerMcpClient: not final, so a task already running here resumes once
+        // the beta is on here again.
         failure: new OrchestratorMcpFailure({
-          code: "capability_denied",
+          code: "orchestration_error",
           message:
-            "Linked environments is off in that workspace. Turn it on in its Settings → Labs.",
+            "The linked workspace has Linked environments turned off. Turn it on in its Settings → Labs.",
         }),
       } satisfies CoderHubCallOutcome;
     }

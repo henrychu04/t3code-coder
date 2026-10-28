@@ -162,7 +162,19 @@ export function makeCoderHub(options: CoderHubOptions): CoderHub {
             (entry) => entry.from === requester.workspaceId && entry.to === targetWorkspaceId,
           );
     let outcome: CallOutcome | undefined;
-    if (targetWorkspaceId === undefined || rule === undefined) {
+    if (
+      targetWorkspaceId === undefined &&
+      (config.workspaceLinks ?? []).some(
+        (entry) => entry.from === requester.workspaceId && !environmentByWorkspace.has(entry.to),
+      )
+    ) {
+      // A linked workspace that has not connected since the gateway started has no known
+      // environment id yet; it may be the target, so the caller retries instead of failing.
+      outcome = failed(
+        "orchestration_error",
+        "That workspace has not connected to T3 Coder yet. Retry once it is connected.",
+      );
+    } else if (targetWorkspaceId === undefined || rule === undefined) {
       outcome = failed(
         "capability_denied",
         "This workspace is not linked to that one. Add a link in T3 Coder's workspace Links settings.",
@@ -228,6 +240,17 @@ export function makeCoderHub(options: CoderHubOptions): CoderHub {
         try {
           request = decodeRequest(value);
         } catch {
+          // Answer what can be answered, so the caller fails now rather than at its timeout.
+          if (isRecord(value) && typeof value.id === "string") {
+            reply(entry, {
+              _tag: "Call",
+              id: value.id,
+              outcome: failed(
+                "orchestration_error",
+                "T3 Coder's gateway could not read this request. Reconnect the workspace so its helper matches the gateway.",
+              ),
+            });
+          }
           continue;
         }
         if (request._tag === "ListLinks") {
