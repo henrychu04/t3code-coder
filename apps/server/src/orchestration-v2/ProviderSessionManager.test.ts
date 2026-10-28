@@ -586,7 +586,13 @@ const layerTestMcpRegistry = Layer.effect(
     Layer.effect(
       T3ToolDispatch.T3ToolDispatch,
       T3ToolDispatch.T3ToolDispatch.pipe(
-        Effect.tap((tools) => tools.bind({ catalog: [], dispatch: () => Effect.succeed(null) })),
+        Effect.tap((tools) =>
+          tools.bind({
+            catalog: [],
+            dispatch: () => Effect.succeed(null),
+            invoke: () => Effect.succeed(null),
+          }),
+        ),
       ),
     ).pipe(Layer.provide(T3ToolDispatch.layer)),
   ),

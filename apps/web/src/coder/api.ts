@@ -14,6 +14,7 @@ export type {
   CoderDeploymentProfile,
   CoderWorkspaceProfile,
   CoderPortForwardProfile,
+  CoderWorkspaceLinkProfile,
   CoderProfileConfig,
   CoderPortForwardRuntimeStatus,
   DiscoveredCoderWorkspace,

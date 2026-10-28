@@ -29,14 +29,17 @@ runtime boundary or syncing upstream.
 3. No relay, Tailscale, Cloudflare, OAuth, Electron, mobile, hosted web, auto-update, T3-owned
    telemetry or trace export, WSL, generic user-facing SSH, reverse forwarding, or arbitrary tunnels.
    The web client contacts no service of its own; linked content (Markdown images and videos, link
-   favicons, GitLab avatars) loads from its own host as on upstream.
+   favicons, GitLab avatars) loads from its own host as on upstream. The gateway may route a T3
+   tool call between two workspace helpers it holds; that is local stdio-to-stdio routing, not a
+   relay.
 4. Port forwards are foreground `coder port-forward` processes bound to `127.0.0.1`, built from
    structured fields only; stop only the exact child process captured at spawn.
 5. Coder owns authentication: never ask for, read, copy, log, or persist Coder tokens. GitLab and
    provider credentials stay in the workspace. Upstream's agent secret request card stays as is.
 6. The workspace helper runs in the foreground over `coder ssh` and speaks newline-delimited RPC
    over stdio. T3 tools reach agents over the workspace file bridge, never an MCP server, because
-   work Claude Code and Codex policies block custom MCP servers.
+   work Claude Code and Codex policies block custom MCP servers. The gateway subscribes to each
+   helper's hub outbox and forwards calls between connected helpers per workspace link rules.
 7. Codex, Claude Code, Pi, and Kilo Code are the only providers; they exist only in the workspace,
    and T3 never probes for or launches a local provider. Kilo Code runs through upstream's ACP
    Registry driver from its local `kilo acp` command only: no registry index, installs, or agent
@@ -44,8 +47,8 @@ runtime boundary or syncing upstream.
 8. No provider binary is bundled on the laptop; the Anthropic Agent SDK stays type-only.
 9. Durable application state stays in the workspace, which remains the source of truth. Local
    persistence outside the browser is limited to non-secret deployment URLs, Coder executable
-   paths, workspace targets, port-forward rules, and the last gateway port. The browser may store
-   and cache what upstream does, but never credentials.
+   paths, workspace targets, port-forward rules, workspace link rules, and the last gateway port.
+   The browser may store and cache what upstream does, but never credentials.
 10. GitLab is the only hosted source-control provider; Git and `glab` run only in the workspace.
 11. The branch policy below is part of the boundary.
 

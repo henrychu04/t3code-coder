@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";
+import { CODER_HUB_METHODS } from "@t3tools/coder-cli/rpc";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -140,6 +141,19 @@ test("translates browser request ids for the helper and restores them in respons
     await eventually(() => assert.equal(transport.messages.length, 2));
     await Effect.runPromise(session.close);
     assert.equal(helper.sent.length, 1, "completed requests must not be interrupted on detach");
+  });
+});
+
+test("refuses the gateway-only hub methods from the browser", async () => {
+  await withBridge(async ({ bridge, helper }) => {
+    const session = await Effect.runPromise(bridge.attach(fakeTransport()));
+    for (const [index, tag] of [...CODER_HUB_METHODS].entries()) {
+      const exit = await Effect.runPromiseExit(
+        session.receive({ _tag: "Request", id: index, tag, payload: {}, headers: [] }),
+      );
+      assert.equal(exit._tag, "Failure", tag);
+    }
+    assert.deepEqual(helper.sent, []);
   });
 });
 

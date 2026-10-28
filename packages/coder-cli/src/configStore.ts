@@ -8,9 +8,11 @@ import * as NodePath from "node:path";
 import {
   normalizeCoderDeploymentProfile,
   normalizeCoderPortForwardProfile,
+  normalizeCoderWorkspaceLinkProfile,
   normalizeCoderWorkspaceProfile,
   type CoderDeploymentProfile,
   type CoderPortForwardProfile,
+  type CoderWorkspaceLinkProfile,
   type CoderWorkspaceProfile,
 } from "./profile.ts";
 
@@ -109,6 +111,25 @@ function parsePortForward(value: unknown): CoderPortForwardProfile {
   });
 }
 
+function parseWorkspaceLink(value: unknown): CoderWorkspaceLinkProfile {
+  if (!isRecord(value)) throw new Error("Coder workspace link must be an object.");
+  requireAllowedKeys(value, ["id", "from", "to", "access"], "Coder workspace link");
+  if (
+    typeof value.id !== "string" ||
+    typeof value.from !== "string" ||
+    typeof value.to !== "string" ||
+    typeof value.access !== "string"
+  ) {
+    throw new Error("Coder workspace link is missing an id, workspaces, or access mode.");
+  }
+  return normalizeCoderWorkspaceLinkProfile({
+    id: value.id,
+    from: value.from,
+    to: value.to,
+    access: value.access as CoderWorkspaceLinkProfile["access"],
+  });
+}
+
 function requireUniqueIds(values: readonly { readonly id: string }[], field: string): void {
   const ids = new Set<string>();
   for (const value of values) {
@@ -123,7 +144,7 @@ export function parseCoderProfileConfig(value: unknown): CoderProfileConfig {
   }
   requireAllowedKeys(
     value,
-    ["version", "deployments", "workspaces", "portForwards"],
+    ["version", "deployments", "workspaces", "portForwards", "workspaceLinks"],
     "Coder profile config",
   );
   if (!Array.isArray(value.deployments) || !Array.isArray(value.workspaces)) {
@@ -132,13 +153,18 @@ export function parseCoderProfileConfig(value: unknown): CoderProfileConfig {
   if (value.portForwards !== undefined && !Array.isArray(value.portForwards)) {
     throw new Error("Coder profile configuration port forwards must be an array.");
   }
+  if (value.workspaceLinks !== undefined && !Array.isArray(value.workspaceLinks)) {
+    throw new Error("Coder profile configuration workspace links must be an array.");
+  }
 
   const deployments = value.deployments.map(parseDeployment);
   const workspaces = value.workspaces.map(parseWorkspace);
   const portForwards = (value.portForwards ?? []).map(parsePortForward);
+  const workspaceLinks = (value.workspaceLinks ?? []).map(parseWorkspaceLink);
   requireUniqueIds(deployments, "deployment");
   requireUniqueIds(workspaces, "workspace");
   requireUniqueIds(portForwards, "port forward");
+  requireUniqueIds(workspaceLinks, "workspace link");
 
   const deploymentIds = new Set(deployments.map((deployment) => deployment.id));
   const workspaceTargets = new Set<string>();
@@ -172,11 +198,27 @@ export function parseCoderProfileConfig(value: unknown): CoderProfileConfig {
     }
     localPorts.add(localTarget);
   }
+  const linkPairs = new Set<string>();
+  for (const link of workspaceLinks) {
+    for (const workspaceId of [link.from, link.to]) {
+      if (!workspaceIds.has(workspaceId)) {
+        throw new Error(
+          `Coder workspace link ${link.id} references unknown workspace ${workspaceId}.`,
+        );
+      }
+    }
+    const pair = `${link.from}\0${link.to}`;
+    if (linkPairs.has(pair)) {
+      throw new Error(`Workspace ${link.from} is linked to workspace ${link.to} more than once.`);
+    }
+    linkPairs.add(pair);
+  }
   return {
     version: 1,
     deployments,
     workspaces,
     ...(value.portForwards === undefined ? {} : { portForwards }),
+    ...(value.workspaceLinks === undefined ? {} : { workspaceLinks }),
   };
 }
 

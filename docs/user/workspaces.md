@@ -64,6 +64,23 @@ network. Each rule runs its own forward process, reports its state (**Starting**
 **Stopped**), and can be restarted or removed individually. Saved rules start again when the
 gateway starts; a rule that failed stays stopped until you restart it or change its configuration.
 
+## Linked workspaces
+
+A link lets agents in one workspace delegate tasks to another workspace and work on its threads.
+It works only while T3 Coder is connected to both workspaces; nothing else connects them.
+
+1. In each workspace, turn on **Linked environments** under **Settings → Labs**.
+2. Under **Settings → Environments → Linked workspaces**, choose **Add link**, then pick the
+   workspace whose agents act, the workspace they may work in, and an access mode.
+
+A link goes one way. The access mode caps what those agents may do in the other workspace, from
+**Read only** to **Full access**; below full access they can change only the work they started
+there. An agent lists linked workspaces with `t3_environment_links` and delegates with
+`delegate_task`, setting `target.environmentId` to the other workspace. Its task appears in its
+own thread, and the work runs as an ordinary thread in the other workspace. Disconnecting that
+workspace stops its helper and the work running there; the task waits and reports how that work
+ended once the workspace is connected again.
+
 ## Data ownership
 
 Repositories, prompts, responses, provider sessions, terminals, checkpoints, project records, and

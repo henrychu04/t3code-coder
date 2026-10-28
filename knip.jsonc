@@ -50,6 +50,8 @@
       "nsExports",
     ],
     "apps/server/src/os-jank.ts": ["exports", "nsExports"],
+    "apps/server/src/peer/PeerForwarding.ts": ["exports", "nsExports"],
+    "apps/server/src/peer/RemoteDelegation.ts": ["exports", "nsExports"],
     "apps/server/src/project/RepositoryIdentityResolver.ts": ["exports", "nsExports"],
     "apps/server/src/provider/CodexProvider.ts": ["exports", "nsExports"],
     "apps/server/src/scheduledTasks/ScheduledTaskService.ts": ["exports", "nsExports"],

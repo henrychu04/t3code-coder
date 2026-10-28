@@ -34,6 +34,19 @@ export interface McpClientCaller {
   readonly sessionId: string;
   readonly label: string;
   readonly access: AuthMcpClientAccess;
+  /**
+   * Another T3 Code environment's peer link. What it starts here carries its
+   * session as `linkOrigin`, and it changes only that work (`linkOrigin.ts`).
+   */
+  readonly linked?: boolean | undefined;
+  /**
+   * Narrower modes the client asked for on this request (`T3-Mode-Limit`):
+   * another environment passing on the limits of the agent it calls for.
+   * Coder: the gateway hub passes them with each linked call (`coder.hub.invoke`'s
+   * `limits`), so there is no `T3-Mode-Limit` header. They can only narrow (see
+   * `clientModeCeiling`).
+   */
+  readonly narrowedTo?: ClientModes | undefined;
 }
 
 export interface ClientModes {
@@ -41,18 +54,39 @@ export interface ClientModes {
   readonly interactionMode: ProviderInteractionMode;
 }
 
+const runtimeModeRank: Record<RuntimeMode, number> = {
+  "approval-required": 0,
+  "auto-accept-edits": 1,
+  auto: 2,
+  "full-access": 3,
+};
+const interactionModeRank: Record<ProviderInteractionMode, number> = { plan: 0, default: 1 };
+
 /**
  * The modes a client caller's writes are capped at: what it was approved
- * with. A read-only client never reaches a write (`McpToolAccess` refuses it
- * first), so it maps to the lowest runtime mode rather than to nothing.
- * Coder: no client narrows them per request; `T3-Mode-Limit` serves linked
- * environments, which are not carried.
+ * with, narrowed by what it asked for on this request. A read-only client
+ * never reaches a write (`McpToolAccess` refuses it first), so it maps to the
+ * lowest runtime mode rather than to nothing.
  */
-export const clientModeCeiling = (client: McpClientCaller | undefined): ClientModes => ({
-  runtimeMode:
-    client === undefined || client.access === "read-only" ? "approval-required" : client.access,
-  interactionMode: "default",
-});
+export const clientModeCeiling = (client: McpClientCaller | undefined): ClientModes => {
+  const approved: ClientModes = {
+    runtimeMode:
+      client === undefined || client.access === "read-only" ? "approval-required" : client.access,
+    interactionMode: "default",
+  };
+  const asked = client?.narrowedTo;
+  if (asked === undefined) return approved;
+  return {
+    runtimeMode:
+      runtimeModeRank[asked.runtimeMode] < runtimeModeRank[approved.runtimeMode]
+        ? asked.runtimeMode
+        : approved.runtimeMode,
+    interactionMode:
+      interactionModeRank[asked.interactionMode] < interactionModeRank[approved.interactionMode]
+        ? asked.interactionMode
+        : approved.interactionMode,
+  };
+};
 
 /** Thread callers default to their own thread; client callers need thread for tools that act as the caller. */
 export interface McpInvocationScope {
@@ -62,6 +96,8 @@ export interface McpInvocationScope {
   readonly requestNamespace: string;
   readonly thread: McpThreadCaller | undefined;
   readonly client: McpClientCaller | undefined;
+  /** False while the Linked environments beta is off here; `/mcp` reads it per request. */
+  readonly linkedEnvironments?: boolean;
 }
 
 export class McpInvocationContext extends Context.Service<
@@ -77,6 +113,13 @@ export const hiddenFromSubagents = (): boolean => {
   const fiber = Fiber.getCurrent();
   const scope = fiber && Context.getOrUndefined(fiber.context, McpInvocationContext);
   return scope?.thread?.subagent !== true;
+};
+
+/** `McpSchema.EnabledWhen` for tools that only serve links, hidden while the beta is off. */
+export const hiddenWhileLinksOff = (): boolean => {
+  const fiber = Fiber.getCurrent();
+  const scope = fiber && Context.getOrUndefined(fiber.context, McpInvocationContext);
+  return scope?.linkedEnvironments !== false;
 };
 
 export type McpCapabilityError<C extends McpCapability> = C extends "preview"

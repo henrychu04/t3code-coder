@@ -68,7 +68,8 @@ Restored data stays in `synchronizing` state until the marker arrives, except fo
 resume behavior: a recently viewed live thread renders its retained snapshot immediately and only
 shows synchronization progress if replay changes its contents. The marker follows buffered live
 events accumulated during snapshot or replay loading. The browser and helper are built from the
-same checkout; helper protocol version 2 remains the transport compatibility fence.
+same checkout; helper protocol version 3 remains the transport compatibility fence (version 3 adds
+the gateway hub methods; see the linked-environments entry).
 
 Live shell and thread subscriptions are bounded (`LiveStreamBudget.ts`), including batches awaiting
 an RPC acknowledgement; overflow detaches that live source, and reconnect uses the existing
@@ -492,7 +493,7 @@ listed here is drift to remove rather than fork behavior to keep.
     older-settled-thread reads (`WsOrchestrationV2GetThreadFamilyRpc`,
     `WsOrchestrationV2GetWorktreeThreadIdsRpc`, `WsOrchestrationV2GetOlderSettledThreadsRpc`) are
     served as upstream's handlers; `WsGuestShareCreateRpc` is omitted (see the guest-sharing cut),
-    as are the four `WsPeerLinks*` RPCs (see the linked-environments cut),
+    as are the four `WsPeerLinks*` RPCs (see the linked-environments entry),
     `WsServerPrepareTriageRpc` (see the triage cut), and `WsPreviewStopLocalServerRpc` (see the
     dev-servers cut).
   - Guest thread sharing (#24104) is not carried: guests reach a share over upstream's server HTTP
@@ -508,50 +509,53 @@ listed here is drift to remove rather than fork behavior to keep.
     orchestration-v2 guest decider, commands, and projection columns stay, because the contract
     unions need them (`knip.jsonc` ignores their unused exports); with no service nothing creates
     a share, so the sidebar `"request"` status and its notification title never fire.
-  - Linked environments (peer links, #16653–#17130) are not carried: upstream links two servers
-    with pairing and OAuth and forwards T3 tool calls over server-to-server HTTP `/mcp`, which
-    breaks `AGENTS.md` boundaries 2, 3, and 6. Cut on the server: `apps/server/src/peer/**`
-    (`PeerLinks`, `PeerMcpClient`, `PeerForwarding`, `PeerLinkRequests`, `RemoteDelegation`) and
-    its layers in `server.ts`, the `WsPeerLinks*` handlers, `mcp/linkOrigin.ts` and its fence
-    (`McpToolAccess`'s `linkedCallers`/`linked` options, `ProjectSetupScriptRunner`'s
-    `skipped-for-link`, `WorktreeMcpService`'s `skipped` status), `McpInvocationContext`'s
-    `T3-Mode-Limit` narrowing and `hiddenWhileLinksOff`, the `t3_environment_links`,
-    `t3_environment_link`, and `t3_environment_unlink` tools, the linked-machine lines of
-    provider-core's `orchestrationInstructions.ts`, `t3_thread_launch`'s `delegatedFrom` parameter,
-    `ThreadLaunchService`'s `linkOrigin`/`delegatedFrom` inputs, `OrchestratorMcpService`'s remote
-    task read, wait, delegate, and cancel paths, `ThreadManagementService`'s remote task stop, and
-    `ProjectionStore`'s `getOpenRemoteDelegatedTasks`. `McpToolAccess.toLayer` refuses any tool
-    call whose `environmentId` names another environment with upstream's "This environment
-    cannot reach linked environments." error, and `delegate_task` refuses a `target.environmentId`
-    naming another environment the same way. Migrations 070 and 071 keep their IDs and create nothing; 072's index stays,
-    because `ProjectionStore`'s waiting-card reads name it. `peerLinks`, `mcpModeLimitHeader`, and
-    `linkFence` are in `CODER_OMITTED_CAPABILITIES`. The contracts (`peerLink.ts`, the
-    `environmentId` tool fields the bridge advertises, `remoteChild`, `linkOrigin`,
-    `delegatedFrom`, the `link_request` turn item, and the `delegated_task.remote.*` and
-    `link_request.record` commands), the orchestration-v2 decider cases for them, their projection
-    decoding and shell fields, `ThreadManagementService`'s client provenance strip, and
-    `ProviderRuntimeRecoveryService`'s remote-task and link-card checks stay, because the contract
-    unions need them; with no peer service nothing creates a remote task or a link card. Cut in
-    the clients: web `EnvironmentContextChip.tsx`, `chat/LinkRequestCard.tsx`,
-    `settings/LinkAccessPicker.tsx`, `LinkMachineSelect.tsx`, `LinkedEnvironmentsSettings.tsx`,
-    `state/peerLinks.ts`, `state/peerPairingCode.ts`; client-runtime `linkRequest.ts`,
-    `state/peerLinks.ts`, `state/peerPairingCode.ts` and their exports; Labs' linked-environments
-    row (`LabsSettingsPanel.tsx` has no Beta section) and its settings-search entries; the `@`
-    machine menu items and machine chips in the composer and drafts (`useComposerMenuItems.ts`,
-    `ComposerCommandMenu.tsx`, `composerThreadItems.ts`, `composerDraftStore.ts`,
-    `composerContextRecords.ts`, `composerContextPresentation.tsx`, `useComposerSend.ts`,
-    `chatViewSend.ts`, `useQueuedRunEdit.ts`); the link-request timeline card
-    (`TimelineV2EventRow.tsx`, `session-logic.ts`); remote-task lineage from `remoteChild` and
-    `delegatedFrom` (`ThreadRelationshipsControl.tsx`, `V2LifecycleRow.tsx`, `MessagesTimeline.tsx`,
-    `ChatView.tsx`'s parent link, `ChatHeader.tsx`'s "From" badge, `Sidebar.logic.ts`,
-    `Sidebar.tsx`, `routeReveal.ts`, `useSidebarProjectGroups.ts`,
+  - Linked environments (#16653–#17130) are carried between Coder workspaces through the gateway
+    hub instead of server-to-server HTTP `/mcp` and pairing, which would break `AGENTS.md`
+    boundaries 2, 3, and 6. Upstream's `peer/PeerForwarding.ts` and `peer/RemoteDelegation.ts`,
+    `mcp/linkOrigin.ts` and its fence, `McpToolAccess`'s forwarding of every tool that takes
+    `environmentId`, `McpInvocationContext`'s linked caller, `delegate_task`'s remote branch,
+    `ThreadLaunchService`'s `linkOrigin`/`delegatedFrom`, `ThreadManagementService`'s remote stop,
+    `ProjectionStore`'s `getOpenRemoteDelegatedTasks`, `t3_environment_links`, the Labs
+    "Linked environments" switch, and the linked-machine orchestration instructions are upstream's.
+    The transport is one seam: `peer/PeerMcpClient.ts` and `peer/PeerLinks.ts` keep upstream's
+    service tags but send calls and read links through `coderHub.ts`, the helper's side of the hub
+    (helper protocol v3: `coder.hub.outbox`, `coder.hub.reply`, `coder.hub.invoke` in
+    `packages/coder-cli/src/rpc.ts`). The gateway (`apps/coder-gateway/src/hub.ts`) holds each
+    v3 helper's outbox open, checks the requester's workspace link rule (`workspaceLinks` in the
+    gateway config, edited in Connections' "Linked workspaces" section,
+    `WorkspaceLinkSettings.tsx`), runs the call on the target workspace's helper with
+    `coder.hub.invoke` as that link's caller (`sessionId` `coder-link:<rule id>`, the rule's access,
+    the calling agent's modes as `narrowedTo`), and replies; the browser bridge refuses the hub
+    methods. A workspace that is not connected is unreachable, and upstream's follower retries.
+    Differences, each marked `Coder:`: no `T3-Mode-Limit` header (the hub carries the limits);
+    `PeerLinks` has no pairing, storage, or expiry (`expiresAt` is a fixed far-future value);
+    `t3_environment_link`, `t3_environment_unlink`, `PeerLinkRequests`, the link-request card, and
+    the `WsPeerLinks*` handlers are not carried, so `t3_environment_links`' `notListed` and the
+    orchestration instructions point to the Links settings; `coder.hub.invoke` refuses calls while
+    Labs' switch is off, as upstream's `/mcp` does; `T3ToolBridge`'s binding gains `invoke` for a
+    linked caller; and upstream's peer tests (`PeerForwarding.test.ts`, `RemoteDelegation.test.ts`,
+    `linkOrigin.test.ts`, `PeerLinks.testkit.ts`) are not carried because they pair two HTTP
+    servers; `coderHub.test.ts` and the gateway's `hub.test.ts` test the transport. Migrations 070
+    and 071 keep their IDs and create nothing; 072's index stays. `peerLinks` and `linkFence` are
+    advertised; `mcpModeLimitHeader` is in `CODER_OMITTED_CAPABILITIES`. Still cut in the
+    clients, and restored by the lineage follow-up: web `EnvironmentContextChip.tsx`,
+    `chat/LinkRequestCard.tsx`, `settings/LinkAccessPicker.tsx`, `LinkMachineSelect.tsx`,
+    `LinkedEnvironmentsSettings.tsx`, `state/peerLinks.ts`, `state/peerPairingCode.ts`;
+    client-runtime `linkRequest.ts`, `state/peerLinks.ts`, `state/peerPairingCode.ts` and their
+    exports; the `@` machine menu items and machine chips in the composer and drafts
+    (`useComposerMenuItems.ts`, `ComposerCommandMenu.tsx`, `composerThreadItems.ts`,
+    `composerDraftStore.ts`, `composerContextRecords.ts`, `composerContextPresentation.tsx`,
+    `useComposerSend.ts`, `chatViewSend.ts`, `useQueuedRunEdit.ts`); the link-request timeline
+    card (`TimelineV2EventRow.tsx`, `session-logic.ts`); remote-task lineage from `remoteChild`
+    and `delegatedFrom` (`ThreadRelationshipsControl.tsx`, `V2LifecycleRow.tsx`,
+    `MessagesTimeline.tsx`, `ChatView.tsx`'s parent link, `ChatHeader.tsx`'s "From" badge,
+    `Sidebar.logic.ts`, `Sidebar.tsx`, `routeReveal.ts`, `useSidebarProjectGroups.ts`,
     `ThreadNotificationCoordinator.tsx`, `state/entities.ts`, client-runtime `threadShell.ts` and
-    `models.ts`); and the `t3_environment_*` tool presentations (`t3McpToolPresentation.ts`,
-    `t3ToolSummary.ts`). The contract's `environment` record kind keeps upstream's definition in
-    `contextPresentationRegistry.ts` and an unavailable-chip handler in
-    `UserMessageContextChips.tsx`, because both registries require every contract kind; shared
-    `composerContextReferences.ts` parses it as upstream does. The planned gateway-hub delegation
-    follow-up restores `RemoteDelegation` and the lineage UI over the gateway instead of HTTP.
+    `models.ts`); and the `t3_environment_link`/`unlink` tool presentations
+    (`t3McpToolPresentation.ts`, `t3ToolSummary.ts`). The contract's `environment` record kind
+    keeps upstream's definition in `contextPresentationRegistry.ts` and an unavailable-chip
+    handler in `UserMessageContextChips.tsx`, because both registries require every contract kind;
+    shared `composerContextReferences.ts` parses it as upstream does.
   - In-app triage (#22753) is not carried: it clones upstream T3 Code's source into the server's
     cache and starts an agent to help file an upstream issue, which T3 Coder bugs are not.
     `apps/server/src/triage/**`, its layer in `server.ts`, and the `server.prepareTriage` handler
@@ -1192,7 +1196,7 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Settings.** Upstream's layout, pages (#25651), navigation, and search, with Coder's Connections
   ("Environments"), Providers, GitLab, and background-activity panels. The access, browser,
   devices, SnapShot, and diagnostics pages are not carried, and `movedSettingsPath` never points at
-  them; Labs has no Beta (guest links) section; About has no mobile app row or privacy policy link;
+  them; Labs' Beta section has only the Linked environments switch (no guest links); About has no mobile app row or privacy policy link;
   storage cleanup lives on Maintenance and Worktrees as upstream's. `hooks/useEnvironmentDisconnectDelay.ts`
   keeps only upstream's `useEnvironmentStateHeldFor`. No Integrations, SnapShot, desktop, diagnostics,
   pairing, mobile app links (`MobileAppSettingsRow`), or `keybindings.json` editor. Settings

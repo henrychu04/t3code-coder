@@ -34,7 +34,11 @@ const services = Layer.mergeAll(
     T3ToolDispatch.T3ToolDispatch,
     T3ToolDispatch.T3ToolDispatch.pipe(
       Effect.tap((tools) =>
-        tools.bind({ catalog: [], dispatch: (scope) => Effect.succeed(scope.thread.threadId) }),
+        tools.bind({
+          catalog: [],
+          dispatch: (scope) => Effect.succeed(scope.thread.threadId),
+          invoke: () => Effect.succeed(null),
+        }),
       ),
     ),
   ).pipe(Layer.provide(T3ToolDispatch.layer)),

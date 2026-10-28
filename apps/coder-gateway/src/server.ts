@@ -68,6 +68,7 @@ import {
   type RpcBridgeSession,
   type WorkspaceRpcBridge,
 } from "./rpcBridge.ts";
+import { makeCoderHub } from "./hub.ts";
 
 export const CODER_GATEWAY_HOST = "127.0.0.1";
 const MAX_CONFIG_BODY_BYTES = 64 * 1024;
@@ -707,6 +708,7 @@ export function makeLocalCoderGateway(
           catch: (cause) => cause,
         })
       : emptyCoderProfileConfig();
+    const hub = makeCoderHub({ config: () => profileConfig });
     const fibers = yield* FiberSet.make();
     const runPromise = yield* FiberSet.runtimePromise(fibers)();
     const runFork = yield* FiberSet.runtime(fibers)();
@@ -1073,6 +1075,9 @@ export function makeLocalCoderGateway(
               return yield* Effect.fail(new Error("Coder workspace connection was cancelled."));
             }
             recordDiagnosticEvent(workspaceId, attempt, "connected");
+            // Coder: route hub requests to and from this helper while it is connected.
+            const detachFromHub = hub.attach(workspaceId, connection);
+            yield* Scope.addFinalizer(connectionScope, Effect.sync(detachFromHub));
             return { connection, rpcBridge } satisfies WorkspaceConnection;
           }).pipe(
             Effect.onError(() =>

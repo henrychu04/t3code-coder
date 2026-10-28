@@ -6,8 +6,9 @@ import { CoderWorkspaceSettings } from "../components/settings/CoderWorkspaceSet
 import { PortForwardSettings } from "../components/settings/PortForwardSettings";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import { useCoderSettingsConfig } from "../components/settings/useCoderSettingsConfig";
+import { WorkspaceLinkSettings } from "../components/settings/WorkspaceLinkSettings";
 
-/** Upstream's Connections page, where Coder connects deployments, workspaces, and forwards. */
+/** Upstream's Connections page, where Coder connects deployments, workspaces, forwards, and links. */
 function CoderConnectionsSettings() {
   const { config, saveConfig, workspaceRuntime } = useCoder();
   const updateConfig = useCoderSettingsConfig(config, saveConfig);
@@ -20,6 +21,7 @@ function CoderConnectionsSettings() {
         workspaceRuntime={workspaceRuntime}
         updateConfig={updateConfig}
       />
+      <WorkspaceLinkSettings config={config} updateConfig={updateConfig} />
     </SettingsPageContainer>
   );
 }
