@@ -107,6 +107,13 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   parsing moved to client-runtime's `pullRequestLinkInput.ts`), move the fork's test adaptations
   with it, keep the moved module upstream's apart from wording, and keep a seam that needs web
   code (`gitLabMergeRequestBrowserUrl`) as a wrapper at the web caller.
+- An upstream sweep that deletes code nothing upstream reaches (67661cfbb5's #26238) also removes
+  helpers, mock-agent options, and guards that only fork-only tests (tests the fork kept after
+  upstream deleted its copy) or fork modules still use. Typecheck misses most of these, since
+  the tests mock by name or spawn scripts; only the full suite finds them (that sync:
+  `GitWorkflowService.test.ts`'s `jj` guard, `useThreadActionMenu.test.tsx`'s entity mocks,
+  the Kilo adapter test's `acp-mock-agent.ts` option). Keep a piece a fork module needs as a
+  `Coder:` seam; adapt a fork-only test to the remaining behavior.
 - Upstream code the fork carries can start importing a module the fork deleted (in 2a7bd1673c,
   `ThreadManagementService.ts` imports `environment/ServerEnvironment.ts` for
   `ServerEnvironmentIdentity`). Declare the piece it needs in the matching Coder module
@@ -138,7 +145,10 @@ repro fixtures and seed scripts under `scripts` (eb1510d249: `fixtures/issue-165
 `fixtures/issue-18188`, `fixtures/issue-21397.json`, `seed-issue-21397.py` and its test) are
 upstream tooling; delete them. Upstream's
 patches for mobile or desktop packages land in `patches/` (2a7bd1673c: `@expo__ui@58.0.18.patch`);
-delete any that `pnpm-workspace.yaml`'s `patchedDependencies` does not list. A fork-deleted file
+delete any that `pnpm-workspace.yaml`'s `patchedDependencies` does not list. An upstream bump
+of a patched package the fork cut renames its patch, so the new file arrives as an addition
+outside any deleted path (67661cfbb5: `alchemy@2.0.0-beta.84.patch`); compare `ls patches` with
+`patchedDependencies` after every stage. A fork-deleted file
 outside those paths that upstream modified (a cut
 surface's test or settings panel) is listed as "deleted by fork"; keep it deleted unless the seams
 doc says otherwise. An upstream rename out of a deleted directory into a kept one (in this batch,
@@ -224,6 +234,9 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   license step). List the newly added package versions that differ from upstream's lockfile and
   replace their `packages:` and `snapshots:` entries and references with upstream's, then confirm
   `pnpm install --frozen-lockfile` passes.
+- When upstream moves a dependency line within a `package.json` (67661cfbb5: `@opencode-ai/sdk`
+  from `dependencies` to `devDependencies` in `apps/server`), the merge can add it back for a
+  package the fork cut. Review `git diff HEAD -- '*package.json'` after resolving manifests.
 - New upstream code can import a dependency the fork had removed with an old cut (7df7cb9999:
   `yauzl` for document text, `jszip` for office previews). Typecheck reports the missing module;
   restore upstream's dependency entry rather than adapting the code.
