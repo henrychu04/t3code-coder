@@ -350,7 +350,7 @@ export const make = Effect.gen(function* () {
     invalidateLocalStatus: gitManager.invalidateLocalStatus,
     invalidateRemoteStatus: gitManager.invalidateRemoteStatus,
     invalidateStatus: gitManager.invalidateStatus,
-    // Coder: route these driver seams through the same Git-only command guard.
+    // Coder: route these driver seams through the same command guard.
     moveWorktree: Effect.fn("GitWorkflowService.moveWorktree")(function (input) {
       return ensureGitCommand("GitWorkflowService.moveWorktree", input.cwd).pipe(
         Effect.andThen(git.moveWorktree(input)),

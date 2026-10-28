@@ -64,6 +64,10 @@ const advertisedAuthMethodId = process.env.T3_ACP_AUTH_METHOD_ID?.trim();
 const initializeAuthMethodId =
   advertisedAuthMethodId ?? (supportsSessionLifecycle ? "test" : undefined);
 const requiresAuthentication = process.env.T3_ACP_REQUIRE_AUTH === "1";
+// Coder: the Kilo Code adapter test reads commands a real child advertises after a delay.
+const commandAdvertisementDelayMs = Number(
+  process.env.T3_ACP_COMMAND_ADVERTISEMENT_DELAY_MS ?? "-1",
+);
 const permissionOptionIds = {
   allowOnce: "allow-once",
   allowAlways: "allow-always",
@@ -562,6 +566,31 @@ const program = Effect.gen(function* () {
       yield* requireAuthentication();
       if (antigravityProfile) {
         yield* publishAntigravityCommands(sessionId);
+      }
+      if (commandAdvertisementDelayMs >= 0) {
+        yield* Effect.sleep(`${commandAdvertisementDelayMs} millis`).pipe(
+          Effect.andThen(
+            agent.client.sessionUpdate({
+              sessionId,
+              update: {
+                sessionUpdate: "available_commands_update",
+                availableCommands: [
+                  {
+                    name: "review",
+                    description: "Review the current changes",
+                    input: { type: "text", hint: "focus" },
+                  },
+                  {
+                    name: "$workspace-skill",
+                    description: "Run the workspace skill",
+                    input: null,
+                  },
+                ],
+              },
+            }),
+          ),
+          Effect.forkDetach,
+        );
       }
       return {
         sessionId,

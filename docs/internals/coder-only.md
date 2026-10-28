@@ -761,6 +761,8 @@ listed here is drift to remove rather than fork behavior to keep.
       (`AcpRegistryAdapterV2.testkit.ts`, `AcpAdapterV2.testkit.ts`, and `scripts/`'s ACP replay
       and mock agents), its adapter and probe tests without the registry, Devin, and
       session-management cases, and a Coder test that the bridge command reaches the prompt.
+      `scripts/acp-mock-agent.ts` keeps `T3_ACP_COMMAND_ADVERTISEMENT_DELAY_MS` (upstream dropped
+      it in #26238), because the adapter test reads commands a real child advertises.
       Upstream's 14k-line `AcpAdapterV2.test.ts` is not carried.
     - The user guide is the fork's `docs/user/providers-kilo.md`, adapted from upstream's
       `providers-acp.md` (not carried) to the local command.
