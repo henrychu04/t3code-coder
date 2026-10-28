@@ -78,6 +78,7 @@ export type ComposerCommandItem =
       label: string;
       description: string;
     };
+// Coder: no machine (environment) chips; the @-machine picker is not carried.
 
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   listId: string;

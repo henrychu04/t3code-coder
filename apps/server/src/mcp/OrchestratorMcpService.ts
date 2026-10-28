@@ -2076,6 +2076,7 @@ const make = Effect.gen(function* () {
               Effect.orElseSucceed(() => "timed_out" as const),
             );
       yield* Effect.annotateCurrentSpan({ "secret_request.status": status });
+      // Coder: no orchestration metrics (no secretRequestsTotal counter).
       if (status !== "saved") return { status };
       if (input.delivery === "file") {
         const file = yield* secretRequests

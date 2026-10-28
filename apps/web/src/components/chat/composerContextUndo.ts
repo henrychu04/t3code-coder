@@ -14,6 +14,7 @@ export interface RetainedContextPayloads extends RetainedAttachmentContextPayloa
   terminals: Map<string, TerminalContextDraft>;
   reviewComments: Map<string, ReviewCommentContext>;
   threads: Map<string, ThreadContextRecord>;
+  // Coder: no machine (environment) chips; the @-machine picker is not carried.
 }
 
 function createRetainedContextPayloads(): RetainedContextPayloads {

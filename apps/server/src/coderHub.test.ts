@@ -182,7 +182,7 @@ it.effect("refuses an invoked tool while Linked environments is off here", () =>
       bound: true,
     });
     assert.strictEqual(outcome._tag, "Failure");
-    if (outcome._tag === "Failure") assert.strictEqual(outcome.failure.code, "capability_denied");
+    if (outcome._tag === "Failure") assert.strictEqual(outcome.failure.code, "orchestration_error");
     assert.strictEqual(scopes.length, 0);
   }),
 );

@@ -526,13 +526,17 @@ listed here is drift to remove rather than fork behavior to keep.
     `WorkspaceLinkSettings.tsx`), runs the call on the target workspace's helper with
     `coder.hub.invoke` as that link's caller (`sessionId` `coder-link:<rule id>`, the rule's access,
     the calling agent's modes as `narrowedTo`), and replies; the browser bridge refuses the hub
-    methods. A workspace that is not connected is unreachable, and upstream's follower retries.
+    methods. A workspace that is not connected is unreachable (`orchestration_error`, including a
+    linked workspace that has not connected since the gateway started), and upstream's follower
+    retries; a call with no matching rule is refused for good (`capability_denied`). Editing a
+    rule's endpoints mints a new rule id, since the id is the origin the fence compares.
     Differences, each marked `Coder:`: no `T3-Mode-Limit` header (the hub carries the limits);
     `PeerLinks` has no pairing, storage, or expiry (`expiresAt` is a fixed far-future value);
     `t3_environment_link`, `t3_environment_unlink`, `PeerLinkRequests`, the link-request card, and
     the `WsPeerLinks*` handlers are not carried, so `t3_environment_links`' `notListed` and the
     orchestration instructions point to the Links settings; `coder.hub.invoke` refuses calls while
-    Labs' switch is off, as upstream's `/mcp` does; `T3ToolBridge`'s binding gains `invoke` for a
+    Labs' switch is off, as upstream's `/mcp` does, with upstream `PeerMcpClient`'s non-final
+    `orchestration_error` so a running task resumes once the switch is on again; `T3ToolBridge`'s binding gains `invoke` for a
     linked caller; and upstream's peer tests (`PeerForwarding.test.ts`, `RemoteDelegation.test.ts`,
     `linkOrigin.test.ts`, `PeerLinks.testkit.ts`) are not carried because they pair two HTTP
     servers; `coderHub.test.ts` and the gateway's `hub.test.ts` test the transport. Migrations 070
@@ -547,7 +551,8 @@ listed here is drift to remove rather than fork behavior to keep.
     exports; the `@` machine menu items and machine chips in the composer and drafts
     (`useComposerMenuItems.ts`, `ComposerCommandMenu.tsx`, `composerThreadItems.ts`,
     `composerDraftStore.ts`, `composerContextRecords.ts`, `composerContextPresentation.tsx`,
-    `useComposerSend.ts`, `chatViewSend.ts`, `useQueuedRunEdit.ts`); the link-request timeline
+    `composerContextUndo.ts`, `contextChipAccents.ts`, `ContextChip.tsx`, `useComposerSend.ts`,
+    `chatViewSend.ts`, `useQueuedRunEdit.ts`); the link-request timeline
     card (`TimelineV2EventRow.tsx`, `session-logic.ts`); and the `t3_environment_link`/`unlink`
     tool presentations (`t3McpToolPresentation.ts`, `t3ToolSummary.ts`). The contract's
     `environment` record kind keeps upstream's definition in `contextPresentationRegistry.ts` and
@@ -571,7 +576,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `CODER_OMITTED_CAPABILITIES`. Web `chat/ThreadServersPanel.tsx`, its `ThreadDetailsPanel.tsx`
     section, and its `thread-sidebar.md` paragraph are cut.
   - The `@` picker lists no threads on linked machines (#26201): `composerThreadItems.ts`, shared
-    `composerContextReferences.ts` (`strandedThreadContexts`), and the composer hooks keep the
+    `composerContextReferences.ts` (`threadContextsOutsideEnvironment`), and the composer hooks keep the
     same-server rules from before #26201. Copy thread (#26202) is upstream's.
   - F6 workspace navigation (#25877) is upstream's without the desktop menu-action forwarding in
     `AppSidebarLayout.tsx`; the Merge requests page's area is labelled "Merge requests"
@@ -1135,7 +1140,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `canonicalizeGitCafePullRequestUrl` is an identity function, since GitCafe is not carried. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    e9236274a3):
+    67661cfbb5):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as

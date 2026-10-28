@@ -171,6 +171,9 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
   `nativeLogging.ts`).
 - Desktop (`apps/desktop`, `native`, `packaging`, `assets`); mobile (`apps/mobile`); hosted web
   (`apps/marketing`, `apps/server/src/cloud`, web `cloud`, `components/clerk`).
+- Triage, dev servers, and dev replay (`apps/server/src/triage`, `apps/server/scripts/dev-replay*`,
+  web `DevReplayHost.tsx`, `chat/ThreadServersPanel.tsx`, `chat/TriageDraftHero.tsx`,
+  `hooks/useStartTriage.ts`, `lib/triageTarget.ts`, `docs/user/triage.md`).
 - Relay (`apps/server/src/relay`, `infra`, `packages/ssh`, `packages/tailscale`); telemetry
   (`apps/server/src/{telemetry,resourceTelemetry,usage,diagnostics}`, web `components/usage`).
 - Upstream repository tooling (`.github`, `.repos`, `oxlint-plugin-t3code`, `docs/operations`,

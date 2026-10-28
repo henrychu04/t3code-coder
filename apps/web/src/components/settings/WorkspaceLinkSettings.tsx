@@ -182,8 +182,11 @@ export function WorkspaceLinkEditor({
         void operation
           .run("save", "Could not save link", () =>
             updateConfig((current) => {
+              // The id is the origin that work started over the link carries, which its fence
+              // compares; a rule pointed at other workspaces is a new link with a new id.
+              const sameEndpoints = link !== null && link.from === from && link.to === to;
               const next: CoderWorkspaceLinkProfile = {
-                id: link?.id ?? `workspace-link-${randomUUID()}`,
+                id: sameEndpoints ? link.id : `workspace-link-${randomUUID()}`,
                 from,
                 to,
                 access,

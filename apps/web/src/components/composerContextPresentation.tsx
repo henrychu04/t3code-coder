@@ -276,6 +276,7 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
 
 function ComposerThreadContextChip(props: { record: ThreadContextRecord }) {
   const { environmentId } = use(ComposerContextActionsContext);
+  // Coder: a thread on a linked machine still reads as unreadable (#26201 is not carried).
   return (
     <ThreadContextChip
       record={props.record}
