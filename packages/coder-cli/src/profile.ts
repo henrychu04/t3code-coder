@@ -1,13 +1,19 @@
-import type {
-  CoderDeploymentProfile,
-  CoderWorkspaceProfile,
-  CoderPortForwardProfile,
+import {
+  AuthMcpClientAccess,
+  type CoderDeploymentProfile,
+  type CoderWorkspaceLinkProfile,
+  type CoderWorkspaceProfile,
+  type CoderPortForwardProfile,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 export type {
   CoderDeploymentProfile,
+  CoderWorkspaceLinkProfile,
   CoderWorkspaceProfile,
   CoderPortForwardProfile,
 } from "@t3tools/contracts";
+
+const isLinkAccess = Schema.is(AuthMcpClientAccess);
 
 function requireSingleLine(value: string, field: string): string {
   const normalized = value.trim();
@@ -99,4 +105,20 @@ export function normalizeCoderPortForwardProfile(
     localPort: normalizePort(profile.localPort, "Local port"),
     remotePort: normalizePort(profile.remotePort, "Remote port"),
   };
+}
+
+export function normalizeCoderWorkspaceLinkProfile(
+  profile: CoderWorkspaceLinkProfile,
+): CoderWorkspaceLinkProfile {
+  const id = requireSingleLine(profile.id, "Coder workspace link id");
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id)) {
+    throw new Error("Coder workspace link id contains unsupported characters.");
+  }
+  const from = requireSingleLine(profile.from, "Coder workspace link source");
+  const to = requireSingleLine(profile.to, "Coder workspace link target");
+  if (from === to) throw new Error("A workspace link must name two different workspaces.");
+  if (!isLinkAccess(profile.access)) {
+    throw new Error("Coder workspace link access is not a supported access mode.");
+  }
+  return { id, from, to, access: profile.access };
 }

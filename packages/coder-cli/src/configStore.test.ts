@@ -142,6 +142,46 @@ describe("Coder profile config store", () => {
     );
   });
 
+  it("validates and round-trips workspace link rules", () => {
+    const base = {
+      version: 1,
+      deployments: [{ id: "lab", name: "Lab", url: "https://coder.example" }],
+      workspaces: [
+        { id: "api", name: "API", deploymentId: "lab", workspace: "dev/api" },
+        { id: "web", name: "Web", deploymentId: "lab", workspace: "dev/web" },
+      ],
+    } as const;
+    const config = {
+      ...base,
+      workspaceLinks: [
+        { id: "api-to-web", from: "api", to: "web", access: "approval-required" },
+        { id: "web-to-api", from: "web", to: "api", access: "read-only" },
+      ],
+    } as const;
+    const link = config.workspaceLinks[0];
+
+    deepStrictEqual(parseCoderProfileConfig(config), config);
+    throws(() =>
+      parseCoderProfileConfig({ ...base, workspaceLinks: [link, { ...link, id: "again" }] }),
+    );
+    throws(() =>
+      parseCoderProfileConfig({
+        ...base,
+        workspaceLinks: [link, { ...link, to: "api", from: "web", id: "api-to-web" }],
+      }),
+    );
+    throws(() => parseCoderProfileConfig({ ...base, workspaceLinks: [{ ...link, to: "api" }] }));
+    throws(() =>
+      parseCoderProfileConfig({ ...base, workspaceLinks: [{ ...link, to: "missing" }] }),
+    );
+    throws(() =>
+      parseCoderProfileConfig({ ...base, workspaceLinks: [{ ...link, access: "root" }] }),
+    );
+    throws(() =>
+      parseCoderProfileConfig({ ...base, workspaceLinks: [{ ...link, token: "secret" }] }),
+    );
+  });
+
   it("drops legacy project roots from workspace connection profiles", () => {
     deepStrictEqual(
       parseCoderProfileConfig({
