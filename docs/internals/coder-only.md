@@ -1051,7 +1051,9 @@ listed here is drift to remove rather than fork behavior to keep.
   `resolveFileContextMenuAbsolutePath` but replaces its editor and reveal items with Open in Files
   (when the caller passes a thread) and Copy path, which copies that full path; the Files tree,
   the diff panel, and turn change cards use it. Changed files in the Git actions dialog open in the
-  Files surface instead of an editor: repository-relative status paths map to the thread's folder,
+  Files surface instead of an editor (`ChatView` passes `openFileSurfaceStable` through
+  `ThreadDetailsPanel`'s `onOpenFile`), and the dialog closes so the file is visible, keeping its
+  commit message for the next open: repository-relative status paths map to the thread's folder,
   and a file outside a subfolder project opens by its absolute path.
   `projectFilesQueryState.ts` has no `isFile`, which only the uncarried `OpenInPicker` reads.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.

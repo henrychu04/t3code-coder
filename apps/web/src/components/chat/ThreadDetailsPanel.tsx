@@ -57,6 +57,8 @@ interface ThreadDetailsPanelProps extends Pick<
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest: () => void;
   onOpenChanges?: () => void;
+  /** Coder: opens a changed file from the Git actions dialog in the Files surface. */
+  onOpenFile?: (relativePath: string) => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
@@ -161,6 +163,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     activeThreadRef={activeThreadRef}
                     {...(props.draftId ? { draftId: props.draftId } : {})}
                     {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
+                    {...(props.onOpenFile ? { onOpenFile: props.onOpenFile } : {})}
                   />
                 ) : null}
               </div>
