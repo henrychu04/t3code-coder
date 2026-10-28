@@ -760,6 +760,7 @@ export default function ChatView(props: ChatViewProps) {
           messages: serverProjection.messages,
           parentSubagents: workflowOpeningParentProjection?.projection.subagents ?? null,
         });
+  // Coder: only a parent in this environment; linked environments' delegatedFrom is not carried.
   const parentThreadLink =
     parentSubagentThreadRef === null
       ? null

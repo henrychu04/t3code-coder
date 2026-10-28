@@ -1,10 +1,13 @@
 import {
+  type EnvironmentId,
+  OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   type ProviderInteractionMode,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import * as Ref from "effect/Ref";
 import * as Struct from "effect/Struct";
 import type * as Layer from "effect/Layer";
@@ -16,7 +19,7 @@ import {
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
-import { resolveInteractionMode, resolveRuntimeMode } from "./OrchestratorMcpService.ts";
+import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import {
   assertFullAccess,
   assertLiveCaller,
@@ -241,14 +244,61 @@ export class HandlersLayer<Tools extends Record<string, Tool.Any>, EX = never, R
 const checkedHandlers = <Handlers>(declarations: Declarations<Handlers>): Handlers =>
   Struct.map(declarations, checkedHandler);
 
+/**
+ * A tool runs in a linked environment when its parameters take this target
+ * as `environmentId`. Other tools may name an environment for their own
+ * reasons, such as the one to link or to move a thread to.
+ */
+const takesLinkedEnvironment = (tool: Tool.Any) => {
+  const parameters: unknown = tool.parametersSchema;
+  return (
+    Predicate.hasProperty(parameters, "fields") &&
+    Predicate.hasProperty(parameters.fields, "environmentId") &&
+    parameters.fields.environmentId === OrchestratorMcpEnvironmentTarget
+  );
+};
+
+const linksUnavailable = new OrchestratorMcpFailure({
+  code: "orchestration_error",
+  message: "This environment cannot reach linked environments.",
+});
+
+/**
+ * Coder: peer links are not carried, so upstream's forwarding of these calls to
+ * a linked environment is replaced by its own refusal. A call naming this
+ * environment runs here; the handler never sees `environmentId`, as upstream's.
+ */
+const refusingLinkedEnvironments = <Tools extends Record<string, Tool.Any>>(
+  toolkit: Toolkit.Toolkit<Tools>,
+  checked: Toolkit.HandlersFrom<Tools>,
+): Toolkit.HandlersFrom<Tools> => {
+  const handlers: Record<string, unknown> = { ...checked };
+  for (const [name, tool] of Object.entries<Tool.Any>(toolkit.tools)) {
+    if (!takesLinkedEnvironment(tool)) continue;
+    const here = handlers[name] as (
+      params: object,
+    ) => Effect.Effect<unknown, Tool.Failure<Tools[keyof Tools]>>;
+    handlers[name] = ({ environmentId, ...params }: { readonly environmentId?: EnvironmentId }) =>
+      Effect.gen(function* () {
+        const scope = yield* McpInvocationContext.McpInvocationContext;
+        if (environmentId === undefined || environmentId === scope.environmentId) {
+          return yield* here(params);
+        }
+        return yield* linksUnavailable;
+      });
+  }
+  return handlers as Toolkit.HandlersFrom<Tools>;
+};
+
 export const toLayer = <Tools extends Record<string, Tool.Any>, EX = never, RX = never>(
   toolkit: Toolkit.Toolkit<Tools>,
   build: Handlers<Tools> | Effect.Effect<Handlers<Tools>, EX, RX>,
-): HandlersLayer<Tools, EX, Exclude<RX, Scope.Scope>> =>
-  handlersLayer(
+): HandlersLayer<Tools, EX, Exclude<RX, Scope.Scope>> => {
+  const withDeclarations = (declarations: Handlers<Tools>) =>
+    refusingLinkedEnvironments(toolkit, checkedHandlers(declarations));
+  return handlersLayer(
     toolkit.toLayer(
-      Effect.isEffect(build)
-        ? Effect.map(build, checkedHandlers<Toolkit.HandlersFrom<Tools>>)
-        : checkedHandlers(build),
+      Effect.isEffect(build) ? Effect.map(build, withDeclarations) : withDeclarations(build),
     ),
   );
+};

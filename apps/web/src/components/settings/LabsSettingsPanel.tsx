@@ -5,7 +5,8 @@ import { LegacyFeaturesSection } from "./SettingsPanels";
 export function LabsSettingsPanel() {
   return (
     <SettingsPageContainer>
-      {/* Coder: no guest links, the Beta section's only row; guest sharing needs T3 Connect. */}
+      {/* Coder: no Beta section. Guest links need T3 Connect, and linked environments pair
+          servers over /mcp; neither is carried. */}
       <LegacyFeaturesSection />
     </SettingsPageContainer>
   );

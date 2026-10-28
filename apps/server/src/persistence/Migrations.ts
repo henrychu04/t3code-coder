@@ -67,10 +67,13 @@ import Migration0067 from "./Migrations/067_WebhookDedupe.ts";
 import { reconcileCoderMigrationHistory } from "./CoderMigrationHistory.ts";
 import Migration0068 from "./Migrations/068_ShellStopRequestIndex.ts";
 import Migration0069 from "./Migrations/069_ThreadMessageSearch.ts";
+import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
 
 // Coder: T3 Coder has no auth sessions or pairing. Upstream's auth migrations keep
 // their IDs so later upstream migrations stay aligned, but they create nothing.
 const omittedAuthMigration = Effect.void;
+// Coder: peer links are not carried; their migrations keep upstream's IDs and create nothing.
+const omittedPeerLinkMigration = Effect.void;
 
 // Coder: exported for the fork's legacy-history migration tests.
 export const migrationEntries = [
@@ -144,6 +147,9 @@ export const migrationEntries = [
   [67, "WebhookDedupe", Migration0067],
   [68, "ShellStopRequestIndex", Migration0068],
   [69, "ThreadMessageSearch", Migration0069],
+  [70, "PeerLinks", omittedPeerLinkMigration],
+  [71, "PeerLinkFence", omittedPeerLinkMigration],
+  [72, "WaitingLinkRequestIndex", Migration0072],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

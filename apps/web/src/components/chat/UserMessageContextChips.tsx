@@ -328,6 +328,13 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         ),
     },
     {
+      // Coder: machine mentions (linked environments) are not carried; a sent one shows as
+      // unavailable, so the contract's required kinds still all have a handler.
+      kind: "environment",
+      canRender: () => false,
+      render: (_record, context) => <UnavailableUserMessageContextChip {...context} />,
+    },
+    {
       kind: "image",
       canRender: (record, context) =>
         record.kind === "image" &&

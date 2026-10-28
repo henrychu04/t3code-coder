@@ -162,6 +162,7 @@ export function useComposerMenuItems({
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
       return [
+        // Coder: no `@` machine matches; linked environments are not carried.
         ...matchComposerThreadItems({
           shells: environmentThreadShells,
           environmentId,

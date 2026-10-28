@@ -5,6 +5,7 @@ import {
   OrchestratorMcpFailure,
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
+  type ProviderInteractionMode,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -35,9 +36,23 @@ export interface McpClientCaller {
   readonly access: AuthMcpClientAccess;
 }
 
-/** Read-only clients map to the lowest mode because McpToolAccess blocks writes first. */
-export const clientRuntimeModeCeiling = (client: McpClientCaller | undefined): RuntimeMode =>
-  client === undefined || client.access === "read-only" ? "approval-required" : client.access;
+export interface ClientModes {
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+}
+
+/**
+ * The modes a client caller's writes are capped at: what it was approved
+ * with. A read-only client never reaches a write (`McpToolAccess` refuses it
+ * first), so it maps to the lowest runtime mode rather than to nothing.
+ * Coder: no client narrows them per request; `T3-Mode-Limit` serves linked
+ * environments, which are not carried.
+ */
+export const clientModeCeiling = (client: McpClientCaller | undefined): ClientModes => ({
+  runtimeMode:
+    client === undefined || client.access === "read-only" ? "approval-required" : client.access,
+  interactionMode: "default",
+});
 
 /** Thread callers default to their own thread; client callers need thread for tools that act as the caller. */
 export interface McpInvocationScope {

@@ -90,6 +90,9 @@ export const CODER_OMITTED_CAPABILITIES = {
   databaseStorage: "No `t3 doctor` in the workspace helper; it compacts and reclaims space itself.",
   ignoredFileListing:
     "No Add to another machine: ignored files such as .env would pass through the laptop browser.",
+  peerLinks: "No linked environments: they need server-to-server /mcp and pairing.",
+  mcpModeLimitHeader: "No /mcp HTTP server; agents reach T3 tools over the workspace file bridge.",
+  linkFence: "No linked environments, so no work starts here from another one.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 
 const platformArch = (): ExecutionEnvironmentDescriptor["platform"]["arch"] => {

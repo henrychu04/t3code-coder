@@ -347,6 +347,7 @@ export interface ComposerThreadDraftState {
   persistedAttachments: PersistedComposerImageAttachment[];
   terminalContexts: TerminalContextDraft[];
   reviewComments: ReviewCommentContext[];
+  // Coder: no machine (environment) chips; the @-machine picker is not carried.
   threadContexts: ThreadContextRecord[];
   // Coder: no `previewAnnotations`, legacy `elementContexts` migration, or SnapShot image
   // sources, because the browser preview is not carried.
