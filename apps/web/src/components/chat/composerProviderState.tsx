@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
 import type { ComposerControlSize } from "./ComposerControl";
+import { runtimeModeOptions } from "./runtimeModeConfig";
 import {
   getReasoningTraitStep,
   shouldRenderTraitsControls,
@@ -315,4 +316,30 @@ export function resolveAvailableRuntimeModes(
   return providerStatus === "ready"
     ? (supportedRuntimeModes ?? SAFE_RUNTIME_MODES)
     : SAFE_RUNTIME_MODES;
+}
+
+/**
+ * Coder: the modes the composer offers and the one it shows, as `RuntimePolicy` runs them. Codex
+ * and Claude report modes per model (the two functions above). A ready provider whose models report
+ * none (Pi, Kilo Code) keeps upstream's provider-level modes, all when it reports none, and an
+ * unsupported mode runs as the least permissive one.
+ */
+export function resolveComposerRuntimeModes(
+  runtimeMode: RuntimeMode,
+  provider: Pick<ServerProvider, "status" | "models" | "supportedRuntimeModes"> | null,
+  modelRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
+): { readonly modes: ReadonlyArray<RuntimeMode>; readonly mode: RuntimeMode } {
+  if (
+    provider?.status !== "ready" ||
+    provider.models.some((model) => model.capabilities?.supportedRuntimeModes !== undefined)
+  ) {
+    const modes = resolveAvailableRuntimeModes(provider?.status, modelRuntimeModes);
+    return { modes, mode: resolveComposerRuntimeMode(runtimeMode, modes) };
+  }
+  const supported = provider.supportedRuntimeModes;
+  const modes =
+    supported && supported.length > 0
+      ? runtimeModeOptions.filter((mode) => supported.includes(mode))
+      : runtimeModeOptions;
+  return { modes, mode: modes.includes(runtimeMode) ? runtimeMode : (modes[0] ?? runtimeMode) };
 }
