@@ -18,6 +18,7 @@ export interface EnvironmentOption {
   machine: EnvironmentMachineKind;
 }
 
+// Coder: no "Add to another machine" (#22180), so no `ADD_TO_MACHINE_LABEL_CLASS`.
 export const EnvMode = Schema.Literals(["local", "worktree"]);
 export type EnvMode = typeof EnvMode.Type;
 

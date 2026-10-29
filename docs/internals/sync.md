@@ -168,7 +168,8 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
 - Auth and pairing (`apps/server/src/auth`, web `components/auth`, client-runtime `authorization`).
 - Preview and browser (`apps/server/src/preview`, web `browser`, `components/preview`).
 - Device (`apps/server/src/device`, web `components/device`, client-runtime `device`).
-- HTTP routes and assets (`apps/server/src/assets`, `http.ts` route files).
+- HTTP routes (`http.ts` route files other than the server's signed asset route in
+  `apps/server/src/http.ts`, and the uncarried `assets/` modules).
 - Forgejo, GitHub, Azure DevOps, Bitbucket, and GitCafe (`packages/source-control-*` except core,
   gitlab, and testing).
 - Other provider packages (`packages/provider-{cursor,fx,grok,muse,opencode}`,
@@ -200,7 +201,7 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
 ## 4. Conflict magnets
 
 - `apps/server/src/server.ts`: upstream's file minus the cut surfaces. Upstream's edits to the
-  carried declarations merge; keep their three `Coder:` changes and the export block. Conflicts
+  carried declarations merge; keep their `Coder:` changes and the export block. Conflicts
   sit in regions the fork deletes (`layerMakeServer`, `layerRuntimeCoreDependencies*`, HTTP,
   auth, preview, and telemetry layers): keep the deletion, and port a new service or provide the
   helper needs into `coderServer.ts`'s matching composition (`CoderRuntimeCoreLive`,

@@ -41,6 +41,7 @@ import {
   decodeCodexRuntimeRequirementsResponse,
   resolveCodexSupportedRuntimeModes,
 } from "./CodexRuntimeModes.ts";
+import { SAFE_RUNTIME_MODES } from "./runtimeModeCapabilities.ts";
 import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
@@ -85,6 +86,8 @@ const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
   reportsContextWindow: true,
+  // Coder: only the safe modes until the probe reads the workspace's runtime-mode policy.
+  supportedRuntimeModes: SAFE_RUNTIME_MODES,
 } as const;
 
 export interface CodexAppServerProviderSnapshot {

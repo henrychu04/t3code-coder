@@ -8,6 +8,7 @@ import { type EnvironmentId, type OrchestrationV2ShellSnapshot } from "@t3tools/
 import { createOptimisticThreadLifecycle } from "./threadLifecycle.ts";
 import * as DateTime from "effect/DateTime";
 
+// Coder: no `uploadFeedback` command (Codex feedback upload is not carried).
 import { createAtomCommandScheduler, createEnvironmentCommand } from "./runtime.ts";
 import {
   type InterruptThreadTurnInput,

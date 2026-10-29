@@ -53,7 +53,7 @@ import {
   resolveClaudeModelsForVersion,
   resolveClaudeUpdateRequiredModels,
 } from "./ClaudeModelCatalog.ts";
-import { buildSupportedRuntimeModes } from "./runtimeModeCapabilities.ts";
+import { buildSupportedRuntimeModes, SAFE_RUNTIME_MODES } from "./runtimeModeCapabilities.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -63,6 +63,8 @@ const CLAUDE_PRESENTATION = {
   displayName: "Claude",
   showInteractionModeToggle: true,
   reportsContextWindow: true,
+  // Coder: only the safe modes until the probe reads the workspace's runtime-mode policy.
+  supportedRuntimeModes: SAFE_RUNTIME_MODES,
 } as const;
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];

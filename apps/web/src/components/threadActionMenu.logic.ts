@@ -1,3 +1,4 @@
+// Coder: the browser-only context menu type; no guest sharing, so no "share-guest" action.
 import type { ContextMenuItem } from "../localApiTypes";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 

@@ -484,7 +484,8 @@ listed here is drift to remove rather than fork behavior to keep.
     browser. `WorkspaceEntries` has no `listIgnoredFiles`, `ws.ts` serves no
     `projects.listIgnoredFiles` (`ignoredFileListing` is in `CODER_OMITTED_CAPABILITIES`),
     client-runtime's `projectCommands.ts` has no matching command, `BranchToolbar.tsx` has no
-    menu entry, and `ChatView.tsx` shows no file-copy banner or send block.
+    menu entry (`BranchToolbar.logic.ts` has no `ADD_TO_MACHINE_LABEL_CLASS`), and `ChatView.tsx`
+    shows no file-copy banner or send block.
   - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
     branch/worktree rename with `moveWorktree`, chunked review files, the gateway's asset
     stream (`coder.serveAsset`), fixed project-config reads, merge-request diffs, and upstream's HTTP bounded thread snapshot,
@@ -502,7 +503,9 @@ listed here is drift to remove rather than fork behavior to keep.
   - Guest thread sharing (#24104) is not carried: guests reach a share over upstream's server HTTP
     routes and T3 Connect, neither of which exists here. `apps/server/src/guest/**`, its HTTP
     route, the share RPC handler, web `components/guest/**`, `routes/guest.tsx`, `guestPage.ts`,
-    the share controls, menu and palette entries, the guest-message footer and bubbles
+    the share controls, menu and palette entries (the "share-guest" thread action in
+    `threadActionMenu.logic.ts`, `useThreadActionMenu.ts`, `Sidebar.tsx`, and its `user-plus` icon
+    in `contextMenuFallback.ts`), the guest-message footer and bubbles
     (`ChatView.tsx`'s timeline footer, `TimelineUserMessageRow.tsx`, and `QueuedRunsControl.tsx`,
     which has no guest names or per-item `editable` flag), the sidebar's guest-request pill and
     badge (`Sidebar.logic.ts`, `SidebarThreadRow.tsx`), Labs' Beta section with its guest-links row
@@ -603,7 +606,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `coderServer.ts` provides `DocumentText.layer` at the bottom of the runtime services, where
     upstream's `layerPlatformServices` provides it; `ProviderHostLive` carries upstream's
     `resolveExtractedTextPath`.
-  - `Orchestrator.ts` and `ProjectService.ts` have no `withCommandMetrics` wrapper (#23966), and
+  - `Orchestrator.ts` and `ProjectService.ts` have no `withCommandMetrics` wrapper (#23966),
+    `ScheduledTaskService.ts` records no webhook metrics, `SecretRequests.ts` counts no consumed
+    secret refs, and
     `RunExecutionService.ts` reports no browser-preview agent activity (`PreviewAgentActivity`,
     #25184), since metrics and the browser preview are not carried.
   - A thread dropped on the composer from another workspace attaches upstream's saved transcript
@@ -809,8 +814,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `CodexManagedTokenBroker` (which renews the managed runtime's ChatGPT sign-in token,
     #21786/#21787) and the `__managed-chatgpt-token` CLI entry are not carried. `CodexAdapterV2` does not
     rewrite failures through `CodexManagedErrors` (ChatGPT Business admin request, #23361), and
-    the server's `threadErrorSummary` and client-runtime's `ThreadRuntimeSummary` carry no
-    `lastErrorCode`; the contract field stays.
+    the server's `threadErrorSummary`, `ProjectionStore.ts`'s shell state, and client-runtime's
+    `ThreadRuntimeSummary` carry no `lastErrorCode`; the contract field stays.
   - Provider drivers, snapshots, and the registry are upstream's. Coder deltas: `CodexDriver`
     offers no T3-managed Codex install (`setupMode: "managed"`), neither driver redeems
     rate-limit reset credits, and `ClaudeDriver` does not read the Claude organization id that
@@ -820,7 +825,9 @@ listed here is drift to remove rather than fork behavior to keep.
     upstream's provider-level `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
     closed to the safe modes) and Codex's `configRequirements/read`, which runs in upstream's
-    parallel probe step (safe modes when it cannot be read). At session start,
+    parallel probe step (safe modes when it cannot be read); before the first probe finishes,
+    both report the safe modes. The fork-only `provider/runtimeModeCapabilities.ts` builds the
+    mode lists and `provider/CodexRuntimeModes.ts` maps Codex's requirements. At session start,
     `ClaudeAdapterV2.resolveBypassAvailability` reads the settings files (cached remote, user,
     project, local, and managed) where upstream calls the SDK's runtime `resolveSettings`
     (#21806); a mode any source disables is off, so `Drivers/ClaudeSkills.ts` keeps
@@ -836,7 +843,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - Absent: client-origin attribution, orchestration and provider metrics (including the run
     outcome metrics of `RunMetrics.ts`, #22094, so `EventSink.ts` records none), turn analytics, NDJSON
     event logs (`EventNdjsonLogger` and `ProviderEventLoggers` keep only the no-op service),
-    provider sign-in commands and credential-change guards, Codex feedback upload, SnapShot
+    provider sign-in commands and credential-change guards, Codex feedback upload (client-runtime
+    `threadCommands.ts` has no `uploadFeedback`), SnapShot
     sources, data-URL uploads, preview-tool metadata, and the agent device shim.
 - **Authorization scopes.** Coder owns authentication, so upstream's per-session scopes always
   grant: web `useEnvironmentScope`, `readEnvironmentScope`, and `useFilesystemReadAccess`
@@ -948,7 +956,8 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
   element captures, SnapShot (with its open question-draft tracker in `questionAttachments.ts`),
-  upstream's large-paste-to-file folding, and remote icons. `work-log/presentation.ts` formats
+  and remote icons. Upstream's large-paste folding (#11442) is carried: a paste at or over the
+  limit becomes a `text/plain` file attachment (`useComposerAttachmentIntake.ts`). `work-log/presentation.ts` formats
   token counts inline, since upstream's `@t3tools/shared/usageFormat` belongs to the omitted usage
   dashboard. Draft file and video attachments
   preview as on main. A context fragment pasted from another workspace downloads its attachments from the
@@ -989,7 +998,7 @@ listed here is drift to remove rather than fork behavior to keep.
   reporting, favorite-editor command (OpenInPicker is not carried), or desktop paste-as-text.
   The keybindings reload toast (`KeybindingsUpdateToast.tsx`) shows the reload's message without
   upstream's config-warning actions, which open the desktop editor. `shortcuts/chatRouteCommands.ts`
-  has no preview commands or legacy-sidebar check, `state/entities.ts` keeps only
+  has no preview commands (its legacy-sidebar check is upstream's), `state/entities.ts` keeps only
   `initializeActiveEnvironmentId` (the first welcome sets the primary), and client-runtime's
   `state/presentation.ts` shows an available placeholder as connecting without upstream's
   `entry.enabled` and `unsupportedReason`, which Coder entries lack. The "failed to start" screen
@@ -1157,7 +1166,8 @@ listed here is drift to remove rather than fork behavior to keep.
     field, and the `sourceControl.signIn*` and `sourceControl.appAccess` RPCs in upstream's
     dormant `WsRpcGroup` only; `CoderWsRpcGroup` omits them. In the clients, web
     `SourceControlAppAccessNotice.tsx`, `T3AppIcon.tsx`, `settings/SourceControlAppSignInSettings.tsx`
-    and `sourceControlAppAccessToast.ts` are cut, and client-runtime `state/sourceControl.ts` and
+    and `sourceControlAppAccessToast.ts` are cut (`state/sourceControlActions.ts` suggests no app
+    access after publishing), and client-runtime `state/sourceControl.ts` and
     `sourceControlClients.ts` have no app-access or sign-in atoms and no `appSignInTargetForRemote`.
   - GitLab's definition (`source-control-gitlab/src/shared/definition.ts`) has three deltas:
     `isChangeRequestReference` accepts a merge request URL on any HTTP(S) host, because
@@ -1327,8 +1337,10 @@ listed here is drift to remove rather than fork behavior to keep.
     `state/shell.ts` treats every workspace as remote (no primary local target).
   - `lib/runtime.ts` has no primary-environment HTTP client, relay, DPoP, or tracer, and
     `branding.ts` fixes the "T3 Coder" name without a desktop bridge or hosted channel.
-  - Upstream's desktop IPC contract (`contracts/ipc.ts`) is not carried; `localApiTypes.ts` keeps
-    its context-menu and confirm-dialog types, and `localApi.ts` opens only HTTP(S) links.
+  - Upstream's desktop IPC contract (`contracts/ipc.ts`) is not carried, nor `themePalette.ts`'s
+    desktop-only `resolveDesktopTheme`; `localApiTypes.ts` keeps
+    its context-menu and confirm-dialog types (web modules that import `ContextMenuItem` from
+    `contracts` upstream import it from there), and `localApi.ts` opens only HTTP(S) links.
     `ThreadNotificationCoordinator.tsx` focuses the tab on a notification click without
     upstream's desktop window reveal.
   - client-runtime `errors/diagnostics.ts` is the `[t3-error]` DevTools reporting described in
@@ -1429,10 +1441,14 @@ listed here is drift to remove rather than fork behavior to keep.
   `storageCleanup.test.ts` its saved-usage-cache test, and `PullRequestService.test.ts` its
   GitHub-credential branch deletion, GitHub Enterprise listing, Bitbucket paging, routing,
   Forgejo, replacement-read retry, Azure environment viewed-file, and repository-identity
-  resolution tests; upstream's OTLP `config.test.ts` is not carried.
+  resolution tests; client-runtime's `pullRequests.test.ts` uses one connection target without
+  upstream's cross-environment routing tests (shared probes, alternates, routed viewed marks and
+  writes); upstream's OTLP `config.test.ts` is not carried.
   `presentation.test.ts` omits upstream's disabled and unsupported connection tests, since Coder
   catalog entries have neither state. `GitManager.test.ts`'s pull request draft-status test and
   `SourceControlRepositoryService.test.ts`'s HTTPS clone-retry tests run on GitLab.
+  The fork-only `hooks/useThreadActionMenu.test.tsx` keeps upstream's deleted hook test beside
+  upstream's `useThreadActionMenu.test.ts`.
   Replay fixtures (`orchestration-v2/testkit/fixtures`) carry only the Claude, Codex, Pi, and ACP
   Registry providers; `ProviderReplayFixtures.ts` lists only those drivers.
   client-runtime's `threadShell.test.ts` omits upstream's switched-off environment test, because
