@@ -108,6 +108,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { useStore } from "zustand";
+import { shallow } from "zustand/vanilla/shallow";
 import {
   isAtomCommandInterrupted,
   mapAtomCommandResult,
@@ -1199,6 +1200,12 @@ export default function ChatView(props: ChatViewProps) {
     composerRef,
     setThreadError,
   });
+  const [heldApprovalRequestIds, setHeldApprovalRequestIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const onHeldRequestIdsChange = useStableCallback((requestIds: ReadonlySet<string>) => {
+    setHeldApprovalRequestIds((current) => (shallow(current, requestIds) ? current : requestIds));
+  });
   const activeProposedPlan = (() => {
     if (!latestRunSettled) {
       return null;
@@ -2121,6 +2128,7 @@ export default function ChatView(props: ChatViewProps) {
     closePreviewPanelStable,
     copyRightPanelFilePathStable,
     moveRightPanelSurfaceStable,
+    onOpenToolDiffStable,
     onOpenTurnDiffStable,
     openChangesFromThreadPanelStable,
     openFileSurfaceStable,
@@ -2932,6 +2940,11 @@ export default function ChatView(props: ChatViewProps) {
               className="relative flex min-h-0 flex-1 flex-col bg-background"
             >
               <ThreadTimeline
+                pendingApprovals={pendingApprovals}
+                heldApprovalRequestIds={heldApprovalRequestIds}
+                respondingRequestIds={respondingRequestIds}
+                onRespondToApproval={onRespondToApprovalStable}
+                canOperateThread={canOperateThread}
                 threadDetailRef={routeThreadDetailRef}
                 entriesInput={timelineEntriesInput}
                 draftEntries={isServerThread ? null : draftTimelineEntries}
@@ -2984,6 +2997,7 @@ export default function ChatView(props: ChatViewProps) {
                 routeThreadKey={displayedTimelineKey}
                 displayThreadKey={displayedTimelineKey}
                 announceTurnStatus={!isProviderSubagent}
+                onOpenToolDiff={onOpenToolDiffStable}
                 onOpenTurnDiff={onOpenTurnDiffStable}
                 onOpenThread={onOpenRelatedThreadStable}
                 parentThreadLink={parentThreadLink}
@@ -3169,6 +3183,7 @@ export default function ChatView(props: ChatViewProps) {
                               environmentUnavailable={activeEnvironmentUnavailableState}
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}
+                              onHeldRequestIdsChange={onHeldRequestIdsChange}
                               pendingUserInputs={pendingUserInputs}
                               activePendingProgress={activePendingProgress}
                               activePendingResolvedAnswers={activePendingResolvedAnswers}
@@ -3230,7 +3245,6 @@ export default function ChatView(props: ChatViewProps) {
                               onResume={onComposerResumeStable}
                               onInterrupt={onInterruptStable}
                               onImplementPlanInNewThread={onImplementPlanInNewThreadStable}
-                              onRespondToApproval={onRespondToApprovalStable}
                               onSelectActivePendingUserInputOption={
                                 onSelectActivePendingUserInputOptionStable
                               }

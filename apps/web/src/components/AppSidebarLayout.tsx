@@ -352,7 +352,7 @@ function SidebarControl() {
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarArea = workspaceAreaProps("sidebar", 0, "Threads");
-  // Coder: no legacy sidebar and no desktop window bridge (fullscreen insets, menu actions).
+  // Coder: no desktop window bridge (fullscreen insets, menu actions).
   const [sidebarRouteReveal] = useState<SidebarRouteReveal>(() => ({
     observedKey: null,
     pendingKey: null,

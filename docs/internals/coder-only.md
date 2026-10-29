@@ -509,6 +509,10 @@ listed here is drift to remove rather than fork behavior to keep.
     orchestration-v2 guest decider, commands, and projection columns stay, because the contract
     unions need them (`knip.jsonc` ignores their unused exports); with no service nothing creates
     a share, so the sidebar `"request"` status and its notification title never fire.
+    Guests' screenshots (#26323) are not carried either: `ChatMarkdown.tsx` has no
+    `HostImageUrlContext` or `hostImageUrl.ts` (workspace images load through the workspace asset
+    route), shared `markdownPipeline.ts` has no `chatMarkdownImageSources`, and
+    `SidebarThreadRow.tsx`'s `TOP_STATUS_ICONS` has no guest `request` entry.
   - Linked environments (#16653–#17130) are carried between Coder workspaces through the gateway
     hub instead of server-to-server HTTP `/mcp` and pairing, which would break `AGENTS.md`
     boundaries 2, 3, and 6. Upstream's `peer/PeerForwarding.ts` and `peer/RemoteDelegation.ts`,
@@ -992,7 +996,7 @@ listed here is drift to remove rather than fork behavior to keep.
   splitting, but not the render scenarios project, `VITE_RELEASE_CHANNEL`, source maps, or the
   build manifest.
 - **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
-  deltas: there is no legacy sidebar (or its Settings switch), usage page, desktop app-update
+  deltas: there is no usage page, desktop app-update
   pills, desktop window bridge (fullscreen insets and the open-settings menu action), or preview
   keybinding context (`readUsagePageOpen` is always false); the active workspace supplies keybindings and the pill's providers. Without
   upstream's "Update everything" (server self-update), `ProviderUpdatesAction.tsx`'s Update all
@@ -1133,6 +1137,16 @@ listed here is drift to remove rather than fork behavior to keep.
     host secrets exist; upstream's host, token, account, and routing settings are not carried.
     The registry's `parseChangeRequestUrl` (core `shared/definition.ts`) rejects a URL carrying
     credentials, because links persist their URL verbatim.
+  - Upstream's forge app sign-in (#26245) is not carried: the server has no
+    `SourceControlSignIn` service or sign-in and app-access handlers, and source-control-core
+    drops the driver's `signIn`, the definition's `appSignIn` and `signIns` setting, and
+    `SourceControlHost.settings.update` (also absent from the test host), because GitLab uses the
+    workspace's `glab` login. Contracts keep upstream's sign-in schemas, the dormant `appSignIn`
+    field, and the `sourceControl.signIn*` and `sourceControl.appAccess` RPCs in upstream's
+    dormant `WsRpcGroup` only; `CoderWsRpcGroup` omits them. In the clients, web
+    `SourceControlAppAccessNotice.tsx`, `T3AppIcon.tsx`, `settings/SourceControlAppSignInSettings.tsx`
+    and `sourceControlAppAccessToast.ts` are cut, and client-runtime `state/sourceControl.ts` and
+    `sourceControlClients.ts` have no app-access or sign-in atoms and no `appSignInTargetForRemote`.
   - GitLab's definition (`source-control-gitlab/src/shared/definition.ts`) has three deltas:
     `isChangeRequestReference` accepts a merge request URL on any HTTP(S) host, because
     self-hosted hostnames need not contain "gitlab"; `authorProfileUrl` links comment authors
@@ -1293,7 +1307,10 @@ listed here is drift to remove rather than fork behavior to keep.
     builds the multi-route driver, routes, and relay credentials the fork cuts. `connection/registry.ts` starts every registered workspace's supervisor
     desired (upstream starts only enabled ones), since the Coder config owns registration. Its entries
     carry no cached unsupported-host rejection, so web `state/server.ts`'s shortcut-keybinding
-    fallback presents each workspace's connection state as is.
+    fallback presents each workspace's connection state as is. It has no `assertKnownAddress` or
+    `register(..., { knownAddressOnly })`, since pairing links (#26178) are not carried, and
+    `connection/resolver.ts` keeps no remote HTTP prepare path, so #25754's authorized descriptor
+    fetch there is not carried.
     `state/shell.ts` treats every workspace as remote (no primary local target).
   - `lib/runtime.ts` has no primary-environment HTTP client, relay, DPoP, or tracer, and
     `branding.ts` fixes the "T3 Coder" name without a desktop bridge or hosted channel.

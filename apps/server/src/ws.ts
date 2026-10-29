@@ -87,7 +87,10 @@ import {
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
 import { ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION } from "./orchestration-v2/ProjectionStore.ts";
-import { coalesceThreadLiveStream } from "./orchestration-v2/ThreadLiveEventCoalescer.ts";
+import {
+  coalesceLiveUpdatedEvents,
+  coalesceThreadLiveStream,
+} from "./orchestration-v2/ThreadLiveEventCoalescer.ts";
 import {
   buildBoundedThreadStreamSnapshot,
   decideThreadResume,
@@ -561,7 +564,9 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
         // Retained creation events may describe deleted threads; replace replay only if a snapshot exists.
         if (shell !== null) return yield* snapshotThenLive();
       }
-      const replay = yield* loadReplayThrough(input.afterSequence, highWater);
+      const replay = coalesceLiveUpdatedEvents(
+        yield* loadReplayThrough(input.afterSequence, highWater),
+      );
       const plan = decideThreadResume({
         afterSequence: input.afterSequence,
         highWater,
@@ -872,6 +877,10 @@ const layerWsRpc = () =>
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
       const crypto = yield* Crypto.Crypto;
+      // RPC client ids are only unique within one socket; terminals share viewers across sockets.
+      const terminalViewerPrefix = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+      const terminalViewerId = (metadata: { readonly client: { readonly id: number } }) =>
+        `${terminalViewerPrefix}:${metadata.client.id}`;
       const serverCommandId = (tag: string) =>
         crypto.randomUUIDv4().pipe(
           Effect.orDie,
@@ -1474,6 +1483,7 @@ const layerWsRpc = () =>
           sourceControlRepositories.lookupRepository(input),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>
           sourceControlRepositories.cloneRepository(input),
+        // Coder: no GitHub app sign-in or app access; GitLab uses the workspace's `glab` login.
         [WS_METHODS.projectCloneStart]: (input) =>
           projectCloneTracker.start(input, {
             createProject: (project) =>
@@ -1782,15 +1792,11 @@ const layerWsRpc = () =>
           vcsProvisioning.initRepository(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
-        [WS_METHODS.terminalAttach]: (input) =>
-          terminalOutputStream(
-            (listener, registerCleanup) =>
-              terminalManager.attachStream(input, listener, registerCleanup),
-            (listener, registerCleanup) =>
-              terminalManager.resyncStream(input, listener, registerCleanup),
-          ),
+        [WS_METHODS.terminalAttach]: (input, metadata) =>
+          terminalManager.attachOutputStream(input, terminalViewerId(metadata)),
         [WS_METHODS.terminalWrite]: (input) => terminalManager.write(input),
-        [WS_METHODS.terminalResize]: (input) => terminalManager.resize(input),
+        [WS_METHODS.terminalResize]: (input, metadata) =>
+          terminalManager.resize(input, terminalViewerId(metadata)),
         [WS_METHODS.terminalClear]: (input) => terminalManager.clear(input),
         [WS_METHODS.terminalClose]: (input) => terminalManager.close(input),
         [WS_METHODS.terminalObserve]: (input) =>
