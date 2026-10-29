@@ -118,6 +118,13 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   `ThreadManagementService.ts` imports `environment/ServerEnvironment.ts` for
   `ServerEnvironmentIdentity`). Declare the piece it needs in the matching Coder module
   (`coderEnvironment.ts`) and point the import there with a `Coder:` comment.
+- An upstream rewrite can add a new caller of the upstream function a seam replaces, in a file that
+  merged cleanly (6d450a4284's #25869: `ChatView.tsx`'s new-thread permissions label called
+  `resolveCompatibleRuntimeMode` while the composer used the fork's resolver). After resolving,
+  `rg` the tree for the upstream names each touched seam replaces, not only the conflicted files.
+- Fork wording changes inside upstream code (GitLab's "merge request !N") break the new test cases
+  upstream adds for that code (48a292364a's #26395). `pnpm test:coder` stops at the first failing
+  package, so read its log for the failing package and rerun until every package has run.
 
 ## 3. Deleted directories
 
@@ -126,7 +133,9 @@ them. After `git merge` stops, run `node scripts/sync-resolve-deleted.mjs` (or
 `pnpm sync:resolve-deleted` when no `package.json` or `pnpm-lock.yaml` is conflicted, since pnpm
 checks dependencies before running a script). It `git rm`s each modify/delete conflict under the
 paths listed in the script and prints every other conflict and every upstream-added file under
-those paths, untouched, for you to decide. It never resolves a content conflict. The files it lists are untouched but staged, so removing
+those paths, untouched, for you to decide. It never resolves a content conflict. A modify/delete it leaves for a human on a surface the fork
+already removed belongs in the script: `git rm` it and add the path to `DELETED_PATHS` in the same
+stage (6d450a4284 added 56). The files it lists are untouched but staged, so removing
 one needs `git rm -f`. To remove every listed upstream-added file at once:
 
 ```sh
