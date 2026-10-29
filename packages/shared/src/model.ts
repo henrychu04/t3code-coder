@@ -1,6 +1,5 @@
 import {
   type CustomModelSetting,
-  CustomModelCapabilities,
   MODEL_SLUG_ALIASES_BY_PROVIDER,
   ModelCapabilities,
   type ModelSelection,
@@ -379,8 +378,7 @@ export interface CustomModelDefinition {
   readonly capabilities: ModelCapabilities | null;
 }
 
-// Coder: custom models cannot declare runtime modes; those come from the provider snapshot.
-const decodeCustomModelCapabilities = Schema.decodeUnknownOption(CustomModelCapabilities);
+const decodeCustomModelCapabilities = Schema.decodeUnknownOption(ModelCapabilities);
 
 export function readCustomModelEntries(value: unknown): CustomModelDefinition[] {
   if (!Array.isArray(value)) return [];

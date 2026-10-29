@@ -7,7 +7,8 @@ The mode is set per thread in the message composer. A new thread names its mode 
 In a thread on your default mode, open **Permissions** from the effort menu or press `mod+shift+a`.
 A thread on another mode, or a model without an effort menu, shows the mode next to the model.
 Changing it in one thread does not change any other thread. A thread created from inside another
-thread keeps that thread's mode; otherwise new threads start in **Full access** unless you pick
+thread keeps that thread's mode. Other new threads use the default from **Settings → Threads → New
+threads → Permissions** (**Full access** at first), which a project can override, unless you pick
 something else before sending.
 
 ## The modes
@@ -50,13 +51,14 @@ Use **Auto** when you want routine work to proceed while retaining provider-supp
 T3 Coder maps these product modes to each provider's own approval and sandbox controls. The labels
 describe the user experience; the provider-specific implementation can differ.
 
-The menu shows only modes supported by the selected provider and model. Codex also reports
-workspace configuration requirements, and T3 Coder removes any mode that those requirements do not
-permit. While provider capabilities are unknown, T3 Coder limits the menu to **Supervised** and
-**Auto-accept edits**.
+The menu shows only the modes the selected provider supports. For Claude and Codex, that follows
+the workspace's policy: Claude's settings can disable **Auto** and **Full access**, and Codex's
+configuration requirements can rule out any mode. If T3 Coder cannot read the policy, it offers only
+**Supervised** and **Auto-accept edits**.
 
-If a previously selected mode becomes unavailable, T3 Coder uses the first supported mode instead
-of sending an unsupported configuration to the provider.
+If a selected mode is not supported, the thread runs in the closest supported mode below it (for
+example, **Full access** becomes **Auto** when policy disables bypass permissions), and the
+composer shows that mode.
 
 Permission mode does not enable features outside the T3 Coder product boundary. T3 Coder does not
 expose free-form provider launch flags.

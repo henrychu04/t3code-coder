@@ -41,7 +41,6 @@ import {
   decodeCodexRuntimeRequirementsResponse,
   resolveCodexSupportedRuntimeModes,
 } from "./CodexRuntimeModes.ts";
-import { attachSupportedRuntimeModes } from "./runtimeModeCapabilities.ts";
 import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
@@ -815,22 +814,19 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
             checkedAt,
           });
 
-  const providerModels = pipe(
-    appendCustomCodexModels(snapshot.models ?? [], codexSettings.customModels),
-    applyPreferredCodexDefaultModel,
-    (models) => applyConfiguredCodexServiceTier(models, snapshot.serviceTier),
-  );
-  // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
-  const models =
-    snapshot.supportedRuntimeModes === undefined
-      ? providerModels
-      : attachSupportedRuntimeModes(providerModels, snapshot.supportedRuntimeModes);
-
   return buildServerProvider({
-    presentation: CODEX_PRESENTATION,
+    // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
+    presentation:
+      snapshot.supportedRuntimeModes === undefined
+        ? CODEX_PRESENTATION
+        : { ...CODEX_PRESENTATION, supportedRuntimeModes: snapshot.supportedRuntimeModes },
     enabled: codexSettings.enabled,
     checkedAt,
-    models,
+    models: pipe(
+      appendCustomCodexModels(snapshot.models ?? [], codexSettings.customModels),
+      applyPreferredCodexDefaultModel,
+      (models) => applyConfiguredCodexServiceTier(models, snapshot.serviceTier),
+    ),
     skills: snapshot.skills,
     slashCommands: [
       COMPACT_SLASH_COMMAND,

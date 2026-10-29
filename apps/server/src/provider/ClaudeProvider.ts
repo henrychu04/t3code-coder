@@ -53,10 +53,7 @@ import {
   resolveClaudeModelsForVersion,
   resolveClaudeUpdateRequiredModels,
 } from "./ClaudeModelCatalog.ts";
-import {
-  attachSupportedRuntimeModes,
-  buildSupportedRuntimeModes,
-} from "./runtimeModeCapabilities.ts";
+import { buildSupportedRuntimeModes } from "./runtimeModeCapabilities.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -608,19 +605,20 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     probeResult && Result.isSuccess(probeResult) ? probeResult.success : undefined;
   const probeFailure =
     probeResult && Result.isFailure(probeResult) ? probeResult.failure : undefined;
+  const models = providerModelsFromSettings(
+    resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+    claudeSettings.customModels,
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  );
   // Coder: runtime modes follow the workspace's Claude permission policy, failing closed when
   // it could not be read.
-  const models = attachSupportedRuntimeModes(
-    providerModelsFromSettings(
-      resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
-      claudeSettings.customModels,
-      DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-    ),
-    buildSupportedRuntimeModes({
+  const presentation = {
+    ...CLAUDE_PRESENTATION,
+    supportedRuntimeModes: buildSupportedRuntimeModes({
       auto: capabilities !== undefined && !capabilities.autoModeDisabled,
       fullAccess: capabilities !== undefined && !capabilities.bypassPermissionsDisabled,
     }),
-  );
+  };
   const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
@@ -628,7 +626,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 
   if (!capabilities) {
     return buildServerProvider({
-      presentation: CLAUDE_PRESENTATION,
+      presentation,
       enabled: claudeSettings.enabled,
       checkedAt,
       models,
@@ -658,7 +656,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     endpoint.hostname !== "api.anthropic.com";
   if (!customApiEndpoint && claudeAuthStatus(capabilities) === "unauthenticated") {
     return buildServerProvider({
-      presentation: CLAUDE_PRESENTATION,
+      presentation,
       enabled: claudeSettings.enabled,
       checkedAt,
       models,
@@ -703,7 +701,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       ? yield* resolveResetCredits(parsedVersion)
       : undefined;
   return buildServerProvider({
-    presentation: CLAUDE_PRESENTATION,
+    presentation,
     enabled: claudeSettings.enabled,
     checkedAt,
     models,

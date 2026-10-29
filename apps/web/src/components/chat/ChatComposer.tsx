@@ -1,6 +1,10 @@
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
-import { runtimeModeConfig } from "./runtimeModeConfig";
+import {
+  resolveCompatibleRuntimeMode,
+  runtimeModeConfig,
+  runtimeModeOptions as runtimeModes,
+} from "./runtimeModeConfig";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { importPastedComposerText, readPastedComposerContext } from "../composerInlineTokenPaste";
 import {
@@ -182,16 +186,12 @@ import {
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ComposerFooterPrimaryActions, type RuntimeModeOption } from "./ComposerFooterControls";
+import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
-import {
-  getComposerPromptInjectionState,
-  getComposerReasoningStep,
-  resolveComposerRuntimeModes,
-} from "./composerProviderState";
+import { getComposerPromptInjectionState, getComposerReasoningStep } from "./composerProviderState";
 import { readPromptUltrathink } from "./TraitsPicker";
 import {
   providerSupportsManualCompaction,
@@ -269,6 +269,8 @@ function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
   deadline.current = 0;
   return armed;
 }
+
+const runtimeModeOptions = runtimeModes.map((mode) => ({ mode, ...runtimeModeConfig[mode] }));
 
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
@@ -839,6 +841,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : undefined;
   const resolvedCompactDisabledReason =
     compactDisabledReason ?? (noProviderAvailable ? "Compacting is unavailable right now" : null);
+  const { modes: compatibleRuntimeModes, mode: compatibleRuntimeMode } =
+    resolveCompatibleRuntimeMode(
+      runtimeMode,
+      selectedProviderEntry?.snapshot.supportedRuntimeModes,
+    );
+  const compatibleRuntimeModeOptions = runtimeModeOptions.filter((option) =>
+    compatibleRuntimeModes.includes(option.mode),
+  );
 
   const providerSendBlockReason: string | null = null;
   const sendDisabledReason =
@@ -865,16 +875,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
-  // Coder: offer only the provider-reported modes, and only safe modes until the provider is
-  // ready; show an unsupported selection as the mode the run gets.
-  const { modes: availableRuntimeModes, mode: compatibleRuntimeMode } = resolveComposerRuntimeModes(
-    runtimeMode,
-    selectedProviderStatus,
-    composerProviderState.supportedRuntimeModes,
-  );
-  const compatibleRuntimeModeOptions: ReadonlyArray<RuntimeModeOption> = availableRuntimeModes.map(
-    (mode) => ({ mode, ...runtimeModeConfig[mode] }),
-  );
   const { enabled: planModeUiEnabled, interactionMode } = resolveComposerInteractionMode({
     planModeEnabled: settings.planModeEnabled,
     provider: selectedProviderStatus,

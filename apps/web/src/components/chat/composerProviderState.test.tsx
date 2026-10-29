@@ -9,8 +9,6 @@ import {
 import {
   getComposerProviderState,
   getComposerReasoningStep,
-  resolveAvailableRuntimeModes,
-  resolveComposerRuntimeMode,
   withImplicitFastModeDefault,
 } from "./composerProviderState";
 import { readPromptUltrathink } from "./TraitsPicker";
@@ -238,65 +236,6 @@ describe("withImplicitFastModeDefault", () => {
         selections(["fastMode", true]),
       ),
     ).toEqual(selections(["fastMode", true]));
-  });
-});
-
-// Coder: per-model runtime modes reported by the workspace provider.
-describe("Coder runtime modes", () => {
-  it("falls back when the selected runtime mode is unsupported", () => {
-    expect(
-      resolveComposerRuntimeMode("full-access", ["approval-required", "auto-accept-edits"]),
-    ).toBe("auto-accept-edits");
-    expect(
-      resolveComposerRuntimeMode("auto-accept-edits", ["approval-required", "auto-accept-edits"]),
-    ).toBe("auto-accept-edits");
-  });
-
-  it("returns the selected model's supported runtime modes", () => {
-    const models = modelWith([]).map((model) => ({
-      ...model,
-      capabilities: {
-        ...model.capabilities,
-        supportedRuntimeModes: ["approval-required", "auto-accept-edits"] as const,
-      },
-    }));
-
-    const state = getComposerProviderState({
-      provider: PROVIDER,
-      model: MODEL,
-      models,
-      modelOptions: undefined,
-      planModeEnabled: true,
-    });
-
-    expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
-  });
-
-  it("leaves missing capability handling to the provider-neutral availability resolver", () => {
-    const state = getComposerProviderState({
-      provider: PROVIDER,
-      model: MODEL,
-      models: [],
-      modelOptions: undefined,
-      planModeEnabled: true,
-    });
-
-    expect(state.supportedRuntimeModes).toBeUndefined();
-  });
-
-  it("fails closed when a warning provider retains cached model capabilities", () => {
-    expect(
-      resolveAvailableRuntimeModes("warning", [
-        "approval-required",
-        "auto-accept-edits",
-        "auto",
-        "full-access",
-      ]),
-    ).toEqual(["approval-required", "auto-accept-edits"]);
-    expect(resolveAvailableRuntimeModes("ready", undefined)).toEqual([
-      "approval-required",
-      "auto-accept-edits",
-    ]);
   });
 });
 

@@ -816,12 +816,11 @@ listed here is drift to remove rather than fork behavior to keep.
     rate-limit reset credits, and `ClaudeDriver` does not read the Claude organization id that
     keys upstream's usage accounts, so its one-probe capability fallback skips upstream's
     same-organization check (API-key logins have no organization either way). `ModelManifest.layerBundled` serves the bundled manifest without
-    upstream's hourly fetch or disk cache. Both providers attach
-    per-model `supportedRuntimeModes` from workspace policy: Claude's effective
+    upstream's hourly fetch or disk cache. Both providers report
+    upstream's provider-level `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
-    closed; the same modes on every model, since the CLI itself drops a mode the model or policy
-    forbids) and Codex's `configRequirements/read`, which runs in upstream's parallel probe step
-    and attaches after its custom-model and service-tier step. At session start,
+    closed to the safe modes) and Codex's `configRequirements/read`, which runs in upstream's
+    parallel probe step (safe modes when it cannot be read). At session start,
     `ClaudeAdapterV2.resolveBypassAvailability` reads the settings files (cached remote, user,
     project, local, and managed) where upstream calls the SDK's runtime `resolveSettings`
     (#21806); a mode any source disables is off, so `Drivers/ClaudeSkills.ts` keeps
@@ -871,15 +870,12 @@ listed here is drift to remove rather than fork behavior to keep.
   - Pages are kept like other attachments; deleting a thread does not delete them.
 - **Tool output images.** `turnItemOutputImages` lists a fetched item's images, and the inspector
   renders each with `ChatMarkdownAssetImage` from upstream's signed `tool-output-image` URL.
-- **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
-  default), limited to the modes the workspace provider reports. Until a provider reports its
-  supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
-  selection falls back to the most permissive supported mode. `RuntimePolicy` applies the same
-  per-model clamp when it starts a run, so the provider receives the mode the composer shows.
-  Providers whose models report no modes (Pi, Kilo Code) keep upstream's provider-level modes in
-  both places; the composer uses upstream's `resolveCompatibleRuntimeMode` (`runtimeModeConfig.ts`,
-  ported ahead of sync from upstream bd84b1781a), which shows an unsupported mode as the least
-  permissive one, as it runs.
+- **Runtime modes.** Modes use upstream's provider-level `supportedRuntimeModes` everywhere (the
+  composer's `resolveCompatibleRuntimeMode`, `RuntimePolicy`, and delegated tasks); Claude and Codex
+  fill it from workspace policy (see the provider drivers above). One delta: a mode the provider
+  does not offer steps down to the broadest offered mode below it, as upstream's
+  `delegatedTaskModes.resolveRuntimeMode` already does, where upstream's `resolveCompatibleRuntimeMode`
+  (`runtimeModeConfig.ts`) and `RuntimePolicy.providerRuntimeMode` fall back to the narrowest.
 - **Contracts.** `packages/contracts` follows upstream, including dormant schemas for surfaces Coder
   does not serve (auth, provider setup, other providers' settings, browser, device, preview, usage
   sources, agent sessions, filesystem browse, background policy). Coder deltas:
@@ -909,8 +905,6 @@ listed here is drift to remove rather than fork behavior to keep.
   - `assets.ts` omits native app icons and upstream's source control credentialed media
     (`SOURCE_CONTROL_MEDIA_ASSET` and `AssetSourceControlMediaUrlValidationError`), because GitLab's
     definition claims no `mediaUrl`.
-  - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
-    `CustomModelCapabilities`, which cannot declare them.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
   - Terminal attach input adds `afterSequence` and `afterEpoch`, terminal snapshots add
     `attachEpoch`, and the attach stream adds a `resumed` event.
