@@ -49,6 +49,7 @@
       "exports",
       "nsExports",
     ],
+    "apps/server/src/orchestration-v2/threadHistoryPaging.ts": ["exports", "nsExports"],
     "apps/server/src/os-jank.ts": ["exports", "nsExports"],
     "apps/server/src/peer/PeerForwarding.ts": ["exports", "nsExports"],
     "apps/server/src/peer/RemoteDelegation.ts": ["exports", "nsExports"],

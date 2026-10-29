@@ -362,7 +362,6 @@ import {
 } from "./coderAssets.ts";
 // Coder
 import {
-  OrchestrationV2GetThreadProjectionInput,
   OrchestrationV2ThreadBoundedSnapshot,
   OrchestrationV2ThreadHistoryPage,
   OrchestrationV2ThreadTranscript,
@@ -1976,7 +1975,10 @@ const WsReviewReadDiffFileChunkRpc = Rpc.make(WS_METHODS.reviewReadDiffFileChunk
 const WsOrchestrationGetThreadBoundedSnapshotRpc = Rpc.make(
   WS_METHODS.orchestrationGetThreadBoundedSnapshot,
   {
-    payload: OrchestrationV2GetThreadProjectionInput,
+    payload: Schema.Struct({
+      threadId: ThreadId,
+      deferWork: Schema.optionalKey(Schema.Boolean),
+    }),
     success: OrchestrationV2ThreadBoundedSnapshot,
     error: OrchestrationV2GetThreadProjectionError,
   },
@@ -1989,7 +1991,8 @@ const WsOrchestrationGetThreadHistoryPageRpc = Rpc.make(
       threadId: ThreadId,
       cursor: TrimmedNonEmptyString,
       throughEntryId: Schema.optional(TrimmedNonEmptyString),
-      view: Schema.optional(Schema.Literals(["conversation", "activity"])),
+      view: Schema.optional(Schema.Literals(["conversation", "activity", "work"])),
+      deferWork: Schema.optionalKey(Schema.Boolean),
     }),
     success: OrchestrationV2ThreadHistoryPage,
     error: OrchestrationV2GetThreadProjectionError,

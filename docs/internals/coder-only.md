@@ -488,7 +488,10 @@ listed here is drift to remove rather than fork behavior to keep.
   - Coder-only methods live in `coderWs.ts` (`CODER_WS_METHODS`): local ref status, managed
     branch/worktree rename with `moveWorktree`, chunked review files, the gateway's asset
     stream (`coder.serveAsset`), fixed project-config reads, merge-request diffs, and upstream's HTTP bounded thread snapshot,
-    history page, and thread transcript over stdio. The method set stays `CoderWsRpcGroup`;
+    history page, and thread transcript over stdio. Their payloads carry the HTTP query's
+    `view` (including `work`) and a boolean `deferWork` in place of `deferWork=1`; the history
+    page calls upstream's `getThreadHistoryPage` as the route does, and the stdio payloads omit
+    `compactIds`. The method set stays `CoderWsRpcGroup`;
     unsupported upstream methods stay omitted. Upstream's thread-family, worktree-thread-id, and
     older-settled-thread reads (`WsOrchestrationV2GetThreadFamilyRpc`,
     `WsOrchestrationV2GetWorktreeThreadIdsRpc`, `WsOrchestrationV2GetOlderSettledThreadsRpc`) are

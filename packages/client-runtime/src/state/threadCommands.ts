@@ -56,6 +56,7 @@ import * as ThreadHistoryController from "./threadHistoryController.ts";
 export type LoadEarlierThreadHistoryInput = {
   readonly threadId: ThreadId;
   readonly throughEntryId?: string;
+  readonly workAnchorId?: string;
 };
 
 export function createThreadEnvironmentAtoms<R, E>(
@@ -82,6 +83,7 @@ export function createThreadEnvironmentAtoms<R, E>(
       supervisor.target.environmentId,
       input.threadId,
       input.throughEntryId,
+      input.workAnchorId,
     );
   });
 
