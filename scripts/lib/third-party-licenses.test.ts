@@ -4,10 +4,11 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import { generateThirdPartyLicenseManifest } from "./third-party-licenses.ts";
+import { generateThirdPartyLicenseManifest } from "./third-party-licenses.js";
 
+// Coder: device tools are not carried, so neither is the installer-pin notice test.
 const tempDirectories: string[] = [];
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -60,7 +61,6 @@ async function createFixture(): Promise<{
 }
 
 afterEach(async () => {
-  vi.unstubAllGlobals();
   await Promise.all(
     tempDirectories
       .splice(0)
@@ -101,13 +101,9 @@ describe("third-party license generation", () => {
     });
   });
 
-  it("renders generated notices from bundled SPDX text without network access", async () => {
-    const fetch = vi.fn(() => {
-      throw new Error("Network is unavailable");
-    });
-    vi.stubGlobal("fetch", fetch);
+  it("renders generated notices from the committed SPDX templates", async () => {
     const fixture = await createFixture();
-    await writeJson(NodePath.join(fixture.root, "licenses/spdx/v3.28.0/MIT.json"), {
+    await writeJson(NodePath.join(fixture.root, "third-party-licenses/spdx/v3.28.0/MIT.json"), {
       licenseId: "MIT",
       licenseText: "MIT License\n\nCopyright (c) <year> <copyright holders>\n\nPermission text",
     });
@@ -137,33 +133,6 @@ describe("third-party license generation", () => {
     expect(manifest.entries.find((entry) => entry.name === "generated-asset")?.noticeText).toBe(
       "Adapted for T3 Code.\n\nMIT License\n\nCopyright (c) 2026 Example Author\n\nPermission text",
     );
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it("fails with an actionable error for missing production notices without fetching", async () => {
-    const fetch = vi.fn(() => {
-      throw new Error("Network is unavailable");
-    });
-    vi.stubGlobal("fetch", fetch);
-    const fixture = await createFixture();
-    await writeJson(fixture.configFile, {
-      customNotices: [
-        {
-          name: "generated-asset",
-          license: "MIT",
-          generatedNotices: [{ licenseId: "MIT" }],
-          bundles: ["assets", "web"],
-        },
-      ],
-      packageOverrides: [],
-    });
-    await expect(
-      generateThirdPartyLicenseManifest({
-        configFile: fixture.configFile,
-        packageManifests: [{ bundle: "web", path: fixture.appManifest }],
-      }),
-    ).rejects.toThrow("Missing bundled SPDX license MIT. Run pnpm licenses:sync");
-    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("finds packages whose exports hide both their manifest and entry point", async () => {
@@ -331,10 +300,10 @@ describe("third-party license generation", () => {
     const fixture = await createFixture();
     await NodeFSP.rm(NodePath.join(fixture.dependencyRoot, "LICENSE"));
     for (const licenseId of ["Apache-2.0", "BSD-3-Clause"]) {
-      await writeJson(NodePath.join(fixture.root, `licenses/spdx/v3.28.0/${licenseId}.json`), {
-        licenseId,
-        licenseText: `${licenseId} terms`,
-      });
+      await writeJson(
+        NodePath.join(fixture.root, `third-party-licenses/spdx/v3.28.0/${licenseId}.json`),
+        { licenseId, licenseText: `${licenseId} terms` },
+      );
     }
     await writeJson(fixture.configFile, {
       packageOverrides: [

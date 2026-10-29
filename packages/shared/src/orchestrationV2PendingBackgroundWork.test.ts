@@ -412,7 +412,7 @@ describe("derivePendingBackgroundWork kinds", () => {
         },
         {
           taskId: "pull-request-watch:github.com/acme/app#5",
-          description: "Watching pull request #5",
+          description: "Watching merge request !5",
           kind: "monitor",
           awaited: true,
         },
