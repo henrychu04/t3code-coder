@@ -56,10 +56,11 @@ const primaryServerStateAtom = Atom.make((get): PrimaryServerState => {
   }
 
   const target = { environmentId, input: {} };
-  const configProjection = Option.getOrNull(
-    AsyncResult.value(get(serverEnvironment.configProjection(target))),
+  const configProjection = AsyncResult.getOrElse(
+    get(serverEnvironment.configProjection(target)),
+    () => null,
   );
-  const welcome = Option.getOrNull(AsyncResult.value(get(serverEnvironment.welcome(target))));
+  const welcome = AsyncResult.getOrElse(get(serverEnvironment.welcome(target)), () => null);
 
   return {
     config: get(serverEnvironment.configValueAtom(environmentId)),
@@ -86,8 +87,9 @@ export const primaryServerLegacyThreadMigrationAtom = Atom.make(
     if (environmentId === null) {
       return null;
     }
-    return Option.getOrNull(
-      AsyncResult.value(get(serverEnvironment.legacyThreadMigration({ environmentId, input: {} }))),
+    return AsyncResult.getOrElse(
+      get(serverEnvironment.legacyThreadMigration({ environmentId, input: {} })),
+      () => null,
     );
   },
 ).pipe(Atom.withLabel("web-primary-server-legacy-thread-migration"));
@@ -131,8 +133,8 @@ const environmentConnectionsAtom = Atom.make((get) => {
     Pick<EnvironmentPresentation, "connection" | "serverConfig">
   >();
   for (const [environmentId] of get(environmentCatalog.catalogValueAtom).entries) {
-    const state = Option.getOrElse(
-      AsyncResult.value(get(environmentCatalog.stateAtom(environmentId))),
+    const state = AsyncResult.getOrElse(
+      get(environmentCatalog.stateAtom(environmentId)),
       () => AVAILABLE_CONNECTION_STATE,
     );
     environments.set(environmentId, {
@@ -172,10 +174,11 @@ export const environmentServerStatesAtom = Atom.make(
 
     for (const [environmentId] of get(environmentCatalog.catalogValueAtom).entries) {
       const target = { environmentId, input: {} };
-      const configProjection = Option.getOrNull(
-        AsyncResult.value(get(serverEnvironment.configProjection(target))),
+      const configProjection = AsyncResult.getOrElse(
+        get(serverEnvironment.configProjection(target)),
+        () => null,
       );
-      const welcome = Option.getOrNull(AsyncResult.value(get(serverEnvironment.welcome(target))));
+      const welcome = AsyncResult.getOrElse(get(serverEnvironment.welcome(target)), () => null);
 
       states.set(environmentId, {
         config: get(serverEnvironment.configValueAtom(environmentId)),

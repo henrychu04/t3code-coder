@@ -29,7 +29,7 @@ const memberProjectFilesAtom = Atom.family((membersKey: string) => {
     for (const [environmentId, projectId, physicalProjectKey] of members) {
       const result = get(projectEnvironment.getConfig({ environmentId, input: { projectId } }));
       if (result.waiting && Option.isNone(AsyncResult.value(result))) continue;
-      const config = Option.getOrNull(AsyncResult.value(result));
+      const config = AsyncResult.getOrElse(result, () => null);
       files.set(physicalProjectKey, config?.status === "valid" ? config.file : null);
     }
     return files;

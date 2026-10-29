@@ -1,3 +1,4 @@
+import { pipe } from "effect/Function";
 import {
   scopeProjectRef,
   scopedThreadKey,
@@ -326,8 +327,10 @@ export function ThreadPullRequestsMiniList({
   pullRequests: ReadonlyArray<ThreadPullRequestLink>;
   onOpenPullRequest?: (event: MouseEvent<HTMLAnchorElement>, url: string) => void;
 }) {
-  const lines = pullRequestListLines(
-    resolveThreadPullRequestChains(visibleThreadPullRequests(pullRequests)),
+  const lines = pipe(
+    visibleThreadPullRequests(pullRequests),
+    resolveThreadPullRequestChains,
+    pullRequestListLines,
   );
   if (lines.length === 0) return null;
   return (

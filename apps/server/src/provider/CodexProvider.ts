@@ -1,3 +1,4 @@
+import { pipe } from "effect/Function";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -814,11 +815,10 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
             checkedAt,
           });
 
-  const providerModels = applyConfiguredCodexServiceTier(
-    applyPreferredCodexDefaultModel(
-      appendCustomCodexModels(snapshot.models ?? [], codexSettings.customModels),
-    ),
-    snapshot.serviceTier,
+  const providerModels = pipe(
+    appendCustomCodexModels(snapshot.models ?? [], codexSettings.customModels),
+    applyPreferredCodexDefaultModel,
+    (models) => applyConfiguredCodexServiceTier(models, snapshot.serviceTier),
   );
   // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
   const models =
