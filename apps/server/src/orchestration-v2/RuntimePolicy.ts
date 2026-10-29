@@ -62,8 +62,8 @@ export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2
 });
 
 // Coder: a mode the provider does not offer (a workspace policy can disable modes) steps down to
-// the broadest offered mode below it, as `delegatedTaskModes.resolveRuntimeMode` does, instead of
-// upstream's approval-required.
+// the broadest offered mode below it, as `delegatedTaskModes.resolveRuntimeMode` does, or else
+// runs in the narrowest offered mode, as the composer shows; upstream runs approval-required.
 function providerRuntimeMode(
   runtimeMode: RuntimeMode,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
@@ -72,10 +72,21 @@ function providerRuntimeMode(
     supportedRuntimeModes.length === 0 ||
     supportedRuntimeModes.includes(runtimeMode)
     ? runtimeMode
-    : (supportedRuntimeModes
-        .filter((mode) => runtimeModeRank(mode) <= runtimeModeRank(runtimeMode))
-        .toSorted((left, right) => runtimeModeRank(right) - runtimeModeRank(left))[0] ??
-        "approval-required");
+    : stepDownRuntimeMode(runtimeMode, supportedRuntimeModes);
+}
+
+function stepDownRuntimeMode(
+  runtimeMode: RuntimeMode,
+  supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
+): RuntimeMode {
+  const ranked = supportedRuntimeModes.toSorted(
+    (left, right) => runtimeModeRank(left) - runtimeModeRank(right),
+  );
+  return (
+    ranked.findLast((mode) => runtimeModeRank(mode) <= runtimeModeRank(runtimeMode)) ??
+    ranked[0] ??
+    "approval-required"
+  );
 }
 
 export const layerFromProjectStore: Layer.Layer<

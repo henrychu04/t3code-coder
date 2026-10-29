@@ -285,6 +285,7 @@ export function useSourceControlPublishRepositoryAction(scope: SourceControlActi
         ),
       );
     }
+    // Coder: no forge app sign-in (#26245), so publishing suggests no app access.
     return publishRepository({
       environmentId: target.environmentId,
       input: {

@@ -34,6 +34,8 @@ import { executeAtomQuery } from "./runtime.ts";
 
 class MutationRefused extends Data.TaggedError("MutationRefused") {}
 
+// Coder: one connection target; upstream's cross-environment routing tests (shared probes,
+// alternates, routed viewed marks and writes) are not carried with that routing.
 const TARGET = new ConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
   label: "Test environment",

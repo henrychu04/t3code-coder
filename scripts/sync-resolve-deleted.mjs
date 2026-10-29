@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 // `git diff --name-status <merge-base> origin/coder-only | grep ^D`.
 const DELETED_PATHS = {
   // Auth and pairing: Coder owns authentication; no sessions, pairing, OAuth, DPoP, or scopes.
-  // The server's auth/ keeps only ServerSecretStore, which a modify/delete cannot name.
+  // The server's auth/ keeps only ServerSecretStore and utils, which a modify/delete cannot name.
   "auth and pairing": [
     "apps/server/src/auth/",
     "apps/server/src/persistence/AuthPairingLinks.ts",
@@ -34,7 +34,8 @@ const DELETED_PATHS = {
     "packages/shared/src/oauthScope.ts",
   ],
   // Preview and browser: no in-app browser, preview panel, or headless browser automation.
-  // web's browser/ keeps only useOpenLink.ts and components/preview/ only the panel shell.
+  // web's browser/ keeps only useOpenLink.ts, and components/preview/ only the panel shell and
+  // its resize handle.
   "preview and browser": [
     "apps/server/src/mcp/PreviewAutomationBroker.ts",
     "apps/server/src/mcp/toolkits/preview/",
@@ -67,11 +68,12 @@ const DELETED_PATHS = {
     "packages/client-runtime/src/device/",
     "packages/client-runtime/src/state/device.ts",
   ],
-  // HTTP routes and assets: the helper serves stdio RPC only; no HTTP server, routes, or signed
-  // asset URLs.
+  // HTTP routes and assets: the helper serves stdio RPC; its only HTTP route is the signed asset
+  // route in http.ts, which assets/ backs, so both stay. No native app icons or credentialed
+  // source-control media.
   "HTTP routes and assets": [
-    "apps/server/src/assets/",
-    "apps/server/src/http.ts",
+    "apps/server/src/assets/NativeAppIconResolver.ts",
+    "apps/server/src/assets/sourceControlMediaResponse.ts",
     "apps/server/src/httpCors.ts",
     "apps/server/src/mcp/McpHttpServer.ts",
     "apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts",

@@ -1,3 +1,4 @@
+// Coder: the browser-only context menu type; no "user-plus" icon, since guest sharing is cut.
 import type { ContextMenuItem } from "./localApiTypes";
 
 const SVG_NS = "http://www.w3.org/2000/svg";

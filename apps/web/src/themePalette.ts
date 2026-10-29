@@ -1658,6 +1658,7 @@ export function resolveThemeAppearance(
   return getThemePreferenceMode(theme) ?? "light";
 }
 
+// Coder: no `resolveDesktopTheme`; the desktop app is not carried.
 export function isKnownThemePreference(theme: string): boolean {
   if (theme === "light" || theme === "dark" || theme === "system") return true;
   return getThemeDefinition(theme) !== null;

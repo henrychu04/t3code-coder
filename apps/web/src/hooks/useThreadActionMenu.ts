@@ -60,6 +60,7 @@ export function useThreadActionMenu(input: {
   readonly threadRef: ScopedThreadRef | null;
   readonly projectCwd: string | null;
   readonly onStartRename: () => void;
+  // Coder: no guest sharing, so no `canShareWithGuest` input or "share-guest" action.
 }) {
   const { threadRef, projectCwd, onStartRename } = input;
   const router = useRouter();

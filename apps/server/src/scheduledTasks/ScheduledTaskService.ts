@@ -1610,6 +1610,7 @@ export const layer = Layer.effect(
       deliveryId: string,
       prompt: string,
     ) {
+      // Coder: webhook metrics are not carried; outcomes and delays stay span annotations only.
       const runOutcome = (outcome: "started" | "skipped" | "failed") =>
         Effect.annotateCurrentSpan({ "scheduled_task.webhook.run_outcome": outcome });
       const dispatched = yield* Ref.make(false);

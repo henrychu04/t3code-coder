@@ -4,12 +4,11 @@ Messages can contain up to 120,000 characters. If a draft is longer, T3 Coder ke
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
-In an existing thread, scrolling a conversation that overflows the viewport can rest the composer
-into one line. Losing focus does not collapse it, and multiline drafts remain expanded. Control
-scroll collapse with **Collapse composer on scroll** under **Settings → Chat**. When the thread-context strip has room, the
-model and mode controls remain available beside it; otherwise they return when the composer is
-focused. Focus the composer or start typing to expand it again. New-thread layouts keep the full
-composer.
+Pasting 32 KiB or more of text adds that fragment as a text-file attachment so
+the agent can inspect it without filling the model context. A smaller paste also
+becomes an attachment when inserting it would exceed the message limit. On a
+hardware keyboard, use `Cmd+Shift+V` on Apple devices or `Ctrl+Shift+V` elsewhere
+to keep a large paste editable in the composer instead.
 
 Pasting plain text while the conversation itself is focused moves that text into the composer.
 Paste remains with a terminal, menu, dialog, editor, or other interactive control when one of those
@@ -97,11 +96,8 @@ confirming removal removes both the thumbnail and its references.
 In an existing thread, select a file mention to open the current file in **Files**. Skill chips
 show their descriptions; **View instructions** opens the skill file in **Files**.
 
-Pasted plain-text fragments of at least 32,768 characters fold into a **Long text** chip. Select it to
-read or edit the text. Folding keeps the full text in the prompt: it counts toward the message
-limit and is sent to the provider as text. Unsent drafts and stashed prompts, including terminal
-excerpts, images, and upload IDs, are kept in browser storage, as on main. Credentials are never
-saved there.
+Unsent drafts and stashed prompts, including terminal excerpts, images, and upload IDs, are kept
+in browser storage, as on main. Credentials are never saved there.
 
 ## Images and files
 
