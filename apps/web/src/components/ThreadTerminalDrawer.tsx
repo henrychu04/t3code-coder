@@ -665,6 +665,7 @@ function TerminalSessionViewport({
         void terminal.setFont(terminalFontOptions(currentFont.family, currentFont.size));
       }
       const latestSession = readTerminalSession();
+      terminal.setSharedGrid(latestSession.grid);
       const initialOutput = readTerminalOutputUpdate(
         latestSession.output,
         INITIAL_TERMINAL_OUTPUT_CURSOR,
@@ -690,6 +691,7 @@ function TerminalSessionViewport({
           }
           const previous = previousSession;
           previousSession = session;
+          terminal.setSharedGrid(session.grid);
           synchronizeTerminalStatus(terminal, session.status, session.version);
           outputCursorRef.current = synchronizeTerminalSession(
             terminal,

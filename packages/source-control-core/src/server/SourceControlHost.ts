@@ -67,6 +67,7 @@ export class SourceControlHost extends Context.Service<
     readonly settings: {
       /** Read fresh on each call to pick up credential changes. */
       readonly get: Effect.Effect<ServerSettings, ServerSettingsError>;
+      // Coder: no `update`; only forge app sign-in, which is not carried, writes credentials.
     };
     readonly process: {
       readonly run: (

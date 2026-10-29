@@ -166,6 +166,7 @@ export interface SourceControlHostCredentials {
   /** What a token must be granted, completing "Give it …". */
   readonly tokenAccess: string;
   readonly newTokenUrl: (host: string) => string;
+  // Coder: no forge app sign-in (`appSignIn`); GitLab uses the workspace's `glab` login.
 }
 
 export const SourceControlHostName = TrimmedNonEmptyString.pipe(
@@ -189,6 +190,7 @@ export const hostCredentialSettingsFields = {
     secretSetting,
     Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
   ),
+  // Coder: no `signIns` session setting; forge app sign-in is not carried.
 };
 
 export const HostCredentialSettings = Schema.Struct(hostCredentialSettingsFields);
