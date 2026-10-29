@@ -48,6 +48,7 @@ import {
   type ScopedThreadRef,
   type ServerProviderSkill,
   type ThreadPullRequestKey,
+  SOURCE_CONTROL_MEDIA_ASSET,
 } from "@t3tools/contracts";
 import {
   codexArtifactTemplatePresentationLabel,
@@ -196,6 +197,9 @@ interface ChatMarkdownProps {
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
   renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
+  /** Loads media a source control host keeps behind a credential through the server, which holds
+      `cwd`'s; without it a private repository's uploads load unauthenticated and 404. */
+  sourceControlMedia?: boolean | undefined;
   headingLevelOffset?: number | undefined;
 }
 
@@ -391,6 +395,7 @@ function useChatMarkdownState({
   onImageExpand,
   renderContextReference,
   headingLevelOffset = 0,
+  sourceControlMedia = false,
 }: ChatMarkdownProps) {
   const resolvedTheme = useRenderedAppearance();
   const markdownRef = useRef<HTMLElement>(null);
@@ -705,6 +710,7 @@ function useChatMarkdownState({
     environmentId,
     expandMedia,
     fileLinkChip,
+    sourceControlMedia,
     renderContextReference,
     headingLevelOffset,
     imageBaseDir,
@@ -1128,6 +1134,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const {
       expandMedia,
       cwd,
+      environmentId,
+      sourceControlMedia,
       imageBaseDir,
       threadRef,
       workspaceMutationId,
@@ -1194,8 +1202,38 @@ const CHAT_MARKDOWN_COMPONENTS = {
       if (fileLinkMeta) return fileLinkChip(fileLinkMeta, copyMarkdown, srcString);
     }
     const kind = mediaKind ?? "image";
-    // Coder: no source control host's credentialed media is carried; web media loads directly
-    // from its host.
+    const directUri = imageSource._tag === "Direct" ? imageSource.uri : null;
+    const hostMediaUrl =
+      directUri === null
+        ? null
+        : (sourceControlClients.mediaUrl(resolveProtocolRelativeMediaUrl(directUri))?.fetchUrl ??
+          null);
+    if (
+      sourceControlMedia &&
+      cwd !== undefined &&
+      environmentId !== null &&
+      directUri !== null &&
+      hostMediaUrl !== null
+    ) {
+      return (
+        <ChatMarkdownAssetImage
+          environmentId={environmentId}
+          resource={{ _tag: SOURCE_CONTROL_MEDIA_ASSET, cwd, url: hostMediaUrl }}
+          alt={altText}
+          kind={kind}
+          copyMarkdown={copyMarkdown}
+          standalone={standalone}
+          className={className}
+          style={authoredSizeStyle}
+          imageProps={imageProps}
+          srcFragment={markdownImageSourceFragment(classifiedSrc)}
+          originalUrl={resolveProtocolRelativeMediaUrl(directUri)}
+          framed={false}
+          fallbackSrc={hostMediaUrl}
+          onImageExpand={imageExpand}
+        />
+      );
+    }
     if (imageSource._tag === "Direct") {
       const mediaSrc = resolveProtocolRelativeMediaUrl(imageSource.uri);
       const originalUrl =

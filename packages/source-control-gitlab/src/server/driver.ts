@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import { definition } from "../shared/definition.ts";
 
 import * as GitLabCli from "./GitLabCli.ts";
+import * as GitLabMediaFetch from "./GitLabMediaFetch.ts";
 import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
 import * as GitLabPullRequestProvider from "./GitLabPullRequestProvider.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
@@ -18,6 +19,8 @@ const makeInstance = Effect.all({
   sourceControl: GitLabSourceControlProvider.make,
   discovery: Effect.succeed(GitLabSourceControlProvider.discovery),
   pullRequests: GitLabPullRequestProvider.make,
+  // Coder: Markdown uploads load through the workspace's `glab` login.
+  fetchMedia: GitLabMediaFetch.make,
 });
 
 export const driver = defineSourceControlDriver({

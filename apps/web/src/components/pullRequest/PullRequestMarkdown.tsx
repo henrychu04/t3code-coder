@@ -1,10 +1,20 @@
 import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
+import { markdownImageSourceFragment } from "@t3tools/client-runtime/markdown-images";
 import { resolveGitLabUploadUrl } from "@t3tools/client-runtime/pull-request-markdown";
-import type { ReferenceAutolink } from "@t3tools/client-runtime/source-control-clients";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import {
+  sourceControlClients,
+  type ReferenceAutolink,
+} from "@t3tools/client-runtime/source-control-clients";
+import {
+  SOURCE_CONTROL_MEDIA_ASSET,
+  type AssetResource,
+  type EnvironmentId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import { createContext, useContext } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
+import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { cn } from "~/lib/utils";
 import { PULL_REQUESTS_PANEL_REF } from "~/rightPanelStore";
 
@@ -34,10 +44,39 @@ function remarkGitLabUploads(options: { readonly repositoryUrl: string }) {
   return (tree: MarkdownUrlNode) => visit(tree);
 }
 
+function PullRequestHostVideo({
+  environmentId,
+  cwd,
+  url,
+  fetchUrl,
+}: {
+  environmentId: EnvironmentId;
+  cwd: string;
+  url: string;
+  fetchUrl: string;
+}) {
+  const resource: AssetResource = { _tag: SOURCE_CONTROL_MEDIA_ASSET, cwd, url: fetchUrl };
+  const assetUrl = useAssetUrlState(environmentId, resource);
+  const refreshAssetUrl = useAssetUrlRefresh(environmentId, resource);
+  const src =
+    assetUrl._tag === "Success" ? assetUrl.url : assetUrl._tag === "Failure" ? fetchUrl : null;
+  return (
+    <MediaVideoPlayer
+      src={src === null ? null : src + markdownImageSourceFragment(url)}
+      originalUrl={url}
+      label="Merge request video"
+      className="w-full"
+      videoClassName="rounded-lg border border-border/60"
+      onRetry={refreshAssetUrl}
+    />
+  );
+}
+
 /**
- * Upstream's change-request body renderer: recognized GitLab navigation stays internal, videos play
- * inline from their host, and other uploads open there. Relative GitLab uploads resolve against the
- * repository. Coder: no source control host's credentialed media fetch is carried.
+ * Upstream's change-request body renderer: recognized GitLab navigation stays internal, media a
+ * host keeps behind a credential loads through the workspace, other videos play inline from their
+ * host, and other uploads open there. Coder: relative GitLab uploads resolve against the
+ * repository first.
  */
 export function PullRequestMarkdown({
   text,
@@ -81,6 +120,19 @@ export function PullRequestMarkdown({
               threadRef={resolvedThreadRef}
               pullRequestPanelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
               extraRemarkPlugins={extraRemarkPlugins}
+              sourceControlMedia
+            />
+          );
+        }
+        const hostMedia = sourceControlClients.mediaUrl(segment.url);
+        if (segment.media === "video" && hostMedia !== null) {
+          return (
+            <PullRequestHostVideo
+              key={`${segment.id}:${segment.url}`}
+              environmentId={environmentId}
+              cwd={cwd}
+              url={segment.url}
+              fetchUrl={hostMedia.fetchUrl}
             />
           );
         }

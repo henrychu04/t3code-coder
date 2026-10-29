@@ -341,9 +341,12 @@ and never returns file contents.
 Media, documents, and attachments load from upstream's signed asset URLs: `assets.createUrl`,
 `assets/AssetAccess.ts`, `assets/MediaFile.ts`, and upstream's asset route (`http.ts`, which
 carries only that route; `auth/utils.ts` carries only upstream's token signing helpers, because
-upstream's HTTP session auth is not carried). Native app icons (upstream's resolver answers only on macOS) and
-GitHub-authenticated media are not carried, so those resource kinds and their errors are cut from
-`contracts/assets.ts`. Project favicons are upstream's: `ProjectFaviconResolver` with
+upstream's HTTP session auth is not carried). Native app icons (upstream's resolver answers only on macOS) are
+not carried, so that resource kind is cut from `contracts/assets.ts`. Upstream's source control
+media resource (`SOURCE_CONTROL_MEDIA_ASSET`, with `sourceControlMediaResponse.ts`) is carried for
+GitLab's Markdown uploads, which GitLab serves only to a signed-in session: the browser asks for a
+signed URL, and the workspace reads the upload through GitLab's API with `glab` (see
+[Upstream seams](#upstream-seams)), so only the bytes reach the laptop. Project favicons are upstream's: `ProjectFaviconResolver` with
 `T3ProjectFileLoader`, the favicon URL atoms and IndexedDB image cache, and Settings → Project's
 file picker, without the desktop-only picker for files outside the project. For the same reason
 `shared/projectFavicon.ts` keeps `PROJECT_FAVICON_EXTENSIONS` module-private, and
@@ -888,9 +891,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - `vcs.ts` and `git.ts` keep upstream's shapes (GitLab's `GitLabCli` supplies its own
     "Merge request not found." detail), plus the helper-only ref-status and thread-branch rename
     schemas.
-  - `assets.ts` omits native app icons and upstream's source control credentialed media
-    (`SOURCE_CONTROL_MEDIA_ASSET` and `AssetSourceControlMediaUrlValidationError`), because GitLab's
-    definition claims no `mediaUrl`.
+  - `assets.ts` omits native app icons.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
     `CustomModelCapabilities`, which cannot declare them.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
@@ -1040,15 +1041,13 @@ listed here is drift to remove rather than fork behavior to keep.
   for images and videos, `chat/MarkdownFileLink.tsx` and its `.logic.ts` for file chips) are
   upstream's, with these differences (each marked `Coder:` in the files):
   - Workspace images and videos load from upstream's signed asset URLs (see
-    [Media and document previews](#media-and-document-previews)), without upstream's GitHub media
-    resource. A media file that is not found names the workspace and the checked path, where
+    [Media and document previews](#media-and-document-previews)). A media file that is not found names the workspace and the checked path, where
     upstream first checks its remote-open mode, because every workspace is remote. Timeline
     galleries are hosted by `ChatView`, as on main.
   - There is no in-app browser, local editor, or file manager: `MarkdownFileLink` never receives
     `onOpen`, `onOpenInBrowser`, or `onReveal`, and the link context menu never offers the
     integrated browser. Without a primary action a chip opens only its copy menu.
-  - Relative and non-web links render as inert text. Host-credentialed media
-    (`sourceControlMedia`) is omitted; web images and videos load directly from their host.
+  - Relative and non-web links render as inert text.
   - GitLab references open directly: `confirmBeforeOpen` is false and the candidate URL is the
     link itself, because `!N` already names a merge request and `#N` an issue (GitLab's
     `changeRequestUrlFromReferenceAutolink` returns null).
@@ -1133,12 +1132,19 @@ listed here is drift to remove rather than fork behavior to keep.
     host secrets exist; upstream's host, token, account, and routing settings are not carried.
     The registry's `parseChangeRequestUrl` (core `shared/definition.ts`) rejects a URL carrying
     credentials, because links persist their URL verbatim.
-  - GitLab's definition (`source-control-gitlab/src/shared/definition.ts`) has three deltas:
+  - GitLab's definition (`source-control-gitlab/src/shared/definition.ts`) has four deltas:
     `isChangeRequestReference` accepts a merge request URL on any HTTP(S) host, because
     self-hosted hostnames need not contain "gitlab"; `authorProfileUrl` links comment authors
     under the host root; and `referenceAutolinks` (`shared/referenceAutolinks.ts`) links `!N`
     merge requests, `#N` issues, and full commit SHAs below the project with GitLab's `/-/`
-    routes, where upstream's GitLab defines none. The package exports upstream's two entry
+    routes, where upstream's GitLab defines none; and `mediaUrl` (`shared/gitLabMedia.ts`) claims
+    Markdown uploads below a project's path, below `/-/project/<id>/`, or on the API route, and
+    maps each to `/api/v4/projects/<project>/uploads/<secret>/<file>`, where upstream's GitLab
+    claims none. The driver's matching `fetchMedia` (`server/GitLabMediaFetch.ts`) runs
+    `glab api` on that route in the minted `cwd` without `--hostname`, so the credential goes only
+    to the host `glab` already uses for that repository, and buffers at most
+    `GITLAB_MEDIA_MAX_BYTES`. Core's `SourceControlMediaRequest` adds `cwd` for it, and
+    `sourceControlMediaResponse.ts` passes the claim's. The package exports upstream's two entry
     points plus `server/GitLabCli`, which `ws.projects.test.ts` stubs.
   - GitLab's hover preview and summary reads are upstream's (#22583). `source-control-definitions`'
     `canonicalizeGitCafePullRequestUrl` is an identity function, since GitCafe is not carried. Diff output is capped
