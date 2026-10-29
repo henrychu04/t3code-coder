@@ -39,5 +39,12 @@ export function resolveCompatibleRuntimeMode(
     supportedRuntimeModes && supportedRuntimeModes.length > 0
       ? runtimeModeOptions.filter((mode) => supportedRuntimeModes.includes(mode))
       : runtimeModeOptions;
-  return { modes, mode: modes.includes(runtimeMode) ? runtimeMode : (modes[0] ?? runtimeMode) };
+  // Coder: an unsupported mode (a workspace policy can disable modes) steps down to the broadest
+  // supported mode below it, as the server's RuntimePolicy runs it, instead of the narrowest.
+  const rank = runtimeModeOptions.indexOf(runtimeMode);
+  const stepDown = modes.findLast((mode) => runtimeModeOptions.indexOf(mode) <= rank);
+  return {
+    modes,
+    mode: modes.includes(runtimeMode) ? runtimeMode : (stepDown ?? modes[0] ?? runtimeMode),
+  };
 }

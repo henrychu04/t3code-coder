@@ -2287,24 +2287,19 @@ it.layer(
       ),
     );
 
-    it.effect("offers the runtime modes the workspace policy allows on every model", () =>
+    it.effect("offers the runtime modes the workspace policy allows", () =>
       Effect.gen(function* () {
         const settings = { ...defaultClaudeSettings, customModels: ["my-gateway-model"] };
         const expectModes = (
           status: Effect.Success<ReturnType<typeof checkClaudeProviderStatus>>,
           expected: ReadonlyArray<RuntimeMode>,
-        ) =>
-          assert.deepStrictEqual(
-            status.models.map((model) => model.capabilities?.supportedRuntimeModes),
-            status.models.map(() => expected),
-          );
+        ) => assert.deepStrictEqual(status.supportedRuntimeModes, expected);
         const safe: ReadonlyArray<RuntimeMode> = ["approval-required", "auto-accept-edits"];
 
         const work = yield* checkClaudeProviderStatus(
           settings,
           claudeCapabilities({ bypassPermissionsDisabled: true }),
         );
-        assert.isTrue(work.models.some((model) => model.isCustom));
         expectModes(work, [...safe, "auto"]);
 
         const open = yield* checkClaudeProviderStatus(settings, claudeCapabilities());

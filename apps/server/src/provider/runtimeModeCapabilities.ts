@@ -1,4 +1,4 @@
-import type { ModelCapabilities, RuntimeMode, ServerProviderModel } from "@t3tools/contracts";
+import type { RuntimeMode } from "@t3tools/contracts";
 
 export const SAFE_RUNTIME_MODES = [
   "approval-required",
@@ -29,27 +29,4 @@ export function buildSupportedRuntimeModes(input: {
         return input.fullAccess ?? false;
     }
   });
-}
-
-function withSupportedRuntimeModes(
-  capabilities: ModelCapabilities | null | undefined,
-  supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
-): ModelCapabilities {
-  if (!capabilities) {
-    return { supportedRuntimeModes };
-  }
-  return {
-    ...capabilities,
-    supportedRuntimeModes,
-  };
-}
-
-export function attachSupportedRuntimeModes(
-  models: ReadonlyArray<ServerProviderModel>,
-  supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
-): ReadonlyArray<ServerProviderModel> {
-  return models.map((model) => ({
-    ...model,
-    capabilities: withSupportedRuntimeModes(model.capabilities, supportedRuntimeModes),
-  }));
 }

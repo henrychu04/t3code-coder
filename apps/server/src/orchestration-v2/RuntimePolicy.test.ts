@@ -64,34 +64,12 @@ const grokInstanceId = ProviderInstanceId.make("grok");
 const supportedRuntimeModesByInstance = new Map<ProviderInstanceId, ReadonlyArray<RuntimeMode>>([
   [grokInstanceId, ["approval-required", "auto", "full-access"]],
 ]);
-// Coder: Claude reports modes per model; "opus" offers every mode and "sonnet" only the safe ones.
-const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
-const pendingClaudeInstanceId = ProviderInstanceId.make("claudePending");
-const claudeModels = [
-  {
-    slug: "opus",
-    capabilities: {
-      supportedRuntimeModes: ["approval-required", "auto-accept-edits", "auto", "full-access"],
-    },
-  },
-  {
-    slug: "sonnet",
-    capabilities: { supportedRuntimeModes: ["approval-required", "auto-accept-edits"] },
-  },
-];
 const providerInstanceFor = (instanceId: ProviderInstanceId) =>
   ({
     snapshot: {
-      getSnapshot: Effect.succeed(
-        (instanceId === claudeInstanceId || instanceId === pendingClaudeInstanceId
-          ? {
-              status: instanceId === claudeInstanceId ? "ready" : "warning",
-              models: claudeModels,
-            }
-          : {
-              supportedRuntimeModes: supportedRuntimeModesByInstance.get(instanceId),
-            }) as unknown as ServerProvider,
-      ),
+      getSnapshot: Effect.succeed({
+        supportedRuntimeModes: supportedRuntimeModesByInstance.get(instanceId),
+      } as ServerProvider),
     },
   }) as ProviderInstance;
 
@@ -143,33 +121,6 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       assert.equal(yield* modeFor(grokInstanceId, "auto"), "auto");
       assert.equal(yield* modeFor(grokInstanceId, "full-access"), "full-access");
       assert.equal(yield* modeFor(providerInstanceId, "auto-accept-edits"), "auto-accept-edits");
-    }),
-  );
-
-  it.effect("clamps the stored mode to the selected model's reported modes", () =>
-    Effect.gen(function* () {
-      const policy = yield* RuntimePolicy.RuntimePolicyV2;
-      const now = yield* DateTime.now;
-      const modeFor = (instanceId: ProviderInstanceId, model: string, runtimeMode: RuntimeMode) =>
-        policy
-          .resolve({
-            thread: makeThread({ now, worktreePath: null, runtimeMode }),
-            modelSelection: { instanceId, model },
-          })
-          .pipe(Effect.map((resolved) => resolved.runtimeMode));
-
-      assert.equal(yield* modeFor(claudeInstanceId, "opus", "full-access"), "full-access");
-      assert.equal(yield* modeFor(claudeInstanceId, "sonnet", "full-access"), "auto-accept-edits");
-      assert.equal(
-        yield* modeFor(claudeInstanceId, "sonnet", "approval-required"),
-        "approval-required",
-      );
-      // An unreported model or a provider that is not ready offers only the safe modes.
-      assert.equal(yield* modeFor(claudeInstanceId, "unknown", "auto"), "auto-accept-edits");
-      assert.equal(
-        yield* modeFor(pendingClaudeInstanceId, "opus", "full-access"),
-        "auto-accept-edits",
-      );
     }),
   );
 });

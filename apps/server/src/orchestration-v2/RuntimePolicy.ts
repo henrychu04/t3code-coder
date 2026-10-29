@@ -4,7 +4,6 @@ import {
   ProjectId,
   ProviderInstanceId,
   type RuntimeMode,
-  type ServerProvider,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -13,7 +12,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import { SAFE_RUNTIME_MODES } from "../provider/runtimeModeCapabilities.ts";
+import { runtimeModeRank } from "../mcp/delegatedTaskModes.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectStore from "./ProjectStore.ts";
 
@@ -62,6 +61,9 @@ export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2
   }),
 });
 
+// Coder: a mode the provider does not offer (a workspace policy can disable modes) steps down to
+// the broadest offered mode below it, as `delegatedTaskModes.resolveRuntimeMode` does, instead of
+// upstream's approval-required.
 function providerRuntimeMode(
   runtimeMode: RuntimeMode,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
@@ -70,30 +72,10 @@ function providerRuntimeMode(
     supportedRuntimeModes.length === 0 ||
     supportedRuntimeModes.includes(runtimeMode)
     ? runtimeMode
-    : "approval-required";
-}
-
-/**
- * Coder: Codex and Claude report supported modes per model. Mirror the composer: a provider that is
- * not ready, or a selected model without reported modes, offers only the safe modes, and a mode
- * outside what is offered falls back to the most permissive offered mode. Providers that report no
- * per-model modes keep upstream's behavior.
- */
-function modelRuntimeMode(
-  runtimeMode: RuntimeMode,
-  snapshot: ServerProvider | undefined,
-  model: string,
-): RuntimeMode {
-  const models = snapshot?.models ?? [];
-  if (!models.some((candidate) => candidate.capabilities?.supportedRuntimeModes !== undefined)) {
-    return runtimeMode;
-  }
-  const offered =
-    snapshot?.status === "ready"
-      ? (models.find((candidate) => candidate.slug === model)?.capabilities
-          ?.supportedRuntimeModes ?? SAFE_RUNTIME_MODES)
-      : SAFE_RUNTIME_MODES;
-  return offered.includes(runtimeMode) ? runtimeMode : (offered.at(-1) ?? "approval-required");
+    : (supportedRuntimeModes
+        .filter((mode) => runtimeModeRank(mode) <= runtimeModeRank(runtimeMode))
+        .toSorted((left, right) => runtimeModeRank(right) - runtimeModeRank(left))[0] ??
+        "approval-required");
 }
 
 export const layerFromProjectStore: Layer.Layer<
@@ -108,8 +90,10 @@ export const layerFromProjectStore: Layer.Layer<
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
         const instance = yield* providerInstances.getInstance(input.modelSelection.instanceId);
-        const snapshot = instance === undefined ? undefined : yield* instance.snapshot.getSnapshot;
-        const supportedRuntimeModes = snapshot?.supportedRuntimeModes;
+        const supportedRuntimeModes =
+          instance === undefined
+            ? undefined
+            : (yield* instance.snapshot.getSnapshot).supportedRuntimeModes;
         const cwd =
           input.thread.worktreePath ??
           (yield* projects.get(input.thread.projectId).pipe(
@@ -136,11 +120,7 @@ export const layerFromProjectStore: Layer.Layer<
             ),
           ));
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: modelRuntimeMode(
-            providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
-            snapshot,
-            input.modelSelection.model,
-          ),
+          runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
         });
