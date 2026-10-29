@@ -19,7 +19,6 @@ import * as Repositories from "../../../sourceControl/SourceControlRepositorySer
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -181,6 +180,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           input.modelSelection ??
           launchedModel ??
           caller?.modelSelection ??
+          // Coder: no out-of-usage fallback (#26164); it reads plan-window usage, not carried.
           projectDefaults?.defaultModelSelection ??
           undefined;
         if (modelSelection === undefined)
@@ -240,7 +240,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const run = result.projection.runs.find((run) => run.userMessageId === messageId);
         return {
           threadId: thread.id,
-          link: formatThreadLink(thread.id, thread.title),
+          link: McpInvocationContext.threadLinkFor(scope, thread.id),
           projectId: thread.projectId,
           modelSelection: thread.modelSelection,
           runId: run?.id ?? null,

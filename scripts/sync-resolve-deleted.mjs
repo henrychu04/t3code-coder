@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 // `git diff --name-status <merge-base> origin/coder-only | grep ^D`.
 const DELETED_PATHS = {
   // Auth and pairing: Coder owns authentication; no sessions, pairing, OAuth, DPoP, or scopes.
-  // The server's auth/ keeps only ServerSecretStore, which a modify/delete cannot name.
+  // The server's auth/ keeps only ServerSecretStore and utils, which a modify/delete cannot name.
   "auth and pairing": [
     "apps/server/src/auth/",
     "apps/server/src/persistence/AuthPairingLinks.ts",
@@ -25,6 +25,7 @@ const DELETED_PATHS = {
     "apps/web/src/routes/pair.tsx",
     "apps/web/src/state/auth.ts",
     "packages/client-runtime/src/authorization/",
+    "packages/client-runtime/src/state/commandPermissions.test.ts",
     "packages/client-runtime/src/state/auth.ts",
     "packages/shared/src/authScopeOptions.ts",
     "packages/shared/src/connectAuth.ts",
@@ -33,7 +34,8 @@ const DELETED_PATHS = {
     "packages/shared/src/oauthScope.ts",
   ],
   // Preview and browser: no in-app browser, preview panel, or headless browser automation.
-  // web's browser/ keeps only useOpenLink.ts and components/preview/ only the panel shell.
+  // web's browser/ keeps only useOpenLink.ts, and components/preview/ only the panel shell and
+  // its resize handle.
   "preview and browser": [
     "apps/server/src/mcp/PreviewAutomationBroker.ts",
     "apps/server/src/mcp/toolkits/preview/",
@@ -41,6 +43,7 @@ const DELETED_PATHS = {
     "apps/server/src/preview/",
     "apps/web/src/browser/",
     "apps/web/src/components/preview/",
+    "apps/web/src/components/settings/IntegrationsSettings.tsx",
     "apps/web/src/previewMiniPlayerStore.ts",
     "apps/web/src/previewStateStore.ts",
     "apps/web/src/state/preview.ts",
@@ -53,19 +56,27 @@ const DELETED_PATHS = {
   // Device: no device hosts, device hub, or agent device shim.
   device: [
     "apps/server/src/device/",
+    "apps/server/src/mcp/McpDeviceToolkit.test.ts",
     "apps/server/src/mcp/toolkits/device/",
     "apps/web/src/components/device/",
+    "apps/web/src/components/settings/EasDeviceHostEditor.tsx",
+    "apps/web/src/components/settings/easDeviceHostsSettings.logic.ts",
     "apps/web/src/state/device.ts",
+    "docs/internals/devices.md",
+    "docs/user/devices.md",
+    "packages/contracts/src/device.test.ts",
     "packages/client-runtime/src/device/",
     "packages/client-runtime/src/state/device.ts",
   ],
-  // HTTP routes and assets: the helper serves stdio RPC only; no HTTP server, routes, or signed
-  // asset URLs.
+  // HTTP routes and assets: the helper serves stdio RPC; its only HTTP route is the signed asset
+  // route in http.ts, which assets/ backs, so both stay. No native app icons or credentialed
+  // source-control media.
   "HTTP routes and assets": [
-    "apps/server/src/assets/",
-    "apps/server/src/http.ts",
+    "apps/server/src/assets/NativeAppIconResolver.ts",
+    "apps/server/src/assets/sourceControlMediaResponse.ts",
     "apps/server/src/httpCors.ts",
     "apps/server/src/mcp/McpHttpServer.ts",
+    "apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts",
     "apps/server/src/orchestration-v2/http.ts",
     "apps/server/src/project/http.ts",
     "apps/server/src/pullRequest/http.ts",
@@ -86,6 +97,13 @@ const DELETED_PATHS = {
     "apps/server/scripts/record-fx-acp-replay-fixture.ts",
     "apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts",
     "apps/server/src/orchestration-v2/Adapters/FxAdapterV2.ts",
+    "apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts",
+    "apps/server/src/provider/AntigravityInstallation.ts",
+    "apps/server/src/provider/AntigravityProvider.ts",
+    "apps/server/src/provider/Drivers/AntigravityDriver.ts",
+    "apps/server/src/provider/antigravityRelease.ts",
+    "apps/server/src/textGeneration/AntigravityTextGeneration.ts",
+    "docs/user/providers-antigravity.md",
     "apps/server/src/provider/acp/",
     "packages/provider-cursor/",
     "packages/provider-fx/",
@@ -115,14 +133,17 @@ const DELETED_PATHS = {
     "apps/desktop/",
     "apps/server/src/desktopUpdate/",
     "apps/web/src/components/desktop/",
+    "apps/web/src/components/chat/OpenInPicker.tsx",
+    "apps/web/src/components/chat/OpenInPickerShortcut.ts",
     "apps/web/src/components/permissions/",
     "apps/web/src/environments/",
     "assets/",
     "native/",
+    "packages/contracts/src/ipc.ts",
     "packaging/",
   ],
   // Mobile: no mobile app.
-  mobile: ["apps/mobile/"],
+  mobile: ["apps/mobile/", "patches/@expo__ui@58.0.20.patch"],
   // Hosted web: no hosted app, cloud accounts, marketing site, or welcome onboarding.
   "hosted web": [
     "apps/marketing/",
@@ -132,29 +153,73 @@ const DELETED_PATHS = {
     "apps/web/src/components/cloud/",
     "apps/web/src/components/onboarding/",
   ],
-  // Server CLI: the helper starts over `coder ssh`, never as upstream's `t3` command.
-  "server CLI": ["apps/server/src/cli/"],
+  // Server CLI: the helper starts over `coder ssh`, never as upstream's `t3` command, and
+  // CoderEnvironment replaces upstream's ServerEnvironment.
+  "server CLI": ["apps/server/src/cli/", "apps/server/src/environment/ServerEnvironment.ts"],
   // Relay: no relay, Tailscale, or SSH transport.
   relay: [
     "apps/server/src/relay/",
     "apps/web/src/state/relay.ts",
+    "docs/internals/remote.md",
+    "docs/user/remote-access.md",
     "infra/",
     "packages/client-runtime/src/relay/",
     "packages/ssh/",
     "packages/tailscale/",
   ],
-  // Telemetry: no T3-owned telemetry, usage dashboards, diagnostics, or trace export.
+  // Telemetry: no T3-owned telemetry, usage dashboards or plan-window usage limits, diagnostics,
+  // or trace export.
   telemetry: [
     "apps/server/src/diagnostics/",
+    "apps/server/src/observability/RpcInstrumentation.ts",
     "apps/server/src/resourceTelemetry/",
     "apps/server/src/telemetry/",
     "apps/server/src/usage/",
     "apps/web/src/components/usage/",
+    "apps/web/src/components/chat/ComposerUsageLimits.tsx",
     "apps/web/src/observability/",
     "apps/web/src/state/usage.ts",
     "packages/client-runtime/src/state/usage.ts",
     "packages/contracts/src/resourceTelemetry.ts",
     "packages/contracts/src/usage.ts",
+    "packages/shared/src/usageLimits.ts",
+    "docs/user/usage.md",
+  ],
+  // Updates and releases: no server self-update, update pill or fleet tracks, npm launcher, CLI
+  // archives, or release notes.
+  "updates and releases": [
+    "apps/server/src/persistence/databaseMigrationHead.ts",
+    "apps/web/src/components/ServerUpdateAction.tsx",
+    "apps/web/src/components/sidebar/SidebarUpdatePill.tsx",
+    "apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx",
+    "apps/web/src/components/sidebar/UpdateEverythingDialog.tsx",
+    "apps/web/src/components/sidebar/updateEverything.logic.ts",
+    "apps/web/src/components/sidebar/useUpdateEverything.ts",
+    "apps/web/src/state/npmRelease.ts",
+    "docs/user/updating.md",
+    "packages/shared/src/cliRelease.ts",
+    "scripts/build-cli-archive.ts",
+    "scripts/build-npm-launcher.ts",
+    "scripts/generate-release-notes.ts",
+    "scripts/licenses/libatomic.LICENSE",
+    "scripts/notify-discord-release.ts",
+    "scripts/smoke-cli-archive.ts",
+  ],
+  // Peer links: the gateway hub replaces upstream's peer stack, so there is no link request card
+  // or client peer-link state.
+  "peer links": [
+    "apps/web/src/components/chat/LinkRequestCard.tsx",
+    "packages/client-runtime/src/state/peerLinks.ts",
+  ],
+  // Guest sharing: no guest share links, guest page, or guest HTTP routes.
+  "guest sharing": [
+    "apps/server/src/guest/",
+    "apps/web/src/components/chat/GuestMessageAttachments.tsx",
+    "apps/web/src/components/chat/GuestShareControls.tsx",
+    "apps/web/src/components/chat/guestMessageStyle.tsx",
+    "apps/web/src/components/guest/",
+    "apps/web/src/guestPage.ts",
+    "apps/web/src/routes/guest.tsx",
   ],
   // Triage, dev servers, and dev replay: no in-app triage of upstream issues, no dev-server panel
   // (it needs the preview port scanner), and no dev-only replay provider.
@@ -190,6 +255,11 @@ const DELETED_PATHS = {
     "apps/server/src/provider/agentContextBudget.json",
     "apps/web/scripts/verify-built-boot.ts",
     "docs/operations/",
+    "docs/internals/open-source-licenses.md",
+    "docs/user/faq.md",
+    "scripts/check-changed.ts",
+    // Upstream's ChatMarkdown browser test, which the fork has not carried since its first commit.
+    "apps/web/src/components/ChatMarkdown.browser.test.tsx",
     // CodeRabbit's configuration and upstream's MCP tool-use evals.
     ".coderabbit.config.ts",
     "evals/",

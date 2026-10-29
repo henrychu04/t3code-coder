@@ -72,6 +72,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadStop: true,
   environmentIcon: true,
   projectCloneTracking: true,
+  threadProjectFromScratch: true,
   // Links are the gateway's workspace link rules; calls between workspaces go through its hub.
   peerLinks: true,
   linkFence: true,
@@ -89,6 +90,7 @@ export const CODER_OMITTED_CAPABILITIES = {
   serverUpdateThreadContinuation: "No server self-update.",
   agentActivityPublishing: "No relay, push notifications, or Live Activities.",
   desktopAppUpdate: "No desktop app.",
+  desktopAppChannelSwitch: "No desktop app.",
   serverBrowser: "No browser preview.",
   databaseStorage: "No `t3 doctor` in the workspace helper; it compacts and reclaims space itself.",
   ignoredFileListing:

@@ -437,7 +437,12 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
   });
 }
 
-// Coder: no legacy sidebar, so there is no `useLegacySidebarEnabled`.
+/** Legacy sidebar opt-ins still count, so those users land in the boring sidebar. */
+export function useBoringSidebarEnabled(): boolean {
+  return useClientSettings(
+    (settings) => settings.boringSidebarEnabled || settings.legacySidebarEnabled,
+  );
+}
 
 export async function prepareModelPreferencesPatch(
   settings: ServerSettings,

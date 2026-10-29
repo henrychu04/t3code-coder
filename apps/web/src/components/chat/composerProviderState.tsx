@@ -5,10 +5,9 @@ import {
   type ProviderInstanceId,
   type ProviderOptionSelection,
   type ScopedThreadRef,
-  type RuntimeMode,
-  type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import type { EffortDisplay } from "@t3tools/contracts/settings";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentValue,
@@ -21,7 +20,6 @@ import type { ReactNode } from "react";
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
 import type { ComposerControlSize } from "./ComposerControl";
-import { resolveCompatibleRuntimeMode } from "./runtimeModeConfig";
 import {
   getReasoningTraitStep,
   shouldRenderTraitsControls,
@@ -45,8 +43,6 @@ type ComposerProviderState = {
   provider: ProviderDriverKind;
   promptEffort: string | null;
   modelOptionsForDispatch: ReadonlyArray<ProviderOptionSelection> | undefined;
-  // Coder: the runtime modes the selected model reports, from the provider's policy.
-  supportedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   composerFrameClassName?: string;
   composerSurfaceClassName?: string;
   modelPickerIconClassName?: string;
@@ -68,6 +64,10 @@ type TraitsRenderInput = {
   hidden?: boolean;
   triggerClassName?: string;
   isComposerOwned?: boolean;
+  effortDisplay?: EffortDisplay;
+  extraMenuContent?: ReactNode;
+  extraMenuOwnsModeShortcut?: boolean;
+  extraMenuHint?: string;
 };
 
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
@@ -155,7 +155,6 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
       descriptors,
       selections,
     ),
-    ...(caps.supportedRuntimeModes ? { supportedRuntimeModes: caps.supportedRuntimeModes } : {}),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",
@@ -238,6 +237,10 @@ function renderTraitsControl(
     hidden,
     triggerClassName,
     isComposerOwned,
+    effortDisplay,
+    extraMenuContent,
+    extraMenuOwnsModeShortcut,
+    extraMenuHint,
   } = input;
   const hasTarget = threadRef !== undefined || draftId !== undefined;
   const { selections: resolvedModelOptions } = resolveComposerOptionSelections(
@@ -277,6 +280,10 @@ function renderTraitsControl(
       {...(hidden !== undefined ? { hidden } : {})}
       {...(triggerClassName !== undefined ? { triggerClassName } : {})}
       {...(isComposerOwned ? { isComposerOwned } : {})}
+      {...(effortDisplay ? { effortDisplay } : {})}
+      {...(extraMenuContent ? { extraMenuContent } : {})}
+      {...(extraMenuOwnsModeShortcut ? { extraMenuOwnsModeShortcut } : {})}
+      {...(extraMenuHint ? { extraMenuHint } : {})}
     />
   );
 }
@@ -287,53 +294,4 @@ export function renderProviderTraitsMenuContent(input: TraitsRenderInput): React
 
 export function renderProviderTraitsPicker(input: TraitsRenderInput): ReactNode {
   return renderTraitsControl(TraitsPicker, input);
-}
-
-// Coder: until a provider reports supported modes, the composer offers only the safe ones.
-const SAFE_RUNTIME_MODES = [
-  "approval-required",
-  "auto-accept-edits",
-] as const satisfies ReadonlyArray<RuntimeMode>;
-
-/**
- * Coder: keep the requested mode when the workspace provider supports it; otherwise use the
- * most permissive supported mode. Supported modes are ordered from least to most permissive.
- */
-export function resolveComposerRuntimeMode(
-  runtimeMode: RuntimeMode,
-  supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
-): RuntimeMode {
-  return supportedRuntimeModes.includes(runtimeMode)
-    ? runtimeMode
-    : (supportedRuntimeModes.at(-1) ?? "approval-required");
-}
-
-/** Coder: a provider that is not ready offers only the safe modes. */
-export function resolveAvailableRuntimeModes(
-  providerStatus: ServerProvider["status"] | null | undefined,
-  supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
-): ReadonlyArray<RuntimeMode> {
-  return providerStatus === "ready"
-    ? (supportedRuntimeModes ?? SAFE_RUNTIME_MODES)
-    : SAFE_RUNTIME_MODES;
-}
-
-/**
- * Coder: the modes the composer offers and the one it shows, as `RuntimePolicy` runs them. Codex
- * and Claude report modes per model (the two functions above); a ready provider whose models report
- * none (Pi, Kilo Code) keeps upstream's `resolveCompatibleRuntimeMode`.
- */
-export function resolveComposerRuntimeModes(
-  runtimeMode: RuntimeMode,
-  provider: Pick<ServerProvider, "status" | "models" | "supportedRuntimeModes"> | null,
-  modelRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
-): { readonly modes: ReadonlyArray<RuntimeMode>; readonly mode: RuntimeMode } {
-  if (
-    provider?.status !== "ready" ||
-    provider.models.some((model) => model.capabilities?.supportedRuntimeModes !== undefined)
-  ) {
-    const modes = resolveAvailableRuntimeModes(provider?.status, modelRuntimeModes);
-    return { modes, mode: resolveComposerRuntimeMode(runtimeMode, modes) };
-  }
-  return resolveCompatibleRuntimeMode(runtimeMode, provider.supportedRuntimeModes);
 }

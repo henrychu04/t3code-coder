@@ -211,18 +211,14 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           ) : null}
         </>
       )}
+      <SidebarThreadUndoNotice />
     </SidebarMenu>
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter({
-  showUndoNotice = false,
-}: {
-  showUndoNotice?: boolean;
-}) {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
     <SidebarFooter>
-      {showUndoNotice ? <SidebarThreadUndoNotice /> : null}
       <SidebarProviderUpdatePill />
       <SidebarUtilityMenu />
     </SidebarFooter>

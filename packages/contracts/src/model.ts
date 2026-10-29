@@ -99,24 +99,13 @@ function canonicalSelectionsToLegacyObject(
 
 export const ModelCapabilities = Schema.Struct({
   optionDescriptors: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
-  // Coder: runtime modes the workspace provider reports for this model.
-  supportedRuntimeModes: Schema.optional(
-    Schema.Array(
-      Schema.Literals(["approval-required", "auto-accept-edits", "auto", "full-access"]),
-    ),
-  ),
 });
 export type ModelCapabilities = typeof ModelCapabilities.Type;
-
-/** Coder: custom entries configure options; runtime modes come from the provider snapshot. */
-export const CustomModelCapabilities = Schema.Struct({
-  optionDescriptors: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
-});
 
 export const CustomModelEntry = Schema.Struct({
   slug: TrimmedNonEmptyString,
   name: Schema.optional(TrimmedNonEmptyString),
-  capabilities: Schema.optional(CustomModelCapabilities),
+  capabilities: Schema.optional(ModelCapabilities),
 });
 export type CustomModelEntry = typeof CustomModelEntry.Type;
 
@@ -151,7 +140,7 @@ export const MUSE_DEFAULT_MODEL = "default";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-fable-5-1",
+  [CLAUDE_DRIVER_KIND]: "claude-opus-5-5",
   [CURSOR_DRIVER_KIND]: "auto",
   // Product slug meaning the current session model, never an ACP model id.
   [GROK_DRIVER_KIND]: "grok-build",

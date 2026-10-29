@@ -21,7 +21,6 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -286,6 +285,7 @@ export function useSourceControlPublishRepositoryAction(scope: SourceControlActi
         ),
       );
     }
+    // Coder: no forge app sign-in (#26245), so publishing suggests no app access.
     return publishRepository({
       environmentId: target.environmentId,
       input: {
@@ -368,15 +368,14 @@ export function readCachedPullRequestResolution(
   if (target.environmentId === null || target.cwd === null || target.reference === null) {
     return null;
   }
-  return Option.getOrNull(
-    AsyncResult.value(
-      appAtomRegistry.get(
-        gitEnvironment.pullRequestResolution({
-          environmentId: target.environmentId,
-          input: { cwd: target.cwd, reference: target.reference },
-        }),
-      ),
+  return AsyncResult.getOrElse(
+    appAtomRegistry.get(
+      gitEnvironment.pullRequestResolution({
+        environmentId: target.environmentId,
+        input: { cwd: target.cwd, reference: target.reference },
+      }),
     ),
+    () => null,
   );
 }
 

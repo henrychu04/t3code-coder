@@ -1,3 +1,4 @@
+import { pipe } from "effect/Function";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -40,7 +41,7 @@ import {
   decodeCodexRuntimeRequirementsResponse,
   resolveCodexSupportedRuntimeModes,
 } from "./CodexRuntimeModes.ts";
-import { attachSupportedRuntimeModes } from "./runtimeModeCapabilities.ts";
+import { SAFE_RUNTIME_MODES } from "./runtimeModeCapabilities.ts";
 import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
@@ -85,6 +86,8 @@ const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
   reportsContextWindow: true,
+  // Coder: only the safe modes until the probe reads the workspace's runtime-mode policy.
+  supportedRuntimeModes: SAFE_RUNTIME_MODES,
 } as const;
 
 export interface CodexAppServerProviderSnapshot {
@@ -814,23 +817,19 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
             checkedAt,
           });
 
-  const providerModels = applyConfiguredCodexServiceTier(
-    applyPreferredCodexDefaultModel(
-      appendCustomCodexModels(snapshot.models ?? [], codexSettings.customModels),
-    ),
-    snapshot.serviceTier,
-  );
-  // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
-  const models =
-    snapshot.supportedRuntimeModes === undefined
-      ? providerModels
-      : attachSupportedRuntimeModes(providerModels, snapshot.supportedRuntimeModes);
-
   return buildServerProvider({
-    presentation: CODEX_PRESENTATION,
+    // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
+    presentation:
+      snapshot.supportedRuntimeModes === undefined
+        ? CODEX_PRESENTATION
+        : { ...CODEX_PRESENTATION, supportedRuntimeModes: snapshot.supportedRuntimeModes },
     enabled: codexSettings.enabled,
     checkedAt,
-    models,
+    models: pipe(
+      appendCustomCodexModels(snapshot.models ?? [], codexSettings.customModels),
+      applyPreferredCodexDefaultModel,
+      (models) => applyConfiguredCodexServiceTier(models, snapshot.serviceTier),
+    ),
     skills: snapshot.skills,
     slashCommands: [
       COMPACT_SLASH_COMMAND,

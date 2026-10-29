@@ -39,6 +39,7 @@ export interface SourceControlDriverInstance {
     HttpClientError.HttpClientError,
     Scope.Scope
   >;
+  // Coder: no forge app sign-in (`signIn`); GitLab uses the workspace's `glab` login.
 }
 
 /** What the server gives every driver. A driver builds anything else it needs itself. */

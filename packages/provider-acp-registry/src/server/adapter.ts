@@ -130,6 +130,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   const startupKey = `local:${options.instanceId}`;
   const flavor: AcpAdapterV2Flavor = {
     driver: ACP_REGISTRY_PROVIDER,
+    // Coder: no Copilot flavor, so no Copilot steering override (#26715).
     capabilities: AcpProviderCapabilitiesV2,
     customModels: readCustomModelEntries(options.settings.customModels).map((entry) => entry.slug),
     promptFailure: acpRegistryPromptFailure,

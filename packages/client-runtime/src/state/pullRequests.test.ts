@@ -34,6 +34,8 @@ import { executeAtomQuery } from "./runtime.ts";
 
 class MutationRefused extends Data.TaggedError("MutationRefused") {}
 
+// Coder: one connection target; upstream's cross-environment routing tests (shared probes,
+// alternates, routed viewed marks and writes) are not carried with that routing.
 const TARGET = new ConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
   label: "Test environment",
@@ -558,15 +560,11 @@ it.effect("updates cached labels after successful edits without rereading the ho
       registry.refresh(detail);
       yield* detailRefreshStarted.await;
       expect(registry.get(detail).waiting).toBe(true);
-      expect(Option.getOrThrow(AsyncResult.value(registry.get(detail))).labels).toEqual([
-        addedLabel,
-      ]);
+      expect(AsyncResult.getOrThrow(registry.get(detail)).labels).toEqual([addedLabel]);
       yield* releaseDetailRefresh.open;
       yield* Effect.exit(AtomRegistry.getResult(registry, detail, { suspendOnWaiting: true }));
       expect(AsyncResult.isFailure(registry.get(detail))).toBe(true);
-      expect(Option.getOrThrow(AsyncResult.value(registry.get(detail))).labels).toEqual([
-        addedLabel,
-      ]);
+      expect(AsyncResult.getOrThrow(registry.get(detail)).labels).toEqual([addedLabel]);
       failDetail = false;
       registry.refresh(detail);
       expect(
@@ -610,7 +608,7 @@ it.effect("publishes the accepted guide run before the follow-up read finishes",
       const result = yield* Effect.promise(() => atoms.generateReviewGuide.run(registry, target));
       expect(result._tag).toBe("Success");
       yield* refreshStarted.await;
-      expect(Option.getOrNull(AsyncResult.value(registry.get(query)))).toEqual(accepted);
+      expect(AsyncResult.getOrElse(registry.get(query), () => null)).toEqual(accepted);
     }),
   ),
 );

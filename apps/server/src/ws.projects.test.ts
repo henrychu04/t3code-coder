@@ -46,6 +46,7 @@ import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
+import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import { ProviderMaintenanceRunner } from "./provider/providerMaintenanceRunner.ts";
@@ -151,6 +152,7 @@ const harness = (
           Effect.succeed(id === testProjectId ? Option.some(project) : Option.none()),
       }),
       stub(ManagedProjectFolders.ManagedProjectFolders),
+      stub(ScratchThreadPromotion.ScratchThreadPromotion),
       stub(ThreadSearch.ThreadSearch),
       stub(ProviderSessionManager.ProviderSessionManagerV2),
       stub(ScheduledTasks.ScheduledTaskService),

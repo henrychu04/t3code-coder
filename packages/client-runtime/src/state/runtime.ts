@@ -566,7 +566,7 @@ const refreshEveryUntilFinal =
  * reader of only this skips the refetches that changed nothing.
  */
 export const selectEnvironmentQueryData = <A, E>(result: AsyncResult.AsyncResult<A, E>): A | null =>
-  Option.getOrNull(AsyncResult.value(result));
+  AsyncResult.getOrElse(result, () => null);
 
 type EnvironmentConnection = readonly [
   SupervisorConnectionState,
@@ -636,7 +636,7 @@ export function environmentSessionGenerationAtom<R, ER>(
             get.self<{ readonly session: RpcSession.RpcSession | null; readonly count: number }>(),
             () => ({ session: null, count: 0 }),
           );
-          const connection = Option.getOrNull(AsyncResult.value(get(connectionAtom(id))));
+          const connection = AsyncResult.getOrElse(get(connectionAtom(id)), () => null);
           if (connection === null || connection[0].phase !== "connected") return previous;
           const session = Option.getOrNull(connection[1]);
           return session === null || session === previous.session
@@ -682,8 +682,9 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         | EnvironmentRegistry.EnvironmentNotRegisteredError
         | EnvironmentRpcUnavailableError
       >((get) => {
-        const connection = Option.getOrNull(
-          AsyncResult.value(get(connectionAtom(target.environmentId))),
+        const connection = AsyncResult.getOrElse(
+          get(connectionAtom(target.environmentId)),
+          () => null,
         );
         if (connection === null) {
           return Effect.never;

@@ -61,7 +61,10 @@ describe("Coder thread snapshot loader", () => {
       expect(
         yield* fetchEnvironmentThreadHistoryPage({ supervisor, threadId, cursor: "older" }),
       ).toEqual(page);
-      expect(inputs).toEqual([{ threadId }, { threadId, cursor: "older" }]);
+      expect(inputs).toEqual([
+        { threadId, deferWork: true },
+        { threadId, cursor: "older", deferWork: true },
+      ]);
 
       yield* SubscriptionRef.set(session, Option.none());
       expect(yield* loader.load({} as PreparedConnection, threadId)).toEqual({
