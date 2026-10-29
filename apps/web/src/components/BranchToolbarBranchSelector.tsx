@@ -10,7 +10,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, VcsRef, ThreadId } from "@t3tools/contracts";
 import type { ContextMenuItem } from "../localApiTypes";
-import { ChevronDownIcon, GitBranchIcon, PencilIcon } from "lucide-react";
+import { GitBranchIcon, PencilIcon } from "lucide-react";
 import {
   useDeferredValue,
   useEffect,
@@ -826,7 +826,6 @@ export function BranchToolbarBranchSelector({
                   className="w-full"
                 />
               </ComposerContextLabel>
-              {displayMode !== "panel" ? <ChevronDownIcon className="size-3 shrink-0" /> : null}
             </ComboboxTrigger>
           </span>
           {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (

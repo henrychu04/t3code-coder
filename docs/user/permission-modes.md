@@ -3,9 +3,12 @@
 A permission mode controls how much the selected agent does on its own and when it stops to ask
 you.
 
-The mode is set per thread from the mode control in the message composer. Changing it in one thread
-does not change any other thread. A thread created from inside another thread keeps that thread's
-mode; otherwise new threads start in **Full access** unless you pick something else before sending.
+The mode is set per thread in the message composer. A new thread names its mode under the composer.
+In a thread on your default mode, open **Permissions** from the effort menu or press `mod+shift+a`.
+A thread on another mode, or a model without an effort menu, shows the mode next to the model.
+Changing it in one thread does not change any other thread. A thread created from inside another
+thread keeps that thread's mode; otherwise new threads start in **Full access** unless you pick
+something else before sending.
 
 ## The modes
 

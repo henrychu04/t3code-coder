@@ -156,6 +156,16 @@ const DELETED_PATHS = {
     "packages/contracts/src/resourceTelemetry.ts",
     "packages/contracts/src/usage.ts",
   ],
+  // Guest sharing: no guest share links, guest page, or guest HTTP routes.
+  "guest sharing": [
+    "apps/server/src/guest/",
+    "apps/web/src/components/chat/GuestMessageAttachments.tsx",
+    "apps/web/src/components/chat/GuestShareControls.tsx",
+    "apps/web/src/components/chat/guestMessageStyle.tsx",
+    "apps/web/src/components/guest/",
+    "apps/web/src/guestPage.ts",
+    "apps/web/src/routes/guest.tsx",
+  ],
   // Triage, dev servers, and dev replay: no in-app triage of upstream issues, no dev-server panel
   // (it needs the preview port scanner), and no dev-only replay provider.
   "triage, dev servers, and dev replay": [
