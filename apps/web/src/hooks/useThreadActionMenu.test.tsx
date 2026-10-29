@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   setThreadAutoSettle: vi.fn(async () => ({ _tag: "Success" as const, value: undefined })),
 }));
 vi.mock("./useThreadActions", () => ({
+  canTurnThreadIntoProject: () => false,
   useThreadActions: () => ({ setThreadAutoSettle: state.setThreadAutoSettle }),
 }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));

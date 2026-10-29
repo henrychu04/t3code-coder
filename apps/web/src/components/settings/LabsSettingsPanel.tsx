@@ -13,8 +13,10 @@ export function LabsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
+        <BoringSidebarMultilineRow />
         {/* Coder: no guest links row; guest links need T3 Connect, which is not carried. */}
         <LinkedEnvironmentsRow />
+        {/* Coder: no Simlock hosts row; device hosts are not carried. */}
       </SettingsSection>
       <LegacyFeaturesSection />
     </SettingsPageContainer>
@@ -36,6 +38,26 @@ function BoringSidebarRow() {
             updateSettings({ boringSidebarEnabled: Boolean(checked), legacySidebarEnabled: false })
           }
           aria-label="Boring sidebar (group by project)"
+        />
+      }
+    />
+  );
+}
+
+function BoringSidebarMultilineRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("boring-sidebar-multiline")}
+      description="In the boring sidebar, show folder threads on two lines: the title, then the branch, pull request, and agent."
+      control={
+        <Switch
+          checked={settings.boringSidebarMultilineRows}
+          onCheckedChange={(checked) =>
+            updateSettings({ boringSidebarMultilineRows: Boolean(checked) })
+          }
+          aria-label="Two-line folder rows"
         />
       }
     />

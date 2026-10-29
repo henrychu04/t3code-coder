@@ -693,7 +693,10 @@ listed here is drift to remove rather than fork behavior to keep.
       attachment budget by `sizeBytes`, and forks carry `claudeAttachmentBudget` beside
       `claudeFork`. Upstream's out-of-process `runClaudeWorker` fork is not carried (forks use
       the CLI transport); only its `encodeClaudeJson` helper stays.
-    - Preview, device, and attachment-upload toolkits are not carried.
+    - Preview, device, and attachment-upload toolkits are not carried. provider-core's device
+      instructions (#25661) are upstream's but never reach an agent: no session holds the
+      `device` capability, and `ClaudeAdapterV2.ts` takes no `deviceToolsAvailable` input and
+      adds no `SubagentStart` device hook.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
     and WebP. Tool-result image bytes follow upstream: `stripUnservedToolOutputImageBytes` keeps
@@ -762,7 +765,8 @@ listed here is drift to remove rather than fork behavior to keep.
       Code driver and probe tests.
     - `AcpRegistryRuntimeCoordinator.ts` has no URL authentication consent or session mutation
       permit. `adapter.ts` has no Devin, GitHub Copilot, or Mistral Vibe flavor (`copilotAcp.ts`
-      and `devinAcp.ts` are not carried) and no native protocol logging.
+      and `devinAcp.ts` are not carried), so neither Copilot's steering override (#26715) nor its
+      test, and no native protocol logging.
     - provider-acp's `adapter.ts` has no self-invocation: every ACP session gets no MCP server,
       and when the thread has a bridge command the first prompt carries
       `t3ToolBridgeInstructions` (moved to provider-core for this) through provider-core's
@@ -790,7 +794,10 @@ listed here is drift to remove rather than fork behavior to keep.
     providers the workspace can reach. It still passes `--no-tools`. Claude's runner
     (`textGeneration/ClaudeTextGeneration.ts`) drops plain-text stdout lines before the first
     JSON line, because a managed workspace launcher prints a banner there first, as
-    `ClaudeCli.ts` allows for stream-json.
+    `ClaudeCli.ts` allows for stream-json. Upstream's out-of-usage fallback (#26164) is not
+    carried in text generation, `t3_thread_launch`'s project default, or the web: it reads
+    plan-window usage (`shared/usageLimits.ts`, not carried), which API-key providers never
+    report. `fallbackModelSelection` stays in the settings schema only.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
     session stores through the helper. `coderServer.ts` provides the scanner beside the helper RPC
     layer, as upstream does beside its WebSocket layer. Upstream offers the import in its welcome
@@ -890,6 +897,10 @@ listed here is drift to remove rather than fork behavior to keep.
     `WsRpcGroup` stays dormant, unreferenced, with the RPCs only it uses, and `knip.jsonc`
     ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
+  - `CoderWsRpcGroup` carries `projects.createFromThread` (#26767), and the descriptor advertises
+    `threadProjectFromScratch`. `server.ts` mirrors `ipc.ts`'s `DesktopUpdateChannelSchema` for
+    `ServerSelfUpdateInput` (#26288), because `ipc.ts` is not carried; the descriptor omits
+    `desktopAppChannelSwitch` and `databaseMigration`.
   - `ServerConfig` omits auth, editors, remote open targets, and observability, except
     upstream's optional `lastEventLoopStall`, which stays in the schema but is never sent.
   - `vcs.ts` and `git.ts` keep upstream's shapes (GitLab's `GitLabCli` supplies its own
@@ -961,7 +972,9 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Project actions.** The thread details panel, action editor, and Settings → Actions are
   upstream's. Coder deltas: repository actions come from the helper's validated `t3.json` read by
   project (`projects.getConfig`), which drops `iconPath` and script preview fields; the editor has
-  no preview URL.
+  no preview URL. The thread details card's item choices (#26904) have no Open in, servers, or
+  usage items, so `threadDetailsUsageEnabled` is never read, and Labs' 5h, weekly, and context
+  limits view (#26859, `ThreadDetailsUsage`) is not carried.
 - **Right panel and composer chrome.** `RightPanelTabs.tsx` is upstream's tab strip and
   `PreviewPanelShell` layout without browser, device, and preview surfaces: no launcher rows,
   favicons, browser profiles, audio controls, or device rename. Never-opened preview and device
@@ -1073,7 +1086,9 @@ listed here is drift to remove rather than fork behavior to keep.
   and a file outside a subfolder project opens by its absolute path.
   `projectFilesQueryState.ts` has no `isFile`, which only the uncarried `OpenInPicker` reads.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
-- **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
+- **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. GitHub
+  maintainer edits (#25588) have no web control; the service and source-control-core plumbing is
+  upstream's, gated on a capability GitLab never advertises. Diffs
   come over the `pullRequests.diff` RPC without upstream's cross-environment GitHub routing,
   a project's default merge method is a workspace setting whose `null` means "last selected",
   and `!` references and GitLab wording are
@@ -1223,7 +1238,7 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Settings.** Upstream's layout, pages (#25651), navigation, and search, with Coder's Connections
   ("Environments"), Providers, GitLab, and background-activity panels. The access, browser,
   devices, SnapShot, and diagnostics pages are not carried, and `movedSettingsPath` never points at
-  them; Labs' Beta section has only the Linked environments switch (no guest links); About has no mobile app row or privacy policy link;
+  them; Labs' Beta section has only the Linked environments switch (no guest links or Simlock row); About has no mobile app row, privacy policy link, or update-track switch (#26288);
   storage cleanup lives on Maintenance and Worktrees as upstream's. `hooks/useEnvironmentDisconnectDelay.ts`
   keeps only upstream's `useEnvironmentStateHeldFor`. No Integrations, SnapShot, desktop, diagnostics,
   pairing, mobile app links (`MobileAppSettingsRow`), or `keybindings.json` editor. Settings
@@ -1263,7 +1278,8 @@ listed here is drift to remove rather than fork behavior to keep.
   registry, whose final schema matches upstream ID 54, and rewrites the history to upstream's IDs
   before upstream's migrator runs. A V2 preview ledger is reconciled before that rewrite, because
   the Coder legacy registry never recorded `OrchestrationV2`. Any other history is left to
-  upstream's migrator and its V2 id-clash check, so `Migrations.test.ts` is upstream's. New
+  upstream's migrator and its V2 id-clash check, so `Migrations.test.ts` is upstream's, without
+  #26288's file-name check (it serves the npm launcher, and the auth IDs have no files). New
   migrations take upstream's next ID; never add a Coder-only migration ID. `migrationEntries`
   stays exported (upstream made it private) for the Coder legacy-history tests.
 - **Persistence.** Upstream's offline query persistence, which only its mobile app
@@ -1347,9 +1363,9 @@ listed here is drift to remove rather than fork behavior to keep.
   `GitVcsDriverCore.fixture.sh` are not carried; `ProviderInstanceRegistry.test.ts` and
   `GitVcsDriverCore.test.ts` write the same stand-ins into their temporary directories (marked
   `Coder:`).
-- **Build tooling.** `scripts/lib/third-party-licenses.ts` never fetches during a build: SPDX
-  texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
-  ones. It reads no device tool version pins, because device tools are not carried. Upstream's
+- **Build tooling.** `scripts/lib/third-party-licenses.ts` reads no device tool version pins,
+  because device tools are not carried (upstream's #26440 already commits the SPDX texts under
+  `third-party-licenses/spdx`, so builds never fetch). Upstream's
   CI-only checks are not carried, since the fork has no CI: the built web boot check
   (`apps/web/scripts/verify-built-boot.ts`) and the agent context budget test
   (`apps/server/src/provider/AgentContextBudget.test.ts` and `agentContextBudget.json`), which
