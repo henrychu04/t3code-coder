@@ -16,6 +16,7 @@ import * as ServerConfig from "./config.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
+import * as BuiltInDrivers from "./sourceControl/builtInDrivers.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 
@@ -25,6 +26,7 @@ const layerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
 const layerTest = Layer.mergeAll(
   Layer.mock(Orchestrator.OrchestratorV2)({ getTurnItem: () => Effect.succeed(null) }),
   Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.succeed(undefined) }),
+  Layer.succeed(BuiltInDrivers.SourceControlDrivers, []),
   layerConfig,
   WorkspacePaths.layer,
   ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),

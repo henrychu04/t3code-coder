@@ -7,6 +7,7 @@ import {
   parseChangeRequestPath,
   projectChangeRequestHost,
 } from "@t3tools/source-control-core/shared/definition";
+import { gitLabMediaUrl } from "./gitLabMedia.ts";
 import { icon } from "./icon.ts";
 import { gitLabReferenceAutolinks } from "./referenceAutolinks.ts";
 
@@ -80,4 +81,6 @@ export const definition = defineSourceControl({
     isChangeRequestInProjectRepository(projectChangeRequestHost(identity, KIND), identity, link),
   canReadChangeRequestOnHost: (identity, link) =>
     isChangeRequestOnProjectHost(projectChangeRequestHost(identity, KIND), identity, link),
+  // Coder: Markdown uploads load through the workspace's `glab` login.
+  mediaUrl: gitLabMediaUrl,
 });
