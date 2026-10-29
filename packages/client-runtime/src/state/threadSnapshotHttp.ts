@@ -51,6 +51,7 @@ export function makeThreadSnapshotLoader(
         if (Option.isNone(session)) return { _tag: "unavailable" } as const;
         return yield* session.value.client[WS_METHODS.orchestrationGetThreadBoundedSnapshot]({
           threadId,
+          deferWork: true,
         }).pipe(
           Effect.map((bounded): ThreadSnapshotLoadResult => ({
             _tag: "present",

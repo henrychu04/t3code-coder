@@ -27,8 +27,6 @@ import {
   buildBoundedThreadProjection,
   decodeThreadHistoryCursor,
   InvalidThreadHistoryCursorError,
-  OLDER_THREAD_USER_TURN_LIMIT,
-  selectHistoryPageFromCursor,
   THREAD_HISTORY_PAGE_POLICY,
   THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
 } from "./orchestration-v2/threadHistoryPaging.ts";
@@ -88,20 +86,12 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
     const { descriptor } = yield* CoderEnvironment.CoderEnvironment;
 
     // Coder: upstream's HTTP bounded thread snapshot, served over helper stdio.
-    const loadThreadSnapshotWindow = (
-      threadId: ThreadId,
-      anchor?: { readonly itemId: string; readonly threadId: ThreadId },
-    ) =>
+    const loadThreadSnapshotWindow = (threadId: ThreadId, deferWork: boolean) =>
       threadManagement
         .getThreadSnapshotWindow(threadId, {
           rowLimit: THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
-          userTurnLimit:
-            anchor === undefined
-              ? THREAD_HISTORY_PAGE_POLICY.maxUserTurns
-              : OLDER_THREAD_USER_TURN_LIMIT,
-          ...(anchor === undefined
-            ? {}
-            : { anchorItemId: anchor.itemId as never, anchorThreadId: anchor.threadId }),
+          deferWork,
+          userTurnLimit: THREAD_HISTORY_PAGE_POLICY.maxUserTurns,
         })
         .pipe(
           Effect.map((snapshot) => ({
@@ -119,8 +109,8 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
         );
 
     const getThreadBoundedSnapshot = Effect.fn("ws.orchestrationV2.getThreadBoundedSnapshot")(
-      function* (threadId: ThreadId) {
-        const snapshot = yield* loadThreadSnapshotWindow(threadId);
+      function* (threadId: ThreadId, deferWork: boolean) {
+        const snapshot = yield* loadThreadSnapshotWindow(threadId, deferWork);
         const bounded = buildBoundedThreadProjection({
           projection: snapshot.projection,
           snapshotSequence: snapshot.snapshotSequence,
@@ -175,85 +165,41 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
         readonly threadId: ThreadId;
         readonly cursor: string;
         readonly throughEntryId?: string | undefined;
-        readonly view?: "conversation" | "activity" | undefined;
+        readonly view?: "conversation" | "activity" | "work" | undefined;
+        readonly deferWork?: boolean;
       }) {
-        // Coder: a find-in-thread page (a target entry or the conversation view) uses upstream's
-        // history read; plain paging keeps the bounded snapshot-window page below.
-        if (input.throughEntryId !== undefined || input.view !== undefined) {
-          const upstreamPage = yield* threadManagement
-            .getThreadHistoryPage(
-              input.threadId,
-              input.cursor,
-              input.throughEntryId,
-              input.view === "conversation",
-            )
-            .pipe(
-              Effect.mapError(
-                (cause) =>
-                  new OrchestrationV2GetThreadProjectionError({
-                    threadId: input.threadId,
-                    message: `Failed to load orchestration V2 thread ${input.threadId} history`,
-                    cause,
-                  }),
-              ),
-            );
-          if (exceedsHelperStdioFrame(upstreamPage)) {
-            return yield* new OrchestrationV2GetThreadProjectionError({
-              threadId: input.threadId,
-              message: "The thread history page exceeds the helper stdio frame limit.",
-            });
-          }
-          return upstreamPage;
-        }
-        const invalidCursor = () =>
+        const failure = (cause: unknown) =>
           new OrchestrationV2GetThreadProjectionError({
             threadId: input.threadId,
-            message: "The thread history cursor is invalid.",
+            message: `Failed to load orchestration V2 thread ${input.threadId} history`,
+            cause,
           });
-        const decoded = yield* Effect.try({
+        yield* Effect.try({
           try: () => decodeThreadHistoryCursor(input.cursor),
           catch: (cause) =>
             cause instanceof InvalidThreadHistoryCursorError
-              ? invalidCursor()
-              : new OrchestrationV2GetThreadProjectionError({
+              ? new OrchestrationV2GetThreadProjectionError({
                   threadId: input.threadId,
-                  message: `Failed to load orchestration V2 thread ${input.threadId} history`,
-                  cause,
-                }),
+                  message: "The thread history cursor is invalid.",
+                })
+              : failure(cause),
         });
-        const snapshot = yield* loadThreadSnapshotWindow(input.threadId, {
-          itemId: decoded.si,
-          threadId: ThreadId.make(decoded.st),
-        });
-        const page = yield* Effect.try({
-          try: () =>
-            selectHistoryPageFromCursor({
-              items: snapshot.projection.visibleTurnItems,
-              cursor: input.cursor,
-              snapshotSequence: snapshot.snapshotSequence,
-            }),
-          catch: (cause) =>
-            cause instanceof InvalidThreadHistoryCursorError
-              ? invalidCursor()
-              : new OrchestrationV2GetThreadProjectionError({
-                  threadId: input.threadId,
-                  message: `Failed to load orchestration V2 thread ${input.threadId} history`,
-                  cause,
-                }),
-        });
-        const result = {
-          snapshotSequence: snapshot.snapshotSequence,
-          items: page.items,
-          nextCursor: page.nextCursor,
-          hasMoreHistory: page.hasMoreHistory,
-        };
-        if (exceedsHelperStdioFrame(result)) {
+        const page = yield* threadManagement
+          .getThreadHistoryPage(
+            input.threadId,
+            input.cursor,
+            input.throughEntryId,
+            input.view === "conversation",
+            input.view === "work" ? "work" : input.deferWork === true ? "deferred" : undefined,
+          )
+          .pipe(Effect.mapError(failure));
+        if (exceedsHelperStdioFrame(page)) {
           return yield* new OrchestrationV2GetThreadProjectionError({
             threadId: input.threadId,
             message: "The thread history page exceeds the helper stdio frame limit.",
           });
         }
-        return result;
+        return page;
       },
     );
 
@@ -472,7 +418,7 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
     return {
       // Coder: upstream's HTTP bounded snapshot and history routes over helper stdio.
       [WS_METHODS.orchestrationGetThreadBoundedSnapshot]: (input) =>
-        getThreadBoundedSnapshot(input.threadId),
+        getThreadBoundedSnapshot(input.threadId, input.deferWork === true),
       [WS_METHODS.orchestrationGetThreadHistoryPage]: (input) => getThreadHistoryPage(input),
       [WS_METHODS.orchestrationGetThreadTranscript]: (input) => getThreadTranscript(input.threadId),
       // Coder: serve GitLab diffs over stdio instead of environment HTTP.
