@@ -6,7 +6,7 @@ import { HttpClientRequest, HttpClientResponse } from "effect/http";
 import { gitLabMediaApiEndpoint } from "../shared/gitLabMedia.ts";
 
 /** `glab api` hands over a whole upload at once, so this bounds the workspace's memory per file. */
-export const GITLAB_MEDIA_MAX_BYTES = 64 * 1024 * 1024;
+const GITLAB_MEDIA_MAX_BYTES = 64 * 1024 * 1024;
 const GITLAB_MEDIA_TIMEOUT_MS = 60_000;
 // An MR with many screenshots would otherwise start a `glab` for each at once.
 const GITLAB_MEDIA_CONCURRENCY = { key: "GitLabMediaFetch", limit: 4 } as const;
