@@ -186,6 +186,12 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
   `hooks/useStartTriage.ts`, `lib/triageTarget.ts`, `docs/user/triage.md`).
 - Relay (`apps/server/src/relay`, `infra`, `packages/ssh`, `packages/tailscale`); telemetry
   (`apps/server/src/{telemetry,resourceTelemetry,usage,diagnostics}`, web `components/usage`).
+- Secret providers (web `settings/SecretsSettings.tsx`, `SecretProviderDialog*`,
+  `SecretSourceInput*`, the server's `secrets/SecretResolver.ts` and `secretProviderDefinitions*`,
+  `packages/secret-provider-*`).
+- Local editors and provider setup (`process/externalLauncher*`, shared `editor.ts`, web
+  `CodexSetupSection.tsx`), and upstream tests for cut surfaces (`mcp/toolkits/core.test.ts`,
+  `apps/web/test/appScenarios.renders.tsx`, two settings browser tests).
 - Upstream repository tooling (`.github`, `.repos`, `oxlint-plugin-t3code`, `docs/operations`,
   `apps/server/integration`, `evals`, `.coderabbit.config.ts`) and upstream's CI-only checks
   (`AgentContextBudget.test.ts`, `verify-built-boot.ts`).
@@ -439,8 +445,13 @@ foreground command limit, so run it in the background and read its log. Known re
   alone:
   `pnpm exec vp test run --config vite.coder.config.ts apps/server/src/serverSettings.test.ts`.
 - On macOS, upstream's `ClaudeSkills.test.ts` "merges plugin enablement and selects installs in
-  native registry order" fails because `TMPDIR` sits under the `/var` symlink (758d773f57, #235). It
-  passes with a real-path temp directory: `TMPDIR=/private/tmp/<dir>`.
+  native registry order" fails because `TMPDIR` sits under the `/var` symlink (758d773f57, #235),
+  as does `GitVcsDriverCore.test.ts`'s "keeps generated worktree folders short without changing
+  long branch names" (32ecd71726). Both pass with a real-path temp directory:
+  `TMPDIR=/private/tmp/<dir>`.
+- Read the suite's own exit status from its log. A background run like
+  `pnpm test:coder > log; echo "exit=$?" >> log` reports success to the agent harness even when the
+  suite failed (32ecd71726's stage 2 did).
 - In a fresh worktree, the first web runs can fail in browser test files that load no tests
   ("There was an error when mocking a module") or time out, because Vite re-optimizes
   dependencies mid-run and reloads ("optimized dependencies changed. reloading"). Rerun
