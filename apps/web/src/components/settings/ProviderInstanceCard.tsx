@@ -194,7 +194,9 @@ function ProviderEnvironmentFieldRow(props: {
   readonly onRemove: (field: ProviderEnvironmentField) => void;
 }) {
   const inputId = `${props.idPrefix}-environment-${props.field.name}`;
-  const value = props.variable?.valueRedacted ? "" : (props.variable?.value ?? "");
+  // Coder: secret providers are not carried, so a stored secret reference shows as no value.
+  const storedValue = props.variable?.valueRedacted ? "" : (props.variable?.value ?? "");
+  const value = typeof storedValue === "string" ? storedValue : "";
 
   return (
     <SettingsRow

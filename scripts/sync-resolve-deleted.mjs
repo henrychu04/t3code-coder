@@ -39,6 +39,8 @@ const DELETED_PATHS = {
   // its resize handle.
   "preview and browser": [
     "apps/server/src/mcp/PreviewAutomationBroker.ts",
+    "apps/server/src/htmlRender/headlessChrome.ts",
+    "apps/server/src/htmlRender/HtmlRender.test.ts",
     "apps/server/src/mcp/toolkits/preview/",
     "apps/server/src/mcp/toolkits/previewControls/",
     "apps/server/src/preview/",
@@ -173,11 +175,14 @@ const DELETED_PATHS = {
     "apps/web/src/components/settings/CodexSetupSection.tsx",
     "packages/shared/src/editor.ts",
   ],
-  // Browser tests for cut surfaces: the provider environment panel test drives managed Codex
-  // accounts and ACP sign-in, and the theme import test the remote catalog and desktop picker.
-  "browser tests for cut surfaces": [
+  // Tests for cut surfaces: the provider environment panel test drives managed Codex accounts and
+  // ACP sign-in, the theme import test the remote catalog and desktop picker, the MCP core test
+  // peer links and client scopes, and the app render scenarios upstream's fake environment.
+  "tests for cut surfaces": [
     "apps/web/src/components/settings/ProviderSettingsPanel.environment.browser.test.tsx",
     "apps/web/src/components/settings/ThemeImportDialog.browser.test.tsx",
+    "apps/server/src/mcp/toolkits/core.test.ts",
+    "apps/web/test/appScenarios.renders.tsx",
   ],
   // Relay: no relay, Tailscale, or SSH transport.
   relay: [
@@ -187,6 +192,7 @@ const DELETED_PATHS = {
     "docs/user/remote-access.md",
     "infra/",
     "packages/client-runtime/src/relay/",
+    "packages/contracts/src/relay.ts",
     "packages/client-runtime/src/connection/supervisor.test.ts",
     "packages/ssh/",
     "packages/tailscale/",
@@ -195,6 +201,10 @@ const DELETED_PATHS = {
   // or trace export.
   telemetry: [
     "apps/server/src/diagnostics/",
+    "apps/server/src/provider/Drivers/claudeUsage.ts",
+    "apps/server/src/provider/Drivers/claudeUsage.test.ts",
+    "apps/web/src/components/settings/DiagnosticsSettings.tsx",
+    "apps/web/src/components/settings/ResourceTelemetryDiagnostics.tsx",
     "apps/server/src/observability/HeapAttribution.ts",
     "apps/server/src/observability/HeapAttribution.test.ts",
     "apps/server/src/observability/Observability.ts",
@@ -233,6 +243,8 @@ const DELETED_PATHS = {
     "scripts/build-cli-archive.ts",
     "scripts/build-npm-launcher.ts",
     "scripts/generate-release-notes.ts",
+    "scripts/release-smoke.ts",
+    "docs/user/background-service.md",
     "scripts/npm-launcher/",
     "scripts/licenses/libatomic.LICENSE",
     "scripts/notify-discord-release.ts",
@@ -277,6 +289,11 @@ const DELETED_PATHS = {
     "apps/web/src/components/settings/SecretProviderDialog.tsx",
     "apps/web/src/components/settings/SecretsSettings.tsx",
     "apps/web/src/routes/_chat.settings.secrets.tsx",
+    "apps/web/src/components/settings/SecretSourceInput.tsx",
+    "apps/web/src/components/settings/SecretSourceInput.browser.test.tsx",
+    "apps/server/src/secrets/SecretResolver.ts",
+    "apps/server/src/secrets/secretProviderDefinitions.ts",
+    "apps/server/src/secrets/secretProviderDefinitions.test.ts",
     "packages/secret-provider-core/",
     "packages/secret-provider-definitions/",
     "packages/secret-provider-onepassword/",

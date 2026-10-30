@@ -527,7 +527,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "pull-request-links-open-in-app",
     title: "Open merge requests in T3 Coder",
     to: "/settings/diffs",
-    searchTerms: ["mr links gitlab browser external click default merge request view panel"],
+    searchTerms: ["mr commit links gitlab browser external click default merge request view panel"],
   },
   {
     id: "skills-in-slash-menu",

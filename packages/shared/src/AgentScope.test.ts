@@ -25,5 +25,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("agentScopeComm
     expect(Number(pid)).toBe(child.pid);
     expect(Number(score)).toBe(AGENT_OOM_SCORE_ADJ);
     expect(args).toEqual(["a b", "$HOME"]);
+
+    // Coder: no launcher script check; `agentScopeLauncherScript` is not carried.
   });
 });

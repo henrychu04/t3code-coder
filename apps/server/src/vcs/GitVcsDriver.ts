@@ -20,6 +20,8 @@ import {
   type VcsCreateRefResult,
   type VcsCreateWorktreeInput,
   type VcsCreateWorktreeResult,
+  type ReviewBranchCommitsInput,
+  type ReviewBranchCommitsResult,
   type ReviewDiffPreviewInput,
   type ReviewDiffPreviewResult,
   type ReviewDiffFileContentsInput,
@@ -342,6 +344,9 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<GitRangeContext, GitCommandError>;
     // Coder: ref-only polling must never refresh or rewrite the real index.
     readonly refStatusLocal: (cwd: string) => Effect.Effect<VcsRefStatusResult, GitCommandError>;
+    readonly getReviewBranchCommits: (
+      input: ReviewBranchCommitsInput,
+    ) => Effect.Effect<ReviewBranchCommitsResult, GitCommandError>;
     readonly getReviewDiffPreview: (
       input: ReviewDiffPreviewInput,
     ) => Effect.Effect<ReviewDiffPreviewResult, GitCommandError>;
