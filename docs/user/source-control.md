@@ -47,9 +47,8 @@ list shows the newest 100 commits in the branch comparison. A merge commit shows
 its first parent.
 
 A commit link from GitLab opens in the Diff pane when the thread's repository has that commit
-locally, on any branch. Otherwise a merge request commit link opens the merge request. Other commit
-links follow your **Open links in** setting; when that opens a new tab, T3 Coder first shows an
-**Open link** button. Command/Ctrl+Click always opens the link in your browser. Commit links follow
+locally, on any branch. Otherwise T3 Coder shows an **Open link** button that opens the commit in
+your browser. Command/Ctrl+Click always opens the link in your browser. Commit links follow
 the **Open merge requests in T3 Coder** setting in **Settings → Diffs**.
 
 ## Automatic project pull

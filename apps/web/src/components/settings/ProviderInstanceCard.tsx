@@ -419,7 +419,11 @@ export function ProviderInstanceCard({
     compatibility.status !== "supported" &&
     compatibility.status !== "unknown";
   const VersionAdvisoryIcon = hasCompatibilityWarning ? AlertTriangleIcon : ArrowUpCircleIcon;
-  const onRunVersionAction = versionAdvisory?.targetVersion ? onInstallRecommended : onRunUpdate;
+  const onRunVersionAction = readOnly
+    ? undefined
+    : versionAdvisory?.targetVersion
+      ? onInstallRecommended
+      : onRunUpdate;
   const displayName =
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
   const accentColor = normalizeProviderAccentColor(instance.accentColor);

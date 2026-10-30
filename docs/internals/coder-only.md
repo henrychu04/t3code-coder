@@ -599,8 +599,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `ProviderInstanceRegistry.ts`, its test, `ProviderInstanceRegistryHydration.ts` (which
     also needs no `Crypto`), and `serverSettings.ts` import the stand-in; `ws.ts` does not
     advertise `secretReferences`. Web `settings/SecretSourceInput.tsx` and its browser test are
-    cut; `ProviderInstanceCard.tsx`'s environment field rows keep the plain value and
-    `SecretInput`, showing a stored secret reference as no value.
+    cut, and `ProviderSettingsPanel.tsx` reads no secret sources for `AddProviderInstanceDialog`;
+    `ProviderInstanceCard.tsx`'s environment field rows keep the plain value and `SecretInput`,
+    showing a stored secret reference as no value.
   - The thread dev-servers panel (#22542) is not carried: it lists and stops servers that
     upstream's preview `PortScanner` discovers, and the browser preview is not carried.
     `ClaudeAdapterV2.ts`'s query runner gives the CLI's jobs no agent-thread variable and counts
@@ -1210,7 +1211,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `canonicalizeGitCafePullRequestUrl` is an identity function, since GitCafe is not carried. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    67661cfbb5):
+    32ecd71726):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
@@ -1374,6 +1375,9 @@ listed here is drift to remove rather than fork behavior to keep.
     desktop-only `resolveDesktopTheme`; `localApiTypes.ts` keeps
     its context-menu and confirm-dialog types (web modules that import `ContextMenuItem` from
     `contracts` upstream import it from there), and `localApi.ts` opens only HTTP(S) links.
+    Since the fork's `Window` type has no `desktopBridge`, `ChatHeader.tsx`'s merge request
+    button tests `"desktopBridge" in window` and opens the browser at once, as upstream's web
+    build does.
     `ThreadNotificationCoordinator.tsx` focuses the tab on a notification click without
     upstream's desktop window reveal.
   - client-runtime `errors/diagnostics.ts` is the `[t3-error]` DevTools reporting described in
