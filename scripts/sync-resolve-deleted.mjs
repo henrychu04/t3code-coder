@@ -14,6 +14,7 @@ const DELETED_PATHS = {
   // The server's auth/ keeps only ServerSecretStore and utils, which a modify/delete cannot name.
   "auth and pairing": [
     "apps/server/src/auth/",
+    "apps/web/src/components/settings/SessionPermissions.tsx",
     "apps/server/src/persistence/AuthPairingLinks.ts",
     "apps/server/src/persistence/AuthSessions.ts",
     "apps/server/src/startupAccess.ts",
@@ -155,7 +156,29 @@ const DELETED_PATHS = {
   ],
   // Server CLI: the helper starts over `coder ssh`, never as upstream's `t3` command, and
   // CoderEnvironment replaces upstream's ServerEnvironment.
-  "server CLI": ["apps/server/src/cli/", "apps/server/src/environment/ServerEnvironment.ts"],
+  // Upstream's runtime startup and state tests build its own server; the helper's startup is
+  // coderServer.ts.
+  "server CLI": [
+    "apps/server/src/cli/",
+    "apps/server/src/environment/ServerEnvironment.ts",
+    "apps/server/src/serverRuntimeStartup.autoPull.test.ts",
+    "apps/server/src/serverRuntimeStartup.test.ts",
+    "apps/server/src/serverRuntimeState.test.ts",
+  ],
+  // Local editors and provider setup: the helper cannot open an editor on the laptop, and
+  // providers are configured in the workspace without in-app sign-in or setup.
+  "local editors and provider setup": [
+    "apps/server/src/process/externalLauncher.ts",
+    "apps/server/src/process/externalLauncher.test.ts",
+    "apps/web/src/components/settings/CodexSetupSection.tsx",
+    "packages/shared/src/editor.ts",
+  ],
+  // Browser tests for cut surfaces: the provider environment panel test drives managed Codex
+  // accounts and ACP sign-in, and the theme import test the remote catalog and desktop picker.
+  "browser tests for cut surfaces": [
+    "apps/web/src/components/settings/ProviderSettingsPanel.environment.browser.test.tsx",
+    "apps/web/src/components/settings/ThemeImportDialog.browser.test.tsx",
+  ],
   // Relay: no relay, Tailscale, or SSH transport.
   relay: [
     "apps/server/src/relay/",
@@ -164,6 +187,7 @@ const DELETED_PATHS = {
     "docs/user/remote-access.md",
     "infra/",
     "packages/client-runtime/src/relay/",
+    "packages/client-runtime/src/connection/supervisor.test.ts",
     "packages/ssh/",
     "packages/tailscale/",
   ],
@@ -171,11 +195,18 @@ const DELETED_PATHS = {
   // or trace export.
   telemetry: [
     "apps/server/src/diagnostics/",
+    "apps/server/src/observability/HeapAttribution.ts",
+    "apps/server/src/observability/HeapAttribution.test.ts",
+    "apps/server/src/observability/Observability.ts",
     "apps/server/src/observability/RpcInstrumentation.ts",
     "apps/server/src/resourceTelemetry/",
     "apps/server/src/telemetry/",
     "apps/server/src/usage/",
     "apps/web/src/components/usage/",
+    "apps/web/src/components/settings/AddUsageLimitSourceDialog.logic.ts",
+    "apps/web/src/components/settings/AddUsageLimitSourceDialog.logic.test.ts",
+    "apps/web/src/components/settings/AddUsageLimitSourceDialog.tsx",
+    "apps/web/src/components/settings/UsageProviderSettings.tsx",
     "apps/web/src/components/chat/ComposerUsageLimits.tsx",
     "apps/web/src/observability/",
     "apps/web/src/state/usage.ts",
@@ -189,6 +220,7 @@ const DELETED_PATHS = {
   // archives, or release notes.
   "updates and releases": [
     "apps/server/src/persistence/databaseMigrationHead.ts",
+    "apps/server/src/serverOwnership.ts",
     "apps/web/src/components/ServerUpdateAction.tsx",
     "apps/web/src/components/sidebar/SidebarUpdatePill.tsx",
     "apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx",
@@ -201,6 +233,7 @@ const DELETED_PATHS = {
     "scripts/build-cli-archive.ts",
     "scripts/build-npm-launcher.ts",
     "scripts/generate-release-notes.ts",
+    "scripts/npm-launcher/",
     "scripts/licenses/libatomic.LICENSE",
     "scripts/notify-discord-release.ts",
     "scripts/smoke-cli-archive.ts",
@@ -236,6 +269,18 @@ const DELETED_PATHS = {
     "apps/web/src/lib/triageTarget.test.ts",
     "docs/user/triage.md",
   ],
+  // Secret providers: no 1Password or other secret provider settings, dialogs, or packages.
+  // Contracts keep upstream's settings fields.
+  "secret providers": [
+    "apps/web/src/components/settings/SecretProviderDialog.logic.test.ts",
+    "apps/web/src/components/settings/SecretProviderDialog.logic.ts",
+    "apps/web/src/components/settings/SecretProviderDialog.tsx",
+    "apps/web/src/components/settings/SecretsSettings.tsx",
+    "apps/web/src/routes/_chat.settings.secrets.tsx",
+    "packages/secret-provider-core/",
+    "packages/secret-provider-definitions/",
+    "packages/secret-provider-onepassword/",
+  ],
   // Upstream repository tooling: vendored sources, CI, hooks, editor and agent configuration,
   // and operations docs. The fork's .github/ keeps only SECURITY.md.
   "upstream repository tooling": [
@@ -258,6 +303,8 @@ const DELETED_PATHS = {
     "docs/internals/open-source-licenses.md",
     "docs/user/faq.md",
     "scripts/check-changed.ts",
+    "scripts/dev-runner.ts",
+    "scripts/dev-runner.test.ts",
     // Upstream's ChatMarkdown browser test, which the fork has not carried since its first commit.
     "apps/web/src/components/ChatMarkdown.browser.test.tsx",
     // CodeRabbit's configuration and upstream's MCP tool-use evals.

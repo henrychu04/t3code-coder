@@ -68,6 +68,7 @@ import { reconcileCoderMigrationHistory } from "./CoderMigrationHistory.ts";
 import Migration0068 from "./Migrations/068_ShellStopRequestIndex.ts";
 import Migration0069 from "./Migrations/069_ThreadMessageSearch.ts";
 import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
+import Migration0073 from "./Migrations/073_ActiveTurnItemIndexes.ts";
 
 // Coder: T3 Coder has no auth sessions or pairing. Upstream's auth migrations keep
 // their IDs so later upstream migrations stay aligned, but they create nothing.
@@ -150,6 +151,7 @@ export const migrationEntries = [
   [70, "PeerLinks", omittedPeerLinkMigration],
   [71, "PeerLinkFence", omittedPeerLinkMigration],
   [72, "WaitingLinkRequestIndex", Migration0072],
+  [73, "ActiveTurnItemIndexes", Migration0073],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
