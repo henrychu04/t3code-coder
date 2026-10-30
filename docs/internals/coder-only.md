@@ -581,6 +581,12 @@ listed here is drift to remove rather than fork behavior to keep.
     "Triage an issue" entry (`CommandPalette.tsx`), the triage draft hero
     (`DraftHeroHeadline.tsx`), `useHandleNewThread`'s `prompt` option (only triage passes it),
     client-runtime's `prepareTriage`, and `docs/user/triage.md` are cut.
+  - Secret providers (#25709, #27044) are not carried: provider credentials stay in the
+    workspace's own configuration, and the fork adds no credential entry. Web
+    `settings/SecretsSettings.tsx`, `SecretProviderDialog*`, the `/settings/secrets` route, its
+    nav and search entries, the `T3CODE_FEATURE_SECRETS` flag, and `OnePasswordIcon` are cut.
+    Contracts, shared `serverSettings.ts`, and the server's `secretProviders` write check and
+    `secretProviderSettings` capability stay as upstream's.
   - The thread dev-servers panel (#22542) is not carried: it lists and stops servers that
     upstream's preview `PortScanner` discovers, and the browser preview is not carried.
     `ClaudeAdapterV2.ts`'s query runner gives the CLI's jobs no agent-thread variable and counts
@@ -1168,10 +1174,8 @@ listed here is drift to remove rather than fork behavior to keep.
     and `sourceControlAppAccessToast.ts` are cut (`state/sourceControlActions.ts` suggests no app
     access after publishing), and client-runtime `state/sourceControl.ts` and
     `sourceControlClients.ts` have no app-access or sign-in atoms and no `appSignInTargetForRemote`.
-  - GitLab's definition (`source-control-gitlab/src/shared/definition.ts`) has four deltas:
-    `isChangeRequestReference` accepts a merge request URL on any HTTP(S) host, because
-    self-hosted hostnames need not contain "gitlab"; `authorProfileUrl` links comment authors
-    under the host root; `referenceAutolinks` (`shared/referenceAutolinks.ts`) links `!N`
+  - GitLab's definition (`source-control-gitlab/src/shared/definition.ts`) has three deltas:
+    `authorProfileUrl` links comment authors under the host root; `referenceAutolinks` (`shared/referenceAutolinks.ts`) links `!N`
     merge requests, `#N` issues, and full commit SHAs below the project with GitLab's `/-/`
     routes, where upstream's GitLab defines none; and `mediaUrl` (`shared/gitLabMedia.ts`) claims
     Markdown uploads below a project's path, below `/-/project/<id>/`, or on the API route, and

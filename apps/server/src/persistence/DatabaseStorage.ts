@@ -33,10 +33,24 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  // Only VACUUM changes these, and doctor refuses to VACUUM while a server has the database open.
+  let layout: { readonly pageSize: number; readonly incrementalVacuum: boolean } | undefined;
+  const readLayout = Effect.suspend(() =>
+    layout !== undefined
+      ? Effect.succeed(layout)
+      : Effect.gen(function* () {
+          const size = yield* sql<{ readonly page_size: number }>`PRAGMA page_size`;
+          const mode = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`;
+          layout = {
+            pageSize: size[0]?.page_size ?? 0,
+            incrementalVacuum: mode[0]?.auto_vacuum === 2,
+          };
+          return layout;
+        }),
+  );
 
   const reclaim = Effect.gen(function* () {
-    const mode = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`;
-    if (mode[0]?.auto_vacuum !== 2) return;
+    if (!(yield* readLayout).incrementalVacuum) return;
     // The driver steps once per statement; incremental_vacuum frees one page per step. Yield between pages.
     for (let page = 0; page < RECLAIM_PAGES_PER_PASS; page++) {
       const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`;

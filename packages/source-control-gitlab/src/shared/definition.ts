@@ -12,9 +12,8 @@ import { icon } from "./icon.ts";
 import { gitLabReferenceAutolinks } from "./referenceAutolinks.ts";
 
 const CHECKOUT_COMMAND = /^glab\s+mr\s+checkout\s+(.+)$/i;
-// Coder: GitLab is the only hosted provider, so a merge request URL on any host is accepted;
-// self-hosted GitLab hostnames need not contain "gitlab".
-const CHANGE_REQUEST_REFERENCE = /^https?:\/\/[^/\s]+\/.+\/-\/merge_requests\/(\d+)(?:[/?#].*)?$/i;
+const CHANGE_REQUEST_REFERENCE =
+  /^https?:\/\/[^/?#\s]+\/[^/?#\s]+(?:\/[^/?#\s]+)+\/-\/merge_requests\/(\d+)(?:[/?#].*)?$/i;
 
 // Self-managed GitLab runs on any hostname and nests projects in groups.
 const CHANGE_REQUEST_PATH = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u;
