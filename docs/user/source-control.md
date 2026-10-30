@@ -42,6 +42,16 @@ against your base branch. Restore still returns the complete saved workspace.
 You can comment on diff lines. Comments annotate the review and can be sent back to Claude as
 part of your next message, which makes "fix this spot" conversations precise.
 
+Open the Diff pane source picker and choose **Commits** to review one local commit at a time. The
+list shows the newest 100 commits in the branch comparison. A merge commit shows its changes against
+its first parent.
+
+A commit link from GitLab opens in the Diff pane when the thread's repository has that commit
+locally, on any branch. Otherwise a merge request commit link opens the merge request. Other commit
+links follow your **Open links in** setting; when that opens a new tab, T3 Coder first shows an
+**Open link** button. Command/Ctrl+Click always opens the link in your browser. Commit links follow
+the **Open merge requests in T3 Coder** setting in **Settings → Diffs**.
+
 ## Automatic project pull
 
 Turn on **Automatically pull** in [Project settings](./project-settings.md) to keep a project's

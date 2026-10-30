@@ -3,12 +3,17 @@ import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchema
 import { GitCommandError } from "./git.ts";
 import { VcsError } from "./vcs.ts";
 
-export const ReviewDiffPreviewSourceKind = Schema.Literals(["working-tree", "branch-range"]);
+export const ReviewDiffPreviewSourceKind = Schema.Literals([
+  "working-tree",
+  "branch-range",
+  "commit",
+]);
 export type ReviewDiffPreviewSourceKind = typeof ReviewDiffPreviewSourceKind.Type;
 
 export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   baseRef: Schema.optional(TrimmedNonEmptyString),
+  commitSha: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
   // Coder: a branch preview may ask for one top-level source.
   sourceKind: Schema.optionalKey(ReviewDiffPreviewSourceKind),
@@ -22,6 +27,24 @@ export const ReviewDiffPreviewInput = Schema.Struct({
 });
 export type ReviewDiffPreviewInput = typeof ReviewDiffPreviewInput.Type;
 
+export const ReviewBranchCommitsInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  baseRef: Schema.optional(TrimmedNonEmptyString),
+});
+export type ReviewBranchCommitsInput = typeof ReviewBranchCommitsInput.Type;
+
+export const ReviewBranchCommitsResult = Schema.Struct({
+  commits: Schema.Array(
+    Schema.Struct({
+      sha: Schema.String,
+      subject: Schema.String,
+      committedAt: Schema.String,
+    }),
+  ),
+  truncated: Schema.Boolean,
+});
+export type ReviewBranchCommitsResult = typeof ReviewBranchCommitsResult.Type;
+
 export const ReviewDiffFileStat = Schema.Struct({
   path: Schema.String,
   previousPath: Schema.NullOr(Schema.String),
@@ -34,6 +57,7 @@ export const ReviewDiffPreviewSource = Schema.Struct({
   id: TrimmedNonEmptyString,
   kind: ReviewDiffPreviewSourceKind,
   title: TrimmedNonEmptyString,
+  commitSubject: Schema.optionalKey(TrimmedNonEmptyString),
   baseRef: Schema.NullOr(TrimmedNonEmptyString),
   headRef: Schema.NullOr(TrimmedNonEmptyString),
   diff: Schema.String,

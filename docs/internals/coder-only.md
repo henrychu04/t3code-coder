@@ -586,7 +586,21 @@ listed here is drift to remove rather than fork behavior to keep.
     `settings/SecretsSettings.tsx`, `SecretProviderDialog*`, the `/settings/secrets` route, its
     nav and search entries, the `T3CODE_FEATURE_SECRETS` flag, and `OnePasswordIcon` are cut.
     Contracts, shared `serverSettings.ts`, and the server's `secretProviders` write check and
-    `secretProviderSettings` capability stay as upstream's.
+    `secretProviderSettings` capability stay as upstream's. Provider environment variables that
+    point at a secret provider (#27115) are cut the same way: contracts keep upstream's
+    `SecretReference` value, `ResolvedProviderInstanceEnvironment`, and `reloadSecrets`, and the
+    server keeps upstream's registry code around a stand-in resolver,
+    `secrets/coderSecretResolver.ts`, in place of `@t3tools/secret-provider-core` and the
+    server's `secrets/SecretResolver.ts` and `secretProviderDefinitions.ts`. It reads no
+    reference, so a variable that points at one makes its instance unavailable with upstream's
+    "Could not read …" reason, and it lists no kind, so `serverSettings.ts` rejects every
+    `secretProviders` write as an unsupported kind and keeps every stored config from clients
+    (`serverSettings.test.ts` expects 1Password's config withheld too).
+    `ProviderInstanceRegistry.ts`, its test, `ProviderInstanceRegistryHydration.ts` (which
+    also needs no `Crypto`), and `serverSettings.ts` import the stand-in; `ws.ts` does not
+    advertise `secretReferences`. Web `settings/SecretSourceInput.tsx` and its browser test are
+    cut; `ProviderInstanceCard.tsx`'s environment field rows keep the plain value and
+    `SecretInput`, showing a stored secret reference as no value.
   - The thread dev-servers panel (#22542) is not carried: it lists and stops servers that
     upstream's preview `PortScanner` discovers, and the browser preview is not carried.
     `ClaudeAdapterV2.ts`'s query runner gives the CLI's jobs no agent-thread variable and counts
@@ -602,7 +616,10 @@ listed here is drift to remove rather than fork behavior to keep.
     (`PullRequestsColumn.tsx`). `ui/standalone-page.tsx`'s wordmark (#25281) reads "T3 Coder".
     `QueuedRunsControl.tsx` (#26159) says "Sent by T3 Coder" and shows no guest name or border.
     The replay provider (#26207) has no `DevReplayHost.tsx`, `__root.tsx` mount, or `window.t3dev`
-    type.
+    type. `SidebarChrome.tsx`'s logo link is named "T3 Coder home" (#24209).
+  - Desktop back/forward buttons and swipe navigation (#27430) are not carried:
+    `HistorySwipeNavigation.tsx`, `navigationHistory.ts`, and their `AppSidebarLayout.tsx` and
+    `SidebarChrome.tsx` hunks are cut.
   - `ws.ts` strips workspace snapshots from provider config when a client asks for them on demand
     (`workspaceSnapshotsOnDemand`) without upstream's usage-limit commands, and
     `coderEnvironment.ts` advertises `providerWorkspaceSnapshotsOnDemand`.
@@ -1110,7 +1127,10 @@ listed here is drift to remove rather than fork behavior to keep.
   definition (`referenceAutolinks`), which the web's upstream `pullRequestMarkdown.logic.ts` calls.
   Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
-  upstream's `lib/openPullRequestLink.ts`. The GitLab-only registry claims only GitLab's
+  upstream's `lib/openPullRequestLink.ts`, which always offers upstream's "Open link" toast when a
+  commit link (#19941) names a commit outside the thread's workspace, since links open only in the
+  system browser; its browser test uses GitLab `/-/commit/` URLs and drops the merge request
+  commit-URL case, which GitLab's definition does not parse. The GitLab-only registry claims only GitLab's
   `/-/merge_requests/` URLs, and project matching (client-runtime `changeRequestLinks.ts`'s
   `isGitLabProject`, also used by `findProjectOnChangeRequestHost`, which #24738 moved there from
   the web's `openPullRequestLink.ts`; the web keeps only `gitLabMergeRequestBrowserUrl`) uses upstream's host
@@ -1223,11 +1243,14 @@ listed here is drift to remove rather than fork behavior to keep.
   `vcs/VcsStatusBroadcaster.ts`, `git/GitManager.ts`, `git/GitWorkflowService.ts`, and
   `git/remoteRefs.ts` are upstream's. Each difference is marked `Coder:` in the file:
   - The driver core has no Git metrics or span events. It adds `moveWorktree`, which
-    renames a thread's worktree folder together with its branch, and `refStatusLocal`, a
+    renames a thread's worktree folder together with its branch (bounded by the 5-minute
+    worktree remove deadline, since upstream dropped the add deadline in #23802), and
+    `refStatusLocal`, a
     branch read that never refreshes the real index. Review file expansion allows up to
     `MAX_REVIEW_DIFF_FILE_BYTES` and fails with `ReviewDiffFileTooLargeError` for the chunked
     review RPCs, rejecting malformed UTF-8; `GitVcsDriverCore.test.ts`'s split-output test
-    expects that field, with a branded exit code so the comparison typechecks. A top-level review `sourceKind` returns only that
+    expects that field, with a branded exit code so the comparison typechecks, and its commit
+    review test (#19941) reads the error as a `GitCommandError`. A top-level review `sourceKind` returns only that
     source. Worktree creation reads `t3.json` through the bounded `readProjectConfig`.
     Checkpoint commits use the "T3 Coder" identity.
   - `VcsProcess` records no Git command metrics. Its concurrency keys and failure
@@ -1443,6 +1466,10 @@ listed here is drift to remove rather than fork behavior to keep.
   upstream's new publish-push, local-remote, display-casing, partial-clone, and missing-parent
   clone cases on GitLab remotes with the fork's mocks. `ProviderRegistry.test.ts` runs upstream's
   startup settings-change hydration tests without the uncarried Antigravity and OpenCode layers.
+  `PullRequestService.test.ts`'s shared merge request read tests (#24392) pass branded GitLab
+  kinds to the fork's typed project helper. Shared `AgentScope.ts` leaves out upstream's
+  `agentScopeLauncherScript` (#27239), which only the uncarried preview browser launches, and
+  `AgentScope.test.ts` drops its launcher check.
   `ThreadDetailsPrRows.browser.test.tsx` checks the run context, not the editor picker. `CommandPalette.browser.test.tsx`
   mocks `useCoder`, and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
   `SourceControlProviderRegistry.test.ts` is upstream's fake-driver file, with its unknown-host

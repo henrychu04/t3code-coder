@@ -57,6 +57,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   projectSettingsOverrides: true,
   projectProviderInstanceOverrides: true,
   threadSnooze: true,
+  threadForceStop: true,
   environmentThemes: true,
   providerWorkspaceSnapshotsOnDemand: true,
   threadPinning: true,

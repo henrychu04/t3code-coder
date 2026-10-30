@@ -970,6 +970,7 @@ const layerWsRpc = () =>
           threadFind: true,
           threadFindProgressive: true,
           secretProviderSettings: true,
+          // Coder: no secret provider is loaded, so settings never point at one (`secretReferences`).
           ...Option.match(scratchWorkspaceRoot, {
             onNone: () => ({}),
             onSome: (root) => ({ scratchWorkspaceRoot: root }),
@@ -1085,6 +1086,8 @@ const layerWsRpc = () =>
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: (input) => threadManagement.stopWorkflow(input),
+        [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: (input) =>
+          threadManagement.forceStopThread(input),
         [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: (input) =>
           readWorkflowScript({ scriptPath: input.scriptPath }),
         [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: (input) =>
@@ -1343,9 +1346,11 @@ const layerWsRpc = () =>
                   cwd: input.cwd,
                   fresh: input.fresh === true,
                 })
-              : input.instanceId !== undefined
-                ? providerRegistry.refreshInstance(input.instanceId)
-                : providerRegistry.refresh();
+              : input.reloadSecrets === true
+                ? providerRegistry.reloadSecretsAndRefresh(input.instanceId)
+                : input.instanceId !== undefined
+                  ? providerRegistry.refreshInstance(input.instanceId)
+                  : providerRegistry.refresh();
             if (input.workspaceSnapshotsOnDemand !== true) return { providers };
             // Coder: no usage-limit commands (API usage only), so the command providers are the
             // providers themselves.
@@ -1805,6 +1810,7 @@ const layerWsRpc = () =>
           gitWorkflow.switchRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.vcsInit]: (input) =>
           vcsProvisioning.initRepository(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.reviewGetBranchCommits]: (input) => review.getBranchCommits(input),
         [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
