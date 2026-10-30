@@ -23,7 +23,12 @@ vi.mock("../state/entities", () => {
       },
     },
   ];
-  return { useProjects: () => projects, readProjects: () => projects };
+  return {
+    useProjects: () => projects,
+    readProjects: () => projects,
+    readProject: () => projects[0],
+    readThreadShell: () => ({ projectId: "frontend", worktreePath: null }),
+  };
 });
 // The link handler reads the server configs from the atom registry when clicked.
 vi.mock("../state/server", async (original) => {
