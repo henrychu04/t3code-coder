@@ -15,6 +15,7 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as ProcessRunner from "./processRunner.ts";
+import * as PortScanner from "./preview/PortScanner.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -154,9 +155,12 @@ const layerVcs = Layer.empty.pipe(
 
 const layerCheckpointStore = CheckpointStore.layer.pipe(Layer.provide(layerVcsDriverRegistry));
 
+const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
+
 const layerTerminal = TerminalManager.layer.pipe(
-  // Coder: no port scanner or native telemetry; the PTY adapter and process runner are shared.
+  // Coder: no native telemetry; the PTY adapter and process runner are shared.
   Layer.provideMerge(layerPtyAdapter),
+  Layer.provide(layerPortScanner),
   Layer.provideMerge(ProcessRunner.layer),
 );
 
@@ -186,6 +190,7 @@ export {
   layerCheckpointStore,
   layerGitWorkflow,
   layerIdleCompactionWorker,
+  layerPortScanner,
   layerPullRequestService,
   layerRepositoryIdentityResolver,
   layerServerSettings,

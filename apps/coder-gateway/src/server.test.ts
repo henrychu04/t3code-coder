@@ -276,6 +276,68 @@ describe("local Coder gateway", () => {
     }
   });
 
+  it("suggests the requested or next loopback port that no forward or process holds", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const occupant = NodeNet.createServer();
+    occupant.listen(0, CODER_GATEWAY_HOST);
+    await once(occupant, "listening");
+    try {
+      const held = (occupant.address() as NodeNet.AddressInfo).port;
+      const configPath = NodePath.join(directory, "config.json");
+      await NodeFS.writeFile(
+        configPath,
+        JSON.stringify({
+          version: 1,
+          deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+          workspaces: [
+            {
+              id: "project-one",
+              name: "Project One",
+              deploymentId: "goldman",
+              workspace: "henry/project-one",
+            },
+          ],
+          portForwards: [
+            {
+              id: "saved",
+              workspaceId: "project-one",
+              protocol: "tcp",
+              localPort: held + 1,
+              remotePort: 3000,
+            },
+          ],
+        }),
+      );
+      const gateway = await startLocalCoderGateway({
+        configPath,
+        // The saved rule's local port stays unbound, so only the config excludes it.
+        connectPortForward: async () => ({
+          closed: new Promise(() => {}),
+          close: () => {},
+        }),
+      });
+      closeGateway = gateway.close;
+      const freePort = (port: unknown, origin = gateway.url) =>
+        request({
+          url: `${gateway.url}/api/port-forwards/free-port`,
+          method: "POST",
+          headers: { Origin: origin, "Content-Type": "application/json" },
+          body: JSON.stringify({ port }),
+        });
+
+      strictEqual((await freePort(held, "https://attacker.example")).statusCode, 403);
+      strictEqual((await freePort(0)).statusCode, 400);
+      strictEqual((await freePort(held + 0.5)).statusCode, 400);
+      const next = await freePort(held);
+      strictEqual(next.statusCode, 200);
+      deepStrictEqual(JSON.parse(next.body), { port: held + 2 });
+      deepStrictEqual(JSON.parse((await freePort(held + 2)).body), { port: held + 2 });
+    } finally {
+      occupant.close();
+    }
+  });
+
   it("auto-starts, reports, restarts, and removes configured port forwards", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);

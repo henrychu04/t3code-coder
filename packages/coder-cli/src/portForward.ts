@@ -30,7 +30,12 @@ export interface CoderPortForwardExit {
 export interface CoderPortForwardConnection {
   readonly closed: Effect.Effect<CoderPortForwardExit>;
   readonly close: Effect.Effect<void>;
+  /** True once Coder prints `Ready!`: its listeners are bound and the agent is reachable. */
+  readonly ready?: () => boolean;
 }
+
+/** The line `coder port-forward` writes to stderr after binding its listeners. */
+const READY_LINE = /(?:^|\n)Ready!\r?\n/;
 
 type SpawnCoderProcess = (
   executable: string,
@@ -43,6 +48,7 @@ interface ManagedPortForwardProcess {
   readonly spawned: Deferred.Deferred<void, CoderPortForwardError>;
   readonly exit: Deferred.Deferred<CoderPortForwardExit>;
   readonly cleanupListeners: () => void;
+  readonly ready: () => boolean;
   closeRequested: boolean;
 }
 
@@ -73,6 +79,7 @@ export function connectCoderPortForward(
         const spawned = yield* Deferred.make<void, CoderPortForwardError>();
         const exit = yield* Deferred.make<CoderPortForwardExit>();
         let stderr = "";
+        let ready = false;
         const child = yield* Effect.try({
           try: () =>
             (options?.spawnProcess ?? spawn)(invocation.executable, invocation.args, {
@@ -85,6 +92,7 @@ export function connectCoderPortForward(
         });
         const process: ManagedPortForwardProcess = {
           child,
+          ready: () => ready,
           spawned,
           exit,
           closeRequested: false,
@@ -118,6 +126,7 @@ export function connectCoderPortForward(
         const onStderr = (chunk: Buffer) => {
           if (stderr.length >= MAX_ERROR_BYTES) return;
           stderr += chunk.toString("utf8").slice(0, MAX_ERROR_BYTES - stderr.length);
+          ready ||= READY_LINE.test(stderr);
         };
         const onSpawn = () => Deferred.doneUnsafe(spawned, Effect.void);
         const onError = (cause: Error) => {
@@ -154,6 +163,7 @@ export function connectCoderPortForward(
     return {
       closed: Deferred.await(process.exit),
       close: terminatePortForwardProcess(process, terminationGraceMs),
+      ready: process.ready,
     };
   });
 }

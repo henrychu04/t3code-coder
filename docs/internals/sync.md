@@ -174,7 +174,8 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
 (top-level directories in brackets):
 
 - Auth and pairing (`apps/server/src/auth`, web `components/auth`, client-runtime `authorization`).
-- Preview and browser (`apps/server/src/preview`, web `browser`, `components/preview`).
+- Preview and browser (`apps/server/src/preview` except `PortScanner.ts`, web `browser`,
+  `components/preview`).
 - Device (`apps/server/src/device`, web `components/device`, client-runtime `device`).
 - HTTP routes (`http.ts` route files other than the server's signed asset route in
   `apps/server/src/http.ts`, and the uncarried `assets/` modules).
@@ -189,8 +190,8 @@ mobile's `microphonePriority.ts` into `packages/shared`) arrives as an added fil
   `nativeLogging.ts`).
 - Desktop (`apps/desktop`, `native`, `packaging`, `assets`); mobile (`apps/mobile`); hosted web
   (`apps/marketing`, `apps/server/src/cloud`, web `cloud`, `components/clerk`).
-- Triage, dev servers, and dev replay (`apps/server/src/triage`, `apps/server/scripts/dev-replay*`,
-  web `DevReplayHost.tsx`, `chat/ThreadServersPanel.tsx`, `chat/TriageDraftHero.tsx`,
+- Triage and dev replay (`apps/server/src/triage`, `apps/server/scripts/dev-replay*`,
+  web `DevReplayHost.tsx`, `chat/TriageDraftHero.tsx`,
   `hooks/useStartTriage.ts`, `lib/triageTarget.ts`, `docs/user/triage.md`).
 - Relay (`apps/server/src/relay`, `infra`, `packages/ssh`, `packages/tailscale`); telemetry
   (`apps/server/src/{telemetry,resourceTelemetry,usage,diagnostics}`, web `components/usage`).

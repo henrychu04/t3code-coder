@@ -240,6 +240,10 @@
       "types": "./src/orchestrationV2ThreadError.ts",
       "import": "./src/orchestrationV2ThreadError.ts"
     },
+    "./preview": {
+      "types": "./src/preview.ts",
+      "import": "./src/preview.ts"
+    },
     "./mediaPreview": {
       "types": "./src/mediaPreview.ts",
       "import": "./src/mediaPreview.ts"

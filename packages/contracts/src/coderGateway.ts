@@ -47,6 +47,8 @@ export interface CoderProfileConfig {
 export interface CoderPortForwardRuntimeStatus {
   readonly id: string;
   readonly status: "starting" | "running" | "stopped" | "error";
+  /** Present once a running forward's listener is bound and the workspace agent reachable. */
+  readonly ready?: true;
   readonly error?: string;
 }
 

@@ -20,6 +20,7 @@ import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
+import { ThreadServersPanel } from "./ThreadServersPanel";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -34,7 +35,7 @@ import { Menu, MenuPopup } from "../ui/menu";
 
 // Coder: there is no local editor to open, and the gateway installs the helper matching this
 // client, so there is no version mismatch warning. Repository actions come from the helper's
-// validated t3.json read by project. No dev-servers or usage-limits items either.
+// validated t3.json read by project. No usage-limits item either.
 const GitActionsControl = memo(BaseGitActionsControl);
 
 interface ThreadDetailsPanelProps extends Pick<
@@ -220,7 +221,10 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 </ThreadDetailsSection>
               ) : null}
 
-              {/* Coder: no dev-servers section; it needs upstream's preview port discovery. */}
+              {density === "full" && !props.draftId && visible.servers ? (
+                <ThreadServersPanel environmentId={props.environmentId} threadId={props.threadId} />
+              ) : null}
+
               {density === "full" && !props.draftId && visible.automations ? (
                 <ThreadAutomationsPanel
                   environmentId={props.environmentId}

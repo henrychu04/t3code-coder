@@ -64,6 +64,9 @@ network. Each rule runs its own forward process, reports its state (**Starting**
 **Stopped**), and can be restarted or removed individually. Saved rules start again when the
 gateway starts; a rule that failed stays stopped until you restart it or change its configuration.
 
+A dev server a thread started can also be forwarded from the thread details card's **Servers**
+section, which saves the same kind of TCP rule (see [Thread sidebar](thread-sidebar.md)).
+
 ## Linked workspaces
 
 A link lets agents in one workspace delegate tasks to another workspace and work on its threads.

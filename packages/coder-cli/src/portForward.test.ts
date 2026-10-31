@@ -94,6 +94,35 @@ describe("Coder port forward process", () => {
     }
   });
 
+  it("reports ready once Coder prints Ready! after its forwarding lines", async () => {
+    const child = fakeChild();
+    const scope = await Effect.runPromise(Scope.make("sequential"));
+    try {
+      const connection = await Effect.runPromise(
+        connectCoderPortForward(
+          { executable: "coder", args: ["port-forward", "workspace"] },
+          {
+            spawnProcess: () => {
+              queueMicrotask(() => child.emit("spawn"));
+              return child as unknown as ChildProcess;
+            },
+          },
+        ).pipe(Scope.provide(scope)),
+      );
+      const flush = () => new Promise((resolve) => setImmediate(resolve));
+      child.stderr.write(
+        "Forwarding 'tcp://127.0.0.1:5173' locally to 'tcp://127.0.0.1:5173' in the workspace\n",
+      );
+      await flush();
+      strictEqual(connection.ready?.(), false);
+      child.stderr.write("Ready!\n");
+      await flush();
+      strictEqual(connection.ready?.(), true);
+    } finally {
+      await Effect.runPromise(Scope.close(scope, Exit.void));
+    }
+  });
+
   it("force-kills a forward that ignores graceful scope shutdown", async () => {
     const child = fakeChild();
     const signals: NodeJS.Signals[] = [];
