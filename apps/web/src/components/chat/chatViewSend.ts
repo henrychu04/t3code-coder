@@ -268,6 +268,7 @@ export function restoreComposerDraft(
   // Coder: no browser preview, so there are no preview annotations to restore.
   store.setReviewComments(draftTarget, snapshot.reviewComments);
   store.setThreadContexts(draftTarget, snapshot.threadContexts);
+  store.setEnvironmentContexts(draftTarget, snapshot.environmentContexts);
   return images;
 }
 
