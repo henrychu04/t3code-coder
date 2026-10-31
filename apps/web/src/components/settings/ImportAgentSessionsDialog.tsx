@@ -1,6 +1,6 @@
 // Coder: upstream's welcome-wizard import step, offered from Settings → Providers. The wizard
-// itself is not carried. The helper scans only the workspace's own Claude Code and Codex session
-// stores and imports their history over its stdio RPC.
+// itself is not carried. The helper scans only the workspace's own Claude Code, Codex, and Pi
+// session stores and imports their history over its stdio RPC.
 import type {
   AgentSessionProjectCandidate,
   EnvironmentId,
@@ -9,7 +9,12 @@ import type {
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
-import { AuthOrchestrationOperateScope, CommandId, ProviderDriverKind } from "@t3tools/contracts";
+import {
+  AgentSessionSource,
+  AuthOrchestrationOperateScope,
+  CommandId,
+  ProviderDriverKind,
+} from "@t3tools/contracts";
 import { ChevronRightIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -43,7 +48,7 @@ import { formatRelativeTime } from "../../timestampFormat";
 
 const SCAN_LIMIT_MESSAGE = "Scan limit reached. Some projects or conversations may be missing.";
 
-/** Imports Claude Code and Codex projects and their history from one workspace. */
+/** Imports Claude Code, Codex, and Pi projects and their history from one workspace. */
 export function ImportAgentSessionsDialog({
   environmentId,
   open,
@@ -641,6 +646,12 @@ function ImportCandidateRow({
   );
 }
 
+const IMPORT_SOURCE_NAMES: Record<AgentSessionSource, string> = {
+  claudeAgent: "Claude Code",
+  codex: "Codex",
+  pi: "Pi",
+};
+
 /**
  * Trailing columns shared by every import row: source icons, thread count,
  * last activity. Each column has a fixed width and each icon has its own slot
@@ -651,7 +662,7 @@ function ImportRowMeta({
   threadCount,
   lastActiveAt,
 }: {
-  readonly sources: ReadonlyArray<"claudeAgent" | "codex"> | null;
+  readonly sources: ReadonlyArray<AgentSessionSource> | null;
   readonly threadCount: number;
   readonly lastActiveAt: string | null;
 }) {
@@ -659,29 +670,20 @@ function ImportRowMeta({
   // "just now" does not fit the fixed column, so collapse it.
   const age = relative === null ? "" : relative.suffix === null ? "now" : relative.value;
   return (
-    <span className="ml-auto grid shrink-0 grid-cols-[1rem_1rem_2.5rem_2.25rem] items-center gap-x-1 text-xs text-muted-foreground tabular-nums">
-      <span className="flex size-4 items-center justify-center">
-        {sources?.includes("claudeAgent") ? (
-          <span role="img" aria-label="Claude Code">
-            <ProviderInstanceIcon
-              driverKind={ProviderDriverKind.make("claudeAgent")}
-              displayName="Claude Code"
-              iconClassName="size-3"
-            />
-          </span>
-        ) : null}
-      </span>
-      <span className="flex size-4 items-center justify-center">
-        {sources?.includes("codex") ? (
-          <span role="img" aria-label="Codex">
-            <ProviderInstanceIcon
-              driverKind={ProviderDriverKind.make("codex")}
-              displayName="Codex"
-              iconClassName="size-3"
-            />
-          </span>
-        ) : null}
-      </span>
+    <span className="ml-auto grid shrink-0 grid-cols-[1rem_1rem_1rem_2.5rem_2.25rem] items-center gap-x-1 text-xs text-muted-foreground tabular-nums">
+      {AgentSessionSource.literals.map((source) => (
+        <span key={source} className="flex size-4 items-center justify-center">
+          {sources?.includes(source) ? (
+            <span role="img" aria-label={IMPORT_SOURCE_NAMES[source]}>
+              <ProviderInstanceIcon
+                driverKind={ProviderDriverKind.make(source)}
+                displayName={IMPORT_SOURCE_NAMES[source]}
+                iconClassName="size-3"
+              />
+            </span>
+          ) : null}
+        </span>
+      ))}
       <span className="text-right">{threadCount}</span>
       <span className="text-right whitespace-nowrap">{age}</span>
     </span>

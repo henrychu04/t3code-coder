@@ -311,6 +311,8 @@ interface ProviderSettingsFormProps {
   readonly idPrefix: string;
   readonly variant: "card" | "dialog" | "settings";
   readonly onChange: (nextConfig: Record<string, unknown> | undefined) => void;
+  // Coder: secret providers are not carried, so there is no `environmentId` for a secret-source
+  // picker and a `SettingsSecretValue` field keeps the plain `SecretInput` (#27746).
 }
 
 function ProviderSettingsSelect({

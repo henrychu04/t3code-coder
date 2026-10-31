@@ -9,7 +9,8 @@ import {
   seedRowsDraft,
 } from "./ProviderSettingsForm";
 
-// Coder: the OpenCode case is omitted because its definition is not carried.
+// Coder: the OpenCode case is omitted because its definition is not carried, and the secret
+// reference case (#27746) because secret providers are not carried.
 describe("ProviderSettingsForm helpers", () => {
   it("keeps every masked field as a stored secret", () => {
     const settingsSchema = makeProviderSettingsSchema({

@@ -11,6 +11,17 @@ export function environmentTransportLabel(_environment: EnvironmentPresentation)
   return "Coder workspace";
 }
 
+// Coder: the label never depends on the prepared connection target.
+export function useEnvironmentTransportLabel(environment: EnvironmentPresentation): string {
+  return environmentTransportLabel(environment);
+}
+
+export function EnvironmentTransportLabel(props: {
+  readonly environment: EnvironmentPresentation;
+}) {
+  return useEnvironmentTransportLabel(props.environment);
+}
+
 export function EnvironmentRow({
   kind,
   label,

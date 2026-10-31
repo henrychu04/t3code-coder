@@ -245,6 +245,7 @@ function pullRequestMarkdownContext(
       detail === null
         ? null
         : (sourceControlClients.parseChangeRequestUrl(detail.url)?.link.repositoryUrl ?? null),
+    lineBreaks: sourceControlClients.find(detail?.provider ?? "")?.hardLineBreaks ?? false,
     threadRef,
   };
 }
@@ -1233,7 +1234,7 @@ export function PullRequestDetailPanel({
   const resolveConflictsControl = (
     <PullRequestResolveConflictsButton
       handoff={handoff}
-      unavailable={attachTarget === null && checkoutRoot === null}
+      unavailable={attachTarget === null && (checkoutRoot === null || !canPrepareWorktree)}
       onResolve={startResolveConflicts}
     />
   );

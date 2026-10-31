@@ -60,4 +60,5 @@ export * from "./coderAssets.ts";
 export type * from "./coderGateway.ts";
 export * from "./secretRequest.ts";
 export * from "./secretReference.ts";
+export * from "./settingsSecretValue.ts";
 export * from "./clientRpcPermissions.ts";

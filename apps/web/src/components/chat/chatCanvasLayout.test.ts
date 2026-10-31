@@ -11,6 +11,9 @@ describe("workspace card beside chat", () => {
       composerHeight: 180,
       detailsCard: { left: width - 292, right: width - 12, bottom: 400 },
     });
+  it("keeps chat centered while the card fits beside it", () => {
+    expect(withCard(1500).chat).toEqual({ left: 382, width: 736, insetStart: 0, insetEnd: 0 });
+  });
   it("narrows chat only after it reaches the left padding", () => {
     expect(withCard(1108).chat).toMatchObject({ left: 48, width: 736 });
     expect(withCard(1028).chat).toEqual({ left: 48, width: 656, insetStart: 0, insetEnd: 276 });
@@ -30,15 +33,14 @@ describe("workspace card beside chat", () => {
       expect(card.x - chat.left - chat.width).toBeGreaterThanOrEqual(32);
     }
   });
-  it("centers the chat beside a details card it would crowd", () => {
+  it("moves the chat left only as far as a details card it would crowd requires", () => {
     const { chat } = resolveChatCanvasLayout({
       container: { width: 1344, height: 988 },
       maxChatWidth: 736,
       detailsCard: { left: 1052, right: 1332, bottom: 339 },
       preview: null,
     });
-    // Equal space on both sides of the chat.
-    expect(chat).toMatchObject({ left: (1052 - 736) / 2, width: 736 });
+    expect(chat).toMatchObject({ left: 1052 - 32 - 736, width: 736 });
   });
   it("keeps the chat canvas-centered when it clears the details card", () => {
     const result = resolveChatCanvasLayout({

@@ -315,7 +315,7 @@ The composer uses upstream's structured context records (`t3-context://v1/<kind>
 `message.context`) without preview annotations, element captures, or SnapShot frames
 (`useComposerContextImport.ts` skips those records when pasting).
 `ComposerAttachmentStrip.tsx`'s media row has upstream's image and video tiles without SnapShot
-frames. The work log
+frames, and `TimelineUserMessageRow.tsx`'s message media (#27306) has none either. The work log
 uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
 native app icons. File chip icons and size tooltips use upstream's `filesystem.getMetadata`, which
 stats absolute workspace paths and reads at most 512 header bytes of an extensionless file to name
@@ -520,8 +520,7 @@ listed here is drift to remove rather than fork behavior to keep.
     a share, so the sidebar `"request"` status and its notification title never fire.
     Guests' screenshots (#26323) are not carried either: `ChatMarkdown.tsx` has no
     `HostImageUrlContext` or `hostImageUrl.ts` (workspace images load through the workspace asset
-    route), shared `markdownPipeline.ts` has no `chatMarkdownImageSources`, and
-    `SidebarThreadRow.tsx`'s `TOP_STATUS_ICONS` has no guest `request` entry.
+    route), and `SidebarThreadRow.tsx`'s `TOP_STATUS_ICONS` has no guest `request` entry.
   - Linked environments (#16653–#17130) are carried between Coder workspaces through the gateway
     hub instead of server-to-server HTTP `/mcp` and pairing, which would break `AGENTS.md`
     boundaries 2, 3, and 6. Upstream's `peer/PeerForwarding.ts` and `peer/RemoteDelegation.ts`,
@@ -601,7 +600,9 @@ listed here is drift to remove rather than fork behavior to keep.
     advertise `secretReferences`. Web `settings/SecretSourceInput.tsx` and its browser test are
     cut, and `ProviderSettingsPanel.tsx` reads no secret sources for `AddProviderInstanceDialog`;
     `ProviderInstanceCard.tsx`'s environment field rows keep the plain value and `SecretInput`,
-    showing a stored secret reference as no value.
+    showing a stored secret reference as no value. #27746's web side (`ProviderSettingsForm.tsx`'s
+    secret-source control for `SettingsSecretValue` fields) is not carried; such a field keeps
+    `SecretInput`.
   - The thread dev-servers panel (#22542) is not carried: it lists and stops servers that
     upstream's preview `PortScanner` discovers, and the browser preview is not carried.
     `ClaudeAdapterV2.ts`'s query runner gives the CLI's jobs no agent-thread variable and counts
@@ -830,11 +831,14 @@ listed here is drift to remove rather than fork behavior to keep.
     carried in text generation, `t3_thread_launch`'s project default, or the web: it reads
     plan-window usage (`shared/usageLimits.ts`, not carried), which API-key providers never
     report. `fallbackModelSelection` stays in the settings schema only.
-  - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
-    session stores through the helper. `coderServer.ts` provides the scanner beside the helper RPC
+  - Agent-session import follows upstream, scanning only the workspace's own Codex, Claude, and
+    Pi session stores through the helper. `project/AgentSessionScanner.ts` declares
+    `resolvePiSessionsDir` itself, because upstream exports it from provider-pi's usage reader,
+    which is not carried. `coderServer.ts` provides the scanner beside the helper RPC
     layer, as upstream does beside its WebSocket layer. Upstream offers the import in its welcome
     wizard, which is not carried; `ImportAgentSessionsDialog.tsx` reuses that import step from
-    **Settings → Providers → History** for the selected workspace.
+    **Settings → Providers → History** for the selected workspace, with the wizard's Pi source
+    labels (#27515).
   - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
     unavailable; providers authenticate through the workspace's API configuration.
     `CodexManagedRuntime` keeps only upstream's resolution contract, so upstream's
@@ -844,7 +848,8 @@ listed here is drift to remove rather than fork behavior to keep.
     the server's `threadErrorSummary`, `ProjectionStore.ts`'s shell state, and client-runtime's
     `ThreadRuntimeSummary` carry no `lastErrorCode`; the contract field stays.
   - Provider drivers, snapshots, and the registry are upstream's. Coder deltas: `CodexDriver`
-    offers no T3-managed Codex install (`setupMode: "managed"`), neither driver redeems
+    offers no T3-managed Codex install (`setupMode: "managed"`) and so passes the adapter no
+    `compatibility` hook (#27281, which reads `CodexInstallation`), neither driver redeems
     rate-limit reset credits, and `ClaudeDriver` does not read the Claude organization id that
     keys upstream's usage accounts, so its one-probe capability fallback skips upstream's
     same-organization check (API-key logins have no organization either way). `ModelManifest.layerBundled` serves the bundled manifest without
@@ -858,7 +863,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `ClaudeAdapterV2.resolveBypassAvailability` reads the settings files (cached remote, user,
     project, local, and managed) where upstream calls the SDK's runtime `resolveSettings`
     (#21806); a mode any source disables is off, so `Drivers/ClaudeSkills.ts` keeps
-    `skillOverrideSettingsPaths` exported for it. `resolveSubagentPromptCacheTtl` reads
+    `claudeSettingsPaths` exported for it. `resolveSubagentPromptCacheTtl` reads
     `subagentPromptCacheTtl` from the same files (user, project, local, then managed; the last one
     set wins) instead of the SDK's `resolveSettings` (#22841). `CodexDriver` has no `CodexUsageHistory`
     requirement, because Codex usage history (#21898) is not carried. The Claude signed-out message names API
@@ -932,6 +937,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `threadProjectFromScratch`. `server.ts` mirrors `ipc.ts`'s `DesktopUpdateChannelSchema` for
     `ServerSelfUpdateInput` (#26288), because `ipc.ts` is not carried; the descriptor omits
     `desktopAppChannelSwitch` and `databaseMigration`.
+  - `CoderWsRpcGroup` omits `server.getNpmRelease` (#27847), which only server self-update
+    (`cloud/npmRelease.ts`, not carried) reads.
   - `ServerConfig` omits auth, editors, remote open targets, and observability, except
     upstream's optional `lastEventLoopStall`, which stays in the schema but is never sent.
   - `vcs.ts` and `git.ts` keep upstream's shapes (GitLab's `GitLabCli` supplies its own
@@ -1062,7 +1069,8 @@ listed here is drift to remove rather than fork behavior to keep.
   moved out of `ChatView` carry the same cuts (each marked `Coder:`): `RightPanelSurfaceContent`
   renders nothing for browser and device surfaces and names merge requests; `useRightPanelSurfaceClose` closes no preview sessions and asks no agent-browser
   confirmation; `useQueuedRunEdit` carries no preview annotations; `useThreadLinkedPullRequest` names merge requests; `useSystemComposerBanners`
-  shows only the offline or reconnecting banner, with no connection diagnosis, disconnect action,
+  shows only the offline or reconnecting banner, whose Reconnect only retries (no #24691 re-enable,
+  since every workspace is enabled), with no connection diagnosis, disconnect action,
   server-update notice, or auto-balanced machines; `useDraftEnvironmentRouting` keeps only the
   manual machine switch; `ChatView.logic.ts`'s send snapshot and title fallbacks and
   `chatViewSend.ts`'s draft restore carry no preview annotations, and a send that redirects
@@ -1190,7 +1198,15 @@ listed here is drift to remove rather than fork behavior to keep.
     `SourceControlHost.settings.update` (also absent from the test host), because GitLab uses the
     workspace's `glab` login. Contracts keep upstream's sign-in schemas, the dormant `appSignIn`
     field, and the `sourceControl.signIn*` and `sourceControl.appAccess` RPCs in upstream's
-    dormant `WsRpcGroup` only; `CoderWsRpcGroup` omits them. In the clients, web
+    dormant `WsRpcGroup` only; `CoderWsRpcGroup` omits them. Upstream's GitHub star prompt
+    (#27832) is cut with it: `CoderWsRpcGroup` omits `sourceControl.starred`, source-control-core
+    drops the driver's `isRepositoryStarred`, client-runtime has no `checkStarred` atom, and web has
+    no `GitHubStarPrompt` or `useComposerSend` `recordPromptSent` call.
+  - Secret provider references in source control host credentials (#27746) are not carried:
+    source-control-core's `SourceControlHost.settings` has no `getWithSecrets` (nor the test
+    host), and server `sourceControlHostSecrets.ts` has no reference resolution or invalidation,
+    so `server.refreshProviders`' `reloadSecrets` invalidates nothing; upstream's
+    `secrets/settingsSecretValue.ts` and `sourceControlHostSecrets.test.ts` are not carried. In the clients, web
     `SourceControlAppAccessNotice.tsx`, `T3AppIcon.tsx`, `settings/SourceControlAppSignInSettings.tsx`
     and `sourceControlAppAccessToast.ts` are cut (`state/sourceControlActions.ts` suggests no app
     access after publishing), and client-runtime `state/sourceControl.ts` and
@@ -1297,7 +1313,8 @@ listed here is drift to remove rather than fork behavior to keep.
   Background activity uses upstream's profiles without host power-monitor intervals or power and
   lock pauses. Upstream's `EnvironmentRow.tsx` and `itemRows.ts` are carried for the scheduled
   task list and the scope notice; `environmentTransportLabel` names every workspace "Coder
-  workspace", because there are no routes, T3 Connect, WSL, or SSH targets. Older fork links that
+  workspace", because there are no routes, T3 Connect, WSL, or SSH targets, so
+  `useEnvironmentTransportLabel` ignores the prepared connection. Older fork links that
   name one checkout by its settings key resolve to its group.
 - **Project icons.** Upstream's bounded Lucide names, palette, or emoji (`ProjectEmoji`), persisted
   on workspace project records through the project metadata command stream; migration 047 adds the
@@ -1362,7 +1379,9 @@ listed here is drift to remove rather than fork behavior to keep.
     probe timeout decides. `connectedLeaseEnd` ends a lease only on a disconnect (no better routes
     or relay credentials). Upstream's `connection/supervisor.test.ts` is not carried; its harness
     builds the multi-route driver, routes, and relay credentials the fork cuts. `connection/registry.ts` starts every registered workspace's supervisor
-    desired (upstream starts only enabled ones), since the Coder config owns registration. Its entries
+    desired (upstream starts only enabled ones), since the Coder config owns registration, and
+    applies every platform reconcile (no #26511 skip of unchanged registrations), since its
+    reconcile also re-acquires supervisors. Its entries
     carry no cached unsupported-host rejection, so web `state/server.ts`'s shortcut-keybinding
     fallback presents each workspace's connection state as is. It has no `assertKnownAddress` or
     `register(..., { knownAddressOnly })`, since pairing links (#26178) are not carried, and

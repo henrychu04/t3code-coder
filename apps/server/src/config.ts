@@ -75,6 +75,14 @@ export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerived
     ].map((directory) => fileSystem.makeDirectory(directory, { recursive: true })),
     { concurrency: "unbounded" },
   );
+  // Logs, traces and the database are written with the process umask; keep them owner-only.
+  yield* fileSystem
+    .chmod(paths.stateDir, 0o700)
+    .pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Could not restrict state directory permissions.", { cause }),
+      ),
+    );
 
   // Staged composer images that were never sent expire after a day, as upstream's do.
   sweepStalePendingAttachments({

@@ -58,7 +58,8 @@ export const layer = (
       const update = (patch: ServerSettingsPatch) =>
         Ref.updateAndGet(settings, (current) => applyServerSettingsPatch(current, patch));
       const host = SourceControlHost.SourceControlHost.of({
-        // Coder: the host has no `update` (forge app sign-in is not carried).
+        // Coder: the host has no `update` (forge app sign-in is not carried) or `getWithSecrets`
+        // (secret provider references are not carried).
         settings: { get: Ref.get(settings) },
         process: {
           run:

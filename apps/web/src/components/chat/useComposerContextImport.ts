@@ -35,6 +35,7 @@ import {
 import { assetEnvironment } from "~/state/assets";
 import { copiedComposerAttachmentFile } from "~/lib/copiedComposerAttachments";
 import { countQuestionAttachments, questionAttachmentDraftId } from "../../questionAttachments";
+import { collectInlineContextIds } from "../../lib/composerContextReferences";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { pendingDraftWork } from "./pendingDraftWork";
 import { randomUUID } from "~/lib/utils";
@@ -80,6 +81,7 @@ export function useComposerContextImport(input: {
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
   readonly composerContextRecords: ComposerDraftContextRecords;
   readonly composerFilesRef: ChatComposerProps["composerFilesRef"];
+  readonly promptRef: RefObject<string>;
   readonly pendingThreadImportsRef: RefObject<Map<string, number>>;
   readonly addComposerFilesToDraft: (files: ComposerFileAttachment[]) => string[];
 }) {
@@ -95,6 +97,7 @@ export function useComposerContextImport(input: {
     pendingUserInputs,
     composerContextRecords,
     composerFilesRef,
+    promptRef,
     pendingThreadImportsRef,
     addComposerFilesToDraft,
   } = input;
@@ -176,6 +179,14 @@ export function useComposerContextImport(input: {
         fail("Downloading it from the source failed.");
         return;
       }
+      // Question attachments have no inline reference. Coder: no preview annotations, so no
+      // annotation owns a screenshot.
+      const references = new Set(collectInlineContextIds(promptRef.current));
+      if (
+        !questionAttachmentTarget &&
+        !references.has(toKindScopedComposerContextId(record.kind, localId))
+      )
+        return;
       file = new File([blob], record.name, { type: record.mimeType || blob.type });
     }
     // The draft these bytes belong to may have been sent or switched away from while they

@@ -772,3 +772,96 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     await NodeFS.rm(directory, { force: true, recursive: true });
   }
 }, 5000);
+
+it("hands an MCP elicitation to onElicitation and answers it, as the Agent SDK does", async () => {
+  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-elicitation-"));
+  const executable = NodePath.join(directory, "fake-claude");
+  // Asks once with the SDK 0.3.276 elicitation wire shape, then reports the answer as a result.
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type === "control_request") {
+    process.stdout.write(JSON.stringify({
+      type: "control_response",
+      response: { subtype: "success", request_id: value.request_id, response: {} },
+    }) + "\\n");
+    return;
+  }
+  if (value.type === "user") {
+    process.stdout.write(JSON.stringify({
+      type: "control_request",
+      request_id: "elicit-1",
+      request: {
+        subtype: "elicitation",
+        mcp_server_name: "deploys",
+        message: "Deploy web?",
+        mode: "form",
+        requested_schema: { type: "object", properties: {} },
+        display_name: "Deploys",
+      },
+    }) + "\\n");
+    return;
+  }
+  if (value.type === "control_response") {
+    process.stdout.write(JSON.stringify({ type: "result", subtype: "success", session_id: "s", is_error: false, answer: value.response }) + "\\n", () => process.exit(0));
+  }
+});
+`,
+    { mode: 0o700 },
+  );
+  const asked: Array<Sdk.ElicitationRequest> = [];
+  const answers: Array<unknown> = [];
+  let resolveAnswered: (() => void) | undefined;
+  const answered = new Promise<void>((resolve) => {
+    resolveAnswered = resolve;
+  });
+  try {
+    const runtime = query({
+      prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+        yield {
+          type: "user",
+          session_id: "",
+          parent_tool_use_id: null,
+          message: { role: "user", content: "hello" },
+        };
+        // Keep input open until the CLI has reported the answer.
+        await answered;
+      })(),
+      options: {
+        pathToClaudeCodeExecutable: executable,
+        env: process.env,
+        onElicitation: async (request, options) => {
+          asked.push(request);
+          assert.equal(options.requestId, "elicit-1");
+          return { action: "accept", content: {} };
+        },
+      },
+    });
+    for await (const message of runtime) {
+      if (message.type !== "result") continue;
+      answers.push((message as { answer?: unknown }).answer);
+      resolveAnswered?.();
+    }
+    assert.deepEqual(asked, [
+      {
+        serverName: "deploys",
+        message: "Deploy web?",
+        mode: "form",
+        requestedSchema: { type: "object", properties: {} },
+        displayName: "Deploys",
+      },
+    ]);
+    assert.deepEqual(answers, [
+      {
+        subtype: "success",
+        request_id: "elicit-1",
+        response: { action: "accept", content: {} },
+      },
+    ]);
+  } finally {
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);

@@ -24,6 +24,7 @@ import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestM
 
 export const PullRequestMarkdownContext = createContext<{
   autolinks: ((text: string) => ReadonlyArray<ReferenceAutolink>) | null;
+  lineBreaks: boolean;
   // Coder: the repository GitLab's project-relative `/uploads/…` links resolve against.
   repositoryUrl: string | null;
   threadRef: ScopedThreadRef | null;
@@ -83,6 +84,7 @@ export function PullRequestMarkdown({
   cwd,
   environmentId,
   threadRef,
+  lineBreaks,
   className,
 }: {
   text: string;
@@ -90,6 +92,7 @@ export function PullRequestMarkdown({
   environmentId: EnvironmentId;
   /** Thread the body is shown beside, so its merge request links open in that thread's panel. */
   threadRef?: ScopedThreadRef | null;
+  lineBreaks?: boolean;
   className?: string;
 }) {
   const context = useContext(PullRequestMarkdownContext);
@@ -120,6 +123,7 @@ export function PullRequestMarkdown({
               threadRef={resolvedThreadRef}
               pullRequestPanelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
               extraRemarkPlugins={extraRemarkPlugins}
+              lineBreaks={lineBreaks ?? context?.lineBreaks ?? false}
               sourceControlMedia
             />
           );
