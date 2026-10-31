@@ -120,7 +120,7 @@ describe("Coder CLI command construction", () => {
       quotePosixShellArgument(
         [
           REMOTE_WORKSPACE_PREFLIGHT_COMMAND,
-          "stty raw -echo 2>/dev/null || true",
+          'if [ -t 0 ]; then stty raw -echo 2>/dev/null || fail "The workspace terminal could not be switched to raw mode (stty raw -echo)."; fi',
           `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
           [
             "exec env",
