@@ -322,8 +322,6 @@ export class GitLabCli extends Context.Service<
     readonly checkoutMergeRequest: (input: {
       readonly cwd: string;
       readonly reference: string;
-      /** Coder: the local branch name `glab mr checkout --branch` creates. */
-      readonly branch?: string;
       readonly force?: boolean;
     }) => Effect.Effect<void, GitLabCliError>;
   }
@@ -767,18 +765,10 @@ export const make = Effect.gen(function* () {
       return executeMergeRequest({
         cwd: input.cwd,
         reference: input.reference,
-        // Coder: upstream ignores `branch` and `force`, and passes MR URLs straight through.
+        // Coder: upstream passes MR URLs straight through.
         args: (() => {
           const selector = mergeRequestReferenceArgs(input.reference);
-          return [
-            "mr",
-            "checkout",
-            ...selector.options,
-            ...(input.branch ? ["--branch", input.branch] : []),
-            ...(input.force ? ["--force"] : []),
-            "--",
-            selector.reference,
-          ];
+          return ["mr", "checkout", ...selector.options, "--", selector.reference];
         })(),
       }).pipe(Effect.asVoid);
     }),

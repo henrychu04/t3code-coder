@@ -111,12 +111,7 @@ layer("GitLabCli.layer", (it) => {
 
         const glab = yield* GitLabCli.GitLabCli;
         const result = yield* glab.getMergeRequest({ cwd: "/repo", reference });
-        yield* glab.checkoutMergeRequest({
-          cwd: "/repo",
-          reference,
-          branch: "mr-42",
-          force: true,
-        });
+        yield* glab.checkoutMergeRequest({ cwd: "/repo", reference });
 
         expect(result.number).toBe(42);
         expect(mockedRun).toHaveBeenNthCalledWith(
@@ -128,17 +123,7 @@ layer("GitLabCli.layer", (it) => {
         expect(mockedRun).toHaveBeenNthCalledWith(
           2,
           expect.objectContaining({
-            args: [
-              "mr",
-              "checkout",
-              "--repo",
-              repository,
-              "--branch",
-              "mr-42",
-              "--force",
-              "--",
-              "42",
-            ],
+            args: ["mr", "checkout", "--repo", repository, "--", "42"],
           }),
         );
       }),
@@ -313,28 +298,6 @@ layer("GitLabCli.layer", (it) => {
             "projects/:fullpath/merge_requests",
             "target_project_id=100",
           ]),
-        }),
-      );
-    }),
-  );
-
-  it.effect("passes the isolated branch and force flags when checking out merge requests", () =>
-    Effect.gen(function* () {
-      mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
-
-      const glab = yield* GitLabCli.GitLabCli;
-      yield* glab.checkoutMergeRequest({
-        cwd: "/repo",
-        reference: "42",
-        branch: "t3code/mr-42-thread",
-        force: true,
-      });
-
-      expect(mockedRun).toHaveBeenCalledWith(
-        expect.objectContaining({
-          command: "glab",
-          cwd: "/repo",
-          args: ["mr", "checkout", "--branch", "t3code/mr-42-thread", "--force", "--", "42"],
         }),
       );
     }),
