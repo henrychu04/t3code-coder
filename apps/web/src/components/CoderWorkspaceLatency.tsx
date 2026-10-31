@@ -104,32 +104,32 @@ function ResourceRow({
 }
 
 function ResourceUsage({ usage }: { readonly usage: CoderWorkspaceResourceUsage }) {
-  const cpuPercent = (usage.cpu.used / usage.cpu.total) * 100;
-  const memoryPercent = (usage.memory.used / usage.memory.total) * 100;
-  const diskPercent = (usage.disk.used / usage.disk.total) * 100;
+  const row = (
+    icon: LucideIcon,
+    label: string,
+    stat: { readonly used: number; readonly total: number | null },
+    format: (value: number) => string,
+  ) => (
+    <ResourceRow
+      detail={
+        // A workspace without a limit for this resource reports no total.
+        stat.total === null
+          ? `${format(stat.used)} used, no limit`
+          : `${format(stat.used)} of ${format(stat.total)}`
+      }
+      icon={icon}
+      label={label}
+      percent={stat.total === null ? 0 : (stat.used / stat.total) * 100}
+      value={
+        stat.total === null ? format(stat.used) : formatCoderResourcePercent(stat.used, stat.total)
+      }
+    />
+  );
   return (
     <div className="space-y-3">
-      <ResourceRow
-        detail={`${usage.cpu.used.toFixed(2)} of ${usage.cpu.total.toFixed(0)} cores`}
-        icon={CpuIcon}
-        label="CPU"
-        percent={cpuPercent}
-        value={formatCoderResourcePercent(usage.cpu.used, usage.cpu.total)}
-      />
-      <ResourceRow
-        detail={`${formatCoderResourceBytes(usage.memory.used)} of ${formatCoderResourceBytes(usage.memory.total)}`}
-        icon={MemoryStickIcon}
-        label="Memory"
-        percent={memoryPercent}
-        value={formatCoderResourcePercent(usage.memory.used, usage.memory.total)}
-      />
-      <ResourceRow
-        detail={`${formatCoderResourceBytes(usage.disk.used)} of ${formatCoderResourceBytes(usage.disk.total)}`}
-        icon={HardDriveIcon}
-        label="Home disk"
-        percent={diskPercent}
-        value={formatCoderResourcePercent(usage.disk.used, usage.disk.total)}
-      />
+      {row(CpuIcon, "CPU", usage.cpu, (value) => `${value.toFixed(2)} cores`)}
+      {row(MemoryStickIcon, "Memory", usage.memory, formatCoderResourceBytes)}
+      {row(HardDriveIcon, "Home disk", usage.disk, formatCoderResourceBytes)}
     </div>
   );
 }

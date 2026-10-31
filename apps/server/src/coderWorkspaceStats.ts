@@ -14,12 +14,21 @@ const MAX_STAT_OUTPUT_BYTES = 64 * 1024;
 
 const decodeUsage = Schema.decodeUnknownEffect(CoderWorkspaceResourceUsage);
 
+/**
+ * The Coder agent's own CLI. An SSH session's shell has it on PATH, but the helper's environment
+ * may not; the agent always points `GIT_SSH_COMMAND` at it (`<agent>/coder gitssh --`).
+ */
+function coderExecutable(): string {
+  const agent = process.env.GIT_SSH_COMMAND?.match(/^(\/\S*\/coder) gitssh\b/)?.[1];
+  return agent ?? "coder";
+}
+
 export const readCoderWorkspaceResourceUsage = Effect.gen(function* () {
   const runner = yield* ProcessRunner.ProcessRunner;
   const stat = (args: ReadonlyArray<string>) =>
     runner
       .run({
-        command: "coder",
+        command: coderExecutable(),
         args: ["--no-version-warning", "stat", ...args, "--output=json"],
         timeout: STAT_TIMEOUT,
         maxOutputBytes: MAX_STAT_OUTPUT_BYTES,

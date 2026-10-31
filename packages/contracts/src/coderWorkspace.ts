@@ -3,7 +3,8 @@ import * as Schema from "effect/Schema";
 const usageStat = <Unit extends "cores" | "B">(unit: Unit) =>
   Schema.Struct({
     used: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
-    total: Schema.Finite.check(Schema.isGreaterThan(0)),
+    /** Null when the workspace has no limit for this resource. */
+    total: Schema.NullOr(Schema.Finite.check(Schema.isGreaterThan(0))),
     unit: Schema.Literal(unit),
   });
 
