@@ -1,9 +1,15 @@
+import type * as Effect from "effect/Effect";
+import type * as Fiber from "effect/Fiber";
 import type * as Scope from "effect/Scope";
 
 import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";
 import type { CoderPortForwardConnection } from "@t3tools/coder-cli/portForward";
 import type { WorkspaceAction } from "./coderCommands.ts";
 import type { WorkspaceRpcBridge } from "./rpcBridge.ts";
+
+/** The gateway's fiber-set runners (`FiberSet.runtimePromise` and `FiberSet.runtime`). */
+export type RunPromise = <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
+export type RunFork = <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
 
 export class WorkspaceActionConflictError extends Error {}
 
