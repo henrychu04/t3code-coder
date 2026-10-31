@@ -158,7 +158,8 @@ immediately when the browser becomes visible again. Stable workspace status refr
 minute so deadline, health, and template-update state do not remain stale.
 
 The gateway stores each workspace and saved forward in one tagged lifecycle state held by an Effect
-`SynchronizedRef`. Workspace connection and action claims, and port-forward start and stop claims,
+`SynchronizedRef` (`apps/coder-gateway/src/workspaceConnections.ts` and `portForwards.ts`; the
+states and claims are in `lifecycleState.ts`, and `server.ts` keeps the routes). Workspace connection and action claims, and port-forward start and stop claims,
 are serialized transitions. Duplicate requests for the same workspace action share its result;
 conflicting actions are rejected instead of being coalesced into a different command. Process exits
 can update only the state that still owns that exact connection, so a late exit cannot overwrite a

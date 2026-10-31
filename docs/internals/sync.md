@@ -275,7 +275,7 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
 - New upstream code can import a dependency the fork had removed with an old cut (7df7cb9999:
   `yauzl` for document text, `jszip` for office previews). Typecheck reports the missing module;
   restore upstream's dependency entry rather than adapting the code.
-- `apps/coder-gateway/src/server.ts`'s CSP pins the hash of `apps/web/index.html`'s inline boot
+- `apps/coder-gateway/src/http.ts`'s CSP pins the hash of `apps/web/index.html`'s inline boot
   script. When upstream edits that script (comment pruning counts), recompute the hash;
   `server.test.ts` fails until then.
 - A package that gains a dependency on deleted host packages (this batch: client-runtime on every
