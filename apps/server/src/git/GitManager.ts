@@ -2696,7 +2696,8 @@ export const make = Effect.gen(function* () {
       return yield* new GitManagerError({
         operation: "preparePullRequestThread",
         cwd,
-        detail: `This repository has uncommitted changes. Commit or stash them before checking out pull request #${pullRequestNumber} here, or check it out in its own folder.`,
+        // Coder: GitLab merge request wording.
+        detail: `This repository has uncommitted changes. Commit or stash them before checking out merge request !${pullRequestNumber} here, or check it out in its own folder.`,
       });
     }
   });
