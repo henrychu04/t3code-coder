@@ -567,15 +567,22 @@ checks that every name here still exists and that every modified upstream file i
   (default `kilo`), hidden `commandArgs` (`["acp"]`), `customModels`, and `enabled` (default off;
   contracts' `DEFAULT_DISABLED_PROVIDER_DRIVERS` lists `acpRegistry`); `client.ts` labels it "Kilo
   Code", inlines its icon, and has a default instance; `AcpRegistrySupport.ts` keeps only
-  local-command `inspect` and `resolve` (no `acpRegistryManagedBinaryDirectories`); `probe.ts` sends
-  no session-management requests; `driver.ts` reports only local readiness (`canAuthenticate` false,
-  sign-in told to happen in the workspace), and real sessions set
-  `authenticateOnAuthRequired: false`; the probe declines URL elicitation; `driver.ts` keeps
-  `acpRegistrySnapshotReadiness` and `testing.ts` keeps `probeAcpRegistryConfiguration` exported for
-  the fork's tests; `AcpRegistryRuntimeCoordinator.ts` has no URL-auth consent or session mutation
-  permit; `adapter.ts` has no Devin, Copilot, or Mistral Vibe flavor or native logging.
-- `ProviderRegistry.ts` treats a ready Kilo Code snapshot listing a model beyond `default` as a
-  completed probe, since this driver reports no `nativeSessions`.
+  local-command `inspect` and `resolve` (no `acpRegistryManagedBinaryDirectories`); `driver.ts`
+  reports only local readiness (`canAuthenticate` false, sign-in told to happen in the workspace)
+  and no `configurableProviders`, and real sessions set `authenticateOnAuthRequired: false`; the
+  probe declines URL elicitation; `driver.ts` keeps `acpRegistrySnapshotReadiness` and
+  `testing.ts` keeps `probeAcpRegistryConfiguration` exported for the fork's tests;
+  `AcpRegistryRuntimeCoordinator.ts` has no URL-auth consent; `adapter.ts` has no Devin, Copilot,
+  or Mistral Vibe flavor or native logging.
+- Kilo Code native sessions: of upstream's ACP session management only the session list and import
+  are carried (Settings → Providers → Kilo Code → **Native sessions**). provider-core's
+  `acpSessionManagement` has only `listSessions`; `probe.ts`'s session manager offers no URL
+  elicitation or auth method; `ws.ts` serves `server.listAcpRegistrySessions` and
+  `server.importAcpRegistrySession` (the import launches without upstream's startup queue), and
+  `coderServer.ts` provides the runtime coordinator alone (upstream: `layerFromHost`);
+  `rpc.ts`, client-runtime's `state/server.ts`, and `AcpSessionManagementSection.tsx` carry only
+  those two. Session delete is cut because Kilo Code advertises no `session/delete`; logout and
+  agent provider configuration are account and provider management.
 - provider-acp's `adapter.ts` gives ACP sessions no MCP server and sends `t3ToolBridgeInstructions`
   with the first prompt through provider-core's `t3AcpPromptWithInstructions`; `mcpOverAcpBridge.ts`
   and `clientTerminals.ts` stay dormant (cutting them would add about 34 seams).
@@ -873,8 +880,8 @@ checks that every name here still exists and that every modified upstream file i
   and the four drivers (`isCoderProviderDriver`); `providerClients.ts` registers only those, and the
   Add provider dialog shows all four with no "Show more" fold or ACP Registry search (#25753).
 - `ProviderSettingsPanel`'s `ProviderInstanceRow` passes no ACP sign-in, managed Codex runtime, or
-  provider setup section, and `RemoteSessionGatedProviderSettings` grants operate access without the
-  remote-session check.
+  provider setup section (it passes `acpProjects` for Kilo Code's native sessions), and
+  `RemoteSessionGatedProviderSettings` grants operate access without the remote-session check.
 
 ### Settings
 
@@ -1046,9 +1053,10 @@ them, the file is named here.
   `window.t3dev`), their replay fixtures (`testkit/fixtures/index.ts` and `shared.ts` drop their
   entries), managed Codex (`CodexManagedTokenBroker`, `__managed-chatgpt-token`, ChatGPT Business
   admin requests #23361), provider sign-in, and Kilo Code's registry index, installs, auth
-  controller, and session management (`acpSessionManagement`, `copilotAcp.ts`, `devinAcp.ts`,
-  `nativeLogging.ts`, `@noble/hashes`), and the Antigravity send block. Codex feedback upload
-  (client-runtime `threadCommands.ts` has no `uploadFeedback`) and SnapShot sources are cut.
+  controller, logout, native session deletion, and agent provider configuration (`copilotAcp.ts`,
+  `devinAcp.ts`, `nativeLogging.ts`, `@noble/hashes`), and the Antigravity send block. Codex
+  feedback upload (client-runtime `threadCommands.ts` has no `uploadFeedback`) and SnapShot sources
+  are cut.
 - **Hosted source control other than GitLab.** GitHub, Azure DevOps, Bitbucket, Forgejo, and
   GitCafe packages, host settings, tokens, accounts, routing, forge app sign-in (#26245,
   `SourceControlSignIn`), app-access notices (`sourceControlAppAccessToast.ts`), and the GitHub star

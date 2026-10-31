@@ -169,6 +169,7 @@ describe("acpRegistrySnapshotReadiness", () => {
       ),
     ).toMatchObject({
       auth: { status: "unknown", canLogout: true },
+      nativeSessions: { canList: true, canLoad: true, canResume: true },
       models: [{ slug: "live-model", isDefault: true }],
     });
   });

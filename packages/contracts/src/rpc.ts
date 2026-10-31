@@ -49,6 +49,14 @@ import {
   ProviderSetupInput,
 } from "./providerSetup.ts";
 
+// Coder: only native session list and import are carried for Kilo Code.
+import {
+  AcpRegistryImportSessionInput,
+  AcpRegistryImportSessionResult,
+  AcpRegistryListSessionsInput,
+  AcpRegistryListSessionsResult,
+  AcpRegistryOperationError,
+} from "./acpRegistry.ts";
 import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
@@ -822,6 +830,18 @@ const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourc
   payload: Schema.Struct({}),
   success: SourceControlDiscoveryResult,
   error: EnvironmentAuthorizationError,
+});
+
+const WsServerListAcpRegistrySessionsRpc = Rpc.make(WS_METHODS.serverListAcpRegistrySessions, {
+  payload: AcpRegistryListSessionsInput,
+  success: AcpRegistryListSessionsResult,
+  error: Schema.Union([AcpRegistryOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsServerImportAcpRegistrySessionRpc = Rpc.make(WS_METHODS.serverImportAcpRegistrySession, {
+  payload: AcpRegistryImportSessionInput,
+  success: AcpRegistryImportSessionResult,
+  error: Schema.Union([AcpRegistryOperationError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetTraceDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetTraceDiagnostics, {
@@ -1833,6 +1853,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsPeerLinksUnlinkRpc,
   WsPeerLinksAnswerRequestRpc,
   WsServerDiscoverSourceControlRpc,
+  WsServerListAcpRegistrySessionsRpc,
+  WsServerImportAcpRegistrySessionRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,
@@ -2124,6 +2146,8 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsServerDiscoverSourceControlRpc,
+  WsServerListAcpRegistrySessionsRpc,
+  WsServerImportAcpRegistrySessionRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
