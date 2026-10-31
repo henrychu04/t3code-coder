@@ -1,8 +1,10 @@
-// Coder: agent sign-in, native session management, and provider configuration are not carried, so
-// the probe declines URL authentication and offers no terminal login, and upstream's management
-// requests (session list and delete, provider list, set, and disable, logout) are absent.
+// Coder: agent sign-in and provider configuration are not carried, so the probe declines URL
+// authentication and offers no terminal login. Of upstream's management requests only the native
+// session list is carried; session delete (Kilo Code advertises none), provider list, set, and
+// disable, and logout are absent.
 import {
   AcpRegistryOperationError,
+  AcpRegistryListSessionsResult,
   AcpRegistryProbeResult,
   type AcpRegistryProbeAuthMethod,
   type AcpRegistryProbeModel,
@@ -13,6 +15,7 @@ import {
 import { AcpRegistrySettings } from "../settings.ts";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -296,6 +299,8 @@ export interface AcpRegistryConfigurationProbeInput {
   readonly environment: NodeJS.ProcessEnv;
 }
 
+type AcpRegistryManagementInput = AcpRegistryConfigurationProbeInput;
+
 export interface AcpRegistryConfigurationProbeResult {
   readonly probe: AcpRegistryProbeResult;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
@@ -401,4 +406,158 @@ export const probeAcpRegistryConfiguration = Effect.fn("AcpRegistryProbe.probeCo
       skills: result.commands.skills,
     };
   },
+);
+
+const MANAGEMENT_TIMEOUT = Duration.seconds(60);
+
+// Coder: no agent sign-in, so the session manager offers no URL elicitation and picks no
+// authentication method.
+const makeAcpRegistryManagementRuntime = Effect.fn("AcpRegistryProbe.makeManagementRuntime")(
+  function* (input: AcpRegistryManagementInput) {
+    const catalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
+    const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const crypto = yield* Crypto.Crypto;
+    const resolved = yield* catalog
+      .resolve(input.settings, input.cwd, input.environment)
+      .pipe(Effect.mapError(AcpRegistrySupport.toAcpRegistryOperationError));
+    const runtimeContext = yield* Layer.build(
+      AcpSessionRuntime.layer({
+        spawn: resolved.spawn,
+        cwd: input.cwd,
+        clientCapabilities: {
+          auth: { terminal: false },
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+        },
+        clientInfo: { name: "t3-code-session-manager", version: "0.0.0" },
+        authenticateOnAuthRequired: false,
+      }).pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+            Layer.succeed(Crypto.Crypto, crypto),
+          ),
+        ),
+      ),
+    );
+    return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
+      Effect.provide(runtimeContext),
+    );
+  },
+);
+
+function managementFailure(
+  operation:
+    | "list"
+    | "delete"
+    | "providers_list"
+    | "providers_set"
+    | "providers_disable"
+    | "logout",
+  error: EffectAcpErrors.AcpError | AcpRegistryOperationError,
+): AcpRegistryOperationError {
+  if (error._tag === "AcpRegistryOperationError") return error;
+  if (error._tag === "AcpRequestError" && error.code === -32601) {
+    if (operation === "list") {
+      return new AcpRegistryOperationError({
+        reason: "session_list_unsupported",
+        message: "The ACP agent does not advertise session listing.",
+        cause: error,
+      });
+    }
+    if (operation === "delete") {
+      return new AcpRegistryOperationError({
+        reason: "session_delete_unsupported",
+        message: "The ACP agent does not advertise session deletion.",
+        cause: error,
+      });
+    }
+    if (operation.startsWith("providers_")) {
+      return new AcpRegistryOperationError({
+        reason: "providers_unsupported",
+        message: "The ACP agent does not advertise provider configuration.",
+        cause: error,
+      });
+    }
+    return new AcpRegistryOperationError({
+      reason: "logout_unsupported",
+      message: "The ACP agent does not advertise logout.",
+      cause: error,
+    });
+  }
+  const classified = acpRegistryProbeFailure(error);
+  if (classified.reason === "authentication_failed") return classified;
+  const failure =
+    operation === "delete"
+      ? { reason: "session_delete_failed" as const, message: "Could not delete the ACP session." }
+      : operation === "providers_list"
+        ? { reason: "providers_list_failed" as const, message: "Could not list ACP providers." }
+        : operation === "providers_set" || operation === "providers_disable"
+          ? {
+              reason: "provider_configuration_failed" as const,
+              message: "Could not update the ACP provider configuration.",
+            }
+          : undefined;
+  return failure === undefined
+    ? classified
+    : new AcpRegistryOperationError({ ...failure, cause: error });
+}
+
+export const listAcpRegistrySessions = Effect.fn("AcpRegistryProbe.listSessions")(
+  function* (input: AcpRegistryManagementInput & { readonly cursor?: string }) {
+    const runtime = yield* makeAcpRegistryManagementRuntime(input);
+    const initialized = yield* runtime.initialize();
+    const listed = yield* runtime.listSessions(input.cursor);
+    const sessions = listed.sessions.slice(0, 256).flatMap((session) => {
+      const sessionId = boundedOpaqueValue(session.sessionId, 1_024);
+      const cwd = boundedOpaqueValue(session.cwd, 4_096);
+      if (sessionId === undefined || cwd === undefined) return [];
+      return [
+        {
+          sessionId,
+          cwd,
+          additionalDirectories: (session.additionalDirectories ?? [])
+            .flatMap((directory) => {
+              const normalized = boundedOpaqueValue(directory, 4_096);
+              return normalized === undefined ? [] : [normalized];
+            })
+            .slice(0, 32),
+          title:
+            session.title === undefined || session.title === null
+              ? null
+              : boundedText(session.title, 1_024) || null,
+          updatedAt:
+            session.updatedAt === undefined || session.updatedAt === null
+              ? null
+              : boundedText(session.updatedAt, 128) || null,
+          importedThreadId: null,
+        },
+      ];
+    });
+    return AcpRegistryListSessionsResult.make({
+      sessions,
+      nextCursor:
+        listed.nextCursor === undefined || listed.nextCursor === null
+          ? null
+          : boundedText(listed.nextCursor, 2_048) || null,
+      canLoad: initialized.agentCapabilities?.loadSession === true,
+      canResume: initialized.agentCapabilities?.sessionCapabilities?.resume != null,
+      canDelete: initialized.agentCapabilities?.sessionCapabilities?.delete != null,
+    });
+  },
+  (effect) =>
+    effect.pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: MANAGEMENT_TIMEOUT,
+        orElse: () =>
+          Effect.fail(
+            new AcpRegistryOperationError({
+              reason: "probe_failed",
+              message: "The ACP session list request timed out.",
+            }),
+          ),
+      }),
+      Effect.mapError((error) => managementFailure("list", error)),
+    ),
 );

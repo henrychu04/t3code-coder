@@ -169,14 +169,10 @@ const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean =>
 
   if (provider.driver === ProviderDriverKind.make("acpRegistry")) {
     // Only completed ACP discovery provides nativeSessions and inventory; placeholder probes cannot establish auth for agents without sign-in.
-    // Coder: native session management is not carried, so the driver reports no
-    // `nativeSessions`; a ready snapshot that lists any discovered model beyond that
-    // placeholder is a completed probe.
     return !(
       provider.installed &&
       provider.status === "ready" &&
-      (provider.nativeSessions !== undefined ||
-        provider.models.some((model) => !model.isCustom && model.slug !== "default"))
+      provider.nativeSessions !== undefined
     );
   }
 

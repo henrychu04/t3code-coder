@@ -58,6 +58,7 @@ import {
   providersIgnoringCheckedAtAtom,
   serverEnvironment,
 } from "../../state/server";
+import { useProjects } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 import {
@@ -1132,6 +1133,11 @@ function ProviderInstanceRow({
   readonly favorites: UnifiedSettings["favorites"];
   readonly actions: ProviderInstanceRowActions;
 }) {
+  const allProjects = useProjects();
+  const acpProjects =
+    mode === "editor" && liveProvider?.driver === "acpRegistry"
+      ? allProjects.filter((project) => project.environmentId === environmentId)
+      : undefined;
   const instance = explicitInstance ?? { driver };
   const driverOption = providerClients.get(driver);
   const updateCandidate =
@@ -1165,6 +1171,7 @@ function ProviderInstanceRow({
   return (
     <ProviderInstanceCard
       environmentId={environmentId}
+      acpProjects={acpProjects}
       projectOverride={projectOverride}
       instanceId={instanceId}
       instance={instance}

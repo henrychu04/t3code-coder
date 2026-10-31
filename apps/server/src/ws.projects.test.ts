@@ -54,6 +54,7 @@ import { ProviderMaintenanceRunner } from "./provider/providerMaintenanceRunner.
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
+import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
@@ -232,6 +233,7 @@ const harness = (
       stub(ProjectFaviconResolver.ProjectFaviconResolver),
       stub(DocumentText.DocumentText),
       stub(ProcessRunner.ProcessRunner),
+      stub(AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator),
       Layer.succeed(BuiltInDrivers.SourceControlDrivers, []),
       ServerConfig.layer(config),
       WorkspacePaths.layer,

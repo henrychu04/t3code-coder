@@ -1,6 +1,7 @@
 // Coder: the driver runs only Kilo Code from its local command. Upstream's registry readiness
 // states, registry icons, agent sign-in (its auth controller, confirmed-authentication cache, and
-// URL authentication action), and native session and provider management are not carried.
+// URL authentication action), native session deletion, logout, and provider management are not
+// carried; native session listing is.
 import {
   ProviderDriverKind,
   TextGenerationError,
@@ -45,6 +46,7 @@ import {
   type AcpRegistryConfigurationProbe,
   type AcpRegistryConfigurationProbeResult,
   type AcpRegistryLiveConfiguration,
+  listAcpRegistrySessions,
   probeAcpRegistryConfiguration,
 } from "./probe.ts";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
@@ -178,6 +180,17 @@ function baseSnapshot(
     setup: { canInstall: false, canAuthenticate: false },
     ...(input.message ? { message: input.message } : {}),
     models: modelsFromDiscovery(input.probe?.probe, input.settings.customModels),
+    // Coder: no provider configuration, so no `configurableProviders`.
+    ...(input.probe === undefined
+      ? {}
+      : {
+          nativeSessions: {
+            canList: input.probe.probe.sessionManagement.canList,
+            canLoad: input.probe.probe.sessionManagement.canLoad,
+            canResume: input.probe.probe.sessionManagement.canResume,
+            canDelete: input.probe.probe.sessionManagement.canDelete,
+          },
+        }),
     slashCommands: input.probe?.slashCommands ?? [],
     skills: input.probe?.skills ?? [],
   };
@@ -602,6 +615,22 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       ),
     );
 
+    // Coder: the session manager needs no runtime coordinator, since it offers no URL elicitation.
+    const provideAcpManagementServices = <A, E>(
+      effect: Effect.Effect<
+        A,
+        E,
+        | AcpRegistrySupport.AcpRegistryCatalog
+        | ChildProcessSpawner.ChildProcessSpawner
+        | Crypto.Crypto
+      >,
+    ): Effect.Effect<A, E> =>
+      effect.pipe(
+        Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.provideService(Crypto.Crypto, crypto),
+      );
+
     return {
       instanceId,
       driverKind: DRIVER_KIND,
@@ -612,6 +641,18 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       snapshot,
       orchestrationAdapter,
       textGeneration: makeUnsupportedTextGeneration(),
+      acpSessionManagement: {
+        listSessions: ({ cwd, cursor }) =>
+          provideAcpManagementServices(
+            listAcpRegistrySessions({
+              instanceId,
+              settings: effectiveConfig,
+              cwd,
+              environment: processEnvironment,
+              ...(cursor === undefined ? {} : { cursor }),
+            }),
+          ),
+      },
     } satisfies ProviderInstance;
   }),
 };

@@ -37,6 +37,17 @@ update the picker without waiting for another provider probe.
 Slash commands Kilo Code provides appear under **Provider** in the `/` menu while a session is
 running. Commands it names with a `$` prefix appear in T3 Coder's `$` skill menu instead.
 
+## Native sessions
+
+To resume a conversation you started with Kilo Code outside T3 Coder, open the Kilo Code
+instance under **Settings → Providers**, choose a project, and select **List sessions**.
+Importing one creates a deterministic T3 thread backed by that Kilo Code session. Importing the
+same session again returns the existing thread, including when another client performs the import.
+
+The thread keeps the session's title and last-update value as provider metadata without
+overwriting a title you set in T3 Coder. Kilo Code sessions cannot be deleted from T3 Coder; manage
+them with Kilo Code in the workspace.
+
 ## Permissions and terminals
 
 Kilo Code reads files, edits, and runs commands itself, under its own sandbox and approval rules.
