@@ -111,6 +111,7 @@ interface ThreadLifecycleInput {
   readonly sendInFlightRef: { current: boolean };
   readonly setOptimisticUserMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
+  // Coder: no usage-limits panel, so there is no `clearUsageLimitsFor` to call after a send.
   readonly beginLocalDispatch: LocalDispatchState["beginLocalDispatch"];
   readonly resetLocalDispatch: LocalDispatchState["resetLocalDispatch"];
   readonly scrollToEnd: (animated?: boolean) => void;
