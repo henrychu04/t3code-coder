@@ -122,11 +122,16 @@ removed once it is older than `STALE_CALL_MS`. If a bridge cannot be
 created, turns run without T3 tools. Workspace processes run as the same OS user; these
 directories are not an isolation boundary between mutually untrusted agents.
 
-The bridge carries upstream's orchestrator, thread, project, environment, worktree, pull-request,
-and `html_render` toolkits. The pull-request tools accept only merge requests on a GitLab host that a
-workspace project uses; project clones go through the same GitLab-only repository service as the
-browser. Preview, device, attachment-upload, and `html_preview` toolkits are not carried, and
-neither is upstream's MCP HTTP server.
+The bridge carries upstream's orchestrator, thread, attachment, project, environment, worktree,
+pull-request, and `html_render` toolkits. The pull-request tools accept only merge requests on a
+GitLab host that a workspace project uses; project clones go through the same GitLab-only repository
+service as the browser. With no HTTP origin to upload to, `t3_attachment_prepare_upload` takes the
+absolute workspace path of a file the agent already has and stores it as a pending upload in
+process, so attachment bytes never pass through the bridge's request files. Attachments reach only
+threads in the caller's own workspace: the attachment tools take no `environmentId`, as upstream's,
+so a thread in a linked workspace answers `thread_not_found`, and an upload forwarded through the
+gateway hub is refused because its path would name a file in the other workspace. Preview, device,
+and `html_preview` toolkits are not carried, and neither is upstream's MCP HTTP server.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
@@ -615,6 +620,13 @@ checks that every name here still exists and that every modified upstream file i
 - No `lastErrorCode`: the server's `threadErrorSummary`, `ProjectionStore.ts`'s shell state,
   client-runtime's `ThreadRuntimeSummary` and `state/models.ts` drop it (the contract field stays).
 - `mcp/toolkits/orchestrator/handlers.ts` has no `t3_environment_link` or `t3_environment_unlink`.
+- `mcp/toolkits/attachment/tools.ts`: `t3_attachment_prepare_upload` takes a `path` beside
+  `upload`, needs storage's services, returns only `attachmentId`, and its description names the
+  path instead of a URL to POST to. `handlers.ts` stores the file through upstream's
+  `validateAttachmentUploadToken` and `storeAttachmentUpload` (`storeWorkspaceFile`) after checking
+  it is an absolute path to a regular file of exactly `upload.sizeBytes`, and refuses a call the
+  gateway hub forwards (`client.linked`). Upstream's `core.test.ts` attachment cases run in
+  `attachment/handlers.test.ts`.
 - `persistence/Errors.ts` has no pairing-link correlation or auth repository errors.
 
 ### HTML renders
