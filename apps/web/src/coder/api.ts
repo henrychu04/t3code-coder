@@ -99,6 +99,16 @@ export async function loadCoderPortForwardStatuses(
   ).portForwards;
 }
 
+/** The requested local port, or the next one free for a TCP forward on this computer. */
+export async function findFreeCoderForwardPort(port: number): Promise<number> {
+  const response = await fetchCoder("/api/port-forwards/free-port", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ port }),
+  });
+  return ((await response.json()) as { readonly port: number }).port;
+}
+
 export async function restartCoderPortForward(portForwardId: string): Promise<void> {
   await fetchCoder(`/api/port-forwards/${encodeURIComponent(portForwardId)}/restart`, {
     method: "POST",

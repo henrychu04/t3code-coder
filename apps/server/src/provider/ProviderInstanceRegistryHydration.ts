@@ -23,6 +23,7 @@ import * as ProviderHostLive from "./ProviderHostLive.ts";
 import type * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import type * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import type * as ServerConfig from "../config.ts";
+import type * as PortScanner from "../preview/PortScanner.ts";
 
 type ProviderInstanceRegistryHydrationEnv =
   | Exclude<
@@ -33,7 +34,9 @@ type ProviderInstanceRegistryHydrationEnv =
     >
   | Settings.ServerSettingsService
   | BackgroundPolicy.BackgroundPolicy
-  | ServerConfig.ServerConfig;
+  | ServerConfig.ServerConfig
+  // The Claude runner counts its CLIs as running agents for port discovery.
+  | PortScanner.PortDiscovery;
 
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
@@ -69,8 +72,7 @@ export const deriveProviderInstanceConfigMap = (
   return merged as ProviderInstanceConfigMap;
 };
 
-// Coder: upstream's dev replay provider (#26207, `seedDevReplayInstance`) is not carried, and the
-// Claude runner reports no agents to port discovery (#22542), so hydration needs neither.
+// Coder: upstream's dev replay provider (#26207, `seedDevReplayInstance`) is not carried.
 const layerSettingsWatcher = (settingsChanges: Stream.Stream<ServerSettings>) =>
   Layer.effectDiscard(
     Effect.gen(function* () {

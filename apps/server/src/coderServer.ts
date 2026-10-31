@@ -67,6 +67,7 @@ import {
   layerCheckpointStore,
   layerGitWorkflow,
   layerIdleCompactionWorker,
+  layerPortScanner,
   layerPullRequestService,
   layerRepositoryIdentityResolver,
   layerServerSettings,
@@ -239,6 +240,9 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   ),
   Layer.provideMerge(CoderProviderRegistryLive),
   Layer.provideMerge(CoderProviderInstancesLive),
+  // Provider hydration builds the Claude runner, which reports agents to the same scanner the
+  // terminal layer and the RPC handlers share.
+  Layer.provideMerge(layerPortScanner),
   Layer.provideMerge(ModelManifest.layerBundled),
   Layer.provideMerge(SqlitePersistenceLayerLive),
   // As upstream's runtime: every source control driver is built with an HTTP client, though

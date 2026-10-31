@@ -41,24 +41,23 @@ const DELETED_PATHS = {
   ],
   // Preview and browser: no in-app browser, preview panel, or headless browser automation.
   // web's browser/ keeps only useOpenLink.ts, and components/preview/ only the panel shell and
-  // its resize handle.
+  // its resize handle. The server's preview/ keeps PortScanner.ts for port discovery, and the
+  // preview state modules keep only its atoms and loopback checks.
   "preview and browser": [
     "apps/server/src/mcp/PreviewAutomationBroker.ts",
     "apps/server/src/htmlRender/headlessChrome.ts",
     "apps/server/src/htmlRender/HtmlRender.test.ts",
     "apps/server/src/mcp/toolkits/preview/",
     "apps/server/src/mcp/toolkits/previewControls/",
-    "apps/server/src/preview/",
+    /^apps\/server\/src\/preview\/(?!PortScanner\.)/,
     "apps/web/src/browser/",
     "apps/web/src/components/preview/",
     "apps/web/src/components/settings/IntegrationsSettings.tsx",
     "apps/web/src/previewMiniPlayerStore.ts",
     "apps/web/src/previewStateStore.ts",
-    "apps/web/src/state/preview.ts",
     "apps/web/src/state/previewStream.ts",
     "packages/client-runtime/src/preview/",
-    "packages/client-runtime/src/state/preview.ts",
-    "packages/shared/src/preview.ts",
+    "packages/shared/src/preview.test.ts",
     "packages/shared/src/previewViewport.ts",
   ],
   // Device: no device hosts, device hub, or agent device shim.
@@ -331,15 +330,13 @@ const DELETED_PATHS = {
     "apps/web/src/guestPage.ts",
     "apps/web/src/routes/guest.tsx",
   ],
-  // Triage, dev servers, and dev replay: no in-app triage of upstream issues, no dev-server panel
-  // (it needs the preview port scanner), and no dev-only replay provider.
-  "triage, dev servers, and dev replay": [
+  // Triage and dev replay: no in-app triage of upstream issues and no dev-only replay provider.
+  "triage and dev replay": [
     "apps/server/src/triage/",
     "apps/server/scripts/dev-replay/",
     "apps/server/scripts/dev-replay-agent.ts",
     "apps/server/scripts/dev-replay-agent.test.ts",
     "apps/web/src/components/DevReplayHost.tsx",
-    "apps/web/src/components/chat/ThreadServersPanel.tsx",
     "apps/web/src/components/chat/TriageDraftHero.tsx",
     "apps/web/src/hooks/useStartTriage.ts",
     "apps/web/src/lib/triageTarget.ts",

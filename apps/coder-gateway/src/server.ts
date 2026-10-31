@@ -198,6 +198,40 @@ async function serveStaticFile(
   }
 }
 
+/** Ports past the requested one a server forward tries before reporting that none is free. */
+const MAX_LOCAL_PORT_CANDIDATES = 100;
+
+/** Whether `port` can be bound on the loopback address `coder port-forward` listens on. */
+function loopbackPortIsFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = NodeHttp.createServer();
+    probe.once("error", () => resolve(false));
+    probe.listen({ port, host: CODER_GATEWAY_HOST, exclusive: true }, () =>
+      probe.close(() => resolve(true)),
+    );
+  });
+}
+
+/**
+ * The requested port, or the next one, that no saved TCP forward uses and nothing on this
+ * computer holds. Null when none of the candidates is free.
+ */
+async function findFreeForwardPort(
+  requested: number,
+  config: CoderProfileConfig,
+): Promise<number | null> {
+  const saved = new Set(
+    (config.portForwards ?? [])
+      .filter((portForward) => portForward.protocol === "tcp")
+      .map((portForward) => portForward.localPort),
+  );
+  const last = Math.min(65_535, requested + MAX_LOCAL_PORT_CANDIDATES);
+  for (let port = requested; port <= last; port += 1) {
+    if (!saved.has(port) && (await loopbackPortIsFree(port))) return port;
+  }
+  return null;
+}
+
 function readJsonBody(request: NodeHttp.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -1819,6 +1853,9 @@ export function makeLocalCoderGateway(
                         : state._tag === "Failed" || state._tag === "ShutdownFailed"
                           ? "error"
                           : "starting",
+                  ...(state._tag === "Running" && state.connection.ready?.() === true
+                    ? { ready: true }
+                    : {}),
                   ...(state._tag === "Failed" || state._tag === "ShutdownFailed"
                     ? { error: state.error }
                     : {}),
@@ -1922,6 +1959,45 @@ export function makeLocalCoderGateway(
               cause instanceof Error ? cause.message : "Coder port forward failed to restart.",
             );
           }
+          return;
+        }
+        if (request.method === "POST" && request.url === "/api/port-forwards/free-port") {
+          if (request.headers.origin !== expectedOrigin) {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+            return;
+          }
+          if (!request.headers["content-type"]?.startsWith("application/json")) {
+            sendText(response, 415, "text/plain; charset=utf-8", "JSON content required.");
+            return;
+          }
+          let requested: unknown;
+          try {
+            requested = ((await readJsonBody(request)) as { readonly port?: unknown } | null)?.port;
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : "Invalid request.";
+            sendText(response, 400, "text/plain; charset=utf-8", message);
+            return;
+          }
+          if (
+            typeof requested !== "number" ||
+            !Number.isInteger(requested) ||
+            requested < 1 ||
+            requested > 65_535
+          ) {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid port.");
+            return;
+          }
+          const port = await findFreeForwardPort(requested, profileConfig);
+          if (port === null) {
+            sendText(
+              response,
+              409,
+              "text/plain; charset=utf-8",
+              `No free local port from ${requested} to ${Math.min(65_535, requested + MAX_LOCAL_PORT_CANDIDATES)}.`,
+            );
+            return;
+          }
+          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ port }));
           return;
         }
         const loginRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/login$/);

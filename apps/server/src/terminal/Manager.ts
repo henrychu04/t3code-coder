@@ -67,6 +67,7 @@ import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceReg
 import * as ServerSettings from "../serverSettings.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProcessRunner from "../processRunner.ts";
+import * as PortScanner from "../preview/PortScanner.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 
@@ -1516,6 +1517,7 @@ export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
 export const make = Effect.fn("TerminalManager.make")(function* () {
   const { terminalLogsDir } = yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
+  const portDiscovery = yield* PortScanner.PortDiscovery;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const path = yield* Path.Path;
   const resolveProviderInstanceEnvironment = Effect.fn(
@@ -1531,8 +1533,9 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
     ptyAdapter,
-    // Coder: no resource-telemetry process table or preview port discovery; terminals poll
-    // the process table themselves.
+    // Coder: no resource-telemetry process table; terminals poll the process table themselves.
+    registerTerminalProcesses: portDiscovery.registerTerminalProcesses,
+    unregisterTerminal: portDiscovery.unregisterTerminal,
     resolveProviderInstanceEnvironment,
   });
 });
