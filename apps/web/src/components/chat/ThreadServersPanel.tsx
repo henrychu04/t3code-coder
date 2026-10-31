@@ -77,29 +77,29 @@ export function ThreadServersPanel(props: {
     const tab = window.open("", "_blank");
     if (tab) tab.opener = null;
     setForwardingKey(serverKey(server));
-    try {
-      const url = forwardedServerUrl(await forwards.forward(server.port));
-      if (tab) tab.location.href = url;
-      else window.open(url, "_blank", "noopener,noreferrer");
-    } catch (error) {
-      tab?.close();
-      reportFailure("Could not forward server", error);
-    } finally {
-      setForwardingKey(null);
-    }
+    const forwarded = await forwards.forward(server.port).then(
+      (rule) => rule,
+      (error: unknown) => {
+        tab?.close();
+        reportFailure("Could not forward server", error);
+        return null;
+      },
+    );
+    setForwardingKey(null);
+    if (forwarded === null) return;
+    const url = forwardedServerUrl(forwarded);
+    if (tab) tab.location.href = url;
+    else window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const unforward = async (server: DiscoveredLocalServer) => {
     const existing = forwards.forwardFor(server.port);
     if (!existing || unforwardingKey !== null) return;
     setUnforwardingKey(serverKey(server));
-    try {
-      await forwards.stopForwarding(existing);
-    } catch (error) {
-      reportFailure("Could not stop forwarding", error);
-    } finally {
-      setUnforwardingKey(null);
-    }
+    await forwards
+      .stopForwarding(existing)
+      .catch((error: unknown) => reportFailure("Could not stop forwarding", error));
+    setUnforwardingKey(null);
   };
 
   const stop = async (server: DiscoveredLocalServer) => {
