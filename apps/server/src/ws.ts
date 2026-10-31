@@ -1337,6 +1337,8 @@ const layerWsRpc = () =>
                 { concurrency: "unbounded", discard: true },
               );
             }
+            // Coder: host credentials hold no secret references (#27746), so a secret reload has
+            // no host-secret cache to invalidate.
             const providers = yield* input.cwd !== undefined && input.instanceId !== undefined
               ? providerRegistry.refreshWorkspaceSnapshot({
                   instanceId: input.instanceId,

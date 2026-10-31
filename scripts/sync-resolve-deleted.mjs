@@ -198,10 +198,11 @@ const DELETED_PATHS = {
     // Upstream tests built on cut surfaces: the fake environment harness, upstream's HTTP peer
     // MCP client, and host credential secret references.
     "apps/web/src/components/ChatView.browser.test.tsx",
-    // Upstream's ACP Registry icon cache (`settings/AcpRegistryIcon.tsx`), which Kilo Code's inlined icon replaces.
-    "apps/web/src/components/chat/ProviderModelPicker.browser.test.tsx",
     "apps/server/src/peer/PeerMcpClient.test.ts",
     "apps/server/src/sourceControl/sourceControlHostSecrets.test.ts",
+    // Upstream's ACP Registry icon cache (`settings/AcpRegistryIcon.tsx`), which Kilo Code's
+    // inlined icon replaces.
+    "apps/web/src/components/chat/ProviderModelPicker.browser.test.tsx",
     "apps/web/src/components/settings/ProviderSettingsPanel.environment.browser.test.tsx",
     "apps/web/src/components/settings/ThemeImportDialog.browser.test.tsx",
     "apps/server/src/mcp/toolkits/core.test.ts",
@@ -343,6 +344,12 @@ const DELETED_PATHS = {
     "packages/secret-provider-core/",
     "packages/secret-provider-definitions/",
     "packages/secret-provider-onepassword/",
+  ],
+  // Other cut web surfaces: the GitHub star prompt (#27832; GitLab is the only host) and guests'
+  // screenshot URLs (#26323; workspace images load through the workspace asset route).
+  "other web surfaces": [
+    "apps/web/src/components/GitHubStarPrompt.tsx",
+    "apps/web/src/components/chat/hostImageUrl.ts",
   ],
   // Upstream repository tooling: vendored sources, CI, hooks, editor and agent configuration,
   // and operations docs. The fork's .github/ keeps only SECURITY.md.

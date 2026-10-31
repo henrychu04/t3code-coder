@@ -275,9 +275,9 @@ fails on any non-loopback URL literal, `fetch(`, outbound `node:net`/`tls`/`http
 process import other than `spawn`, spawn target other than an invocation's executable, executable
 literal other than `coder`, `open`, `xdg-open`, or `explorer.exe`, or `shell: true`.
 
-Provider version checks are workspace-originated network requests: the helper queries
-`registry.npmjs.org` for the latest version of each enabled provider whose installer it can
-identify; manual installations are not checked. The workspace setting `enableProviderUpdateChecks`
+Provider version checks are workspace-originated network requests: the helper asks the
+workspace's own `npm view` (its configured registry, #27847) and otherwise `registry.npmjs.org`
+for the latest version of each enabled provider whose installer it can identify; manual installations are not checked. The workspace setting `enableProviderUpdateChecks`
 is on by default; disabling **Settings → Maintenance → Provider update checks** opts that workspace
 out. Explicit provider updates run the installation's identified installer inside the workspace.
 Versions marked broken or unsupported by the bundled compatibility policy are not offered. The
@@ -551,7 +551,8 @@ listed here is drift to remove rather than fork behavior to keep.
     `orchestration_error` so a running task resumes once the switch is on again; `T3ToolBridge`'s binding gains `invoke` for a
     linked caller; and upstream's peer tests (`PeerForwarding.test.ts`, `RemoteDelegation.test.ts`,
     `linkOrigin.test.ts`, `PeerLinks.testkit.ts`) are not carried because they pair two HTTP
-    servers; `coderHub.test.ts` and the gateway's `hub.test.ts` test the transport. Migrations 070
+    servers, nor is `PeerMcpClient.test.ts` (#26567's HTTP MCP session reuse; hub calls hold no
+    session); `coderHub.test.ts` and the gateway's `hub.test.ts` test the transport. Migrations 070
     and 071 keep their IDs and create nothing; 072's index stays. `peerLinks` and `linkFence` are
     advertised; `mcpModeLimitHeader` is in `CODER_OMITTED_CAPABILITIES`. Remote-task lineage from
     `remoteChild` and `delegatedFrom` (the task row, the delegated thread's parent link and "From"
@@ -1227,7 +1228,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `canonicalizeGitCafePullRequestUrl` is an identity function, since GitCafe is not carried. Diff output is capped
     (`DIFF_MAX_OUTPUT_BYTES`) to fit the gateway's `MAX_RPC_MESSAGE_BYTES` ceiling.
   - GitLab fixes for bugs still in upstream's `GitLabCli` (checked against upstream `main`
-    32ecd71726):
+    80a2351fcb):
     merge requests between projects post to the source project with a numeric
     `target_project_id` instead of sending the repository text as `source_project_id`; merge
     request URLs reach `glab` as `--repo <url> ... -- <iid>` because older versions read URLs as
@@ -1493,7 +1494,7 @@ listed here is drift to remove rather than fork behavior to keep.
   kinds to the fork's typed project helper. Shared `AgentScope.ts` leaves out upstream's
   `agentScopeLauncherScript` (#27239), which only the uncarried preview browser launches, and
   `AgentScope.test.ts` drops its launcher check.
-  `ThreadDetailsPrRows.browser.test.tsx` checks the run context, not the editor picker. `CommandPalette.browser.test.tsx`
+  `CommandPalette.browser.test.tsx`
   mocks `useCoder`, and `GitLabPullRequestCli.legacy.test.ts` expects the fork's `DIFF_MAX_OUTPUT_BYTES`.
   `SourceControlProviderRegistry.test.ts` is upstream's fake-driver file, with its unknown-host
   fallback on a GitLab remote and a GitHub URL among the URLs no host claims.
@@ -1517,8 +1518,7 @@ listed here is drift to remove rather than fork behavior to keep.
   over the helper's history RPC (`threadHistoryHttp.ts`) instead of upstream's HTTP client.
   `ws.test.ts` omits upstream's config-RPC buffering test, which builds upstream's session-scoped
   `layerWsRpc`. Upstream's `composerContextUndo.test.ts` (preview annotations
-  only) is not carried; `DiffPanel.browser.test.tsx` passes `onOpenFile` without an editor mock,
-  and `ProjectSettingsPanel.browser.test.tsx` keeps `projects.getConfig` pending as upstream
+  only) is not carried, and `ProjectSettingsPanel.browser.test.tsx` keeps `projects.getConfig` pending as upstream
   keeps its file read.
   `pullRequestsRouteSearch.test.ts` runs under happy-dom, because the route module loads the diff
   worker, which needs a browser `self`. Upstream's `*.browser.test.*` files run in headless
@@ -1530,7 +1530,15 @@ listed here is drift to remove rather than fork behavior to keep.
   `ChatMarkdown.permissions.browser` tests are not carried), `ProjectSettingsPanel.test.tsx`, and `RightPanelTabs.test.tsx`
   (upstream's `RightPanelTabs.browser.test.tsx` is not carried). The carried browser tests omit
   cases for cut surfaces: grant checks in `ProjectSettingsPanel`, uncarried providers in
-  `ProviderModelPicker`, and preview mocks in `ReopenClosedViewShortcut`.
+  `ProviderModelPicker.composition`, and preview mocks in `ReopenClosedViewShortcut`. Upstream's
+  `ProviderModelPicker.browser.test.tsx` (ACP Registry icon cache) and `ChatView.browser.test.tsx`
+  (`test/fakeEnvironment`) are not carried. Each marked: `CommandPalette.composition` mocks
+  `useCoder` and picks the workspace first; `StorageSettings` keys its status mock on the
+  saved-image-artifacts title; `useComposerContextImport` drops linked environments, composer
+  images, and annotation cases; `useComposerResume` and `useThreadLifecycle` pass no
+  `clearUsageLimitsFor`; `FilePreviewPanel` has no remote-open mock or editor props;
+  `PullRequestMarkdown` runs on the GitLab-only registry with `repositoryUrl`; and
+  `ProviderSettingsForm.test.ts` has no secret-source cases.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,
