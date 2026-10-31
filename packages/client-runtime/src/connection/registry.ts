@@ -190,6 +190,8 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  // Coder: every reconcile is applied (no #26511 skip of unchanged registrations), since it also
+  // re-acquires each workspace's supervisor.
   const reconcilePlatform = Effect.fn("EnvironmentRegistry.reconcilePlatform")(function* (
     registrations: ReadonlyArray<PlatformConnectionRegistration>,
   ) {
