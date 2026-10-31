@@ -150,6 +150,7 @@ function SettingsRouteLayout() {
   return (
     <SettingsScopeProvider
       search={rawSearch}
+      // Coder: there is no secrets settings page.
       singleEnvironment={pathname === "/settings/providers"}
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.

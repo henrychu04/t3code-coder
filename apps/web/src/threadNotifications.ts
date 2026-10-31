@@ -5,16 +5,17 @@ import completionUrl from "./assets/notification-completion.mp3";
 import inputUrl from "./assets/notification-input.mp3";
 
 type NotificationMode = ClientSettings["notificationMode"];
-export function hasNotificationSound(mode: NotificationMode) {
-  return mode === "sound" || mode === "notifications-and-sound";
-}
-
 export const NOTIFICATION_MODE_LABELS = {
   off: "Off",
   notifications: "Notifications only",
   sound: "Sound only",
   "notifications-and-sound": "Notifications with sound",
 } satisfies Record<NotificationMode, string>;
+
+export function hasNotificationSound(mode: NotificationMode) {
+  return mode === "sound" || mode === "notifications-and-sound";
+}
+
 export function hasDesktopNotifications(mode: NotificationMode) {
   return mode === "notifications" || mode === "notifications-and-sound";
 }
@@ -37,6 +38,8 @@ export function threadNotificationTag(environmentId: EnvironmentId, threadId: Th
 let originalFavicon: HTMLLinkElement | undefined;
 let badgeFavicon: HTMLLinkElement | undefined;
 
+// Coder: no desktop bridge (the fork's Window has no `desktopBridge`), so the favicon always
+// carries the badge.
 export function setNotificationBadge(count: number) {
   let image: string | null = null;
   if (count > 0) {
@@ -84,12 +87,8 @@ const playingUntil = new Map<string, number>();
 
 /** Called from a gesture so browsers allow later background playback. */
 export function unlockNotificationAudio() {
-  try {
-    audioContext ??= new AudioContext();
-    void audioContext.resume().catch(() => undefined);
-  } catch {
-    // Audio may be unavailable in a browser with restricted media support.
-  }
+  audioContext ??= new AudioContext();
+  void audioContext.resume().catch(() => undefined);
 }
 
 export async function playNotificationSound(

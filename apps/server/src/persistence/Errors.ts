@@ -19,6 +19,7 @@ function summarizeSchemaIssue(issue: SchemaIssue.Issue): string {
 export const PersistenceErrorCorrelation = Schema.Union([
   Schema.Struct({ sessionId: Schema.String }),
   Schema.Struct({ currentSessionId: Schema.String }),
+  // Coder: no auth pairing links, so no `pairingLinkId` correlation or auth repository errors.
   Schema.Struct({ threadId: Schema.String }),
 ]);
 export type PersistenceErrorCorrelation = typeof PersistenceErrorCorrelation.Type;

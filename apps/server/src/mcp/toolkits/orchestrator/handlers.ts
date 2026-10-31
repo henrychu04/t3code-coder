@@ -189,6 +189,7 @@ const handlers = {
       return yield* forwarding.links(scope);
     }),
   ),
+  // Coder: no `t3_environment_link` or `t3_environment_unlink`; workspace links are gateway rules.
   t3_thread_interrupt: McpToolAccess.writesThreads(
     (input) => [input.threadId],
     (input) =>

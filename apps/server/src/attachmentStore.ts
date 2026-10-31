@@ -125,8 +125,8 @@ export function parseThreadSegmentFromAttachmentId(attachmentId: string): string
 }
 
 /**
- * Coder stored composer images as `<uuid>.<ext>` before adopting these ids. Their decoded
- * `legacy-<uuid>-<ext>` ids keep resolving to the original workspace file.
+ * Coder: the fork stored composer images as `<uuid>.<ext>` before adopting these ids. Their
+ * decoded `legacy-<uuid>-<ext>` ids keep resolving to the original workspace file.
  */
 function legacyAttachmentRelativePath(attachmentId: string): string | null {
   const normalizedId = normalizeAttachmentRelativePath(attachmentId);

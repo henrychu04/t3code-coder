@@ -12,19 +12,6 @@ type ComposerModelSelectionState = Pick<
   "activeProvider" | "modelSelectionByProvider" | "modelSelectionExplicit"
 >;
 
-/** A human picked the draft's active model; seeded defaults may not replace it. */
-export function hasExplicitComposerModelSelection(
-  draft: ComposerModelSelectionState | null | undefined,
-): boolean {
-  const activeProvider = draft?.activeProvider;
-  return (
-    draft?.modelSelectionExplicit === true &&
-    activeProvider !== null &&
-    activeProvider !== undefined &&
-    draft.modelSelectionByProvider[activeProvider] !== undefined
-  );
-}
-
 interface ThreadContextLike {
   environmentId: EnvironmentId;
   projectId: ProjectId;
@@ -65,6 +52,18 @@ export function resolveNewThreadModelSelectionOverride(input: {
   return (
     input.projectDefaultSelection ??
     (input.carrySourceDraftId === input.destinationDraftId ? null : input.carrySelection)
+  );
+}
+
+export function hasExplicitComposerModelSelection(
+  draft: ComposerModelSelectionState | null | undefined,
+): boolean {
+  const activeProvider = draft?.activeProvider;
+  return (
+    draft?.modelSelectionExplicit === true &&
+    activeProvider !== null &&
+    activeProvider !== undefined &&
+    draft.modelSelectionByProvider[activeProvider] !== undefined
   );
 }
 

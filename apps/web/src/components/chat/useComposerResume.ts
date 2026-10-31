@@ -41,6 +41,7 @@ interface ComposerResumeInput {
     runtimeMode: RuntimeMode;
     interactionMode: ProviderInteractionMode;
   }) => Promise<AtomCommandResult<void, unknown>>;
+  // Coder: no usage-limits panel, so there is no `clearUsageLimitsFor` to call after a resume.
   readonly scrollToEnd: ReturnType<typeof useTimelineFollow>["scrollToEnd"];
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
 }
