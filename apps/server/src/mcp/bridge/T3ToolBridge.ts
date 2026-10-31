@@ -84,19 +84,6 @@ const BRIDGE_JOB_PREFIX = "bridge-job:";
 const MAX_JOBS_PER_THREAD = 16;
 const JOB_RETENTION_MS = 60 * 60 * 1_000;
 
-const TASK_STATUS_ENTRY: FileBridgeCatalogEntry = {
-  name: "task_status",
-  description:
-    "Read the result of a T3 tool call that answered {status:'running', taskId}. Returns the tool's result once it finishes, or {status:'running'} while it is still running.",
-  readOnly: true,
-  inputSchema: {
-    type: "object",
-    properties: { taskId: { type: "string" } },
-    required: ["taskId"],
-    additionalProperties: false,
-  },
-};
-
 const isReadOnly = (tool: Tool.Any) => Context.get(tool.annotations, Tool.Readonly);
 
 /**
@@ -110,7 +97,6 @@ export const T3_TOOL_CATALOG: ReadonlyArray<FileBridgeCatalogEntry> = [
     readOnly: isReadOnly(tool),
     inputSchema: advertisedJsonSchema(tool),
   })),
-  ...(Object.hasOwn(BridgedToolkit.tools, "task_status") ? [] : [TASK_STATUS_ENTRY]),
 ];
 
 const READ_ONLY_TOOLS = new Set(
@@ -184,6 +170,18 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
         Effect.provide(services),
       );
 
+    /** The bridge task a `task_status` request reads, if it names one. */
+    const jobTaskId = (request: FileBridgeRequest) => {
+      const taskId = (request.params as Record<string, unknown>).taskId;
+      return request.tool === "task_status" &&
+        typeof taskId === "string" &&
+        taskId.startsWith(BRIDGE_JOB_PREFIX)
+        ? taskId
+        : undefined;
+    };
+
+    // A finished result stays until its reply is published (`published`), so a read whose reply
+    // never reaches the agent can be retried.
     const readJob = (scope: McpInvocationContext.McpThreadInvocationScope, taskId: string) =>
       Effect.gen(function* () {
         const job = jobs.get(taskId);
@@ -192,27 +190,40 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
         }
         const exit = job.fiber.pollUnsafe();
         if (exit === undefined) return { status: "running", taskId };
-        jobs.delete(taskId);
         return yield* exit;
+      });
+
+    const published: NonNullable<T3ToolBinding["published"]> = (scope, request) =>
+      Effect.sync(() => {
+        const taskId = jobTaskId(request);
+        const job = taskId === undefined ? undefined : jobs.get(taskId);
+        if (
+          taskId !== undefined &&
+          job?.threadId === scope.thread.threadId &&
+          job.fiber.pollUnsafe() !== undefined
+        ) {
+          jobs.delete(taskId);
+        }
       });
 
     const dispatch: T3ToolBinding["dispatch"] = (scope, request) =>
       Effect.gen(function* () {
-        const params = request.params as Record<string, unknown>;
-        if (
-          request.tool === "task_status" &&
-          typeof params.taskId === "string" &&
-          params.taskId.startsWith(BRIDGE_JOB_PREFIX)
-        ) {
-          return yield* readJob(scope, params.taskId);
-        }
+        const taskIdToRead = jobTaskId(request);
+        if (taskIdToRead !== undefined) return yield* readJob(scope, taskIdToRead);
         if (!T3_TOOL_CATALOG.some((entry) => entry.name === request.tool)) {
           return yield* failure("UnknownTool", "Unknown T3 tool. Run --list to see the tools.");
         }
+        // Plan mode's read-only rule needs the thread; without it, refuse rather than run.
         const thread = yield* engine
           .getThreadShell(scope.thread.threadId)
           .pipe(Effect.orElseSucceed(() => null));
-        if (thread?.interactionMode === "plan" && !READ_ONLY_TOOLS.has(request.tool)) {
+        if (thread === null) {
+          return yield* failure(
+            "ThreadUnavailable",
+            "This thread could not be read. Retry shortly.",
+          );
+        }
+        if (thread.interactionMode === "plan" && !READ_ONLY_TOOLS.has(request.tool)) {
           return yield* failure("PlanModeReadOnly", "Plan mode permits read-only T3 tools only.");
         }
 
@@ -223,21 +234,24 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
             yield* Fiber.interrupt(job.fiber);
           }
         }
-        const fiber = yield* run(scope, request).pipe(Effect.forkIn(jobScope));
-        const exit = yield* Fiber.await(fiber).pipe(
-          Effect.timeoutOption(options.inlineBudgetMs ?? INLINE_BUDGET_MS),
-        );
-        if (Option.isSome(exit)) return yield* exit.value;
-        if (
-          [...jobs.values()].filter((job) => job.threadId === scope.thread.threadId).length >=
-          MAX_JOBS_PER_THREAD
-        ) {
-          yield* Fiber.interrupt(fiber);
+        // Refuse before the tool starts, so a refused call never half-applies.
+        let running = 0;
+        for (const job of jobs.values()) {
+          if (job.threadId === scope.thread.threadId && job.fiber.pollUnsafe() === undefined) {
+            running++;
+          }
+        }
+        if (running >= MAX_JOBS_PER_THREAD) {
           return yield* failure(
             "TooManyRunningCalls",
             "Too many T3 tool calls are still running. Read their results with task_status first.",
           );
         }
+        const fiber = yield* run(scope, request).pipe(Effect.forkIn(jobScope));
+        const exit = yield* Fiber.await(fiber).pipe(
+          Effect.timeoutOption(options.inlineBudgetMs ?? INLINE_BUDGET_MS),
+        );
+        if (Option.isSome(exit)) return yield* exit.value;
         const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`;
         jobs.set(taskId, { threadId: scope.thread.threadId, startedAt: now, fiber });
         return {
@@ -254,7 +268,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
         ? run(scope, request)
         : failure("UnknownTool", "Unknown T3 tool.");
 
-    return { catalog: T3_TOOL_CATALOG, dispatch, invoke } satisfies T3ToolBinding;
+    return { catalog: T3_TOOL_CATALOG, dispatch, published, invoke } satisfies T3ToolBinding;
   });
 
 export const makeBinding = makeBindingWith();

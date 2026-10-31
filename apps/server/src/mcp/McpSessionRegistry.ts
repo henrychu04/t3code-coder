@@ -160,6 +160,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
                 {
                   catalog: binding.catalog,
                   name: bridgeName(environmentId, scope.thread.threadId),
+                  onPublished: (call) => Effect.runSync(tools.published(scope, call)),
                   ...(options.bridgeParent === undefined ? {} : { parent: options.bridgeParent }),
                 },
               );

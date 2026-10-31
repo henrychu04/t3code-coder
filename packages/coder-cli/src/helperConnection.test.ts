@@ -56,7 +56,10 @@ async function connectCoderHelper(...args: Parameters<typeof connectCoderHelperE
   }
 }
 
-function makeFakeHelperProcess(options?: { readonly ignoreSigterm?: boolean }) {
+function makeFakeHelperProcess(options?: {
+  readonly ignoreSigterm?: boolean;
+  readonly ignoreShutdown?: boolean;
+}) {
   const events = new EventEmitter();
   const stdin = new PassThrough();
   const stdout = new PassThrough();
@@ -86,7 +89,10 @@ function makeFakeHelperProcess(options?: { readonly ignoreSigterm?: boolean }) {
       const line = input.slice(0, newline);
       input = input.slice(newline + 1);
       const request = JSON.parse(line) as { readonly id: string };
-      if (request.id === "gateway-info") {
+      if (request.id === "gateway-shutdown") {
+        // The helper exits on request, and `coder ssh` with it.
+        if (!options?.ignoreShutdown) queueMicrotask(() => events.emit("exit", 130, null));
+      } else if (request.id === "gateway-info") {
         queueMicrotask(() =>
           stdout.write(
             `${JSON.stringify({
@@ -336,9 +342,10 @@ describe("Coder helper connection", () => {
 
     fake.stdout.write("not-json\n");
 
+    // The negotiated helper is asked to exit before any signal.
     deepStrictEqual(await connection.closed, {
-      code: null,
-      signal: "SIGTERM",
+      code: 130,
+      signal: null,
       expected: false,
       reason: "Coder helper emitted a malformed RPC message.",
     });
@@ -389,7 +396,7 @@ describe("Coder helper connection", () => {
   });
 
   it("force-kills a helper that ignores graceful connection shutdown", async () => {
-    const fake = makeFakeHelperProcess({ ignoreSigterm: true });
+    const fake = makeFakeHelperProcess({ ignoreSigterm: true, ignoreShutdown: true });
     const connection = await connectCoderHelper(
       { executable: "coder", args: [] },
       {
@@ -419,12 +426,12 @@ describe("Coder helper connection", () => {
     await Effect.runPromise(Scope.close(scope, Exit.void));
 
     strictEqual((await closed).expected, true);
-    deepStrictEqual(fake.killSignals, ["SIGTERM"]);
+    deepStrictEqual(fake.killSignals, []);
   });
 });
 
 it("does not hide a failed helper stop and retries the captured process", async () => {
-  const { child } = makeFakeHelperProcess();
+  const { child } = makeFakeHelperProcess({ ignoreShutdown: true });
   const originalKill = child.kill.bind(child);
   child.kill = () => false;
   const scope = await Effect.runPromise(Scope.make("sequential"));

@@ -11,6 +11,7 @@ import * as RpcServer from "effect/rpc/RpcServer";
 import {
   CODER_HELPER_INFO_METHOD,
   CODER_HELPER_PROTOCOL_VERSION,
+  CODER_HELPER_SHUTDOWN_METHOD,
   CoderHelperProtocolError,
   CoderHelperInfoRpcGroup,
   CoderHelperRpcGroup,
@@ -35,6 +36,10 @@ export const coderHelperHandlers = CoderHelperInfoRpcGroup.toLayer({
             supportedVersion: CODER_HELPER_PROTOCOL_VERSION,
           }),
         ),
+  // The helper's normal SIGTERM shutdown: NodeRuntime interrupts the main fiber, which runs every
+  // finalizer, and the process exits.
+  [CODER_HELPER_SHUTDOWN_METHOD]: () =>
+    Effect.sync(() => void process.kill(process.pid, "SIGTERM")),
 });
 
 const coderServerConfigLayer = Layer.effect(

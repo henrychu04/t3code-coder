@@ -19,6 +19,10 @@
       "types": "./src/helperConnection.ts",
       "import": "./src/helperConnection.ts"
     },
+    "./processTermination": {
+      "types": "./src/processTermination.ts",
+      "import": "./src/processTermination.ts"
+    },
     "./profile": {
       "types": "./src/profile.ts",
       "import": "./src/profile.ts"

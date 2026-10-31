@@ -12,9 +12,15 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 // Version 2 makes browser-session request isolation and synchronization
 // completion part of the required gateway/helper contract. Version 3 adds the
 // hub methods, which let the gateway route T3 tool calls between two
-// workspaces it is connected to.
-export const CODER_HELPER_PROTOCOL_VERSION = 3;
+// workspaces it is connected to. Version 4 adds the shutdown request.
+export const CODER_HELPER_PROTOCOL_VERSION = 4;
 export const CODER_HELPER_INFO_METHOD = "coder.helper.info";
+/**
+ * The gateway's request that the helper exit. Coder's remote PTY never delivers end-of-file, and
+ * on Windows a signal force-stops `coder.exe` without closing its SSH session, so this is how the
+ * gateway ends a session cleanly. Only the gateway calls it; the browser bridge refuses it.
+ */
+export const CODER_HELPER_SHUTDOWN_METHOD = "coder.helper.shutdown";
 export const CODER_HUB_OUTBOX_METHOD = "coder.hub.outbox";
 export const CODER_HUB_REPLY_METHOD = "coder.hub.reply";
 export const CODER_HUB_INVOKE_METHOD = "coder.hub.invoke";
@@ -147,6 +153,10 @@ export const CoderHubRpcGroup = RpcGroup.make(
   CoderHubInvokeRpc,
 );
 
-export const CoderHelperInfoRpcGroup = RpcGroup.make(CoderHelperInfoRpc);
+export const CoderHelperShutdownRpc = Rpc.make(CODER_HELPER_SHUTDOWN_METHOD, {
+  payload: Schema.Struct({}),
+});
+
+export const CoderHelperInfoRpcGroup = RpcGroup.make(CoderHelperInfoRpc, CoderHelperShutdownRpc);
 
 export const CoderHelperRpcGroup = CoderHelperInfoRpcGroup.merge(CoderHubRpcGroup);

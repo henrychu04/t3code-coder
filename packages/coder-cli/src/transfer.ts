@@ -6,7 +6,6 @@ import * as NodePath from "node:path";
 
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 
 import {
   buildCoderWorkspaceShellInvocation,
@@ -14,6 +13,7 @@ import {
   type CoderInvocation,
   type CoderInvocationOptions,
 } from "./command.ts";
+import { terminateChildProcess } from "./processTermination.ts";
 import { type CoderDeploymentProfile, type CoderWorkspaceProfile } from "./profile.ts";
 
 const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
@@ -100,22 +100,9 @@ export function runProcess(
           catch: (cause) => new CoderProcessError(`${label} could not start.`, { cause }),
         }),
         (child) =>
-          Effect.uninterruptible(
-            Effect.suspend(() => {
-              if (Deferred.isDoneUnsafe(exit)) return Effect.void;
-              child.kill("SIGTERM");
-              return Deferred.await(exit).pipe(
-                Effect.timeoutOption(terminationGraceMs),
-                Effect.flatMap((result) => {
-                  if (Option.isSome(result)) return Effect.void;
-                  if (child.exitCode === null && child.signalCode === null) {
-                    child.kill("SIGKILL");
-                  }
-                  return Deferred.await(exit).pipe(Effect.asVoid);
-                }),
-              );
-            }),
-          ).pipe(Effect.catchCause(() => Effect.void)),
+          terminateChildProcess({ child, exit, graceMs: terminationGraceMs }).pipe(
+            Effect.catchCause(() => Effect.void),
+          ),
       );
 
       const result = yield* Deferred.await(exit).pipe(

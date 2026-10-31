@@ -10,7 +10,6 @@ import { ServerConfig, WS_METHODS, type ExecutionEnvironmentDescriptor } from "@
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
-import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -20,9 +19,11 @@ import {
   REMOTE_PREFLIGHT_FAILED_PREFIX,
   type CoderInvocation,
 } from "./command.ts";
+import { terminateChildProcess } from "./processTermination.ts";
 import {
   CODER_HELPER_INFO_METHOD,
   CODER_HELPER_PROTOCOL_VERSION,
+  CODER_HELPER_SHUTDOWN_METHOD,
   CODER_RPC_FRAME_MAX_BYTES,
   CoderHelperInfo,
 } from "./rpc.ts";
@@ -114,6 +115,8 @@ interface ManagedCoderProcess {
     readonly error?: Error;
   }>;
   closeRequested: boolean;
+  /** The helper answered negotiation, so it serves the shutdown request. */
+  negotiated: boolean;
   unexpectedExitReason: string | undefined;
   stderr: string;
 }
@@ -143,45 +146,40 @@ function parseInfoResponse(value: unknown): CoderHelperInfo {
   return Schema.decodeUnknownSync(CoderHelperInfo)(value.exit.value);
 }
 
+const SHUTDOWN_REQUEST = `${JSON.stringify({
+  _tag: "Request",
+  id: "gateway-shutdown",
+  tag: CODER_HELPER_SHUTDOWN_METHOD,
+  payload: {},
+  headers: [],
+})}\n`;
+
 const terminateCoderProcess = (
   process: ManagedCoderProcess,
   terminationGraceMs: number,
 ): Effect.Effect<void> =>
-  Effect.uninterruptible(
-    Effect.suspend(() => {
-      process.closeRequested = true;
-      if (Deferred.isDoneUnsafe(process.exit)) return Effect.void;
-
-      // A failed signal is not an exit. Escalate, then require an exit event.
+  Effect.suspend(() => {
+    process.closeRequested = true;
+    if (Deferred.isDoneUnsafe(process.exit)) return Effect.void;
+    const { stdin } = process.child;
+    const endStdin = (line?: string) => {
       try {
-        process.child.stdin.end();
-        process.child.kill("SIGTERM");
+        if (line !== undefined && !stdin.destroyed && !stdin.writableEnded) stdin.write(line);
+        stdin.end();
       } catch {
-        /* Still try SIGKILL below. */
+        /* Signals follow. */
       }
-      return Deferred.await(process.exit).pipe(
-        Effect.timeoutOption(terminationGraceMs),
-        Effect.flatMap((exit) => {
-          if (Option.isSome(exit)) return Effect.void;
-          if (process.child.exitCode === null && process.child.signalCode === null) {
-            process.child.kill("SIGKILL");
-          }
-          return Deferred.await(process.exit).pipe(
-            Effect.timeoutOrElse({
-              duration: terminationGraceMs,
-              orElse: () =>
-                Effect.die(
-                  new CoderHelperConnectionError(
-                    "Coder process did not exit after SIGKILL; shutdown was not confirmed.",
-                  ),
-                ),
-            }),
-            Effect.asVoid,
-          );
-        }),
-      );
-    }),
-  );
+    };
+    // A negotiated helper is asked to exit, so `coder ssh` ends its session itself; before that,
+    // only signals stop the launch.
+    if (!process.negotiated) endStdin();
+    return terminateChildProcess({
+      child: process.child,
+      exit: process.exit,
+      graceMs: terminationGraceMs,
+      ...(process.negotiated ? { requestExit: () => endStdin(SHUTDOWN_REQUEST) } : {}),
+    });
+  });
 
 function acquireCoderProcess(
   invocation: CoderInvocation,
@@ -208,6 +206,7 @@ function acquireCoderProcess(
             child,
             exit,
             closeRequested: false,
+            negotiated: false,
             unexpectedExitReason: undefined,
             stderr: "",
           };
@@ -453,6 +452,7 @@ export function connectCoderHelper(
                 }
                 const serverConfig = parseServerConfigResponse(message);
                 negotiated = true;
+                process.negotiated = true;
                 settled = true;
                 cleanupNegotiation();
                 resume(

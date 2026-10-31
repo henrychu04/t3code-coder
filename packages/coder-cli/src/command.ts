@@ -51,6 +51,8 @@ export const REMOTE_WORKSPACE_PREFLIGHT_COMMAND = [
   'command -v head >/dev/null 2>&1 || fail "T3 Coder requires head to receive transfers."',
   'command -v claude >/dev/null 2>&1 || command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1 || command -v kilo >/dev/null 2>&1 || fail "T3 Coder requires Claude Code, Codex, Pi, or Kilo Code in the workspace PATH."',
 ].join("; ");
+const REMOTE_RAW_TERMINAL_COMMAND =
+  'if [ -t 0 ]; then stty raw -echo 2>/dev/null || fail "The workspace terminal could not be switched to raw mode (stty raw -echo)."; fi';
 export function quotePosixShellArgument(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -266,7 +268,8 @@ export function buildCoderHelperInvocation(
   const helperCommand = [
     REMOTE_WORKSPACE_PREFLIGHT_COMMAND,
     ...(expectedBundleHash === undefined ? [] : [remoteHelperBundleCheck(expectedBundleHash)]),
-    "stty raw -echo 2>/dev/null || true",
+    // Coder's remote PTY would echo RPC lines back; without a terminal there is nothing to set.
+    REMOTE_RAW_TERMINAL_COMMAND,
     `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
     [
       "exec env",
