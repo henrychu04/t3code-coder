@@ -108,6 +108,9 @@ export function useComposerContextImport(input: {
   );
   const addComposerDraftReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const addComposerDraftThreadContexts = useComposerDraftStore((store) => store.addThreadContexts);
+  const addComposerDraftEnvironmentContexts = useComposerDraftStore(
+    (store) => store.addEnvironmentContexts,
+  );
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, { reportFailure: false });
   const loadThreadTranscript = useAtomCommand(orchestrationEnvironment.threadTranscript, {
     reportFailure: false,
@@ -287,7 +290,7 @@ export function useComposerContextImport(input: {
           ? terminalContextRecord(existing.record)
           : existing?.kind === "review-comment"
             ? reviewCommentContextRecord(existing.record)
-            : existing?.kind === "thread"
+            : existing?.kind === "thread" || existing?.kind === "environment"
               ? existing.record
               : existing
                 ? (uploadedContextRecordFromDraft(existing) ?? undefined)
@@ -326,6 +329,16 @@ export function useComposerContextImport(input: {
           // Coder: no linked-machine exception (#26201 is not carried).
           if (record.environmentId !== environmentId) break;
           addComposerDraftThreadContexts(threadDraftTarget, [record], {
+            appendReference: false,
+          });
+          rewritten.set(record.contextId, record.contextId);
+          break;
+        }
+        case "environment": {
+          // A machine means the same machine from any thread, so a pasted one is kept,
+          // but not in an answer to an agent's question, which carries no machines.
+          if (questionAttachmentTarget !== null) break;
+          addComposerDraftEnvironmentContexts(composerDraftTarget, [record], {
             appendReference: false,
           });
           rewritten.set(record.contextId, record.contextId);

@@ -22,6 +22,7 @@ import {
 } from "../../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import ChatMarkdown from "../ChatMarkdown";
+import { EnvironmentContextChip } from "../EnvironmentContextChip";
 import { ThreadContextChip } from "../ThreadContextChip";
 import { MessageCircleIcon, MousePointerClickIcon, PaintbrushIcon } from "lucide-react";
 import type { ComposerContextId, KnownComposerContextRecord } from "@t3tools/contracts";
@@ -323,11 +324,14 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         ),
     },
     {
-      // Coder: machine mentions (linked environments) are not carried; a sent one shows as
-      // unavailable, so the contract's required kinds still all have a handler.
       kind: "environment",
-      canRender: () => false,
-      render: (_record, context) => <UnavailableUserMessageContextChip {...context} />,
+      canRender: (record) => record.kind === "environment",
+      render: (record, context) =>
+        record.kind === "environment" ? (
+          <EnvironmentContextChip record={record} copyMarkdown={context.copyMarkdown} />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
     },
     {
       kind: "image",

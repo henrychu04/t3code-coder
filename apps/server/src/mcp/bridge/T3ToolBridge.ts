@@ -30,6 +30,8 @@ import * as PullRequestsToolkitHandlers from "../toolkits/pullRequests/handlers.
 import { PullRequestsToolkit } from "../toolkits/pullRequests/tools.ts";
 import * as ThreadToolkitHandlers from "../toolkits/thread/handlers.ts";
 import { ThreadToolkit } from "../toolkits/thread/tools.ts";
+import * as AttachmentToolkitHandlers from "../toolkits/attachment/handlers.ts";
+import { AttachmentToolkit } from "../toolkits/attachment/tools.ts";
 import * as EnvironmentToolkitHandlers from "../toolkits/environment/handlers.ts";
 import { EnvironmentToolkit } from "../toolkits/environment/tools.ts";
 import * as ProjectToolkitHandlers from "../toolkits/project/handlers.ts";
@@ -47,13 +49,11 @@ import {
 } from "./FileBridge.ts";
 import { type T3ToolBinding, t3ToolFailure } from "./T3ToolDispatch.ts";
 
-/**
- * Upstream's toolkits the bridge carries. Preview, device, attachment uploads, and `html_preview`
- * stay out.
- */
+/** Upstream's toolkits the bridge carries. Preview, device, and `html_preview` stay out. */
 const BridgedToolkit = Toolkit.merge(
   OrchestratorToolkit,
   ThreadToolkit,
+  AttachmentToolkit,
   ProjectToolkit,
   EnvironmentToolkit,
   WorktreeToolkit,
@@ -68,6 +68,7 @@ const BridgedHandlersLive = Layer.mergeAll(
     Layer.provide(ThreadMetadataMcpService.layer),
   ),
   McpToolAccess.HandlersLayer.layer(ThreadToolkitHandlers.layer),
+  McpToolAccess.HandlersLayer.layer(AttachmentToolkitHandlers.layer),
   McpToolAccess.HandlersLayer.layer(ProjectToolkitHandlers.layer),
   McpToolAccess.HandlersLayer.layer(EnvironmentToolkitHandlers.layer),
   McpToolAccess.HandlersLayer.layer(WorktreeToolkitHandlers.layer).pipe(
