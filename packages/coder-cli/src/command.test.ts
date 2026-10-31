@@ -18,14 +18,12 @@ import {
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
   buildCoderWorkspaceShellInvocation,
-  buildCoderWorkspaceStatsInvocation,
   REMOTE_HELPER_BUNDLE_HASH_FILE,
   REMOTE_HELPER_COMMAND,
   REMOTE_HELPER_INSTALL_REQUIRED_SENTINEL,
   REMOTE_HELPER_READY_SENTINEL,
   REMOTE_NODE_COMMAND,
   REMOTE_WORKSPACE_PREFLIGHT_COMMAND,
-  REMOTE_WORKSPACE_STATS_COMMAND,
   quotePosixShellArgument,
   remoteHelperBundleCheck,
 } from "./command.ts";
@@ -85,28 +83,6 @@ describe("Coder CLI command construction", () => {
   });
 
   it("builds the preflighted foreground helper invocation as an argument array", () => {
-    deepStrictEqual(buildCoderWorkspaceStatsInvocation(deployment, workspace).args, [
-      "--no-version-warning",
-      "--url",
-      "https://coder.example.gs.com",
-      "ssh",
-      "equities-dev",
-      "--",
-      "sh",
-      "-l",
-      "-c",
-      quotePosixShellArgument(REMOTE_WORKSPACE_STATS_COMMAND),
-    ]);
-    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder --no-version-warning stat cpu --output=json/u);
-    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder --no-version-warning stat mem --output=json/u);
-    match(
-      REMOTE_WORKSPACE_STATS_COMMAND,
-      /coder --no-version-warning stat disk --path "\$HOME" --output=json/u,
-    );
-    deepStrictEqual(
-      REMOTE_WORKSPACE_STATS_COMMAND.match(/\bcoder \S+/gu),
-      Array.from({ length: 3 }, () => "coder --no-version-warning"),
-    );
     deepStrictEqual(buildCoderHelperInvocation(deployment, workspace).args, [
       "--no-version-warning",
       "--url",
@@ -120,7 +96,7 @@ describe("Coder CLI command construction", () => {
       quotePosixShellArgument(
         [
           REMOTE_WORKSPACE_PREFLIGHT_COMMAND,
-          "stty raw -echo 2>/dev/null || true",
+          'if [ -t 0 ]; then stty raw -echo 2>/dev/null || fail "The workspace terminal could not be switched to raw mode (stty raw -echo)."; fi',
           `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
           [
             "exec env",

@@ -3,10 +3,10 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import type * as Scope from "effect/Scope";
 
 import type { CoderInvocation } from "./command.ts";
+import { terminateChildProcess } from "./processTermination.ts";
 
 const MAX_ERROR_BYTES = 16 * 1024;
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
@@ -50,44 +50,14 @@ const terminatePortForwardProcess = (
   process: ManagedPortForwardProcess,
   terminationGraceMs: number,
 ): Effect.Effect<void> =>
-  Effect.uninterruptible(
-    Effect.suspend(() => {
-      process.closeRequested = true;
-      if (Deferred.isDoneUnsafe(process.exit)) return Effect.void;
-
-      // A failed signal is not an exit. Escalate, then require an exit event.
-      try {
-        process.child.kill("SIGTERM");
-      } catch {
-        /* Still try SIGKILL below. */
-      }
-      return Deferred.await(process.exit).pipe(
-        Effect.timeoutOption(terminationGraceMs),
-        Effect.flatMap((exit) => {
-          if (Option.isSome(exit)) return Effect.void;
-          if (process.child.exitCode === null && process.child.signalCode === null) {
-            try {
-              process.child.kill("SIGKILL");
-            } catch {
-              /* Still require an exit event below. */
-            }
-          }
-          return Deferred.await(process.exit).pipe(
-            Effect.timeoutOrElse({
-              duration: terminationGraceMs,
-              orElse: () =>
-                Effect.die(
-                  new CoderPortForwardError(
-                    "Coder process did not exit after SIGKILL; shutdown was not confirmed.",
-                  ),
-                ),
-            }),
-            Effect.asVoid,
-          );
-        }),
-      );
-    }),
-  ).pipe(Effect.tap(() => Effect.sync(process.cleanupListeners)));
+  Effect.suspend(() => {
+    process.closeRequested = true;
+    return terminateChildProcess({
+      child: process.child,
+      exit: process.exit,
+      graceMs: terminationGraceMs,
+    });
+  }).pipe(Effect.tap(() => Effect.sync(process.cleanupListeners)));
 
 export function connectCoderPortForward(
   invocation: CoderInvocation,

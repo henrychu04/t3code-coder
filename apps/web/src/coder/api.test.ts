@@ -5,7 +5,6 @@ import {
   discoverCoderWorkspaces,
   loadCoderPortForwardStatuses,
   loadCoderWorkspaceDiagnostics,
-  loadCoderWorkspaceMetrics,
   restartCoderWorkspace,
   startCoderWorkspace,
   stopCoderWorkspace,
@@ -47,27 +46,14 @@ describe("Coder workspace lifecycle API", () => {
     await expect(discoverCoderWorkspaces("deployment one")).resolves.toEqual(workspaces);
   });
 
-  it("loads validated workspace resource usage", async () => {
-    const usage = {
-      healthy: true,
-      cpu: { used: 0.5, total: 4, unit: "cores" },
-      memory: { used: 1024, total: 2048, unit: "B" },
-      disk: { used: 4096, total: 8192, unit: "B" },
-    };
-    const fetchMock = vi.fn(async () => Response.json(usage));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(loadCoderWorkspaceMetrics("workspace one")).resolves.toEqual(usage);
-    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/metrics", {
-      cache: "no-store",
-    });
-  });
-
   it("reads the connection timeline", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ events: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(loadCoderWorkspaceDiagnostics("workspace one")).resolves.toEqual([]);
+    await expect(loadCoderWorkspaceDiagnostics("workspace one")).resolves.toEqual({
+      events: [],
+      traffic: null,
+    });
     expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/diagnostics", {
       cache: "no-store",
     });

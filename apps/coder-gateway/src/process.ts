@@ -3,9 +3,9 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 
 import type { CoderInvocation } from "@t3tools/coder-cli/command";
+import { terminateChildProcess } from "@t3tools/coder-cli/processTermination";
 
 export class GatewayProcessError extends Error {
   readonly _tag = "GatewayProcessError";
@@ -69,23 +69,11 @@ const terminateGatewayProcess = (
   process: ManagedGatewayProcess,
   terminationGraceMs: number,
 ): Effect.Effect<void> =>
-  Effect.uninterruptible(
-    Effect.suspend(() => {
-      if (Deferred.isDoneUnsafe(process.exited)) return Effect.void;
-
-      process.child.kill("SIGTERM");
-      return Deferred.await(process.exited).pipe(
-        Effect.timeoutOption(terminationGraceMs),
-        Effect.flatMap((exit) => {
-          if (Option.isSome(exit)) return Effect.void;
-          if (process.child.exitCode === null && process.child.signalCode === null) {
-            process.child.kill("SIGKILL");
-          }
-          return Deferred.await(process.exited);
-        }),
-      );
-    }),
-  ).pipe(
+  terminateChildProcess({
+    child: process.child,
+    exit: process.exited,
+    graceMs: terminationGraceMs,
+  }).pipe(
     Effect.catchCause(() => Effect.void),
     Effect.ensuring(Effect.sync(process.cleanupListeners)),
   );

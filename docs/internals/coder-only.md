@@ -47,18 +47,23 @@ probe is in flight per workspace. The browser retains the last sample with a sta
 probes stop succeeding and shows a slow-connection warning only after consecutive high-latency
 samples. The gateway exposes no latency endpoint and starts no ping process of its own.
 
-The header's workspace health card reads Coder's workspace health from `coder list --output json`.
-While the card is open, the browser refreshes that health and asks the gateway for workspace-scoped
-CPU, memory, and home-disk usage every ten seconds. Each resource sample is a bounded, foreground `coder ssh` invocation of Coder
-2.25.3's `coder stat` commands inside the connected workspace. The gateway accepts only Coder's
-fixed JSON result shape, never samples the shared host explicitly, and does not run resource polling
-while the card is closed.
+The header's workspace health card shows Coder's workspace health from the status loop's
+`coder list --output json`. While the card is open, the browser asks the connected helper for
+CPU, memory, and home-disk usage every ten seconds over its existing RPC connection
+(`coder.workspaceResourceUsage`). The helper runs Coder's `coder stat` commands in the workspace
+and accepts only their fixed JSON result shape, so the laptop starts no process for it. Nothing
+samples resources while the card is closed.
 
 For every connected workspace, the gateway starts one foreground process through the authenticated
 Coder CLI. The process runs a version-matched helper in the Linux workspace and carries T3's Effect
 RPC envelopes as newline-delimited JSON over stdin and stdout. The helper has no HTTP server,
 WebSocket server, or other listening socket. Closing the Coder connection stops the helper and any
-active turn. Reloading or temporarily disconnecting the browser does not stop the helper; the
+active turn: the gateway sends the helper the gateway-only `coder.helper.shutdown` request, so the
+helper exits and `coder ssh` closes its session itself (Coder's remote PTY never delivers
+end-of-file, and on Windows a signal force-stops `coder.exe`), then escalates to SIGTERM and SIGKILL
+one grace period apart (`packages/coder-cli/src/processTermination.ts`, shared by every Coder
+child process). The helper launch switches the remote PTY to raw mode before its ready line and
+reports a preflight failure if `stty` cannot. Reloading or temporarily disconnecting the browser does not stop the helper; the
 gateway keeps it attached and reconnects the loopback WebSocket. If the helper or Coder SSH process
 exits, the next browser connection runs preflight again and starts a fresh foreground helper.
 Shell and thread subscriptions use upstream's optional `requestCompletionMarker` negotiation.
@@ -111,8 +116,9 @@ results are bounded (`T3ToolBridge.ts`). Upstream's lifecycle owns the bridges: 
 revoked, which deletes the directory, when the session is released, the thread is archived or
 deleted, or the helper stops. The thread's next credential recreates the same directory, so a
 command in the agent's history keeps working after its session rotates. Each bridge marks the
-directory as its own and, once another helper in the workspace recreates it, stops serving and
-leaves it in place. If a bridge cannot be
+directory as its own and, once another helper in the workspace recreates it (the mark differs or
+is gone), stops serving and leaves it in place; a call directory a killed CLI left behind is
+removed once it is older than `STALE_CALL_MS`. If a bridge cannot be
 created, turns run without T3 tools. Workspace processes run as the same OS user; these
 directories are not an isolation boundary between mutually untrusted agents.
 
@@ -169,7 +175,7 @@ removed, or the gateway exits.
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> codex / claude
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> git -> Git remote
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> glab -> GitLab
-browser -> 127.0.0.1 gateway -> coder ssh -> coder stat in connected workspace
+browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> coder stat
 local client -> 127.0.0.1:configured port -> coder port-forward -> workspace service
 ```
 
@@ -433,7 +439,9 @@ checks that every name here still exists and that every modified upstream file i
 - `coderEnvironment.ts` advertises upstream's capabilities and protocol version except
   `CODER_OMITTED_CAPABILITIES`, each with a reason; `coderEnvironment.test.ts` fails on a key in
   neither list. It also declares `ServerEnvironmentIdentity`, which `ThreadManagementService.ts`
-  imports from the uncarried `environment/`, and advertises `providerWorkspaceSnapshotsOnDemand`.
+  imports from the uncarried `environment/`, with upstream's `makeIdentity` persistence carried as
+  is (temp file linked without replacing, so concurrent helpers agree on one id), and advertises
+  `providerWorkspaceSnapshotsOnDemand`.
 - `coderWs.ts` (`CODER_WS_METHODS`) adds local ref status, branch and worktree rename
   (`moveWorktree`), chunked review files, the gateway's asset stream (`coder.serveAsset`) and upload
   body (`coder.writeRequestBody`), fixed project-config reads, merge-request diffs, and upstream's
@@ -518,7 +526,9 @@ checks that every name here still exists and that every modified upstream file i
   `toolCommand` (a Coder field on provider-core's `McpProviderSessionConfig`) runs the tools and
   whose `endpoint` is the per-thread directory; `mcp/bridge/T3ToolBridge.ts` runs upstream's
   handlers by name with the credential's `McpInvocationContext`, refuses non-read-only tools in plan
-  mode, turns slow calls into `bridge-job:` tasks, and prints `advertisedJsonSchema` for `--schema`.
+  mode (and any call when the thread cannot be read), turns slow calls into `bridge-job:` tasks
+  (the per-thread cap counts running tasks and is checked before a call starts; a finished result
+  stays until its reply is published), and prints `advertisedJsonSchema` for `--schema`.
 - `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of `ServerEnvironment`.
 - provider-core's `server/t3ToolBridgeInstructions.ts` reuses upstream's orchestration sections,
   rewriting "`html_preview`, then `html_render`" to "`html_render`" and dropping the `preview_*`

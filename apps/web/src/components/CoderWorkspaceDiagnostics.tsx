@@ -3,9 +3,11 @@ import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
 
 import {
   loadCoderWorkspaceDiagnostics,
+  type CoderWorkspaceTraffic,
   type WorkspaceDiagnosticEvent,
   type WorkspaceDiagnosticPhase,
 } from "../coder/api";
+import { formatCoderResourceBytes } from "./CoderWorkspaceLatency";
 
 const REFRESH_MS = 1_000;
 
@@ -33,6 +35,7 @@ function durationLabel(event: WorkspaceDiagnosticEvent): string {
 export function CoderWorkspaceDiagnostics({ workspaceId }: { readonly workspaceId: string }) {
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<readonly WorkspaceDiagnosticEvent[]>([]);
+  const [traffic, setTraffic] = useState<CoderWorkspaceTraffic | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
@@ -43,7 +46,8 @@ export function CoderWorkspaceDiagnostics({ workspaceId }: { readonly workspaceI
       try {
         const next = await loadCoderWorkspaceDiagnostics(workspaceId);
         if (!cancelled) {
-          setEvents(next);
+          setEvents(next.events);
+          setTraffic(next.traffic);
           setUnavailable(false);
         }
       } catch {
@@ -88,6 +92,12 @@ export function CoderWorkspaceDiagnostics({ workspaceId }: { readonly workspaceI
               <span className="tabular-nums text-muted-foreground">{durationLabel(event)}</span>
             </div>
           ))
+        )}
+        {traffic === null ? null : (
+          <p className="tabular-nums text-muted-foreground">
+            This connection: {formatCoderResourceBytes(traffic.sentBytes)} sent,{" "}
+            {formatCoderResourceBytes(traffic.receivedBytes)} received
+          </p>
         )}
       </div>
     </details>

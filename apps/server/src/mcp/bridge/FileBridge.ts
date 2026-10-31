@@ -31,6 +31,8 @@ const CALL_ID_PATTERN = /^[a-f0-9-]{36}$/u;
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/u;
 /** The owner mark is one UUID. */
 const MAX_OWNER_BYTES = 64;
+/** A call directory this old outlived its CLI (which gives up after 15 s); remove it. */
+const STALE_CALL_MS = 5 * 60_000;
 
 export interface FileBridgeRequest {
   readonly id: string;
@@ -99,6 +101,8 @@ export async function createFileBridge(
     readonly intervalMs?: number;
     /** Safety net only: the dispatcher answers long tools with a task id well before this. */
     readonly timeoutMs?: number;
+    /** Called once a handler's own result, not a substitute error, reached the caller. */
+    readonly onPublished?: (request: FileBridgeRequest) => void;
   },
 ): Promise<FileBridge> {
   const directory = join(options.parent ?? tmpdir(), options.name);
@@ -121,10 +125,12 @@ export async function createFileBridge(
     throw error;
   }
   let closed = false;
-  const ownsDirectory = () =>
+  // Only a missing or different mark means another bridge took over; any other read error is
+  // transient, so the next tick tries again.
+  const ownsDirectory = (): Promise<boolean | undefined> =>
     readBounded(ownerFile, MAX_OWNER_BYTES).then(
       (text) => text === owner,
-      () => false,
+      (error: NodeJS.ErrnoException) => (error.code === "ENOENT" ? false : undefined),
     );
   const controllers = new Set<AbortController>();
   const active = new Map<string, Promise<void>>();
@@ -135,6 +141,11 @@ export async function createFileBridge(
     try {
       const stat = await lstat(call);
       if (!stat.isDirectory() || stat.isSymbolicLink()) return;
+      // A CLI killed before its cleanup leaves its directory behind.
+      if (Date.now() - stat.mtimeMs > STALE_CALL_MS) {
+        await rm(call, { recursive: true, force: true });
+        return;
+      }
       const text = await readBounded(join(call, "request.json"), MAX_BRIDGE_REQUEST_BYTES);
       if (text === undefined) return;
       request = parseFileBridgeRequest(JSON.parse(text));
@@ -178,7 +189,8 @@ export async function createFileBridge(
     }
     if (closed) return;
     let encoded = JSON.stringify(response);
-    if (Buffer.byteLength(encoded) > MAX_BRIDGE_RESPONSE_BYTES) {
+    const oversized = Buffer.byteLength(encoded) > MAX_BRIDGE_RESPONSE_BYTES;
+    if (oversized) {
       encoded = JSON.stringify({
         id: request.id,
         ok: false,
@@ -196,13 +208,16 @@ export async function createFileBridge(
         await out.close();
       }
       await rename(join(call, "reply.json"), join(call, "response.json"));
+      if (!oversized) options.onPublished?.(request);
     } catch {
       // The caller disappeared.
     }
   };
 
   const tick = async () => {
-    if (!(await ownsDirectory())) {
+    const owned = await ownsDirectory();
+    if (owned === undefined) return;
+    if (!owned) {
       // Another bridge took this directory over; its calls are not ours.
       closed = true;
       clearInterval(timer);
@@ -240,7 +255,7 @@ export async function createFileBridge(
       for (const controller of controllers) controller.abort();
       await ticking;
       await Promise.allSettled(active.values());
-      if (await ownsDirectory()) {
+      if ((await ownsDirectory()) === true) {
         await rm(directory, { recursive: true, force: true }).catch(() => {});
       }
     },

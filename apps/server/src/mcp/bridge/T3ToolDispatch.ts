@@ -30,6 +30,11 @@ export interface T3ToolBinding {
     scope: McpInvocationContext.McpThreadInvocationScope,
     request: FileBridgeRequest,
   ) => Effect.Effect<unknown, FileBridgeToolFailure>;
+  /** Called once a `dispatch` result has reached the agent. */
+  readonly published?: (
+    scope: McpInvocationContext.McpThreadInvocationScope,
+    request: FileBridgeRequest,
+  ) => Effect.Effect<void>;
   /** Runs a tool for a caller that is not one of this workspace's agents (the gateway hub). */
   readonly invoke: (
     scope: McpInvocationContext.McpInvocationScope,
@@ -44,6 +49,7 @@ export class T3ToolDispatch extends Context.Service<
     /** The bound toolkits, or nothing while the helper is still starting. */
     readonly binding: Effect.Effect<T3ToolBinding | undefined>;
     readonly dispatch: T3ToolBinding["dispatch"];
+    readonly published: NonNullable<T3ToolBinding["published"]>;
   }
 >()("t3/mcp/bridge/T3ToolDispatch") {}
 
@@ -63,6 +69,10 @@ export const layer = Layer.effect(
                 )
               : binding.dispatch(scope, request),
           ),
+        ),
+      published: (scope, request) =>
+        Ref.get(bound).pipe(
+          Effect.flatMap((binding) => binding?.published?.(scope, request) ?? Effect.void),
         ),
     });
   }),

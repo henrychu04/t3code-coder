@@ -19,6 +19,7 @@ import {
 } from "@t3tools/contracts";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import * as ProcessRunner from "./processRunner.ts";
 import * as ServerConfig from "./config.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
@@ -228,6 +229,7 @@ const harness = (
       stub(ServerSecretStore.ServerSecretStore),
       stub(ProjectFaviconResolver.ProjectFaviconResolver),
       stub(DocumentText.DocumentText),
+      stub(ProcessRunner.ProcessRunner),
       Layer.succeed(BuiltInDrivers.SourceControlDrivers, []),
       ServerConfig.layer(config),
       WorkspacePaths.layer,

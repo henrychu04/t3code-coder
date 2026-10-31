@@ -22,13 +22,6 @@ export interface CoderInvocationOptions {
 export const REMOTE_NODE_COMMAND = '"$HOME/.t3-coder/node24/bin/node"';
 export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper/index.mjs"';
 export const REMOTE_HELPER_READY_SENTINEL = "T3_CODER_HELPER_READY";
-export const REMOTE_WORKSPACE_STATS_COMMAND = [
-  "set -eu",
-  'cpu="$(coder --no-version-warning stat cpu --output=json)"',
-  'memory="$(coder --no-version-warning stat mem --output=json)"',
-  'disk="$(coder --no-version-warning stat disk --path "$HOME" --output=json)"',
-  `printf '{"cpu":%s,"memory":%s,"disk":%s}\\n' "$cpu" "$memory" "$disk"`,
-].join("; ");
 const REMOTE_NODE_VERSION_CHECK = `${REMOTE_NODE_COMMAND} -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 24 ? 0 : 1)'`;
 /** A preflight failure line: the helper launch prints it and exits before the ready sentinel. */
 export const REMOTE_PREFLIGHT_FAILED_PREFIX = "T3_CODER_PREFLIGHT_FAILED: ";
@@ -58,6 +51,8 @@ export const REMOTE_WORKSPACE_PREFLIGHT_COMMAND = [
   'command -v head >/dev/null 2>&1 || fail "T3 Coder requires head to receive transfers."',
   'command -v claude >/dev/null 2>&1 || command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1 || command -v kilo >/dev/null 2>&1 || fail "T3 Coder requires Claude Code, Codex, Pi, or Kilo Code in the workspace PATH."',
 ].join("; ");
+const REMOTE_RAW_TERMINAL_COMMAND =
+  'if [ -t 0 ]; then stty raw -echo 2>/dev/null || fail "The workspace terminal could not be switched to raw mode (stty raw -echo)."; fi';
 export function quotePosixShellArgument(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -211,19 +206,6 @@ export function buildCoderWorkspaceShellInvocation(
   );
 }
 
-export function buildCoderWorkspaceStatsInvocation(
-  deploymentInput: CoderDeploymentProfile,
-  workspaceInput: CoderWorkspaceProfile,
-  options?: CoderInvocationOptions,
-): CoderInvocation {
-  return buildCoderWorkspaceShellInvocation(
-    deploymentInput,
-    workspaceInput,
-    REMOTE_WORKSPACE_STATS_COMMAND,
-    options,
-  );
-}
-
 export function buildCoderPortForwardInvocation(
   deploymentInput: CoderDeploymentProfile,
   workspaceInput: CoderWorkspaceProfile,
@@ -286,7 +268,8 @@ export function buildCoderHelperInvocation(
   const helperCommand = [
     REMOTE_WORKSPACE_PREFLIGHT_COMMAND,
     ...(expectedBundleHash === undefined ? [] : [remoteHelperBundleCheck(expectedBundleHash)]),
-    "stty raw -echo 2>/dev/null || true",
+    // Coder's remote PTY would echo RPC lines back; without a terminal there is nothing to set.
+    REMOTE_RAW_TERMINAL_COMMAND,
     `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
     [
       "exec env",
