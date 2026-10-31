@@ -1,6 +1,11 @@
 // Upstream's useRightPanelSurfaceClose. Coder: there are no browser surfaces, so no preview
 // session closes with a surface and no agent-controlled browser asks first.
-import { AuthTerminalOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { useThreadTerminalActions } from "../components/terminal/useThreadTerminalActions";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
@@ -10,19 +15,25 @@ import {
   useRightPanelStore,
   type RightPanelSurface,
 } from "../rightPanelStore";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { readThreadShell } from "../state/entities";
 import { readEnvironmentScope } from "../state/session";
+import { environmentShell } from "../state/shell";
+import { threadEnvironment } from "../state/threads";
+import { useAtomCommand } from "../state/use-atom-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useStableCallback } from "./useStableCallback";
 
 /**
  * Closes right panel surfaces for a thread. A terminal tab's sessions go with
- * it, and closing a terminal tab asks first.
+ * it, closing a terminal tab asks first, and a side chat that never ran is deleted.
  */
 export function useRightPanelSurfaceClose(input: {
   readonly threadRef: ScopedThreadRef | null;
   readonly terminalLabelsById: ReadonlyMap<string, string>;
 }) {
   const { threadRef, terminalLabelsById } = input;
+  const deleteThread = useAtomCommand(threadEnvironment.delete, "side chat delete");
   const terminalActions = useThreadTerminalActions(threadRef);
   const storeCloseTerminal = useTerminalUiStateStore((state) => state.closeTerminal);
   const surfaces = useRightPanelStore(
@@ -38,6 +49,21 @@ export function useRightPanelSurfaceClose(input: {
         storeCloseTerminal(ref, terminalId);
         terminalActions.closeTerminalSession(terminalId, ref);
       }
+    }
+    if (
+      surface.kind === "side-chat" &&
+      readEnvironmentScope(ref.environmentId, AuthOrchestrationOperateScope) &&
+      // A live shell without the side chat means it is already deleted.
+      !(
+        appAtomRegistry.get(environmentShell.stateValueAtom(ref.environmentId)).status === "live" &&
+        readThreadShell(scopeThreadRef(ref.environmentId, surface.threadId)) === null
+      )
+    ) {
+      // The server keeps a side chat with a run or message. Reopen skips one it deleted.
+      void deleteThread({
+        environmentId: ref.environmentId,
+        input: { threadId: surface.threadId, onlyIfUnused: true },
+      });
     }
   };
   // The active surface closes last so the panel does not flash through it.

@@ -12,7 +12,7 @@ async function renderBody(
   options: { lineBreaks?: boolean } = {},
 ) {
   const context = {
-    autolinks: null,
+    remarkPlugins: [],
     lineBreaks:
       typeof host === "string"
         ? (sourceControlClients.get(host).hardLineBreaks ?? false)

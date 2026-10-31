@@ -20,6 +20,7 @@ import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
+import { ThreadDetailsContext, type ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -34,7 +35,8 @@ import { Menu, MenuPopup } from "../ui/menu";
 
 // Coder: there is no local editor to open, and the gateway installs the helper matching this
 // client, so there is no version mismatch warning. Repository actions come from the helper's
-// validated t3.json read by project. No dev-servers or usage-limits items either.
+// validated t3.json read by project. No dev-servers or usage-limits items either; `usage`
+// carries only the context window.
 const GitActionsControl = memo(BaseGitActionsControl);
 
 interface ThreadDetailsPanelProps extends Pick<
@@ -77,6 +79,7 @@ interface ThreadDetailsPanelProps extends Pick<
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  usage: ThreadDetailsUsageInput;
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
@@ -228,11 +231,17 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 />
               ) : null}
 
-              {density === "full" && !props.draftId && visible.lineage ? (
+              {density === "full" && !props.draftId && (visible.lineage || visible.sideChats) ? (
                 <ThreadRelationshipsPanel
                   environmentId={props.environmentId}
                   threadId={props.threadId}
+                  showLineage={visible.lineage}
+                  showSideChats={visible.sideChats}
                 />
+              ) : null}
+
+              {visible.context && props.usage.contextWindow ? (
+                <ThreadDetailsContext usage={props.usage.contextWindow} />
               ) : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}

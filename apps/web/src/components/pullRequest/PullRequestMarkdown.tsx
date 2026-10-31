@@ -1,10 +1,6 @@
 import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
 import { markdownImageSourceFragment } from "@t3tools/client-runtime/markdown-images";
-import { resolveGitLabUploadUrl } from "@t3tools/client-runtime/pull-request-markdown";
-import {
-  sourceControlClients,
-  type ReferenceAutolink,
-} from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   SOURCE_CONTROL_MEDIA_ASSET,
   type AssetResource,
@@ -12,7 +8,7 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { createContext, useContext } from "react";
-import type { Options as ReactMarkdownOptions } from "react-markdown";
+import type { PluggableList } from "unified";
 
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { cn } from "~/lib/utils";
@@ -20,30 +16,16 @@ import { PULL_REQUESTS_PANEL_REF } from "~/rightPanelStore";
 
 import ChatMarkdown from "../ChatMarkdown";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
-import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestMarkdown.logic";
+import { splitPullRequestBody } from "./pullRequestMarkdown.logic";
 
 export const PullRequestMarkdownContext = createContext<{
-  autolinks: ((text: string) => ReadonlyArray<ReferenceAutolink>) | null;
+  /** Stable per repository, so comments share one renderer and its parse cache. */
+  remarkPlugins: PluggableList;
   lineBreaks: boolean;
   // Coder: the repository GitLab's project-relative `/uploads/…` links resolve against.
   repositoryUrl: string | null;
   threadRef: ScopedThreadRef | null;
 } | null>(null);
-
-type MarkdownUrlNode = { type: string; url?: string; children?: MarkdownUrlNode[] };
-
-const UPLOAD_URL_NODE_TYPES = new Set(["image", "link", "definition"]);
-
-/** Coder: GitLab writes pasted files into Markdown as `/uploads/…` images and links. */
-function remarkGitLabUploads(options: { readonly repositoryUrl: string }) {
-  const visit = (node: MarkdownUrlNode): void => {
-    if (UPLOAD_URL_NODE_TYPES.has(node.type) && node.url !== undefined) {
-      node.url = resolveGitLabUploadUrl(node.url, options.repositoryUrl) ?? node.url;
-    }
-    node.children?.forEach(visit);
-  };
-  return (tree: MarkdownUrlNode) => visit(tree);
-}
 
 function PullRequestHostVideo({
   environmentId,
@@ -96,14 +78,10 @@ export function PullRequestMarkdown({
   className?: string;
 }) {
   const context = useContext(PullRequestMarkdownContext);
-  const autolinks = context?.autolinks;
+  // Coder: GitLab upload links in the body split against the repository.
   const repositoryUrl = context?.repositoryUrl ?? null;
-  const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
   const segments = splitPullRequestBody(text, repositoryUrl);
-  const extraRemarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = autolinks
-    ? [[remarkPullRequestAutolinks, { autolinks }]]
-    : [];
-  if (repositoryUrl !== null) extraRemarkPlugins.push([remarkGitLabUploads, { repositoryUrl }]);
+  const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
   return (
     <div
       className={cn(
@@ -122,7 +100,7 @@ export function PullRequestMarkdown({
               environmentId={environmentId}
               threadRef={resolvedThreadRef}
               pullRequestPanelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
-              extraRemarkPlugins={extraRemarkPlugins}
+              {...(context ? { extraRemarkPlugins: context.remarkPlugins } : {})}
               lineBreaks={lineBreaks ?? context?.lineBreaks ?? false}
               sourceControlMedia
             />

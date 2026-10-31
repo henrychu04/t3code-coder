@@ -59,6 +59,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
   pullRequests: true,
   pullRequestChecks: true,
+  sideChats: true,
   inlineMessageContext: true,
   requiredWorktreeBootstrap: true,
   threadSettlement: true,
@@ -90,6 +91,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadStop: true,
   environmentIcon: true,
   projectCloneTracking: true,
+  projectOrganization: true,
   threadProjectFromScratch: true,
   // Links are the gateway's workspace link rules; calls between workspaces go through its hub.
   peerLinks: true,
