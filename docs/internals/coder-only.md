@@ -86,7 +86,7 @@ target bounded encoded sizes but always keep the newest requested turn; older pa
 RPC on the existing connection. Review file snapshots stay in bounded helper memory
 (`ReviewService.ts`) and are fetched only when the diff renderer expands omitted context; a file
 above the expansion limit returns a typed `tooLarge` outcome rather than an RPC failure. GitLab
-merge-request diffs are paged by file below the gateway's `MAX_RPC_MESSAGE_BYTES` frame. Migration
+merge-request diffs are paged by file below the `CODER_RPC_FRAME_MAX_BYTES` frame. Migration
 049 stores manual active-thread order in the workspace.
 
 Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLab MR links at
@@ -677,7 +677,7 @@ checks that every name here still exists and that every modified upstream file i
   request URLs reach `glab` as `--repo <url> … -- <iid>`. `glab auth status` lines with a token
   label or `glpat-` token are never surfaced; clones accept only GitLab URLs without credentials,
   query, or fragment and pass `--` before the URL; diff output is capped (`DIFF_MAX_OUTPUT_BYTES`)
-  under `MAX_RPC_MESSAGE_BYTES`; `GitLabCli` supplies "Merge request not found." as its detail.
+  under `CODER_RPC_FRAME_MAX_BYTES`; `GitLabCli` supplies "Merge request not found." as its detail.
 - `PullRequestService` omits cross-environment routing (routing identities, verified credentials,
   `expectedAccountId` refs) and runs delete-branch without the verified-credential wrapper.
 - `coderServer.ts` uses `server.ts`'s `layerRepositoryIdentityResolver`, whose refine hook lets
