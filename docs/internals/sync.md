@@ -416,11 +416,10 @@ foreground command limit, so run it in the background and read its log. Known re
   2-second watcher timeout under full-suite load; #236 lists the other known flakes. Rerun it
   alone:
   `pnpm exec vp test run --config vite.coder.config.ts apps/server/src/serverSettings.test.ts`.
-- On macOS, upstream's `ClaudeSkills.test.ts` "merges plugin enablement and selects installs in
-  native registry order" fails because `TMPDIR` sits under the `/var` symlink (758d773f57, #235),
-  as does `GitVcsDriverCore.test.ts`'s "keeps generated worktree folders short without changing
-  long branch names" (32ecd71726). Both pass with a real-path temp directory:
-  `TMPDIR=/private/tmp/<dir>`.
+- On macOS, `TMPDIR` sits under the `/var` symlink, which upstream's `ClaudeSkills.test.ts` and
+  `GitVcsDriverCore.test.ts` trip over (#235). `vite.coder.config.ts` loads
+  `apps/server/src/testUtils/darwinTempDir.setup.ts`, which points `TMPDIR` at its real path; a
+  new macOS-only path failure in another suite belongs in that setup, not in upstream's tests.
 - Read the suite's own exit status from its log. A background run like
   `pnpm test:coder > log; echo "exit=$?" >> log` reports success to the agent harness even when the
   suite failed (32ecd71726's stage 2 did).
@@ -428,11 +427,12 @@ foreground command limit, so run it in the background and read its log. Known re
   ("There was an error when mocking a module") or time out, because Vite re-optimizes
   dependencies mid-run and reloads ("optimized dependencies changed. reloading"). Rerun
   `pnpm test:web:coder` until no reload is logged; failures that remain are real.
-- Under the full suite's load, browser tests time out in large numbers (15fe283272: 105 failures,
-  then 19 in a second run, all passing alone), and ClaudeAdapterV2's "persists a todo_list from
-  inline Claude task-tool frames" can hit its 60-second timeout. Rerun the failed files alone:
-  `pnpm exec vp test run --project browser <files>` from `apps/web`. Unit failures that repeat
-  across runs are real.
+- Browser tests time out in large numbers when they share the machine with the unit project
+  (15fe283272: 105 failures, all passing alone), so `pnpm test:web:coder` runs the unit and browser
+  projects one after the other. Under other load (parallel agents, a second suite), ClaudeAdapterV2's
+  "persists a todo_list from inline Claude task-tool frames" can still hit its 60-second timeout.
+  Rerun failed files alone: `pnpm exec vp test run --project browser <files>` from `apps/web`.
+  Failures that repeat across runs are real.
 - Fork-adapted unit tests that match rendered HTML as strings (`ChatMarkdown.test.tsx`) fail when
   upstream adds an attribute its browser tests never assert (ed3f965e07: #22777's `dir`). Add
   the attribute to the expected string.
