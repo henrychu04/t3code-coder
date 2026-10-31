@@ -277,6 +277,8 @@ it("publishes unique tools with reference-free object-root input schemas", () =>
     "t3_thread_launch",
     "link_pull_request",
     "html_render",
+    "t3_attachment_prepare_upload",
+    "t3_thread_send_attachments",
   ]) {
     assert.include(names, name);
   }
@@ -285,12 +287,7 @@ it("publishes unique tools with reference-free object-root input schemas", () =>
     T3ToolBridge.T3_TOOL_CATALOG.find((entry) => entry.name === name)?.readOnly;
   assert.strictEqual(readOnly("read_pull_request_guide"), true);
   assert.strictEqual(readOnly("write_pull_request_guides"), false);
-  for (const name of [
-    "preview_open",
-    "device_list",
-    "t3_attachment_prepare_upload",
-    "html_preview",
-  ]) {
+  for (const name of ["preview_open", "device_list", "html_preview"]) {
     assert.notInclude(names, name);
   }
 });
