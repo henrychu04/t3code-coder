@@ -1,12 +1,10 @@
 import type {
   DiscoveredCoderWorkspace,
-  CoderWorkspaceResourceUsage,
   WorkspaceDiagnosticPhase,
   WorkspaceDiagnosticEvent,
 } from "@t3tools/contracts";
 export type {
   DiscoveredCoderWorkspace,
-  CoderWorkspaceResourceUsage,
   WorkspaceDiagnosticPhase,
   WorkspaceDiagnosticEvent,
 } from "@t3tools/contracts";
@@ -41,7 +39,6 @@ import {
   buildCoderStartWorkspaceInvocation,
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
-  buildCoderWorkspaceStatsInvocation,
   REMOTE_HELPER_READY_SENTINEL,
   type CoderInvocation,
 } from "@t3tools/coder-cli/command";
@@ -76,11 +73,9 @@ const MAX_CONFIG_BODY_BYTES = 64 * 1024;
 const MAX_CODER_LIST_BYTES = 2 * 1024 * 1024;
 const MAX_CODER_AUTH_STATUS_BYTES = 64 * 1024;
 const MAX_CODER_WORKSPACE_ACTION_BYTES = 64 * 1024;
-const MAX_CODER_WORKSPACE_STATS_BYTES = 64 * 1024;
 const MAX_WORKSPACE_DIAGNOSTIC_EVENTS = 24;
 const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
 const DEFAULT_PROCESS_TERMINATION_GRACE_MS = 5_000;
-const DEFAULT_CODER_WORKSPACE_STATS_TIMEOUT_MS = 15_000;
 const DEFAULT_CODER_WORKSPACE_LIST_TIMEOUT_MS = 30_000;
 
 const indexHtml = `<!doctype html>
@@ -103,9 +98,10 @@ function sendText(
   statusCode: number,
   contentType: string,
   body: string | Buffer,
+  cacheHeaders: Readonly<Record<string, string>> = { "Cache-Control": "no-store" },
 ): void {
   response.writeHead(statusCode, {
-    "Cache-Control": "no-store",
+    ...cacheHeaders,
     "Content-Type": contentType,
     "Content-Security-Policy":
       "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' 'sha256-n0OPhj7RDHbzPYmNVtzBFHdU5YSjXCbQBVoFS8BcmDQ='; connect-src 'self' blob: https: http: ws://127.0.0.1:*; img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; worker-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:",
@@ -129,23 +125,71 @@ const STATIC_CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".woff2": "font/woff2",
 };
 
+/**
+ * Build outputs named in Vite's manifest, which carry a content hash. Like upstream's static
+ * route, only these are cached as immutable: a hash-like name alone is not enough.
+ */
+async function readImmutableBuildAssets(staticDir: string): Promise<ReadonlySet<string>> {
+  try {
+    const manifest = JSON.parse(
+      await NodeFS.readFile(NodePath.join(staticDir, ".vite", "manifest.json"), "utf8"),
+    ) as Record<string, { file?: unknown; css?: unknown; assets?: unknown }>;
+    const files = Object.values(manifest).flatMap((entry) => [
+      entry.file,
+      ...(Array.isArray(entry.css) ? entry.css : []),
+      ...(Array.isArray(entry.assets) ? entry.assets : []),
+    ]);
+    return new Set(files.filter((file): file is string => typeof file === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
 async function serveStaticFile(
+  request: NodeHttp.IncomingMessage,
   response: NodeHttp.ServerResponse,
   staticDir: string,
   pathname: string,
+  immutableBuildAssets: ReadonlySet<string>,
 ): Promise<boolean> {
   const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
   const candidate = NodePath.resolve(staticDir, relativePath);
   const root = `${NodePath.resolve(staticDir)}${NodePath.sep}`;
   if (!candidate.startsWith(root)) return false;
   try {
-    const body = await NodeFS.readFile(candidate);
-    sendText(
-      response,
-      200,
-      STATIC_CONTENT_TYPES[NodePath.extname(candidate)] ?? "application/octet-stream",
-      body,
-    );
+    const info = await NodeFS.stat(candidate);
+    if (!info.isFile()) return false;
+    const extension = NodePath.extname(candidate);
+    const contentType = STATIC_CONTENT_TYPES[extension] ?? "application/octet-stream";
+    // HTML names the current bundle, so it is always revalidated in full.
+    if (extension === ".html") {
+      sendText(response, 200, contentType, await NodeFS.readFile(candidate), {
+        "Cache-Control": "no-cache",
+      });
+      return true;
+    }
+    const assetPath = NodePath.relative(staticDir, candidate).replaceAll("\\", "/");
+    const etag = `W/"${info.size.toString(16)}-${info.mtimeMs.toString(16)}"`;
+    const cacheHeaders = {
+      "Cache-Control": immutableBuildAssets.has(assetPath)
+        ? "public, max-age=31536000, immutable"
+        : "no-cache",
+      ETag: etag,
+    };
+    const ifNoneMatch = request.headers["if-none-match"];
+    if (
+      ifNoneMatch !== undefined &&
+      ifNoneMatch
+        .split(",")
+        .some(
+          (value) => value.trim() === "*" || value.trim().replace(/^W\//i, "") === etag.slice(2),
+        )
+    ) {
+      response.writeHead(304, cacheHeaders);
+      response.end();
+      return true;
+    }
+    sendText(response, 200, contentType, await NodeFS.readFile(candidate), cacheHeaders);
     return true;
   } catch (cause) {
     const code = (cause as NodeJS.ErrnoException).code;
@@ -441,81 +485,6 @@ function runCoderWorkspaceAction(
   );
 }
 
-function parseWorkspaceStat<Unit extends "cores" | "B">(
-  value: unknown,
-  expectedUnit: Unit,
-  label: string,
-): { readonly used: number; readonly total: number; readonly unit: Unit } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new GatewayProcessError(`Coder returned invalid ${label} usage.`);
-  }
-  const record = value as Record<string, unknown>;
-  if (
-    typeof record.used !== "number" ||
-    !Number.isFinite(record.used) ||
-    record.used < 0 ||
-    typeof record.total !== "number" ||
-    !Number.isFinite(record.total) ||
-    record.total <= 0 ||
-    record.unit !== expectedUnit
-  ) {
-    throw new GatewayProcessError(`Coder returned invalid ${label} usage.`);
-  }
-  return { used: record.used, total: record.total, unit: expectedUnit };
-}
-
-export function parseCoderWorkspaceResourceUsage(output: string): CoderWorkspaceResourceUsage {
-  let value: unknown;
-  try {
-    value = JSON.parse(output);
-  } catch (cause) {
-    throw new GatewayProcessError("Coder returned invalid workspace resource usage.", { cause });
-  }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new GatewayProcessError("Coder returned invalid workspace resource usage.");
-  }
-  const record = value as Record<string, unknown>;
-  return {
-    cpu: parseWorkspaceStat(record.cpu, "cores", "CPU"),
-    memory: parseWorkspaceStat(record.memory, "B", "memory"),
-    disk: parseWorkspaceStat(record.disk, "B", "disk"),
-  };
-}
-
-function runCoderWorkspaceResourceUsage(
-  invocation: CoderInvocation,
-  timeoutMs = DEFAULT_CODER_WORKSPACE_STATS_TIMEOUT_MS,
-): Effect.Effect<CoderWorkspaceResourceUsage, GatewayProcessError> {
-  return runGatewayProcess(invocation, {
-    label: "Coder workspace resource usage",
-    timeoutMs,
-    maxStdoutBytes: MAX_CODER_WORKSPACE_STATS_BYTES,
-    maxStderrBytes: MAX_CODER_WORKSPACE_STATS_BYTES,
-    stdoutMode: "error",
-    stderrMode: "tail",
-  }).pipe(
-    Effect.flatMap((result) => {
-      if (result.code !== 0) {
-        const detail = result.stderr.toString("utf8").trim();
-        return Effect.fail(
-          new GatewayProcessError(
-            `Coder workspace resource usage exited with code ${String(result.code)} (${String(result.signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
-          ),
-        );
-      }
-      return Effect.try({
-        try: () => parseCoderWorkspaceResourceUsage(result.stdout.toString("utf8")),
-        catch: (cause) =>
-          cause instanceof GatewayProcessError
-            ? cause
-            : new GatewayProcessError("Coder returned invalid workspace resource usage.", {
-                cause,
-              }),
-      });
-    }),
-  );
-}
-
 type WorkspaceAction = "start" | "stop" | "restart" | "update";
 
 class WorkspaceActionConflictError extends Error {}
@@ -688,10 +657,6 @@ export interface LocalCoderGatewayEffectOptions {
   readonly connectPortForward?: (
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderPortForwardConnection, unknown, Scope.Scope>;
-  readonly readWorkspaceResourceUsage?: (
-    invocation: CoderInvocation,
-  ) => Effect.Effect<CoderWorkspaceResourceUsage, unknown>;
-  readonly workspaceResourceUsageTimeoutMs?: number;
 }
 
 const MIN_SAVED_GATEWAY_PORT = 1024;
@@ -788,6 +753,10 @@ export function makeLocalCoderGateway(
             : { preflightTimeoutMs: options.workspaceProbeTimeoutMs }),
         }));
     const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
+    const immutableBuildAssets =
+      options?.staticDir === undefined
+        ? new Set<string>()
+        : yield* Effect.promise(() => readImmutableBuildAssets(options.staticDir!));
     // The bundle is built before the gateway starts and does not change while it runs.
     const helperBundlePath = options?.helperBundlePath;
     const helperBundleHash =
@@ -814,10 +783,6 @@ export function makeLocalCoderGateway(
       options?.updateWorkspace ?? ((invocation) => runCoderWorkspaceAction(invocation, "update"));
     const installHelper = options?.installHelper ?? installCoderHelper;
     const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
-    const readWorkspaceResourceUsage =
-      options?.readWorkspaceResourceUsage ??
-      ((invocation: CoderInvocation) =>
-        runCoderWorkspaceResourceUsage(invocation, options?.workspaceResourceUsageTimeoutMs));
     const coderInvocationOptions = (deploymentId: string) => ({
       globalConfig: NodePath.join(
         NodePath.dirname(options?.configPath ?? NodePath.join(process.cwd(), "config.json")),
@@ -1822,94 +1787,18 @@ export function makeLocalCoderGateway(
             sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
             return;
           }
+          const lifecycleState = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
+          const traffic =
+            lifecycleState._tag === "Connected" ? lifecycleState.connection.traffic?.() : undefined;
           sendText(
             response,
             200,
             "application/json; charset=utf-8",
-            JSON.stringify({ events: [...diagnosticEventsFor(workspaceId)] }),
+            JSON.stringify({
+              events: [...diagnosticEventsFor(workspaceId)],
+              ...(traffic === undefined ? {} : { traffic }),
+            }),
           );
-          return;
-        }
-        const resourceUsageRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/metrics$/);
-        if (
-          request.method === "GET" &&
-          resourceUsageRoute !== null &&
-          resourceUsageRoute !== undefined
-        ) {
-          let workspaceId: string;
-          try {
-            workspaceId = decodeURIComponent(resourceUsageRoute[1] ?? "");
-          } catch {
-            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
-            return;
-          }
-          // This GET runs `coder` commands, so a cross-site page may not trigger it.
-          const fetchSite = request.headers["sec-fetch-site"];
-          if (fetchSite !== undefined && fetchSite !== "same-origin" && fetchSite !== "none") {
-            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-            return;
-          }
-          const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
-          const deployment =
-            workspace === undefined
-              ? undefined
-              : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
-          if (workspace === undefined || deployment === undefined) {
-            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
-            return;
-          }
-          const state = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
-          if (state._tag !== "Connected") {
-            sendText(
-              response,
-              409,
-              "text/plain; charset=utf-8",
-              "Coder workspace is not connected.",
-            );
-            return;
-          }
-          try {
-            const invocationOptions = coderInvocationOptions(deployment.id);
-            const [usage, healthy] = await Promise.all([
-              runPromise(
-                readWorkspaceResourceUsage(
-                  buildCoderWorkspaceStatsInvocation(deployment, workspace, invocationOptions),
-                ),
-              ),
-              runPromise(
-                listWorkspaces(buildCoderListWorkspacesInvocation(deployment, invocationOptions)),
-              )
-                .then(
-                  (workspaces) =>
-                    workspaces.find((entry) => discoveredWorkspaceMatches(entry, workspace))
-                      ?.healthy ?? null,
-                )
-                .catch(() => null),
-            ]);
-            const currentState = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
-            if (currentState._tag !== "Connected" || currentState.connection !== state.connection) {
-              sendText(
-                response,
-                409,
-                "text/plain; charset=utf-8",
-                "Coder workspace connection changed.",
-              );
-              return;
-            }
-            sendText(
-              response,
-              200,
-              "application/json; charset=utf-8",
-              JSON.stringify({ healthy, ...usage }),
-            );
-          } catch (cause) {
-            sendText(
-              response,
-              502,
-              "text/plain; charset=utf-8",
-              cause instanceof Error ? cause.message : "Coder workspace resource usage failed.",
-            );
-          }
           return;
         }
         if (request.method === "GET" && request.url === "/api/port-forwards") {
@@ -2296,8 +2185,11 @@ export function makeLocalCoderGateway(
           return;
         }
         if (request.method === "GET" && options?.staticDir) {
-          if (await serveStaticFile(response, options.staticDir, requestUrl.pathname)) return;
-          if (await serveStaticFile(response, options.staticDir, "/")) return;
+          const staticDir = options.staticDir;
+          const serve = (pathname: string) =>
+            serveStaticFile(request, response, staticDir, pathname, immutableBuildAssets);
+          if (await serve(requestUrl.pathname)) return;
+          if (await serve("/")) return;
         }
         if (request.method === "GET" && requestUrl.pathname === "/") {
           sendText(response, 200, "text/html; charset=utf-8", indexHtml);

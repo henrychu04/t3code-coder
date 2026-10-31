@@ -57,6 +57,7 @@ export * from "./worktreeSetup.ts";
 
 // Coder: the gateway asset stream and the local gateway wire.
 export * from "./coderAssets.ts";
+export * from "./coderWorkspace.ts";
 export type * from "./coderGateway.ts";
 export * from "./secretRequest.ts";
 export * from "./secretReference.ts";

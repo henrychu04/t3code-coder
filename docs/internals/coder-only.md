@@ -47,12 +47,12 @@ probe is in flight per workspace. The browser retains the last sample with a sta
 probes stop succeeding and shows a slow-connection warning only after consecutive high-latency
 samples. The gateway exposes no latency endpoint and starts no ping process of its own.
 
-The header's workspace health card reads Coder's workspace health from `coder list --output json`.
-While the card is open, the browser refreshes that health and asks the gateway for workspace-scoped
-CPU, memory, and home-disk usage every ten seconds. Each resource sample is a bounded, foreground `coder ssh` invocation of Coder
-2.25.3's `coder stat` commands inside the connected workspace. The gateway accepts only Coder's
-fixed JSON result shape, never samples the shared host explicitly, and does not run resource polling
-while the card is closed.
+The header's workspace health card shows Coder's workspace health from the status loop's
+`coder list --output json`. While the card is open, the browser asks the connected helper for
+CPU, memory, and home-disk usage every ten seconds over its existing RPC connection
+(`coder.workspaceResourceUsage`). The helper runs Coder's `coder stat` commands in the workspace
+and accepts only their fixed JSON result shape, so the laptop starts no process for it. Nothing
+samples resources while the card is closed.
 
 For every connected workspace, the gateway starts one foreground process through the authenticated
 Coder CLI. The process runs a version-matched helper in the Linux workspace and carries T3's Effect
@@ -169,7 +169,7 @@ removed, or the gateway exits.
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> codex / claude
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> git -> Git remote
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> glab -> GitLab
-browser -> 127.0.0.1 gateway -> coder ssh -> coder stat in connected workspace
+browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> coder stat
 local client -> 127.0.0.1:configured port -> coder port-forward -> workspace service
 ```
 

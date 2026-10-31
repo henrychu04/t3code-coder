@@ -78,6 +78,13 @@ export interface CoderHelperConnection {
   readonly drained: Effect.Effect<void>;
   readonly onRpcMessage: (listener: (message: unknown) => void) => () => void;
   readonly close: Effect.Effect<void>;
+  /** Bytes written to and read from this helper's stdio, for the connection diagnostics. */
+  readonly traffic?: () => CoderHelperTraffic;
+}
+
+export interface CoderHelperTraffic {
+  readonly sentBytes: number;
+  readonly receivedBytes: number;
 }
 
 function parseServerConfigResponse(value: unknown): ServerConfig {
@@ -263,6 +270,8 @@ export function connectCoderHelper(
     const connection = yield* Effect.callback<CoderHelperConnection, CoderHelperConnectionError>(
       (resume) => {
         const decoder = new StringDecoder("utf8");
+        let sentBytes = 0;
+        let receivedBytes = 0;
         let stdout = "";
         let stdoutBytes = 0;
         let settled = false;
@@ -367,6 +376,7 @@ export function connectCoderHelper(
           const scanFrom = stdout.length;
           stdout += decoder.write(chunk);
           stdoutBytes += chunk.byteLength;
+          receivedBytes += chunk.byteLength;
           let newline = stdout.indexOf("\n", scanFrom);
           while (newline !== -1) {
             const line = stdout.slice(0, newline);
@@ -471,10 +481,12 @@ export function connectCoderHelper(
                             throw new Error("Coder workspace helper is disconnected.");
                           }
                           const encoded = JSON.stringify(rpcMessage);
-                          if (Buffer.byteLength(encoded, "utf8") > MAX_HELPER_LINE_BYTES) {
+                          const encodedBytes = Buffer.byteLength(encoded, "utf8");
+                          if (encodedBytes > MAX_HELPER_LINE_BYTES) {
                             throw new Error("Coder helper RPC request is too large.");
                           }
                           child.stdin.write(`${encoded}\n`);
+                          sentBytes += encodedBytes + 1;
                         },
                         catch: (cause) =>
                           new CoderHelperConnectionError(
@@ -517,6 +529,7 @@ export function connectCoderHelper(
                       return () => rpcListeners.delete(listener);
                     },
                     close: terminateCoderProcess(process, terminationGraceMs),
+                    traffic: () => ({ sentBytes, receivedBytes }),
                   }),
                 );
               } catch (cause) {
