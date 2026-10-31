@@ -490,6 +490,12 @@ checks that every name here still exists and that every modified upstream file i
   and `linkFence` are advertised; `mcpModeLimitHeader` is omitted. `threadShell.test.ts`'s
   linked-task case drops the switched-off parent step. Cut client pieces are under [Cut
   surfaces](#cut-surfaces).
+- `@`-mentioning a machine (#17130) is carried; its machines are the connected workspaces the
+  composer's workspace links to. `coder/linkedWorkspaces.ts` reads the `workspaceLinks` rules from
+  that workspace and the Linked environments switch, in place of `offersLinkedEnvironmentsAtom`
+  (`state/peerLinks.ts`, cut), and `useComposerMenuItems.ts` offers only those environments.
+  Shared `composerContextReferences.ts` tells the agent to ask for a link in the Links settings in
+  place of calling `t3_environment_link`.
 - The `@` picker lists no threads on linked machines (#26201): `composerThreadItems.ts`, shared
   `composerContextReferences.ts` (`threadContextsOutsideEnvironment`), and the composer hooks keep
   the same-server rules.
@@ -1072,17 +1078,11 @@ them, the file is named here.
   `settings/SourceControlAppSignInSettings.tsx` are cut, and client-runtime `state/sourceControl.ts`
   and `sourceControlClients.ts` have no app-access or sign-in atoms or `appSignInTargetForRemote`.
 - **Linked-environment client pieces.** The hub replaces pairing, so web
-  `EnvironmentContextChip.tsx`, `chat/LinkRequestCard.tsx`, `settings/LinkAccessPicker.tsx`,
-  `LinkMachineSelect.tsx`, `LinkedEnvironmentsSettings.tsx`, `state/peerLinks.ts`,
-  `state/peerPairingCode.ts`, client-runtime `linkRequest.ts`, `PeerLinkRequests`, the `@` machine
-  menu items and machine chips (`useComposerMenuItems.ts`, `ComposerCommandMenu.tsx`,
-  `composerDraftStore.ts`, `composerContextRecords.ts`, `composerContextPresentation.tsx`,
-  `composerContextUndo.ts`, `contextChipAccents.ts`, `ContextChip.tsx`, `useComposerSend.ts`,
-  `useQueuedRunEdit.ts`), the link-request timeline card (`TimelineV2EventRow.tsx`,
-  `session-logic.ts`), and the `t3_environment_link`/`unlink` tool presentations
-  (`t3McpToolPresentation.ts`, `t3ToolSummary.ts`) are cut. The contract's `environment` record kind
-  keeps a definition in `contextPresentationRegistry.ts` and an unavailable chip in
-  `UserMessageContextChips.tsx`. The peer tests that pair two HTTP servers
+  `chat/LinkRequestCard.tsx`, `settings/LinkAccessPicker.tsx`, `LinkMachineSelect.tsx`,
+  `LinkedEnvironmentsSettings.tsx`, `state/peerLinks.ts`, `state/peerPairingCode.ts`,
+  client-runtime `linkRequest.ts`, `PeerLinkRequests`, the link-request timeline card
+  (`TimelineV2EventRow.tsx`, `session-logic.ts`), and the `t3_environment_link`/`unlink` tool
+  presentations (`t3McpToolPresentation.ts`, `t3ToolSummary.ts`) are cut. The peer tests that pair two HTTP servers
   (`PeerForwarding.test.ts`, `RemoteDelegation.test.ts`, `linkOrigin.test.ts`,
   `PeerLinks.testkit.ts`, `PeerMcpClient.test.ts`) are not carried; `coderHub.test.ts` and the
   gateway's `hub.test.ts` test the transport.
