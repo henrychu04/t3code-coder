@@ -73,8 +73,9 @@ vi.mock(import("./settingsLayout"), async (original) => ({
       <h3>{title}</h3>
       {description}
       {status && (
+        // Coder: the artifact rule is titled for saved image artifacts.
         <div
-          data-testid={`${title === "Delete old browser artifacts" ? "artifact" : "logs"}-retention-status`}
+          data-testid={`${title === "Delete old saved image artifacts" ? "artifact" : "logs"}-retention-status`}
         >
           {status}
         </div>

@@ -12,6 +12,14 @@ vi.mock("@effect/atom-react", async (original) => ({
   useAtomValue: (atom: unknown) =>
     atom === primaryServerKeybindingsAtom ? DEFAULT_RESOLVED_KEYBINDINGS : [],
 }));
+// Coder: Add project also lists each deployment's Coder workspaces, read from the Coder context.
+vi.mock("../coder/CoderBootstrap", () => ({
+  useCoder: () => ({
+    config: { deployments: [], workspaces: [] },
+    saveConfig: async () => undefined,
+    connectWorkspace: async () => undefined,
+  }),
+}));
 vi.mock("../hooks/useTheme", () => ({
   useRenderedAppearance: () => "light",
   useTheme: () => ({ theme: "t3-chat", resolvedTheme: "light", appearanceMode: "light" }),
@@ -102,6 +110,8 @@ describe.each(["repository", "folder", "destination"] as const)("add-project %s"
   ])("keeps Enter in the input during composition: %j", async (composition) => {
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
     await act(() => openCommandPalette({ open: "add-project" }));
+    // Coder: Add project opens the workspace picker first.
+    await page.getByText("Local", { exact: true }).click();
     await page.getByText(step === "folder" ? "Local folder" : "Git URL", { exact: true }).click();
     const input = () => page.getByRole("combobox");
     if (step === "destination") {
