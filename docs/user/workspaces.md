@@ -81,6 +81,9 @@ own thread, and the work runs as an ordinary thread in the other workspace. Disc
 workspace stops its helper and the work running there; the task waits and reports how that work
 ended once the workspace is connected again.
 
+To point an agent at a linked workspace in a message, type `@` and part of the workspace's name in
+the composer and pick it. The list shows the connected workspaces the current one links to.
+
 ## Data ownership
 
 Repositories, prompts, responses, provider sessions, terminals, checkpoints, project records, and

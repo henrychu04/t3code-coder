@@ -302,6 +302,9 @@ export function useComposerSend(input: ComposerSendInput) {
   );
   const setComposerDraftReviewComments = useComposerDraftStore((store) => store.setReviewComments);
   const setComposerDraftThreadContexts = useComposerDraftStore((store) => store.setThreadContexts);
+  const setComposerDraftEnvironmentContexts = useComposerDraftStore(
+    (store) => store.setEnvironmentContexts,
+  );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const sendToMultipleModels = useMultipleModelSend({
     environmentId,
@@ -399,13 +402,14 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
     if (onSideChat && sendCtx && sideChatCommand && sideChatDisabledReason === null) {
-      // Coder: no preview annotations or machine contexts to check.
+      // Coder: no preview annotations to check.
       if (
         sendCtx.images.length > 0 ||
         sendCtx.files.length > 0 ||
         filterTerminalContextsWithText(sendCtx.terminalContexts).length > 0 ||
         sendCtx.reviewComments.length > 0 ||
-        sendCtx.threadContexts.length > 0
+        sendCtx.threadContexts.length > 0 ||
+        sendCtx.environmentContexts.length > 0
       ) {
         toastManager.add(
           stackedThreadToast({
@@ -474,6 +478,7 @@ export function useComposerSend(input: ComposerSendInput) {
       terminalContexts: composerTerminalContexts,
       reviewComments: composerReviewComments,
       threadContexts: composerThreadContexts,
+      environmentContexts: composerEnvironmentContexts,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
@@ -513,6 +518,7 @@ export function useComposerSend(input: ComposerSendInput) {
           terminalContexts: composerTerminalContexts,
           reviewComments: composerReviewComments,
           threadContexts: composerThreadContexts,
+          environmentContexts: composerEnvironmentContexts,
         },
         setThreadError,
       );
@@ -527,7 +533,10 @@ export function useComposerSend(input: ComposerSendInput) {
       prompt: promptForSend,
       imageCount: composerImages.length + composerFiles.length,
       terminalContexts: composerTerminalContexts,
-      elementContextCount: composerReviewComments.length + composerThreadContexts.length,
+      elementContextCount:
+        composerReviewComments.length +
+        composerThreadContexts.length +
+        composerEnvironmentContexts.length,
     });
     if (
       sendInteractionModeEnabled &&
@@ -554,6 +563,7 @@ export function useComposerSend(input: ComposerSendInput) {
       const followUpTerminalContexts = [...sendableComposerTerminalContexts];
       const followUpReviewComments = [...composerReviewComments];
       const followUpThreadContexts = [...composerThreadContexts];
+      const followUpEnvironmentContexts = [...composerEnvironmentContexts];
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
@@ -563,6 +573,7 @@ export function useComposerSend(input: ComposerSendInput) {
           terminalContexts: sendableComposerTerminalContexts,
           reviewComments: composerReviewComments,
           threadContexts: composerThreadContexts,
+          environmentContexts: composerEnvironmentContexts,
         }),
         interactionMode: followUp.interactionMode,
       });
@@ -575,6 +586,7 @@ export function useComposerSend(input: ComposerSendInput) {
             terminalContexts: followUpTerminalContexts,
             reviewComments: followUpReviewComments,
             threadContexts: followUpThreadContexts,
+            environmentContexts: followUpEnvironmentContexts,
           },
           writePrompt: (prompt) => setComposerDraftPrompt(composerDraftTarget, prompt),
           writeTerminalContexts: (contexts) =>
@@ -583,6 +595,8 @@ export function useComposerSend(input: ComposerSendInput) {
             setComposerDraftReviewComments(composerDraftTarget, [...comments]),
           writeThreadContexts: (records) =>
             setComposerDraftThreadContexts(composerDraftTarget, [...records]),
+          writeEnvironmentContexts: (records) =>
+            setComposerDraftEnvironmentContexts(composerDraftTarget, [...records]),
           resetCursor: (options) => composerRef.current?.resetCursorState(options),
         });
       } else if (
@@ -599,7 +613,8 @@ export function useComposerSend(input: ComposerSendInput) {
       composerFiles.length === 0 &&
       sendableComposerTerminalContexts.length === 0 &&
       composerReviewComments.length === 0 &&
-      composerThreadContexts.length === 0
+      composerThreadContexts.length === 0 &&
+      composerEnvironmentContexts.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
     if (standaloneSlashCommand && multipleModelSelections === null) {
@@ -644,6 +659,7 @@ export function useComposerSend(input: ComposerSendInput) {
       sendableTerminalContexts: sendableComposerTerminalContexts,
       reviewComments: composerReviewComments,
       threadContexts: composerThreadContexts,
+      environmentContexts: composerEnvironmentContexts,
     });
     const {
       files: composerFilesSnapshot,
@@ -651,6 +667,7 @@ export function useComposerSend(input: ComposerSendInput) {
       terminalContexts: composerTerminalContextsSnapshot,
       reviewComments: composerReviewCommentsSnapshot,
       threadContexts: composerThreadContextsSnapshot,
+      environmentContexts: composerEnvironmentContextsSnapshot,
       messageText: messageTextForSend,
     } = sendSnapshot;
     const {
@@ -684,6 +701,7 @@ export function useComposerSend(input: ComposerSendInput) {
         terminalContexts: composerTerminalContextsSnapshot,
         reviewComments: composerReviewCommentsSnapshot,
         threadContexts: composerThreadContextsSnapshot,
+        environmentContexts: composerEnvironmentContextsSnapshot,
         attachments: composerAttachmentsSnapshot.map((attachment, index) => ({
           attachment,
           attachmentId: attachmentIds[index] ?? attachment.id,

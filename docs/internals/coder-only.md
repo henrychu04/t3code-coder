@@ -122,11 +122,16 @@ removed once it is older than `STALE_CALL_MS`. If a bridge cannot be
 created, turns run without T3 tools. Workspace processes run as the same OS user; these
 directories are not an isolation boundary between mutually untrusted agents.
 
-The bridge carries upstream's orchestrator, thread, project, environment, worktree, pull-request,
-and `html_render` toolkits. The pull-request tools accept only merge requests on a GitLab host that a
-workspace project uses; project clones go through the same GitLab-only repository service as the
-browser. Preview, device, attachment-upload, and `html_preview` toolkits are not carried, and
-neither is upstream's MCP HTTP server.
+The bridge carries upstream's orchestrator, thread, attachment, project, environment, worktree,
+pull-request, and `html_render` toolkits. The pull-request tools accept only merge requests on a
+GitLab host that a workspace project uses; project clones go through the same GitLab-only repository
+service as the browser. With no HTTP origin to upload to, `t3_attachment_prepare_upload` takes the
+absolute workspace path of a file the agent already has and stores it as a pending upload in
+process, so attachment bytes never pass through the bridge's request files. Attachments reach only
+threads in the caller's own workspace: the attachment tools take no `environmentId`, as upstream's,
+so a thread in a linked workspace answers `thread_not_found`, and an upload forwarded through the
+gateway hub is refused because its path would name a file in the other workspace. Preview, device,
+and `html_preview` toolkits are not carried, and neither is upstream's MCP HTTP server.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
@@ -485,6 +490,12 @@ checks that every name here still exists and that every modified upstream file i
   and `linkFence` are advertised; `mcpModeLimitHeader` is omitted. `threadShell.test.ts`'s
   linked-task case drops the switched-off parent step. Cut client pieces are under [Cut
   surfaces](#cut-surfaces).
+- `@`-mentioning a machine (#17130) is carried; its machines are the connected workspaces the
+  composer's workspace links to. `coder/linkedWorkspaces.ts` reads the `workspaceLinks` rules from
+  that workspace and the Linked environments switch, in place of `offersLinkedEnvironmentsAtom`
+  (`state/peerLinks.ts`, cut), and `useComposerMenuItems.ts` offers only those environments.
+  Shared `composerContextReferences.ts` tells the agent to ask for a link in the Links settings in
+  place of calling `t3_environment_link`.
 - The `@` picker lists no threads on linked machines (#26201): `composerThreadItems.ts`, shared
   `composerContextReferences.ts` (`threadContextsOutsideEnvironment`), and the composer hooks keep
   the same-server rules.
@@ -611,6 +622,13 @@ checks that every name here still exists and that every modified upstream file i
 - No `lastErrorCode`: the server's `threadErrorSummary`, `ProjectionStore.ts`'s shell state,
   client-runtime's `ThreadRuntimeSummary` and `state/models.ts` drop it (the contract field stays).
 - `mcp/toolkits/orchestrator/handlers.ts` has no `t3_environment_link` or `t3_environment_unlink`.
+- `mcp/toolkits/attachment/tools.ts`: `t3_attachment_prepare_upload` takes a `path` beside
+  `upload`, needs storage's services, returns only `attachmentId`, and its description names the
+  path instead of a URL to POST to. `handlers.ts` stores the file through upstream's
+  `validateAttachmentUploadToken` and `storeAttachmentUpload` (`storeWorkspaceFile`) after checking
+  it is an absolute path to a regular file of exactly `upload.sizeBytes`, and refuses a call the
+  gateway hub forwards (`client.linked`). Upstream's `core.test.ts` attachment cases run in
+  `attachment/handlers.test.ts`.
 - `persistence/Errors.ts` has no pairing-link correlation or auth repository errors.
 
 ### HTML renders
@@ -811,7 +829,7 @@ checks that every name here still exists and that every modified upstream file i
   offline or reconnecting banner, whose Reconnect only retries; `useDraftEnvironmentRouting` keeps
   only the manual machine switch; `useComposerSend` has no feedback upload, `/usage-limits`, load
   balancing, or preview-annotation send (`composerSend.logic.ts` has no load-balancing helpers), and
-  its `/side` text-only check reads no annotations or machine contexts; `useRightPanelActions` has
+  its `/side` text-only check reads no annotations; `useRightPanelActions` has
   no browser or device surfaces, so no `embedded` flag; `useChatTerminalActions` opens no script
   preview; `useProjectCloneBanner` shows no file-copy banner; `useComposerResume` and
   `useThreadLifecycle` call no `clearUsageLimitsFor`; `ThreadErrorBanner` and `ChatBannerLane` take
@@ -1067,17 +1085,11 @@ them, the file is named here.
   `settings/SourceControlAppSignInSettings.tsx` are cut, and client-runtime `state/sourceControl.ts`
   and `sourceControlClients.ts` have no app-access or sign-in atoms or `appSignInTargetForRemote`.
 - **Linked-environment client pieces.** The hub replaces pairing, so web
-  `EnvironmentContextChip.tsx`, `chat/LinkRequestCard.tsx`, `settings/LinkAccessPicker.tsx`,
-  `LinkMachineSelect.tsx`, `LinkedEnvironmentsSettings.tsx`, `state/peerLinks.ts`,
-  `state/peerPairingCode.ts`, client-runtime `linkRequest.ts`, `PeerLinkRequests`, the `@` machine
-  menu items and machine chips (`useComposerMenuItems.ts`, `ComposerCommandMenu.tsx`,
-  `composerDraftStore.ts`, `composerContextRecords.ts`, `composerContextPresentation.tsx`,
-  `composerContextUndo.ts`, `contextChipAccents.ts`, `ContextChip.tsx`, `useComposerSend.ts`,
-  `useQueuedRunEdit.ts`), the link-request timeline card (`TimelineV2EventRow.tsx`,
-  `session-logic.ts`), and the `t3_environment_link`/`unlink` tool presentations
-  (`t3McpToolPresentation.ts`, `t3ToolSummary.ts`) are cut. The contract's `environment` record kind
-  keeps a definition in `contextPresentationRegistry.ts` and an unavailable chip in
-  `UserMessageContextChips.tsx`. The peer tests that pair two HTTP servers
+  `chat/LinkRequestCard.tsx`, `settings/LinkAccessPicker.tsx`, `LinkMachineSelect.tsx`,
+  `LinkedEnvironmentsSettings.tsx`, `state/peerLinks.ts`, `state/peerPairingCode.ts`,
+  client-runtime `linkRequest.ts`, `PeerLinkRequests`, the link-request timeline card
+  (`TimelineV2EventRow.tsx`, `session-logic.ts`), and the `t3_environment_link`/`unlink` tool
+  presentations (`t3McpToolPresentation.ts`, `t3ToolSummary.ts`) are cut. The peer tests that pair two HTTP servers
   (`PeerForwarding.test.ts`, `RemoteDelegation.test.ts`, `linkOrigin.test.ts`,
   `PeerLinks.testkit.ts`, `PeerMcpClient.test.ts`) are not carried; `coderHub.test.ts` and the
   gateway's `hub.test.ts` test the transport.

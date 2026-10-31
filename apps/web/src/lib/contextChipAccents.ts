@@ -14,7 +14,7 @@ export const CONTEXT_CHIP_ACCENTS = {
   "pr-closed": "oklch(0.62 0.16 16)",
   skill: "oklch(0.62 0.16 322)",
   thread: "oklch(0.62 0.12 190)",
-  // Coder: no machine (environment) chips; the @-machine picker is not carried.
+  environment: "oklch(0.62 0.11 145)",
   citation: "oklch(0.62 0.16 259)",
   "doc-pdf": "oklch(0.62 0.16 24)",
   "doc-word": "oklch(0.62 0.136 248)",
