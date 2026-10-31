@@ -171,13 +171,14 @@ const terminateCoderProcess = (
       }
     };
     // A negotiated helper is asked to exit, so `coder ssh` ends its session itself; before that,
-    // only signals stop the launch.
-    if (!process.negotiated) endStdin();
+    // or once stdin can no longer carry the request, only signals stop the launch.
+    const canRequestExit = process.negotiated && !stdin.destroyed && !stdin.writableEnded;
+    if (!canRequestExit) endStdin();
     return terminateChildProcess({
       child: process.child,
       exit: process.exit,
       graceMs: terminationGraceMs,
-      ...(process.negotiated ? { requestExit: () => endStdin(SHUTDOWN_REQUEST) } : {}),
+      ...(canRequestExit ? { requestExit: () => endStdin(SHUTDOWN_REQUEST) } : {}),
     });
   });
 
