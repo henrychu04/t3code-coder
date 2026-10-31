@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { CoderWorkspaceResourceUsage, EnvironmentId } from "@t3tools/contracts";
+import { createEnvironmentRpcCommand } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import {
   ActivityIcon,
   CpuIcon,
@@ -11,12 +13,19 @@ import {
 } from "lucide-react";
 
 import { useCoder } from "../coder/CoderBootstrap";
-import { loadCoderWorkspaceMetrics, type CoderWorkspaceMetrics } from "../coder/api";
 import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
+import { connectionAtomRuntime } from "../connection/runtime";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironments } from "../state/environments";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 
 const RESOURCE_REFRESH_MS = 10_000;
+
+// The helper runs `coder stat` in its workspace, so no `coder ssh` starts on the laptop.
+const resourceUsageCommand = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "coder-workspace-resource-usage",
+  tag: "coder.workspaceResourceUsage",
+});
 const AUTOSTOP_REFRESH_MS = 1_000;
 
 export function formatCoderWorkspaceLatency(latencyMs: number): string {
@@ -94,33 +103,33 @@ function ResourceRow({
   );
 }
 
-function ResourceUsage({ usage }: { readonly usage: CoderWorkspaceMetrics }) {
-  const cpuPercent = (usage.cpu.used / usage.cpu.total) * 100;
-  const memoryPercent = (usage.memory.used / usage.memory.total) * 100;
-  const diskPercent = (usage.disk.used / usage.disk.total) * 100;
+function ResourceUsage({ usage }: { readonly usage: CoderWorkspaceResourceUsage }) {
+  const row = (
+    icon: LucideIcon,
+    label: string,
+    stat: { readonly used: number; readonly total: number | null },
+    format: (value: number) => string,
+  ) => (
+    <ResourceRow
+      detail={
+        // A workspace without a limit for this resource reports no total.
+        stat.total === null
+          ? `${format(stat.used)} used, no limit`
+          : `${format(stat.used)} of ${format(stat.total)}`
+      }
+      icon={icon}
+      label={label}
+      percent={stat.total === null ? 0 : (stat.used / stat.total) * 100}
+      value={
+        stat.total === null ? format(stat.used) : formatCoderResourcePercent(stat.used, stat.total)
+      }
+    />
+  );
   return (
     <div className="space-y-3">
-      <ResourceRow
-        detail={`${usage.cpu.used.toFixed(2)} of ${usage.cpu.total.toFixed(0)} cores`}
-        icon={CpuIcon}
-        label="CPU"
-        percent={cpuPercent}
-        value={formatCoderResourcePercent(usage.cpu.used, usage.cpu.total)}
-      />
-      <ResourceRow
-        detail={`${formatCoderResourceBytes(usage.memory.used)} of ${formatCoderResourceBytes(usage.memory.total)}`}
-        icon={MemoryStickIcon}
-        label="Memory"
-        percent={memoryPercent}
-        value={formatCoderResourcePercent(usage.memory.used, usage.memory.total)}
-      />
-      <ResourceRow
-        detail={`${formatCoderResourceBytes(usage.disk.used)} of ${formatCoderResourceBytes(usage.disk.total)}`}
-        icon={HardDriveIcon}
-        label="Home disk"
-        percent={diskPercent}
-        value={formatCoderResourcePercent(usage.disk.used, usage.disk.total)}
-      />
+      {row(CpuIcon, "CPU", usage.cpu, (value) => `${value.toFixed(2)} cores`)}
+      {row(MemoryStickIcon, "Memory", usage.memory, formatCoderResourceBytes)}
+      {row(HardDriveIcon, "Home disk", usage.disk, formatCoderResourceBytes)}
     </div>
   );
 }
@@ -133,7 +142,7 @@ export function CoderWorkspaceLatency({
   const { workspaceNetwork, workspaceRuntime } = useCoder();
   const { environments } = useEnvironments();
   const [cardOpen, setCardOpen] = useState(false);
-  const [resourceUsage, setResourceUsage] = useState<CoderWorkspaceMetrics | null>(null);
+  const [resourceUsage, setResourceUsage] = useState<CoderWorkspaceResourceUsage | null>(null);
   const [resourceError, setResourceError] = useState(false);
   const [now, setNow] = useState(Date.now());
   const environment = environments.find((entry) => entry.environmentId === environmentId);
@@ -151,14 +160,16 @@ export function CoderWorkspaceLatency({
     let cancelled = false;
     let timer: number | undefined;
     const refresh = async (): Promise<void> => {
-      try {
-        const usage = await loadCoderWorkspaceMetrics(workspaceId);
-        if (!cancelled) {
-          setResourceUsage(usage);
+      const result = await resourceUsageCommand
+        .run(appAtomRegistry, { environmentId, input: {} })
+        .catch(() => null);
+      if (!cancelled) {
+        if (result !== null && AsyncResult.isSuccess(result)) {
+          setResourceUsage(result.value);
           setResourceError(false);
+        } else {
+          setResourceError(true);
         }
-      } catch {
-        if (!cancelled) setResourceError(true);
       }
       if (!cancelled) timer = window.setTimeout(() => void refresh(), RESOURCE_REFRESH_MS);
     };
@@ -167,7 +178,7 @@ export function CoderWorkspaceLatency({
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [cardOpen, workspaceId]);
+  }, [cardOpen, environmentId, workspaceId]);
 
   useEffect(() => {
     if (
@@ -216,7 +227,7 @@ export function CoderWorkspaceLatency({
     requiredStopLabel !== null &&
     typeof requiredStopAt === "string" &&
     Date.parse(requiredStopAt) - now <= 30 * 60_000;
-  const healthy = resourceUsage?.healthy ?? runtime?.healthy;
+  const healthy = runtime?.healthy;
   const healthLabel = healthy === true ? "Healthy" : healthy === false ? "Unhealthy" : "Connected";
   const healthDotClass =
     healthy === false ? "bg-destructive" : "bg-emerald-500 dark:bg-emerald-400";

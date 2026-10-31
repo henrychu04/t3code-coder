@@ -216,7 +216,7 @@ export function WorkspaceConnectionStatus({
     let timer: number | undefined;
     const refresh = async (): Promise<void> => {
       try {
-        const events = await loadCoderWorkspaceDiagnostics(workspace.id);
+        const { events } = await loadCoderWorkspaceDiagnostics(workspace.id);
         const running = [...events].reverse().find((event) => event.status === "running");
         if (!cancelled) setDiagnosticPhase(running?.phase ?? null);
       } catch {

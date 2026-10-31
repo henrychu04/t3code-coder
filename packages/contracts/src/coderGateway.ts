@@ -85,16 +85,6 @@ export interface WorkspaceDiagnosticEvent {
   readonly durationMs?: number;
 }
 
-export interface CoderWorkspaceResourceUsage {
-  readonly cpu: { readonly used: number; readonly total: number; readonly unit: "cores" };
-  readonly memory: { readonly used: number; readonly total: number; readonly unit: "B" };
-  readonly disk: { readonly used: number; readonly total: number; readonly unit: "B" };
-}
-
-export interface CoderWorkspaceMetrics extends CoderWorkspaceResourceUsage {
-  readonly healthy: boolean | null;
-}
-
 export type CoderDeploymentAuthenticationStatus =
   | "authenticated"
   | "unauthenticated"
