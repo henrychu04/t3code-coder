@@ -7,7 +7,6 @@ import type {
   DiscoveredCoderWorkspace,
   WorkspaceDiagnosticPhase,
   WorkspaceDiagnosticEvent,
-  CoderWorkspaceMetrics,
   CoderDeploymentAuthenticationStatus,
 } from "@t3tools/contracts";
 export type {
@@ -21,8 +20,6 @@ export type {
   CoderWorkspaceRuntimeStatus,
   WorkspaceDiagnosticPhase,
   WorkspaceDiagnosticEvent,
-  CoderWorkspaceResourceUsage,
-  CoderWorkspaceMetrics,
   CoderDeploymentAuthenticationStatus,
 } from "@t3tools/contracts";
 async function fetchCoder(path: string, init?: RequestInit): Promise<Response> {
@@ -130,20 +127,35 @@ export async function disconnectCoderWorkspace(workspaceId: string): Promise<voi
   });
 }
 
-export async function loadCoderWorkspaceDiagnostics(
-  workspaceId: string,
-): Promise<readonly WorkspaceDiagnosticEvent[]> {
+/** Bytes sent to and received from the connected helper since its connection opened. */
+export interface CoderWorkspaceTraffic {
+  readonly sentBytes: number;
+  readonly receivedBytes: number;
+}
+
+export async function loadCoderWorkspaceDiagnostics(workspaceId: string): Promise<{
+  readonly events: readonly WorkspaceDiagnosticEvent[];
+  readonly traffic: CoderWorkspaceTraffic | null;
+}> {
   const response = await fetchCoder(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`,
     {
       cache: "no-store",
     },
   );
-  const events = ((await response.json()) as { readonly events?: unknown }).events;
+  const body = (await response.json()) as { readonly events?: unknown; readonly traffic?: unknown };
+  const events = body.events;
   if (!Array.isArray(events) || !events.every(isWorkspaceDiagnosticEvent)) {
     throw new Error("Coder returned invalid connection diagnostics.");
   }
-  return events;
+  const traffic = body.traffic as Partial<CoderWorkspaceTraffic> | undefined;
+  return {
+    events,
+    traffic:
+      typeof traffic?.sentBytes === "number" && typeof traffic.receivedBytes === "number"
+        ? { sentBytes: traffic.sentBytes, receivedBytes: traffic.receivedBytes }
+        : null,
+  };
 }
 
 const WORKSPACE_DIAGNOSTIC_PHASES = new Set<WorkspaceDiagnosticPhase>([
@@ -172,45 +184,6 @@ function isWorkspaceDiagnosticEvent(value: unknown): value is WorkspaceDiagnosti
         Number.isFinite(record.durationMs) &&
         record.durationMs >= 0))
   );
-}
-
-function isResourceMeasurement(
-  value: unknown,
-  unit: "cores" | "B",
-): value is { readonly used: number; readonly total: number; readonly unit: "cores" | "B" } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.used === "number" &&
-    Number.isFinite(record.used) &&
-    record.used >= 0 &&
-    typeof record.total === "number" &&
-    Number.isFinite(record.total) &&
-    record.total > 0 &&
-    record.unit === unit
-  );
-}
-
-export async function loadCoderWorkspaceMetrics(
-  workspaceId: string,
-): Promise<CoderWorkspaceMetrics> {
-  const response = await fetchCoder(`/api/workspaces/${encodeURIComponent(workspaceId)}/metrics`, {
-    cache: "no-store",
-  });
-  const value = (await response.json()) as unknown;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Coder returned invalid workspace resource usage.");
-  }
-  const record = value as Record<string, unknown>;
-  if (
-    (record.healthy !== null && typeof record.healthy !== "boolean") ||
-    !isResourceMeasurement(record.cpu, "cores") ||
-    !isResourceMeasurement(record.memory, "B") ||
-    !isResourceMeasurement(record.disk, "B")
-  ) {
-    throw new Error("Coder returned invalid workspace resource usage.");
-  }
-  return value as CoderWorkspaceMetrics;
 }
 
 export async function restartCoderWorkspace(workspaceId: string): Promise<void> {

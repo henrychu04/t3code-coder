@@ -19,6 +19,9 @@ export const CODER_HUB_OUTBOX_METHOD = "coder.hub.outbox";
 export const CODER_HUB_REPLY_METHOD = "coder.hub.reply";
 export const CODER_HUB_INVOKE_METHOD = "coder.hub.invoke";
 
+/** One RPC frame between browser, gateway and helper; bounds per-message buffering at each hop. */
+export const CODER_RPC_FRAME_MAX_BYTES = 8 * 1024 * 1024;
+
 /** Only the gateway calls these; the browser bridge refuses them. */
 export const CODER_HUB_METHODS: ReadonlySet<string> = new Set([
   CODER_HUB_OUTBOX_METHOD,

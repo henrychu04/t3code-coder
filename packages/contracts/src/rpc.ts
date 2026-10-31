@@ -373,6 +373,8 @@ import {
   CoderWriteRequestBodyInput,
 } from "./coderAssets.ts";
 // Coder
+import { CoderWorkspaceResourceUsage, CoderWorkspaceResourceUsageError } from "./coderWorkspace.ts";
+// Coder
 import {
   OrchestrationV2ThreadBoundedSnapshot,
   OrchestrationV2ThreadHistoryPage,
@@ -590,6 +592,7 @@ export const WS_METHODS = {
   projectsGetConfig: "projects.getConfig",
   coderServeAsset: "coder.serveAsset",
   coderWriteRequestBody: "coder.writeRequestBody",
+  coderWorkspaceResourceUsage: "coder.workspaceResourceUsage",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
   reviewOpenDiffFileContents: "review.openDiffFileContents",
@@ -2003,6 +2006,13 @@ const WsCoderWriteRequestBodyRpc = Rpc.make(WS_METHODS.coderWriteRequestBody, {
   error: CoderRequestBodyError,
 });
 
+/** Coder: the helper runs `coder stat` in its workspace for the workspace health card. */
+const WsCoderWorkspaceResourceUsageRpc = Rpc.make(WS_METHODS.coderWorkspaceResourceUsage, {
+  payload: Schema.Struct({}),
+  success: CoderWorkspaceResourceUsage,
+  error: CoderWorkspaceResourceUsageError,
+});
+
 const WsSubscribeVcsRefStatusRpc = Rpc.make(WS_METHODS.subscribeVcsRefStatus, {
   payload: VcsStatusInput,
   success: VcsRefStatusStreamEvent,
@@ -2110,6 +2120,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsAttachmentsDeleteRpc,
   WsCoderServeAssetRpc,
   WsCoderWriteRequestBodyRpc,
+  WsCoderWorkspaceResourceUsageRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsServerDiscoverSourceControlRpc,

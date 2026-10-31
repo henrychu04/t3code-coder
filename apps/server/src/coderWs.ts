@@ -1,4 +1,5 @@
 // Coder: the helper's fork-only RPC methods, served beside upstream's handlers in `ws.ts`.
+import { CODER_RPC_FRAME_MAX_BYTES } from "@t3tools/coder-cli/rpc";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -37,6 +38,8 @@ import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
+import * as ProcessRunner from "./processRunner.ts";
+import { readCoderWorkspaceResourceUsage } from "./coderWorkspaceStats.ts";
 
 /** The methods only the helper serves; `ws.ts` builds every other `CoderWsRpcGroup` method. */
 export const CODER_WS_METHODS = [
@@ -47,14 +50,15 @@ export const CODER_WS_METHODS = [
   WS_METHODS.projectsGetConfig,
   WS_METHODS.coderServeAsset,
   WS_METHODS.coderWriteRequestBody,
+  WS_METHODS.coderWorkspaceResourceUsage,
   WS_METHODS.subscribeVcsRefStatus,
   WS_METHODS.vcsRenameThreadBranch,
   WS_METHODS.reviewOpenDiffFileContents,
   WS_METHODS.reviewReadDiffFileChunk,
 ] as const;
 
-// Helper stdio frames are limited to 8 MiB, including RPC overhead.
-const HELPER_STDIO_FRAME_LIMIT_BYTES = 8 * 1024 * 1024 - 64 * 1024;
+// Leaves room for the RPC envelope around the value inside one helper stdio frame.
+const HELPER_STDIO_FRAME_LIMIT_BYTES = CODER_RPC_FRAME_MAX_BYTES - 64 * 1024;
 
 /** Fail a snapshot that cannot fit one helper stdio frame before transport encoding. */
 export function exceedsHelperStdioFrame(value: unknown): boolean {
@@ -84,6 +88,7 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
     const path = yield* Path.Path;
     const fileSystem = yield* FileSystem.FileSystem;
     const { descriptor } = yield* CoderEnvironment.CoderEnvironment;
+    const processRunner = yield* ProcessRunner.ProcessRunner;
 
     // Coder: upstream's HTTP bounded thread snapshot, served over helper stdio.
     const loadThreadSnapshotWindow = (threadId: ThreadId, deferWork: boolean) =>
@@ -434,6 +439,10 @@ export const makeHandlers = ({ serverCommandId, refreshGitStatus }: UpstreamHelp
       // process; an upload's body arrives in chunks.
       [WS_METHODS.coderServeAsset]: (input) => assets.serve(input),
       [WS_METHODS.coderWriteRequestBody]: (input) => assets.writeRequestBody(input),
+      [WS_METHODS.coderWorkspaceResourceUsage]: () =>
+        readCoderWorkspaceResourceUsage.pipe(
+          Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+        ),
       // Coder: subscribe to non-mutating local branch status.
       [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatusBroadcaster.streamRefStatus(cwd),
       // Coder: rename the branch and managed worktree together.

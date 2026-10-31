@@ -20,9 +20,14 @@ import {
   REMOTE_PREFLIGHT_FAILED_PREFIX,
   type CoderInvocation,
 } from "./command.ts";
-import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION, CoderHelperInfo } from "./rpc.ts";
+import {
+  CODER_HELPER_INFO_METHOD,
+  CODER_HELPER_PROTOCOL_VERSION,
+  CODER_RPC_FRAME_MAX_BYTES,
+  CoderHelperInfo,
+} from "./rpc.ts";
 
-const MAX_HELPER_LINE_BYTES = 8 * 1024 * 1024;
+const MAX_HELPER_LINE_BYTES = CODER_RPC_FRAME_MAX_BYTES;
 const MAX_HELPER_ERROR_BYTES = 32 * 1024;
 const MAX_HELPER_PREAMBLE_BYTES = 32 * 1024;
 const PREAMBLE_TAIL_CHARS = 2 * 1024;
@@ -73,6 +78,13 @@ export interface CoderHelperConnection {
   readonly drained: Effect.Effect<void>;
   readonly onRpcMessage: (listener: (message: unknown) => void) => () => void;
   readonly close: Effect.Effect<void>;
+  /** Bytes written to and read from this helper's stdio, for the connection diagnostics. */
+  readonly traffic?: () => CoderHelperTraffic;
+}
+
+export interface CoderHelperTraffic {
+  readonly sentBytes: number;
+  readonly receivedBytes: number;
 }
 
 function parseServerConfigResponse(value: unknown): ServerConfig {
@@ -238,6 +250,8 @@ export function connectCoderHelper(
     readonly readySentinel?: string;
     readonly spawnProcess?: SpawnCoderProcess;
     readonly terminationGraceMs?: number;
+    /** Aborting before negotiation completes stops the child and fails the connection. */
+    readonly signal?: AbortSignal;
   },
 ): Effect.Effect<CoderHelperConnection, CoderHelperConnectionError, Scope.Scope> {
   return Effect.gen(function* () {
@@ -256,6 +270,8 @@ export function connectCoderHelper(
     const connection = yield* Effect.callback<CoderHelperConnection, CoderHelperConnectionError>(
       (resume) => {
         const decoder = new StringDecoder("utf8");
+        let sentBytes = 0;
+        let receivedBytes = 0;
         let stdout = "";
         let stdoutBytes = 0;
         let settled = false;
@@ -271,6 +287,7 @@ export function connectCoderHelper(
           negotiationTimer = undefined;
           child.off("error", onError);
           child.off("exit", onEarlyExit);
+          options?.signal?.removeEventListener("abort", onAbort);
         };
         const fail = (cause: unknown) => {
           if (settled) return;
@@ -299,6 +316,7 @@ export function connectCoderHelper(
           runFork(terminateCoderProcess(process, terminationGraceMs));
         };
         const onError = (cause: Error) => fail(cause);
+        const onAbort = () => terminateForFailure("Coder workspace connection was cancelled.");
         const startTimer = (timeoutMs: number, message: string) => {
           if (negotiationTimer !== undefined) clearTimeout(negotiationTimer);
           negotiationTimer = setTimeout(() => {
@@ -358,6 +376,7 @@ export function connectCoderHelper(
           const scanFrom = stdout.length;
           stdout += decoder.write(chunk);
           stdoutBytes += chunk.byteLength;
+          receivedBytes += chunk.byteLength;
           let newline = stdout.indexOf("\n", scanFrom);
           while (newline !== -1) {
             const line = stdout.slice(0, newline);
@@ -462,10 +481,12 @@ export function connectCoderHelper(
                             throw new Error("Coder workspace helper is disconnected.");
                           }
                           const encoded = JSON.stringify(rpcMessage);
-                          if (Buffer.byteLength(encoded, "utf8") > MAX_HELPER_LINE_BYTES) {
+                          const encodedBytes = Buffer.byteLength(encoded, "utf8");
+                          if (encodedBytes > MAX_HELPER_LINE_BYTES) {
                             throw new Error("Coder helper RPC request is too large.");
                           }
                           child.stdin.write(`${encoded}\n`);
+                          sentBytes += encodedBytes + 1;
                         },
                         catch: (cause) =>
                           new CoderHelperConnectionError(
@@ -508,6 +529,7 @@ export function connectCoderHelper(
                       return () => rpcListeners.delete(listener);
                     },
                     close: terminateCoderProcess(process, terminationGraceMs),
+                    traffic: () => ({ sentBytes, receivedBytes }),
                   }),
                 );
               } catch (cause) {
@@ -544,7 +566,14 @@ export function connectCoderHelper(
         child.once("exit", onEarlyExit);
         child.stdin.on("error", onStdinError);
         child.stdout.on("data", onStdout);
-        if (ready) {
+        if (options?.signal?.aborted) {
+          onAbort();
+        } else {
+          options?.signal?.addEventListener("abort", onAbort, { once: true });
+        }
+        if (settled) {
+          // Already cancelled: the abort failed the connection and is stopping the child.
+        } else if (ready) {
           startTimer(negotiationTimeoutMs, NEGOTIATION_TIMEOUT_MESSAGE);
           writeInfoRequest();
         } else {

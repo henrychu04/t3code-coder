@@ -1,10 +1,10 @@
 import { useCoder } from "./CoderBootstrap";
-import { startCoderWorkspace, type DiscoveredCoderWorkspace } from "./api";
+import type { DiscoveredCoderWorkspace } from "./api";
 import { randomUUID } from "../lib/utils";
 
 /** Persist a discovered target before starting and connecting its workspace. */
 export function useConnectDiscoveredWorkspace() {
-  const { config, saveConfig, connectWorkspace } = useCoder();
+  const { config, saveConfig, connectWorkspace, startWorkspace } = useCoder();
   return async (deploymentId: string, workspace: DiscoveredCoderWorkspace) => {
     if (workspace.status !== "running" && workspace.status !== "stopped") {
       throw new Error(
@@ -21,7 +21,9 @@ export function useConnectDiscoveredWorkspace() {
       workspace: workspace.target,
     };
     if (!existing) await saveConfig({ ...config, workspaces: [...config.workspaces, profile] });
-    if (workspace.status === "stopped") await startCoderWorkspace(profile.id);
-    return connectWorkspace(profile.id);
+    // The context's start guards the workspace from the status loop until it is connected.
+    return workspace.status === "stopped"
+      ? startWorkspace(profile.id)
+      : connectWorkspace(profile.id);
   };
 }

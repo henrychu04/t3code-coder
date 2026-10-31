@@ -22,13 +22,6 @@ export interface CoderInvocationOptions {
 export const REMOTE_NODE_COMMAND = '"$HOME/.t3-coder/node24/bin/node"';
 export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper/index.mjs"';
 export const REMOTE_HELPER_READY_SENTINEL = "T3_CODER_HELPER_READY";
-export const REMOTE_WORKSPACE_STATS_COMMAND = [
-  "set -eu",
-  'cpu="$(coder --no-version-warning stat cpu --output=json)"',
-  'memory="$(coder --no-version-warning stat mem --output=json)"',
-  'disk="$(coder --no-version-warning stat disk --path "$HOME" --output=json)"',
-  `printf '{"cpu":%s,"memory":%s,"disk":%s}\\n' "$cpu" "$memory" "$disk"`,
-].join("; ");
 const REMOTE_NODE_VERSION_CHECK = `${REMOTE_NODE_COMMAND} -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 24 ? 0 : 1)'`;
 /** A preflight failure line: the helper launch prints it and exits before the ready sentinel. */
 export const REMOTE_PREFLIGHT_FAILED_PREFIX = "T3_CODER_PREFLIGHT_FAILED: ";
@@ -207,19 +200,6 @@ export function buildCoderWorkspaceShellInvocation(
       "-c",
       quotePosixShellArgument(shellCommand),
     ],
-    options,
-  );
-}
-
-export function buildCoderWorkspaceStatsInvocation(
-  deploymentInput: CoderDeploymentProfile,
-  workspaceInput: CoderWorkspaceProfile,
-  options?: CoderInvocationOptions,
-): CoderInvocation {
-  return buildCoderWorkspaceShellInvocation(
-    deploymentInput,
-    workspaceInput,
-    REMOTE_WORKSPACE_STATS_COMMAND,
     options,
   );
 }

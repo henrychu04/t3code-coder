@@ -3,7 +3,7 @@ import {
   type PromiseCoderHelperConnection as CoderHelperConnection,
 } from "./testUtils/gateway.ts";
 // @effect-diagnostics nodeBuiltinImport:off
-import { deepStrictEqual, strictEqual, throws } from "node:assert";
+import { deepStrictEqual, strictEqual } from "node:assert";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import * as NodeHttp from "node:http";
@@ -25,16 +25,10 @@ import {
   buildCoderStartWorkspaceInvocation,
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
-  buildCoderWorkspaceStatsInvocation,
 } from "@t3tools/coder-cli/command";
 import { CoderHelperInstallRequiredError } from "@t3tools/coder-cli/helperConnection";
 import { hashCoderHelperBundle } from "@t3tools/coder-cli/transfer";
-import {
-  CODER_GATEWAY_HOST,
-  makeLocalCoderGateway,
-  parseCoderWorkspaceResourceUsage,
-  runCoderAuthStatus,
-} from "./server.ts";
+import { CODER_GATEWAY_HOST, makeLocalCoderGateway, runCoderAuthStatus } from "./server.ts";
 
 let closeGateway: (() => Promise<void>) | undefined;
 const tempDirectories: string[] = [];
@@ -59,36 +53,6 @@ afterEach(async () => {
       .splice(0)
       .map((directory) => NodeFS.rm(directory, { recursive: true, force: true })),
   );
-});
-
-describe("Coder workspace resource usage", () => {
-  it("parses Coder stat JSON without accepting malformed totals", () => {
-    deepStrictEqual(
-      parseCoderWorkspaceResourceUsage(
-        JSON.stringify({
-          cpu: { used: 0.75, total: 4, unit: "cores" },
-          memory: { used: 3_221_225_472, total: 8_589_934_592, unit: "B" },
-          disk: { used: 42_949_672_960, total: 107_374_182_400, unit: "B" },
-        }),
-      ),
-      {
-        cpu: { used: 0.75, total: 4, unit: "cores" },
-        memory: { used: 3_221_225_472, total: 8_589_934_592, unit: "B" },
-        disk: { used: 42_949_672_960, total: 107_374_182_400, unit: "B" },
-      },
-    );
-    throws(
-      () =>
-        parseCoderWorkspaceResourceUsage(
-          JSON.stringify({
-            cpu: { used: 0.75, total: 4, unit: "cores" },
-            memory: { used: 1024, total: 0, unit: "B" },
-            disk: { used: 4096, total: 8192, unit: "B" },
-          }),
-        ),
-      /invalid memory usage/u,
-    );
-  });
 });
 
 function request(input: {
@@ -1269,89 +1233,6 @@ setTimeout(() => process.exit(0), 100);
     strictEqual((await connect()).statusCode, 200);
     deepStrictEqual(installs, [bundleHash]);
     strictEqual(launches.length, 3);
-  });
-
-  it("samples workspace resource usage only while the helper is connected", async () => {
-    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
-    tempDirectories.push(directory);
-    const configPath = NodePath.join(directory, "config.json");
-    let closeConnection: (() => void) | undefined;
-    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
-      closeConnection = () => resolve({ code: 130, signal: null, expected: true });
-    });
-    const invocations: Array<ReturnType<typeof buildCoderWorkspaceStatsInvocation>> = [];
-    const usage = {
-      cpu: { used: 0.75, total: 4, unit: "cores" as const },
-      memory: { used: 3_221_225_472, total: 8_589_934_592, unit: "B" as const },
-      disk: { used: 42_949_672_960, total: 107_374_182_400, unit: "B" as const },
-    };
-    const gateway = await startLocalCoderGateway({
-      configPath,
-      connectHelper: async () => ({
-        info: helperInfo,
-        closed,
-        sendRpc: () => undefined,
-        onRpcMessage: () => () => undefined,
-        close: () => closeConnection?.(),
-      }),
-      readWorkspaceResourceUsage: async (invocation) => {
-        invocations.push(invocation);
-        return usage;
-      },
-      listWorkspaces: async () => [
-        {
-          name: "project-one",
-          target: "henry/project-one",
-          status: "running",
-          updateAvailable: false,
-          healthy: true,
-          autostopAt: null,
-          requiredStopAt: null,
-        },
-      ],
-    });
-    closeGateway = gateway.close;
-    const deployment = {
-      id: "goldman",
-      name: "Goldman",
-      url: "https://coder.example.gs.com",
-    };
-    const workspace = {
-      id: "project-one",
-      name: "Project One",
-      deploymentId: "goldman",
-      workspace: "henry/project-one",
-    };
-    await request({
-      url: `${gateway.url}/api/config`,
-      method: "POST",
-      headers: { Origin: gateway.url, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        version: 1,
-        deployments: [deployment],
-        workspaces: [workspace],
-      }),
-    });
-
-    strictEqual(
-      (await request({ url: `${gateway.url}/api/workspaces/project-one/metrics` })).statusCode,
-      409,
-    );
-    await request({
-      url: `${gateway.url}/api/workspaces/project-one/connection`,
-      method: "POST",
-      headers: { Origin: gateway.url },
-    });
-    const response = await request({
-      url: `${gateway.url}/api/workspaces/project-one/metrics`,
-    });
-    strictEqual(response.statusCode, 200);
-    deepStrictEqual(JSON.parse(response.body), { healthy: true, ...usage });
-    deepStrictEqual(invocations, [
-      buildCoderWorkspaceStatsInvocation(deployment, workspace, {
-        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
-      }),
-    ]);
   });
 
   it("reports remote preflight failures emitted on stdout", async () => {
