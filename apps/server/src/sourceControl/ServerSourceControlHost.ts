@@ -15,7 +15,7 @@ export const layer = Layer.effect(
     const git = yield* GitVcsDriver.GitVcsDriver;
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     return SourceControlHost.SourceControlHost.of({
-      // Coder: no `update`; see SourceControlHost.
+      // Coder: no `update` or `getWithSecrets`; see SourceControlHost.
       settings: { get: serverSettings.getSettings },
       process: { run: process.run },
       git: {

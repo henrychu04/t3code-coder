@@ -64,6 +64,7 @@ export type Options = {
   /** External MCP server configurations, passed as `--mcp-config` as the SDK does. */
   readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   readonly strictMcpConfig?: boolean;
+  readonly onElicitation?: NonNullable<Sdk.Options["onElicitation"]>;
   readonly onUserDialog?: NonNullable<Sdk.Options["onUserDialog"]>;
   readonly pathToClaudeCodeExecutable: string;
   /** Arguments before the CLI's own, as the SDK passes them to a native executable. */
@@ -122,6 +123,12 @@ type ControlRequest = {
     readonly agent_id?: string;
     readonly dialog_kind?: string;
     readonly payload?: Record<string, unknown>;
+    readonly mcp_server_name?: string;
+    readonly message?: string;
+    readonly mode?: "form" | "url";
+    readonly url?: string;
+    readonly elicitation_id?: string;
+    readonly requested_schema?: Record<string, unknown>;
   };
 };
 
@@ -217,6 +224,12 @@ const ControlRequestSchema = Schema.Struct({
     agent_id: Schema.optional(Schema.String),
     dialog_kind: Schema.optional(Schema.String),
     payload: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+    mcp_server_name: Schema.optional(Schema.String),
+    message: Schema.optional(Schema.String),
+    mode: Schema.optional(Schema.Literals(["form", "url"])),
+    url: Schema.optional(Schema.String),
+    elicitation_id: Schema.optional(Schema.String),
+    requested_schema: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   }),
 });
 
@@ -718,6 +731,40 @@ class ClaudeCliQuery implements Query {
             subtype: "success",
             request_id: message.request_id,
             response: result,
+          },
+        });
+        return;
+      }
+      if (message.request.subtype === "elicitation") {
+        // As the SDK does: without a handler the elicitation is declined, and a null answer
+        // sends no response.
+        const request = message.request;
+        if (request.mcp_server_name === undefined || request.message === undefined) {
+          throw new Error("Claude Code sent an invalid elicitation request.");
+        }
+        const result = this.options.onElicitation
+          ? await this.options.onElicitation(
+              {
+                serverName: request.mcp_server_name,
+                message: request.message,
+                ...(request.mode ? { mode: request.mode } : {}),
+                ...(request.url ? { url: request.url } : {}),
+                ...(request.elicitation_id ? { elicitationId: request.elicitation_id } : {}),
+                ...(request.requested_schema ? { requestedSchema: request.requested_schema } : {}),
+                ...(request.title ? { title: request.title } : {}),
+                ...(request.display_name ? { displayName: request.display_name } : {}),
+                ...(request.description ? { description: request.description } : {}),
+              },
+              { signal: callbackController.signal, requestId: message.request_id },
+            )
+          : { action: "decline" as const };
+        if (result === null) return;
+        await this.write({
+          type: "control_response",
+          response: {
+            subtype: "success",
+            request_id: message.request_id,
+            response: result as Record<string, unknown>,
           },
         });
         return;

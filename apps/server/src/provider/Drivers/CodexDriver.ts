@@ -173,6 +173,8 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
         enabled,
         config,
       },
+      // Coder: no `compatibility` hook (#27281); it reads `CodexInstallation`, which manages
+      // T3-installed Codex releases and is not carried.
       { onUsageLimits: (update) => snapshot.applyUsageLimits(update) },
     ).pipe(
       Effect.mapError(

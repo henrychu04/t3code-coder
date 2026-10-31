@@ -1,4 +1,4 @@
-import { secretSettingsFields } from "@t3tools/contracts";
+import { isSecretReference, secretSettingsFields } from "@t3tools/contracts";
 
 import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 
@@ -30,6 +30,7 @@ export function readSecretFieldValues(
   value: unknown,
 ): ReadonlyArray<readonly [serverHost: string | null, value: string]> {
   if (typeof value === "string") return [[null, value]];
+  if (isSecretReference(value)) return [];
   if (value === null || typeof value !== "object" || Array.isArray(value)) return [];
   return Object.entries(value).flatMap(([serverHost, entry]) =>
     typeof entry === "string" ? [[serverHost.trim().toLowerCase(), entry] as const] : [],
@@ -41,5 +42,9 @@ export function writeSecretFieldValues(
   values: ReadonlyArray<readonly [serverHost: string | null, value: string]>,
 ): unknown {
   if (typeof original === "string") return values[0]?.[1] ?? "";
+  if (isSecretReference(original)) return original;
   return Object.fromEntries(values.map(([serverHost, value]) => [serverHost ?? "", value]));
 }
+
+// Coder: upstream resolves secret provider references in host credentials here (#27746); secret
+// providers are not carried, and only the Bitbucket and GitCafe drivers, also not carried, read them.

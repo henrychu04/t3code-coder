@@ -1158,6 +1158,7 @@ export function useComposerSend(input: ComposerSendInput) {
         ) {
           handleNewThreadInActiveProject();
         }
+        // Coder: no GitHub star prompt (#27832), so sends are not counted toward one.
       }
     }
 

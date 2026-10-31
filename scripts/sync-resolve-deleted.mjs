@@ -94,6 +94,8 @@ const DELETED_PATHS = {
     "packages/source-control-forgejo/",
     "packages/source-control-gitcafe/",
     "packages/source-control-github/",
+    "apps/server/src/sourceControl/SourceControlSignIn.ts",
+    "apps/web/src/components/settings/SourceControlHostSettings.tsx",
   ],
   // Other provider packages: Codex, Claude Code, Pi, and Kilo Code are the only providers.
   "other provider packages": [
@@ -119,6 +121,9 @@ const DELETED_PATHS = {
     /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?:fx|grok|muse|opencode|skill_invocation)[^/]*\//,
     /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?!message_steering\/grok_output\.ts$|todo_list\/grok_output\.ts$|tool_call_read_only\/cursor_output\.ts$)[^/]+\/(?:cursor|fx|grok|muse|opencode)_[^/]+$/,
     /^apps\/server\/src\/orchestration-v2\/testkit\/(?:Cursor|Fx|Grok|Muse|OpenCode)ReplayFixtures\./,
+    "apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts",
+    "apps/server/src/textGeneration/OpenCode2TextGeneration.test.ts",
+    "apps/server/src/provider/antigravityUsageLimits.ts",
   ],
   // Kilo Code runs upstream's ACP Registry driver from its local command only: no registry
   // installs, agent sign-in, per-agent flavors, or native protocol logging.
@@ -129,6 +134,8 @@ const DELETED_PATHS = {
     "packages/provider-acp-registry/src/server/devinAcp.ts",
     "packages/provider-acp-registry/src/server/testing/",
     "packages/provider-acp/src/server/nativeLogging.ts",
+    "apps/server/src/mcp/AcpMcpStdioBridge.ts",
+    "apps/web/src/components/settings/AcpSessionManagementSection.tsx",
   ],
   // Desktop: no Electron app, local primary environment, desktop updates, OS permission
   // checklist, native helpers, or packaging.
@@ -144,6 +151,10 @@ const DELETED_PATHS = {
     "native/",
     "packages/contracts/src/ipc.ts",
     "packaging/",
+    "packages/shared/src/desktopAppControl.ts",
+    "scripts/apply-web-brand-assets.ts",
+    "scripts/build-desktop-artifact.ts",
+    "scripts/fixtures/desktop-launch/",
   ],
   // Mobile: no mobile app.
   mobile: ["apps/mobile/", "patches/@expo__ui@58.0.20.patch"],
@@ -155,6 +166,7 @@ const DELETED_PATHS = {
     "apps/web/src/components/clerk/",
     "apps/web/src/components/cloud/",
     "apps/web/src/components/onboarding/",
+    "apps/web/src/components/promptLinks/copyPromptLink.ts",
   ],
   // Server CLI: the helper starts over `coder ssh`, never as upstream's `t3` command, and
   // CoderEnvironment replaces upstream's ServerEnvironment.
@@ -174,15 +186,29 @@ const DELETED_PATHS = {
     "apps/server/src/process/externalLauncher.test.ts",
     "apps/web/src/components/settings/CodexSetupSection.tsx",
     "packages/shared/src/editor.ts",
+    "apps/server/src/provider/CodexChatGptModels.ts",
+    "apps/server/src/provider/CodexInstallation.ts",
+    "apps/web/src/components/settings/ProviderSetupSection.tsx",
+    "docs/user/welcome-wizard.md",
   ],
   // Tests for cut surfaces: the provider environment panel test drives managed Codex accounts and
   // ACP sign-in, the theme import test the remote catalog and desktop picker, the MCP core test
   // peer links and client scopes, and the app render scenarios upstream's fake environment.
   "tests for cut surfaces": [
+    // Upstream tests built on cut surfaces: the fake environment harness, upstream's HTTP peer
+    // MCP client, and host credential secret references.
+    "apps/web/src/components/ChatView.browser.test.tsx",
+    // Upstream's ACP Registry icon cache (`settings/AcpRegistryIcon.tsx`), which Kilo Code's inlined icon replaces.
+    "apps/web/src/components/chat/ProviderModelPicker.browser.test.tsx",
+    "apps/server/src/peer/PeerMcpClient.test.ts",
+    "apps/server/src/sourceControl/sourceControlHostSecrets.test.ts",
     "apps/web/src/components/settings/ProviderSettingsPanel.environment.browser.test.tsx",
     "apps/web/src/components/settings/ThemeImportDialog.browser.test.tsx",
     "apps/server/src/mcp/toolkits/core.test.ts",
     "apps/web/test/appScenarios.renders.tsx",
+    "apps/web/src/components/settings/AddProviderInstanceDialog.environment.browser.test.tsx",
+    "apps/web/test/fakeEnvironment.ts",
+    "packages/client-runtime/src/state/server.test.ts",
   ],
   // Relay: no relay, Tailscale, or SSH transport.
   relay: [
@@ -196,6 +222,14 @@ const DELETED_PATHS = {
     "packages/client-runtime/src/connection/supervisor.test.ts",
     "packages/ssh/",
     "packages/tailscale/",
+    "apps/web/src/components/settings/AddEnvironmentDialog.tsx",
+    "apps/web/src/components/settings/ConnectionsSettings.tsx",
+    "apps/web/src/components/settings/EnvironmentRoutesList.tsx",
+    "apps/web/src/components/settings/LoadBalancingSettings.tsx",
+    "apps/web/src/components/settings/PullRequestRoutingSettings.tsx",
+    "packages/client-runtime/src/connection/routes.ts",
+    "packages/client-runtime/src/state/relayDiscovery.ts",
+    "packages/shared/src/relayClient.ts",
   ],
   // Telemetry: no T3-owned telemetry, usage dashboards or plan-window usage limits, diagnostics,
   // or trace export.
@@ -225,6 +259,11 @@ const DELETED_PATHS = {
     "packages/contracts/src/usage.ts",
     "packages/shared/src/usageLimits.ts",
     "docs/user/usage.md",
+    "apps/server/src/provider/Drivers/codexUsage.ts",
+    "apps/server/src/provider/EventNdjsonLogger.test.ts",
+    "apps/server/src/serverLogger.ts",
+    "packages/provider-pi/src/server/usage.ts",
+    "packages/shared/src/observability.ts",
   ],
   // Updates and releases: no server self-update, update pill or fleet tracks, npm launcher, CLI
   // archives, or release notes.
@@ -249,12 +288,18 @@ const DELETED_PATHS = {
     "scripts/licenses/libatomic.LICENSE",
     "scripts/notify-discord-release.ts",
     "scripts/smoke-cli-archive.ts",
+    "apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx",
+    "packages/client-runtime/src/connection/outdatedHostUpdate.ts",
+    "scripts/install.sh",
   ],
   // Peer links: the gateway hub replaces upstream's peer stack, so there is no link request card
   // or client peer-link state.
   "peer links": [
     "apps/web/src/components/chat/LinkRequestCard.tsx",
     "packages/client-runtime/src/state/peerLinks.ts",
+    "apps/server/src/mcp/linkOrigin.test.ts",
+    "apps/server/src/peer/PeerForwarding.test.ts",
+    "apps/server/src/peer/RemoteDelegation.test.ts",
   ],
   // Guest sharing: no guest share links, guest page, or guest HTTP routes.
   "guest sharing": [
@@ -284,6 +329,7 @@ const DELETED_PATHS = {
   // Secret providers: no 1Password or other secret provider settings, dialogs, or packages.
   // Contracts keep upstream's settings fields.
   "secret providers": [
+    "apps/server/src/secrets/settingsSecretValue.ts",
     "apps/web/src/components/settings/SecretProviderDialog.logic.test.ts",
     "apps/web/src/components/settings/SecretProviderDialog.logic.ts",
     "apps/web/src/components/settings/SecretProviderDialog.tsx",
@@ -328,6 +374,7 @@ const DELETED_PATHS = {
     ".coderabbit.config.ts",
     "evals/",
     "oxlint-plugin-t3code/",
+    "apps/server/scripts/migrate-dev-db.ts",
   ],
 };
 

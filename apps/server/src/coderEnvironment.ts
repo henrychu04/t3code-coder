@@ -86,6 +86,7 @@ export const CODER_OMITTED_CAPABILITIES = {
   pullRequestStackActions: "GitLab has no native stack actions.",
   otlpEndpointCheck: "No OpenTelemetry export settings or trace export.",
   serverSelfUpdate: "No server self-update; the gateway installs the helper from the checkout.",
+  npmReleaseLookup: "No server self-update, the only reader of `server.getNpmRelease`.",
   serverInstallation: "No server self-update.",
   serverSelfUpdateProgress: "No server self-update.",
   serverUpdateThreadContinuation: "No server self-update.",

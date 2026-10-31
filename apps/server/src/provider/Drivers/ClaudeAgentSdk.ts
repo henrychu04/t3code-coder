@@ -37,6 +37,7 @@ const SUPPORTED_QUERY_OPTIONS: ReadonlySet<string> = new Set([
   "includePartialMessages",
   "mcpServers",
   "model",
+  "onElicitation",
   "onUserDialog",
   "pathToClaudeCodeExecutable",
   "permissionMode",
@@ -113,6 +114,7 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
         }
       : {}),
     ...(options.model ? { model: options.model } : {}),
+    ...(options.onElicitation ? { onElicitation: options.onElicitation } : {}),
     ...(options.onUserDialog ? { onUserDialog: options.onUserDialog } : {}),
     ...(options.permissionMode ? { permissionMode: options.permissionMode } : {}),
     ...(options.persistSession === false ? { persistSession: false } : {}),
