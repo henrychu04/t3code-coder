@@ -1,4 +1,4 @@
-import type { ThreadContextRecord } from "@t3tools/contracts";
+import type { EnvironmentContextRecord, ThreadContextRecord } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 
 import type { ComposerFileAttachment } from "../../composerDraftStore";
@@ -10,11 +10,12 @@ export interface RetainedAttachmentContextPayloads {
   files: Map<string, ComposerFileAttachment>;
 }
 
+// Coder: no browser preview, so deleted chips retain no preview annotations or their images.
 export interface RetainedContextPayloads extends RetainedAttachmentContextPayloads {
   terminals: Map<string, TerminalContextDraft>;
   reviewComments: Map<string, ReviewCommentContext>;
   threads: Map<string, ThreadContextRecord>;
-  // Coder: no machine (environment) chips; the @-machine picker is not carried.
+  environments: Map<string, EnvironmentContextRecord>;
 }
 
 function createRetainedContextPayloads(): RetainedContextPayloads {
@@ -22,6 +23,7 @@ function createRetainedContextPayloads(): RetainedContextPayloads {
     terminals: new Map(),
     reviewComments: new Map(),
     threads: new Map(),
+    environments: new Map(),
     files: new Map(),
   };
 }

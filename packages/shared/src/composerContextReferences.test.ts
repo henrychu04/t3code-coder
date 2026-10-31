@@ -308,7 +308,8 @@ describe("provider projection", () => {
     expect(projected).toContain('<context kind="environment" id="env_vps">');
     expect(projected).toContain("label: vps");
     expect(projected).toContain("environmentId: environment-vps");
-    expect(projected).toContain("t3_environment_link with this environmentId");
+    // Coder: no t3_environment_link; the text points to workspace link rules.
+    expect(projected).toContain("If t3_environment_links does not list it");
     expect(projected).not.toMatch(/https?:/);
   });
 

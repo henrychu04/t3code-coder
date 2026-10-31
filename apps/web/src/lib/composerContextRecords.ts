@@ -10,6 +10,7 @@ import {
 import type {
   ComposerContextId,
   ComposerContextRecord,
+  EnvironmentContextRecord,
   EnvironmentId,
   FileContextRecord,
   ImageContextRecord,
@@ -128,6 +129,26 @@ export function threadContextReference(record: ThreadContextRecord): ComposerCon
   return { kind: "thread", contextId: record.contextId, label: record.label };
 }
 
+/** One record per machine: mentioning the same machine twice reuses the chip. */
+export function environmentContextReference(
+  record: EnvironmentContextRecord,
+): ComposerContextReference {
+  return { kind: "environment", contextId: record.contextId, label: record.label };
+}
+
+export function environmentContextRecord(
+  environmentId: EnvironmentId,
+  label: string,
+): EnvironmentContextRecord {
+  return {
+    version: 1,
+    kind: "environment",
+    contextId: toKindScopedComposerContextId("environment", environmentId),
+    label: sanitizeComposerContextLabel(label, "environment"),
+    environmentId,
+  };
+}
+
 export function terminalContextRecord(context: TerminalContextDraft): TerminalContextRecord {
   return {
     version: 1,
@@ -218,12 +239,14 @@ export function buildMessageContext(input: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   reviewComments: ReadonlyArray<ReviewCommentContext>;
   threadContexts?: ReadonlyArray<ThreadContextRecord>;
+  environmentContexts?: ReadonlyArray<EnvironmentContextRecord>;
   attachments?: ReadonlyArray<BoundComposerAttachment>;
 }): OrchestrationMessageContext | undefined {
   const records: ComposerContextRecord[] = [
     ...input.terminalContexts.map(terminalContextRecord),
     ...input.reviewComments.map(reviewCommentContextRecord),
     ...(input.threadContexts ?? []),
+    ...(input.environmentContexts ?? []),
     ...(input.attachments ?? []).map(attachmentContextRecord),
   ];
   return records.length === 0 ? undefined : { version: 1, records };
