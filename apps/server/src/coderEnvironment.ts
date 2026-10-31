@@ -88,6 +88,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadPullRequestLinking: true,
   serverResolvedCommandContext: true,
   threadStop: true,
+  localServerStop: true,
   environmentIcon: true,
   projectCloneTracking: true,
   threadProjectFromScratch: true,
@@ -116,7 +117,6 @@ export const CODER_OMITTED_CAPABILITIES = {
     "No Add to another machine: ignored files such as .env would pass through the laptop browser.",
   mcpModeLimitHeader:
     "No /mcp HTTP server; the gateway hub carries a linked call's mode limits with the call.",
-  localServerStop: "No dev-server port discovery: the browser preview is not carried.",
   triage: "No in-app triage: it clones upstream T3 Code to help file upstream issues.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 

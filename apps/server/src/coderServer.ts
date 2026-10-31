@@ -68,6 +68,7 @@ import {
   layerCheckpointStore,
   layerGitWorkflow,
   layerIdleCompactionWorker,
+  layerPortScanner,
   layerPullRequestService,
   layerRepositoryIdentityResolver,
   layerServerSettings,
@@ -240,6 +241,9 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   ),
   Layer.provideMerge(CoderProviderRegistryLive),
   Layer.provideMerge(CoderProviderInstancesLive),
+  // Provider hydration builds the Claude runner, which reports agents to the same scanner the
+  // terminal layer and the RPC handlers share.
+  Layer.provideMerge(layerPortScanner),
   // Coder: the RPC layer serializes Kilo Code native session imports through the ACP Registry
   // runtime coordinator. Upstream provides it with the registry catalog
   // (`AcpRegistrySupport.layerFromHost`), which the RPC layer does not use.

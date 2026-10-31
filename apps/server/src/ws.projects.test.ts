@@ -68,6 +68,7 @@ import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as PortScanner from "./preview/PortScanner.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -222,6 +223,7 @@ const harness = (
       stub(VcsProvisioningService.VcsProvisioningService),
       stub(ReviewService.ReviewService),
       stub(TerminalManager.TerminalManager),
+      stub(PortScanner.PortDiscovery),
       stub(GitWorkflowService.GitWorkflowService),
       stub(SecretRequests.SecretRequests),
       stub(McpAppRequests.McpAppRequests),

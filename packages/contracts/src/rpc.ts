@@ -2214,6 +2214,8 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsTerminalClearRpc,
   WsTerminalCloseRpc,
   WsSubscribeTerminalMetadataRpc,
+  WsPreviewStopLocalServerRpc,
+  WsSubscribeDiscoveredLocalServersRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsOrchestrationV2DispatchCommandRpc,

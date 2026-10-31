@@ -64,6 +64,7 @@ import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeComp
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
+import * as PortScanner from "../../preview/PortScanner.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
@@ -2349,7 +2350,7 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
         },
       });
     }).pipe(
-      Effect.provide(ClaudeAdapterV2.layerQueryRunner),
+      Effect.provide(ClaudeAdapterV2.layerQueryRunner.pipe(Layer.provide(PortScanner.layerTest))),
       Effect.provideService(ProviderEventLoggers.ProviderEventLoggers, {
         ...ProviderEventLoggers.NoOpProviderEventLoggers,
         native,

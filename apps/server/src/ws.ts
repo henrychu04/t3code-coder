@@ -30,6 +30,7 @@ import {
   OrchestrationV2GetShellSnapshotError,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2ThreadLaunchError,
+  type DiscoveredLocalServerList,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ThreadStreamItem,
@@ -64,6 +65,7 @@ import { RpcGroup } from "effect/rpc";
 import { isNetworkPath } from "@t3tools/shared/path";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
+import * as PortScanner from "./preview/PortScanner.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
@@ -924,6 +926,7 @@ const layerWsRpc = () =>
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
+      const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
       // Coder: of upstream's ACP Registry services, only the runtime coordinator is used here.
@@ -2039,6 +2042,33 @@ const layerWsRpc = () =>
               terminalManager.subscribeMetadata((event) => Queue.offer(queue, event)),
               (unsubscribe) => Effect.sync(unsubscribe),
             ),
+          ),
+        [WS_METHODS.previewStopLocalServer]: (input) => portDiscovery.stopServer(input),
+        [WS_METHODS.subscribeDiscoveredLocalServers]: (input) =>
+          Stream.callback<DiscoveredLocalServerList>((queue) =>
+            Effect.gen(function* () {
+              const configuredUrls = input.configuredUrls ?? [];
+              yield* portDiscovery.retain;
+              const initial = yield* portDiscovery.scan(configuredUrls);
+              const initialScannedAt = DateTime.formatIso(yield* DateTime.now);
+              yield* Queue.offer(queue, {
+                servers: initial,
+                scannedAt: initialScannedAt,
+                configuredUrlProbing: true,
+              });
+              yield* portDiscovery.subscribe(
+                { configuredUrls, initialSnapshot: initial },
+                (servers) =>
+                  Effect.gen(function* () {
+                    const scannedAt = DateTime.formatIso(yield* DateTime.now);
+                    yield* Queue.offer(queue, {
+                      servers,
+                      scannedAt,
+                      configuredUrlProbing: true,
+                    });
+                  }),
+              );
+            }),
           ),
         // Coder: preserve bounded helper stdio streams and reconnect snapshots.
         [WS_METHODS.subscribeServerConfig]: (input) =>

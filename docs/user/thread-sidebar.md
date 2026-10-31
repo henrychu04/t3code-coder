@@ -241,6 +241,15 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+The thread details card lists the web servers that the thread's terminals or its Claude agent
+started in the workspace, with their ports. A server the agent started stays listed after the
+agent's turn ends. Select a server to forward it to `127.0.0.1` on this computer and open it in a
+new tab; the forward is saved under **Settings → Environments → Port forwarding** and uses the same
+port when it is free, otherwise the next free one. A forwarded server shows its local address, and
+selecting it opens that address. **Stop forwarding** removes the forward; the server keeps running.
+**Stop** ends the server's job and keeps the agent, the terminal, and T3 Coder running; a saved
+forward stays until you remove it.
+
 To choose what the thread details card shows, right-click the card or open
 **Settings → Appearance → Thread details**. Hidden rows keep their keyboard
 shortcuts, such as project scripts. **Reset to default** brings back the

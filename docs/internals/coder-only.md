@@ -174,7 +174,11 @@ Each saved port-forward rule starts a separate foreground `coder port-forward` p
 contains only a configured workspace, TCP or UDP protocol, and validated local and remote ports. The
 gateway always supplies `127.0.0.1` as the local bind address. It reports process state to the
 settings UI, does not loop on failures, and stops the exact captured process when a rule changes, is
-removed, or the gateway exits.
+removed, or the gateway exits. A running forward's status adds `ready` once the process prints
+Coder's `Ready!` line on stderr. The thread details card's Servers section saves the same rules
+(see [Web chat, composer, and files](#web-chat-composer-and-files)); its free-port check
+(`/api/port-forwards/free-port`, at most `MAX_LOCAL_PORT_CANDIDATES` ports past the requested one)
+binds and closes a probe listener on `127.0.0.1` only and opens no connection.
 
 ```text
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> codex / claude
@@ -432,7 +436,8 @@ checks that every name here still exists and that every modified upstream file i
   `CoderRuntimeStartup`, `StorageCleanup`, `DatabaseStorage`, the T3 tool bridge binding, and the
   RPC layer. In `server.ts`, settings also provide the secret store, the VCS status broadcaster
   takes the demand-only background policy, and the terminal shares its PTY adapter and process
-  runner with no port scanner or native telemetry.
+  runner and upstream's port scanner (`layerPortScanner`, which the helper also provides to the
+  Claude runner and the RPC handlers) with no native telemetry.
 - `CoderRuntimeStartup` completes before the RPC layer is built, replacing upstream's startup
   command queue, with upstream's recovery order (provider runtimes, then `recoverDelegatedTasks`);
   `coderServer.ts` starts the delegated-task question reactor with the other workers, and
@@ -525,8 +530,7 @@ checks that every name here still exists and that every modified upstream file i
   `forkHeadMessageId`) is not carried. Forks also carry `claudeAttachmentBudget`.
 - `ClaudeAdapterV2.ts`: pasted images go through `resolvePastedImageAttachments`, counted toward
   the PDF and attachment budget by `sizeBytes`; bridge sessions get
-  `CLAUDE_BRIDGE_BACKGROUND_WAIT_INSTRUCTIONS` (no ToolSearch sentence); the query runner gives CLI
-  jobs no agent-thread variable and counts no agent for port discovery; no `deviceToolsAvailable`
+  `CLAUDE_BRIDGE_BACKGROUND_WAIT_INSTRUCTIONS` (no ToolSearch sentence); no `deviceToolsAvailable`
   input or `SubagentStart` device hook; `resolveBypassAvailability` reads the settings files (cached
   remote, user, project, local, managed) where upstream calls the SDK's `resolveSettings`, and
   `resolveSubagentPromptCacheTtl` reads `subagentPromptCacheTtl` from them (last set wins).
@@ -562,7 +566,7 @@ checks that every name here still exists and that every modified upstream file i
   driver list; `settingsSecrets.ts` reads secret fields from Pi's and the ACP Registry's client
   definitions only; `ProviderOrchestrationAdapterInfrastructure.ts` provides only the Claude query
   runner and the Codex app-server factory; `ProviderInstanceRegistryHydration.ts` seeds no replay
-  instance and needs no `PortDiscovery` or `Crypto`; `testkit/DormantProviderCapabilities.ts` is
+  instance and needs no `Crypto`; `testkit/DormantProviderCapabilities.ts` is
   kept for orchestrator tests.
 - Pi: `buildPiRpcLaunch` hands upstream's T3 extension the file bridge (`T3_TOOL_COMMAND`,
   `T3_TOOL_CATALOG`); it registers the catalog's tools under upstream's names, runs each through the
@@ -652,7 +656,8 @@ checks that every name here still exists and that every modified upstream file i
   check) and adds the helper-only methods and `CoderWsRpcGroup`, the only group the helper serves.
   Upstream's `WsRpcGroup` stays dormant (`knip.jsonc` ignores `rpc.ts`'s unused exports).
   `CoderWsRpcGroup` omits `server.getDatabaseStorage`, `server.getNpmRelease`,
-  `server.prepareTriage`, `preview.stopLocalServer`, guest share creation, the peer-link RPCs, and
+  `server.prepareTriage`, the browser preview's RPCs (it keeps `preview.stopLocalServer` and
+  `subscribeDiscoveredLocalServers`), guest share creation, the peer-link RPCs, and
   the `sourceControl.signIn*`, `sourceControl.appAccess`, and `sourceControl.starred` RPCs.
 - `server.ts` (contracts) mirrors `ipc.ts`'s `DesktopUpdateChannelSchema` for
   `ServerSelfUpdateInput`, because `ipc.ts` is not carried.
@@ -671,7 +676,7 @@ checks that every name here still exists and that every modified upstream file i
 - `terminal/Manager.ts` keeps a bounded attach replay window (`DEFAULT_ATTACH_REPLAY_*`) and
   answers an attach with `afterSequence` by replaying the gap and a `resumed` event; each shell
   session has an `attachEpoch`, and a cursor naming another epoch gets a snapshot. Terminals poll
-  the process table themselves, register no ports, record no metrics, and get no managed ACP
+  the process table themselves, record no metrics, and get no managed ACP
   directories on `PATH`.
 - client-runtime adds `TerminalBufferCache`, a bounded memory cache that seeds a reattach and
   supplies its `afterSequence` and `afterEpoch`; a resumed attach of a closed terminal gets
@@ -871,8 +876,18 @@ checks that every name here still exists and that every modified upstream file i
   is still the partial diff that asked, and lets a contents loader return `null`
   (`FileDiffContentsLoader` and `LoadedPartialDiffContents` types), which 1.6.1 still lacks.
 - Project actions: repository actions come from `projects.getConfig`, which drops `iconPath` and
-  script preview fields; the editor has no preview URL; the thread details card has no Open in,
-  servers, or usage items, so `threadDetailsUsageEnabled` is never read.
+  script preview fields; the editor has no preview URL; the thread details card has no Open in or
+  usage items, so `threadDetailsUsageEnabled` is never read.
+- Servers (`chat/ThreadServersPanel.tsx`): selecting an unforwarded server is **Forward** in place
+  of opening the browser panel (`coder/serverForwards.ts`): the gateway's
+  `/api/port-forwards/free-port` picks the server's port or the next one free on `127.0.0.1` and
+  unused by a saved TCP rule, the browser saves an ordinary rule through `useCoderSettingsConfig`,
+  waits for the forward's `ready` status (Coder's `Ready!` line, up to `FORWARD_READY_TIMEOUT_MS`),
+  and points a tab it opened during the click at `http://127.0.0.1:<local port>/`; a forward that
+  never runs is removed again. A forwarded row shows its local address, opens it, and adds **Stop
+  forwarding**, which removes the rule; stopping the server keeps the rule. No modified-click
+  system-browser open (no desktop shell). Client-runtime's `state/preview.ts` keeps only
+  `discoveredServers` and `stopLocalServer`, and shared `preview.ts` only the loopback checks.
 - The worktree setup card says "Use project checkout"; `ChatComposer.tsx`'s `addComposerFolders`
   always takes the remote-environment branch and its toast.
 - Command palette (`CommandPalette.tsx` and its split modules): every workspace is remote; Add
@@ -1049,7 +1064,7 @@ them, the file is named here.
   or connection catalog; `settings/AddEnvironmentDialog.tsx` is cut. With no session scopes,
   scheduled task lists show every webhook URL.
 - **Browser preview and devices.** No in-app browser, preview panel, mini-player, preview MCP
-  toolkits, device hosts, or agent device shim; provider-core's device instructions never reach an
+  toolkits, device hosts, or agent device shim (port discovery stays: `preview/PortScanner.ts`); provider-core's device instructions never reach an
   agent. Without browser preview, `composerDraftStore.ts` keeps no empty draft alive for an open
   page, and `mergeDirectPreviewAnnotation` is not carried.
 - **Telemetry, usage, and diagnostics.** No T3 telemetry, analytics, client-origin attribution,
@@ -1110,8 +1125,6 @@ them, the file is named here.
   reads no reference (an instance whose variable points at one is unavailable with upstream's "Could
   not read …" reason) and lists no kind (`secretProviders` writes are rejected); `ws.ts` does not
   advertise `secretReferences`.
-- **Dev servers** (#22542). `chat/ThreadServersPanel.tsx`, its `ThreadDetailsPanel.tsx` section and
-  `thread-sidebar.md` paragraph, and `preview.stopLocalServer`; `localServerStop` is omitted.
 - **Add to another machine** (#22180, #22254). It copies ignored files such as `.env` between
   workspaces through the browser: no `listIgnoredFiles`, `projects.listIgnoredFiles`
   (`ignoredFileListing` omitted), client-runtime `projectCommands.ts` command, `BranchToolbar.tsx`
