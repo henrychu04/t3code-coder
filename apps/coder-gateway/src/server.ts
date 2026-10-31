@@ -10,9 +10,7 @@ export type {
 } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
-import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
-import type { Duplex } from "node:stream";
 
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -59,608 +57,57 @@ import {
   WORKSPACE_ASSET_ROUTE,
   WORKSPACE_UPLOAD_ROUTE,
 } from "./assetProxy.ts";
-import { GatewayProcessError, runGatewayProcess } from "./process.ts";
+import {
+  checkCoderAuthStatus,
+  discoveredWorkspaceMatches,
+  failWhenAborted,
+  runCoderLogin,
+  runCoderWorkspaceAction,
+  runCoderWorkspaceList,
+  type CoderAuthenticationStatus,
+  type WorkspaceAction,
+} from "./coderCommands.ts";
+import {
+  assertDeploymentUrlsUnchanged,
+  CoderConfigConflictError,
+  portForwardIsCurrent,
+  workspaceConnectionIsCurrent,
+} from "./configChanges.ts";
+import {
+  CODER_GATEWAY_HOST,
+  indexHtml,
+  isServerNotRunningError,
+  readImmutableBuildAssets,
+  readJsonBody,
+  rejectWebSocketUpgrade,
+  sendText,
+  serveStaticFile,
+} from "./http.ts";
+import {
+  makeDeferredPromise,
+  WorkspaceActionConflictError,
+  type PortForwardLifecycleState,
+  type PortForwardStartClaim,
+  type PortForwardStopClaim,
+  type WorkspaceActionClaim,
+  type WorkspaceCloseClaim,
+  type WorkspaceConnection,
+  type WorkspaceConnectionClaim,
+  type WorkspaceLifecycleState,
+} from "./lifecycleState.ts";
+import { findFreeForwardPort, MAX_LOCAL_PORT_CANDIDATES } from "./portProbe.ts";
 import {
   makeWorkspaceRpcBridge,
   RpcBridgeSessionError,
   type RpcBridgeSession,
-  type WorkspaceRpcBridge,
 } from "./rpcBridge.ts";
 import { makeCoderHub } from "./hub.ts";
+import { readSavedGatewayPort, saveGatewayPort } from "./savedPort.ts";
 
-export const CODER_GATEWAY_HOST = "127.0.0.1";
-const MAX_CONFIG_BODY_BYTES = 64 * 1024;
-const MAX_CODER_LIST_BYTES = 2 * 1024 * 1024;
-const MAX_CODER_AUTH_STATUS_BYTES = 64 * 1024;
-const MAX_CODER_WORKSPACE_ACTION_BYTES = 64 * 1024;
+export { runCoderAuthStatus, type CoderAuthenticationStatus } from "./coderCommands.ts";
+export { CODER_GATEWAY_HOST } from "./http.ts";
+
 const MAX_WORKSPACE_DIAGNOSTIC_EVENTS = 24;
-const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
-const DEFAULT_PROCESS_TERMINATION_GRACE_MS = 5_000;
-const DEFAULT_CODER_WORKSPACE_LIST_TIMEOUT_MS = 30_000;
-
-const indexHtml = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>T3 Coder</title>
-  </head>
-  <body>
-    <main>
-      <h1>T3 Coder</h1>
-      <p>The local gateway is ready.</p>
-    </main>
-  </body>
-</html>`;
-
-function sendText(
-  response: NodeHttp.ServerResponse,
-  statusCode: number,
-  contentType: string,
-  body: string | Buffer,
-  cacheHeaders: Readonly<Record<string, string>> = { "Cache-Control": "no-store" },
-): void {
-  response.writeHead(statusCode, {
-    ...cacheHeaders,
-    "Content-Type": contentType,
-    "Content-Security-Policy":
-      "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' 'sha256-n0OPhj7RDHbzPYmNVtzBFHdU5YSjXCbQBVoFS8BcmDQ='; connect-src 'self' blob: https: http: ws://127.0.0.1:*; img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; worker-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:",
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Cross-Origin-Resource-Policy": "same-origin",
-    "Referrer-Policy": "no-referrer",
-  });
-  response.end(body);
-}
-
-const STATIC_CONTENT_TYPES: Readonly<Record<string, string>> = {
-  ".css": "text/css; charset=utf-8",
-  ".html": "text/html; charset=utf-8",
-  ".ico": "image/x-icon",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
-  ".svg": "image/svg+xml",
-  ".wasm": "application/wasm",
-  ".woff2": "font/woff2",
-};
-
-/**
- * Build outputs named in Vite's manifest, which carry a content hash. Like upstream's static
- * route, only these are cached as immutable: a hash-like name alone is not enough.
- */
-async function readImmutableBuildAssets(staticDir: string): Promise<ReadonlySet<string>> {
-  try {
-    const manifest = JSON.parse(
-      await NodeFS.readFile(NodePath.join(staticDir, ".vite", "manifest.json"), "utf8"),
-    ) as Record<string, { file?: unknown; css?: unknown; assets?: unknown }>;
-    const files = Object.values(manifest).flatMap((entry) => [
-      entry.file,
-      ...(Array.isArray(entry.css) ? entry.css : []),
-      ...(Array.isArray(entry.assets) ? entry.assets : []),
-    ]);
-    return new Set(files.filter((file): file is string => typeof file === "string"));
-  } catch {
-    return new Set();
-  }
-}
-
-async function serveStaticFile(
-  request: NodeHttp.IncomingMessage,
-  response: NodeHttp.ServerResponse,
-  staticDir: string,
-  pathname: string,
-  immutableBuildAssets: ReadonlySet<string>,
-): Promise<boolean> {
-  const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
-  const candidate = NodePath.resolve(staticDir, relativePath);
-  const root = `${NodePath.resolve(staticDir)}${NodePath.sep}`;
-  if (!candidate.startsWith(root)) return false;
-  try {
-    const info = await NodeFS.stat(candidate);
-    if (!info.isFile()) return false;
-    const extension = NodePath.extname(candidate);
-    const contentType = STATIC_CONTENT_TYPES[extension] ?? "application/octet-stream";
-    // HTML names the current bundle, so it is always revalidated in full.
-    if (extension === ".html") {
-      sendText(response, 200, contentType, await NodeFS.readFile(candidate), {
-        "Cache-Control": "no-cache",
-      });
-      return true;
-    }
-    const assetPath = NodePath.relative(staticDir, candidate).replaceAll("\\", "/");
-    const etag = `W/"${info.size.toString(16)}-${info.mtimeMs.toString(16)}"`;
-    const cacheHeaders = {
-      "Cache-Control": immutableBuildAssets.has(assetPath)
-        ? "public, max-age=31536000, immutable"
-        : "no-cache",
-      ETag: etag,
-    };
-    const ifNoneMatch = request.headers["if-none-match"];
-    if (
-      ifNoneMatch !== undefined &&
-      ifNoneMatch
-        .split(",")
-        .some(
-          (value) => value.trim() === "*" || value.trim().replace(/^W\//i, "") === etag.slice(2),
-        )
-    ) {
-      response.writeHead(304, cacheHeaders);
-      response.end();
-      return true;
-    }
-    sendText(response, 200, contentType, await NodeFS.readFile(candidate), cacheHeaders);
-    return true;
-  } catch (cause) {
-    const code = (cause as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT" && code !== "EISDIR" && code !== "ENOTDIR") throw cause;
-    return false;
-  }
-}
-
-/** Ports past the requested one a server forward tries before reporting that none is free. */
-const MAX_LOCAL_PORT_CANDIDATES = 100;
-
-/** Whether `port` can be bound on the loopback address `coder port-forward` listens on. */
-function loopbackPortIsFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const probe = NodeHttp.createServer();
-    probe.once("error", () => resolve(false));
-    probe.listen({ port, host: CODER_GATEWAY_HOST, exclusive: true }, () =>
-      probe.close(() => resolve(true)),
-    );
-  });
-}
-
-/**
- * The requested port, or the next one, that no saved TCP forward uses and nothing on this
- * computer holds. Null when none of the candidates is free.
- */
-async function findFreeForwardPort(
-  requested: number,
-  config: CoderProfileConfig,
-): Promise<number | null> {
-  const saved = new Set(
-    (config.portForwards ?? [])
-      .filter((portForward) => portForward.protocol === "tcp")
-      .map((portForward) => portForward.localPort),
-  );
-  const last = Math.min(65_535, requested + MAX_LOCAL_PORT_CANDIDATES);
-  for (let port = requested; port <= last; port += 1) {
-    if (!saved.has(port) && (await loopbackPortIsFree(port))) return port;
-  }
-  return null;
-}
-
-function readJsonBody(request: NodeHttp.IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalBytes = 0;
-    request.on("data", (chunk: Buffer) => {
-      totalBytes += chunk.byteLength;
-      if (totalBytes > MAX_CONFIG_BODY_BYTES) {
-        reject(new Error("Request body is too large."));
-        request.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    request.on("end", () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown);
-      } catch (cause) {
-        reject(cause);
-      }
-    });
-    request.once("error", reject);
-  });
-}
-
-function rejectWebSocketUpgrade(socket: Duplex, statusCode: number, statusText: string): void {
-  socket.end(
-    `HTTP/1.1 ${statusCode} ${statusText}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
-  );
-}
-
-function isServerNotRunningError(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    cause.code === "ERR_SERVER_NOT_RUNNING"
-  );
-}
-
-const runCoderLogin = Effect.fn("coderGateway.runCoderLogin")(function* (
-  executable: string,
-  args: readonly string[],
-) {
-  const result = yield* runGatewayProcess(
-    { executable, args },
-    {
-      label: "Coder login",
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-      windowsHide: false,
-    },
-  );
-  if (result.code !== 0) {
-    return yield* Effect.fail(
-      new GatewayProcessError(
-        `Coder login exited with code ${String(result.code)} (${String(result.signal)}).`,
-      ),
-    );
-  }
-});
-
-export type CoderAuthenticationStatus = "authenticated" | "unauthenticated" | "unavailable";
-
-function checkCoderAuthStatus(
-  invocation: CoderInvocation,
-  timeoutMs = DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS,
-  terminationGraceMs = DEFAULT_PROCESS_TERMINATION_GRACE_MS,
-): Effect.Effect<CoderAuthenticationStatus> {
-  return runGatewayProcess(invocation, {
-    label: "Coder authentication check",
-    timeoutMs,
-    terminationGraceMs,
-    stdout: "ignore",
-    stderrMode: "tail",
-    maxStderrBytes: MAX_CODER_AUTH_STATUS_BYTES,
-  }).pipe(
-    Effect.map((result): CoderAuthenticationStatus => {
-      if (result.code === 0) return "authenticated";
-      return /\bStatus code 401\b/.test(result.stderr.toString("utf8"))
-        ? "unauthenticated"
-        : "unavailable";
-    }),
-    Effect.catch(() => Effect.succeed("unavailable" as const)),
-  );
-}
-
-export function runCoderAuthStatus(
-  invocation: CoderInvocation,
-  timeoutMs = DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS,
-  terminationGraceMs = DEFAULT_PROCESS_TERMINATION_GRACE_MS,
-): Promise<CoderAuthenticationStatus> {
-  return Effect.runPromise(checkCoderAuthStatus(invocation, timeoutMs, terminationGraceMs));
-}
-
-class CoderConfigConflictError extends Error {}
-
-/**
- * Coder keeps a deployment's sign-in in the profile directory named by its id, so a saved
- * deployment's URL never changes; otherwise its session would go to the new host.
- */
-function assertDeploymentUrlsUnchanged(previous: CoderProfileConfig, next: CoderProfileConfig) {
-  for (const deployment of next.deployments) {
-    const saved = previous.deployments.find((entry) => entry.id === deployment.id);
-    if (saved !== undefined && saved.url !== deployment.url)
-      throw new CoderConfigConflictError(
-        `The domain of ${saved.name} cannot change. Add the new domain instead.`,
-      );
-  }
-}
-
-function workspaceConnectionIsCurrent(
-  previous: CoderProfileConfig,
-  next: CoderProfileConfig,
-  workspaceId: string,
-): boolean {
-  const previousWorkspace = previous.workspaces.find((entry) => entry.id === workspaceId);
-  const nextWorkspace = next.workspaces.find((entry) => entry.id === workspaceId);
-  if (previousWorkspace === undefined || nextWorkspace === undefined) return false;
-  const previousDeployment = previous.deployments.find(
-    (entry) => entry.id === previousWorkspace.deploymentId,
-  );
-  const nextDeployment = next.deployments.find((entry) => entry.id === nextWorkspace.deploymentId);
-  return (
-    previousDeployment !== undefined &&
-    nextDeployment !== undefined &&
-    previousWorkspace.deploymentId === nextWorkspace.deploymentId &&
-    previousWorkspace.workspace === nextWorkspace.workspace &&
-    previousDeployment.url === nextDeployment.url &&
-    previousDeployment.executable === nextDeployment.executable
-  );
-}
-
-function portForwardIsCurrent(
-  previous: CoderProfileConfig,
-  next: CoderProfileConfig,
-  portForwardId: string,
-): boolean {
-  const previousPortForward = previous.portForwards?.find((entry) => entry.id === portForwardId);
-  const nextPortForward = next.portForwards?.find((entry) => entry.id === portForwardId);
-  return (
-    previousPortForward !== undefined &&
-    nextPortForward !== undefined &&
-    previousPortForward.workspaceId === nextPortForward.workspaceId &&
-    previousPortForward.protocol === nextPortForward.protocol &&
-    previousPortForward.localPort === nextPortForward.localPort &&
-    previousPortForward.remotePort === nextPortForward.remotePort &&
-    workspaceConnectionIsCurrent(previous, next, previousPortForward.workspaceId)
-  );
-}
-
-function discoveredWorkspace(value: unknown): DiscoveredCoderWorkspace | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  const name = typeof record.name === "string" ? record.name.trim() : "";
-  const owner =
-    typeof record.owner_name === "string"
-      ? record.owner_name.trim()
-      : typeof record.ownerName === "string"
-        ? record.ownerName.trim()
-        : "";
-  const latestBuild =
-    typeof record.latest_build === "object" &&
-    record.latest_build !== null &&
-    !Array.isArray(record.latest_build)
-      ? (record.latest_build as Record<string, unknown>)
-      : undefined;
-  const rawStatus = latestBuild?.status;
-  const status =
-    rawStatus === "running" || rawStatus === "starting" || rawStatus === "stopped"
-      ? rawStatus
-      : "unknown";
-  if (name.length === 0) return null;
-  const health =
-    typeof record.health === "object" && record.health !== null && !Array.isArray(record.health)
-      ? (record.health as Record<string, unknown>)
-      : undefined;
-  const rawDeadline = latestBuild?.deadline;
-  const deadlineMs = typeof rawDeadline === "string" ? Date.parse(rawDeadline) : Number.NaN;
-  const rawMaxDeadline = latestBuild?.max_deadline;
-  const maxDeadlineMs =
-    typeof rawMaxDeadline === "string" ? Date.parse(rawMaxDeadline) : Number.NaN;
-  const activeStartBuild =
-    latestBuild?.transition === "start" && (status === "running" || status === "starting");
-  const autostopAt =
-    activeStartBuild && Number.isFinite(deadlineMs) ? new Date(deadlineMs).toISOString() : null;
-  return {
-    name,
-    target: owner.length === 0 ? name : `${owner}/${name}`,
-    status,
-    updateAvailable: record.outdated === true,
-    healthy: typeof health?.healthy === "boolean" ? health.healthy : null,
-    autostopAt,
-    requiredStopAt:
-      autostopAt !== null && Number.isFinite(maxDeadlineMs)
-        ? new Date(maxDeadlineMs).toISOString()
-        : null,
-  };
-}
-
-function discoveredWorkspaceMatches(
-  discovered: DiscoveredCoderWorkspace,
-  workspace: { readonly workspace: string },
-): boolean {
-  return (
-    discovered.target === workspace.workspace ||
-    (!workspace.workspace.includes("/") && discovered.name === workspace.workspace)
-  );
-}
-
-/** Fails once `signal` aborts; racing it interrupts the other effect, which stops its child. */
-function failWhenAborted(signal: AbortSignal): Effect.Effect<never, Error> {
-  return Effect.callback<never, Error>((resume) => {
-    const onAbort = () =>
-      resume(Effect.fail(new Error("Coder workspace connection was cancelled.")));
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-    return Effect.sync(() => signal.removeEventListener("abort", onAbort));
-  });
-}
-
-function runCoderWorkspaceList(
-  invocation: CoderInvocation,
-): Effect.Effect<readonly DiscoveredCoderWorkspace[], GatewayProcessError, never> {
-  return runGatewayProcess(invocation, {
-    label: "Coder workspace discovery",
-    timeoutMs: DEFAULT_CODER_WORKSPACE_LIST_TIMEOUT_MS,
-    maxStdoutBytes: MAX_CODER_LIST_BYTES,
-    maxStderrBytes: MAX_CODER_LIST_BYTES,
-    stdoutMode: "error",
-  }).pipe(
-    Effect.flatMap((result) => {
-      if (result.code !== 0) {
-        const detail = result.stderr.toString("utf8").trim();
-        return Effect.fail(
-          new GatewayProcessError(
-            `Coder workspace discovery exited with code ${String(result.code)} (${String(result.signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
-          ),
-        );
-      }
-      return Effect.try({
-        try: () => {
-          const parsed = JSON.parse(result.stdout.toString("utf8")) as unknown;
-          if (!Array.isArray(parsed)) throw new Error("Coder returned a non-array workspace list.");
-          return parsed
-            .map(discoveredWorkspace)
-            .filter((workspace): workspace is DiscoveredCoderWorkspace => workspace !== null);
-        },
-        catch: (cause) =>
-          new GatewayProcessError(
-            cause instanceof Error ? cause.message : "Coder returned an invalid workspace list.",
-            { cause },
-          ),
-      });
-    }),
-  );
-}
-
-function runCoderWorkspaceAction(
-  invocation: CoderInvocation,
-  action: WorkspaceAction,
-): Effect.Effect<void, GatewayProcessError> {
-  return runGatewayProcess(invocation, {
-    label: `Coder workspace ${action}`,
-    maxStdoutBytes: MAX_CODER_WORKSPACE_ACTION_BYTES,
-    maxStderrBytes: MAX_CODER_WORKSPACE_ACTION_BYTES,
-    stdoutMode: "tail",
-    stderrMode: "tail",
-  }).pipe(
-    Effect.flatMap((result) => {
-      if (result.code === 0) return Effect.void;
-      const detail = [result.stdout, result.stderr]
-        .map((output) => output.toString("utf8").trim())
-        .filter((output) => output.length > 0)
-        .join("\n");
-      return Effect.fail(
-        new GatewayProcessError(
-          `Coder workspace ${action} exited with code ${String(result.code)} (${String(result.signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
-        ),
-      );
-    }),
-  );
-}
-
-type WorkspaceAction = "start" | "stop" | "restart" | "update";
-
-class WorkspaceActionConflictError extends Error {}
-
-interface DeferredPromise<A> {
-  readonly promise: Promise<A>;
-  readonly resolve: (value: A) => void;
-  readonly reject: (cause: unknown) => void;
-}
-
-function makeDeferredPromise<A>(): DeferredPromise<A> {
-  let resolve!: (value: A) => void;
-  let reject!: (cause: unknown) => void;
-  const promise = new Promise<A>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
-type WorkspaceLifecycleState =
-  | {
-      readonly _tag: "ShutdownFailed";
-      readonly generation: number;
-      readonly connection: CoderHelperConnection;
-      readonly scope: Scope.Closeable;
-      readonly error: string;
-    }
-  | { readonly _tag: "Disconnected"; readonly generation: number }
-  | {
-      readonly _tag: "Connecting";
-      readonly generation: number;
-      readonly operation: Promise<WorkspaceConnection>;
-      // Interrupts the attempt, killing its `coder ssh` child, so a close need not wait for it.
-      readonly cancel: AbortController;
-    }
-  | {
-      readonly _tag: "Connected";
-      readonly generation: number;
-      readonly connection: CoderHelperConnection;
-      readonly rpcBridge: WorkspaceRpcBridge;
-      readonly scope: Scope.Closeable;
-    }
-  | {
-      readonly _tag: "Changing";
-      readonly generation: number;
-      readonly action: WorkspaceAction;
-      readonly operation: Promise<void>;
-      // Acquisition cleanup can fail while this operation is waiting for it.
-      readonly shutdownFailure?:
-        | Extract<WorkspaceLifecycleState, { _tag: "ShutdownFailed" }>
-        | undefined;
-    };
-
-type PortForwardLifecycleState =
-  | {
-      readonly _tag: "ShutdownFailed";
-      readonly generation: number;
-      readonly connection: CoderPortForwardConnection;
-      readonly scope: Scope.Closeable;
-      readonly error: string;
-    }
-  | { readonly _tag: "Idle"; readonly generation: number }
-  | { readonly _tag: "WorkspaceStopped"; readonly generation: number }
-  | {
-      readonly _tag: "Starting";
-      readonly generation: number;
-      readonly operation: Promise<CoderPortForwardConnection>;
-    }
-  | {
-      readonly _tag: "Running";
-      readonly generation: number;
-      readonly connection: CoderPortForwardConnection;
-      readonly scope: Scope.Closeable;
-    }
-  | {
-      readonly _tag: "Stopping";
-      readonly generation: number;
-      readonly operation: Promise<void>;
-      // Acquisition cleanup can fail while this operation is waiting for it.
-      readonly shutdownFailure?:
-        | Extract<PortForwardLifecycleState, { _tag: "ShutdownFailed" }>
-        | undefined;
-    }
-  | { readonly _tag: "Failed"; readonly generation: number; readonly error: string };
-
-type WorkspaceConnectionClaim =
-  | { readonly _tag: "ShutdownFailed"; readonly error: string }
-  | { readonly _tag: "Existing"; readonly connection: WorkspaceConnection }
-  | { readonly _tag: "Pending"; readonly operation: Promise<WorkspaceConnection> }
-  | { readonly _tag: "Changing"; readonly operation: Promise<void> }
-  | { readonly _tag: "Start"; readonly generation: number };
-
-type WorkspaceCloseClaim =
-  | { readonly _tag: "Closed" }
-  | { readonly _tag: "Changing"; readonly operation: Promise<void> }
-  | {
-      readonly _tag: "Close";
-      readonly pending: Promise<WorkspaceConnection> | undefined;
-      readonly cancel: AbortController | undefined;
-      readonly scope: Scope.Closeable | undefined;
-      readonly previous:
-        | Extract<WorkspaceLifecycleState, { _tag: "Connected" | "ShutdownFailed" }>
-        | undefined;
-    };
-
-type PortForwardStartClaim =
-  | { readonly _tag: "ShutdownFailed"; readonly error: string }
-  | { readonly _tag: "Existing"; readonly connection: CoderPortForwardConnection }
-  | { readonly _tag: "Pending"; readonly operation: Promise<CoderPortForwardConnection> }
-  | { readonly _tag: "Stopping"; readonly operation: Promise<void> }
-  | { readonly _tag: "Start"; readonly generation: number };
-
-type PortForwardStopClaim =
-  | { readonly _tag: "Stopped" }
-  | { readonly _tag: "Pending"; readonly operation: Promise<void> }
-  | {
-      readonly _tag: "Stop";
-      readonly pending: Promise<CoderPortForwardConnection> | undefined;
-      readonly scope: Scope.Closeable | undefined;
-      readonly previous:
-        | Extract<PortForwardLifecycleState, { _tag: "Running" | "ShutdownFailed" }>
-        | undefined;
-    };
-
-type WorkspaceActionClaim =
-  | { readonly _tag: "Pending"; readonly operation: Promise<void> }
-  | { readonly _tag: "Conflict"; readonly action: WorkspaceAction }
-  | {
-      readonly _tag: "Start";
-      readonly pending: Promise<WorkspaceConnection> | undefined;
-      readonly cancel: AbortController | undefined;
-      readonly scope: Scope.Closeable | undefined;
-      readonly previous:
-        | Extract<WorkspaceLifecycleState, { _tag: "Connected" | "ShutdownFailed" }>
-        | undefined;
-    };
-
-interface WorkspaceConnection {
-  readonly connection: CoderHelperConnection;
-  readonly rpcBridge: WorkspaceRpcBridge;
-}
 
 export interface LocalCoderGatewayEffectOptions {
   readonly configPath?: string;
@@ -691,29 +138,6 @@ export interface LocalCoderGatewayEffectOptions {
   readonly connectPortForward?: (
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderPortForwardConnection, unknown, Scope.Scope>;
-}
-
-const MIN_SAVED_GATEWAY_PORT = 1024;
-const MAX_SAVED_GATEWAY_PORT = 65_535;
-
-async function readSavedGatewayPort(portPath: string): Promise<number | null> {
-  try {
-    const raw = (await NodeFS.readFile(portPath, "utf8")).trim();
-    if (!/^\d+$/.test(raw)) return null;
-    const port = Number(raw);
-    return port >= MIN_SAVED_GATEWAY_PORT && port <= MAX_SAVED_GATEWAY_PORT ? port : null;
-  } catch {
-    return null;
-  }
-}
-
-async function saveGatewayPort(portPath: string, port: number): Promise<void> {
-  try {
-    await NodeFS.mkdir(NodePath.dirname(portPath), { recursive: true });
-    await NodeFS.writeFile(portPath, `${port}\n`, "utf8");
-  } catch {
-    // The next start falls back to an ephemeral port.
-  }
 }
 
 export function makeLocalCoderGateway(
