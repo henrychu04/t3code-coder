@@ -160,18 +160,16 @@ export function CoderWorkspaceLatency({
     let cancelled = false;
     let timer: number | undefined;
     const refresh = async (): Promise<void> => {
-      try {
-        const result = await resourceUsageCommand.run(appAtomRegistry, {
-          environmentId,
-          input: {},
-        });
-        if (!AsyncResult.isSuccess(result)) throw new Error("Resource usage is unavailable.");
-        if (!cancelled) {
+      const result = await resourceUsageCommand
+        .run(appAtomRegistry, { environmentId, input: {} })
+        .catch(() => null);
+      if (!cancelled) {
+        if (result !== null && AsyncResult.isSuccess(result)) {
           setResourceUsage(result.value);
           setResourceError(false);
+        } else {
+          setResourceError(true);
         }
-      } catch {
-        if (!cancelled) setResourceError(true);
       }
       if (!cancelled) timer = window.setTimeout(() => void refresh(), RESOURCE_REFRESH_MS);
     };
