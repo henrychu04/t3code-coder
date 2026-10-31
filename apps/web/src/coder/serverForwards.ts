@@ -73,17 +73,31 @@ export async function forwardServer(input: {
     localPort: await findFreeCoderForwardPort(remotePort),
     remotePort,
   };
-  // Saving starts the forward; the gateway answers once its process has spawned.
-  await updateConfig((current) => addServerForward(current, rule));
+  // Saving starts the forward; the gateway answers once its process has spawned. Another tab may
+  // have forwarded the same server first; that rule is used instead of adding a second one.
+  let forwarded = rule;
+  await updateConfig((current) => {
+    const existing = findServerForward(current, rule.workspaceId, remotePort);
+    if (existing !== undefined) {
+      forwarded = existing;
+      return current;
+    }
+    return addServerForward(current, rule);
+  });
   const deadline = Date.now() + FORWARD_READY_TIMEOUT_MS;
   for (;;) {
-    const status = (await loadCoderPortForwardStatuses()).find((entry) => entry.id === rule.id);
+    const status = (await loadCoderPortForwardStatuses()).find(
+      (entry) => entry.id === forwarded.id,
+    );
     const expired = Date.now() >= deadline;
     // Coder versions that never print `Ready!` still open once the wait runs out.
-    if (status?.status === "running" && (status.ready === true || expired)) return rule;
+    if (status?.status === "running" && (status.ready === true || expired)) return forwarded;
     if (status?.status !== "running" && (status?.status !== "starting" || expired)) {
-      // A forward that never ran is not kept, so Settings shows no rule to explain.
-      await updateConfig((current) => removeServerForward(current, rule.id));
+      // A forward this click added and that never ran is not kept, so Settings shows no rule to
+      // explain; a rule another tab added stays.
+      if (forwarded === rule) {
+        await updateConfig((current) => removeServerForward(current, rule.id));
+      }
       throw new Error(status?.error ?? "The port forward did not start.");
     }
     await new Promise((resolve) => setTimeout(resolve, FORWARD_READY_POLL_MS));

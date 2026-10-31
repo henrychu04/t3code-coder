@@ -1511,7 +1511,13 @@ export function makeLocalCoderGateway(
       return deferred.promise;
     };
 
-    const startConfiguredPortForwards = async (): Promise<void> => {
+    /**
+     * Starts the saved rules. A config save passes `retryFailed: false`: a rule that failed stays
+     * stopped until it is restarted or changed (a changed rule's lifecycle is recreated as idle).
+     */
+    const startConfiguredPortForwards = async (options?: {
+      readonly retryFailed?: boolean;
+    }): Promise<void> => {
       if ((profileConfig.portForwards?.length ?? 0) === 0) return;
       const workspacesByDeployment = new Map<
         string,
@@ -1538,6 +1544,12 @@ export function makeLocalCoderGateway(
       );
       await Promise.allSettled(
         (profileConfig.portForwards ?? []).map(async (portForward) => {
+          if (
+            options?.retryFailed === false &&
+            SynchronizedRef.getUnsafe(portForwardLifecycle(portForward.id))._tag === "Failed"
+          ) {
+            return;
+          }
           const workspace = profileConfig.workspaces.find(
             (entry) => entry.id === portForward.workspaceId,
           );
@@ -1909,7 +1921,7 @@ export function makeLocalCoderGateway(
               for (const portForwardId of stalePortForwardIds) {
                 portForwardLifecycles.delete(portForwardId);
               }
-              await startConfiguredPortForwards();
+              await startConfiguredPortForwards({ retryFailed: false });
               return profileConfig;
             });
             sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(savedConfig));
@@ -2501,7 +2513,7 @@ export function makeLocalCoderGateway(
       yield* Effect.promise(() => saveGatewayPort(options.portPath!, address.port));
     }
 
-    yield* Effect.promise(startConfiguredPortForwards);
+    yield* Effect.promise(() => startConfiguredPortForwards());
 
     return { url: `http://${CODER_GATEWAY_HOST}:${address.port}` };
   });

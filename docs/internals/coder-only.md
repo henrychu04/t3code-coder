@@ -178,7 +178,10 @@ removed, or the gateway exits. A running forward's status adds `ready` once the 
 Coder's `Ready!` line on stderr. The thread details card's Servers section saves the same rules
 (see [Web chat, composer, and files](#web-chat-composer-and-files)); its free-port check
 (`/api/port-forwards/free-port`, at most `MAX_LOCAL_PORT_CANDIDATES` ports past the requested one)
-binds and closes a probe listener on `127.0.0.1` only and opens no connection.
+binds and closes a probe listener on `127.0.0.1` only and opens no connection. On Windows a
+specific-address bind can succeed while another program listens on `0.0.0.0` with the same port,
+so the check may call such a port free (unverified on a Windows laptop); the gateway cannot probe
+the wildcard address or connect out to tell, by boundary 1 and its no-outbound-connection rule.
 
 ```text
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> codex / claude
@@ -597,7 +600,9 @@ checks that every name here still exists and that every modified upstream file i
   `coderServer.ts` provides the runtime coordinator alone (upstream: `layerFromHost`);
   `rpc.ts`, client-runtime's `state/server.ts`, and `AcpSessionManagementSection.tsx` carry only
   those two. Session delete is cut because Kilo Code advertises no `session/delete`; logout and
-  agent provider configuration are account and provider management.
+  agent provider configuration are account and provider management. The section keeps upstream's
+  `readOnly` prop (upstream's browser test passes it) and `probe.ts` keeps upstream's
+  `managementFailure` reasons for the cut actions; neither is read here.
 - provider-acp's `adapter.ts` gives ACP sessions no MCP server and sends `t3ToolBridgeInstructions`
   with the first prompt through provider-core's `t3AcpPromptWithInstructions`; `mcpOverAcpBridge.ts`
   and `clientTerminals.ts` stay dormant (cutting them would add about 34 seams). HTTP MCP servers
@@ -980,8 +985,9 @@ checks that every name here still exists and that every modified upstream file i
 
 ### Build tooling and tests
 
-- `apps/web/vite.config.ts` carries upstream's office/pdf asset handling and route splitting but
-  not the render scenarios project, `VITE_RELEASE_CHANNEL`, source maps, or the build manifest.
+- `apps/web/vite.config.ts` carries upstream's office/pdf asset handling, route splitting and
+  build manifest (the gateway reads `.vite/manifest.json` to cache hashed assets) but not the render
+  scenarios project, `VITE_RELEASE_CHANNEL`, or source maps.
 - Root `vite.config.ts` is upstream's without the remote task cache and cached test tasks (`infra/`
   is cut), the per-package test projects (`vite.coder.config.ts` replaces upstream's
   `apps/server/vite.config.ts` and extends this file, which therefore loads `gitConfig.setup.ts`),

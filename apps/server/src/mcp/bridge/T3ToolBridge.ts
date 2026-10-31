@@ -134,6 +134,9 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
     const crypto = yield* Crypto.Crypto;
     const jobScope = yield* Effect.scope;
     const jobs = new Map<string, BridgeJob>();
+    // Calls still inside their inline budget, per thread; they count toward the cap before they
+    // become jobs, so concurrent calls cannot all pass the check.
+    const inlineCalls = new Map<string, number>();
 
     const run = (
       scope: McpInvocationContext.McpInvocationScope,
@@ -235,10 +238,12 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
             yield* Fiber.interrupt(job.fiber);
           }
         }
-        // Refuse before the tool starts, so a refused call never half-applies.
-        let running = 0;
+        // Refuse before the tool starts, so a refused call never half-applies. The count and the
+        // reservation below run without yielding, so concurrent calls see each other.
+        const threadId = scope.thread.threadId;
+        let running = inlineCalls.get(threadId) ?? 0;
         for (const job of jobs.values()) {
-          if (job.threadId === scope.thread.threadId && job.fiber.pollUnsafe() === undefined) {
+          if (job.threadId === threadId && job.fiber.pollUnsafe() === undefined) {
             running++;
           }
         }
@@ -248,13 +253,25 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
             "Too many T3 tool calls are still running. Read their results with task_status first.",
           );
         }
-        const fiber = yield* run(scope, request).pipe(Effect.forkIn(jobScope));
-        const exit = yield* Fiber.await(fiber).pipe(
-          Effect.timeoutOption(options.inlineBudgetMs ?? INLINE_BUDGET_MS),
-        );
-        if (Option.isSome(exit)) return yield* exit.value;
-        const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`;
-        jobs.set(taskId, { threadId: scope.thread.threadId, startedAt: now, fiber });
+        inlineCalls.set(threadId, (inlineCalls.get(threadId) ?? 0) + 1);
+        const releaseInline = Effect.sync(() => {
+          const remaining = (inlineCalls.get(threadId) ?? 1) - 1;
+          if (remaining > 0) inlineCalls.set(threadId, remaining);
+          else inlineCalls.delete(threadId);
+        });
+        const outcome = yield* Effect.gen(function* () {
+          const fiber = yield* run(scope, request).pipe(Effect.forkIn(jobScope));
+          const exit = yield* Fiber.await(fiber).pipe(
+            Effect.timeoutOption(options.inlineBudgetMs ?? INLINE_BUDGET_MS),
+          );
+          if (Option.isSome(exit)) return { _tag: "Done" as const, exit: exit.value };
+          const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`;
+          // Registered before the inline slot is released, so the call is counted throughout.
+          jobs.set(taskId, { threadId, startedAt: now, fiber });
+          return { _tag: "Job" as const, taskId };
+        }).pipe(Effect.ensuring(releaseInline));
+        if (outcome._tag === "Done") return yield* outcome.exit;
+        const taskId = outcome.taskId;
         return {
           status: "running",
           taskId,

@@ -89,7 +89,12 @@ export function ThreadServersPanel(props: {
     if (forwarded === null) return;
     const url = forwardedServerUrl(forwarded);
     if (tab) tab.location.href = url;
-    else window.open(url, "_blank", "noopener,noreferrer");
+    else if (window.open(url, "_blank", "noopener,noreferrer") === null) {
+      // The browser blocked the tab; the forward still runs, so say where it is.
+      toastManager.add(
+        stackedThreadToast({ type: "success", title: "Server forwarded", description: url }),
+      );
+    }
   };
 
   const unforward = async (server: DiscoveredLocalServer) => {
