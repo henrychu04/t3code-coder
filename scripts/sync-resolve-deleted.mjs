@@ -14,8 +14,10 @@ import * as NodePath from "node:path";
 // `git diff --name-status <merge-base> origin/coder-only | grep ^D`.
 const DELETED_PATHS = {
   // Auth and pairing: Coder owns authentication; no sessions, pairing, OAuth, DPoP, or scopes.
-  // The server's auth/ keeps only ServerSecretStore and utils, which a modify/delete cannot name.
+  // The server's auth/ keeps only ServerSecretStore, utils, and serverInternalPaths (which carried
+  // file readers import); a modify/delete cannot name them.
   "auth and pairing": [
+    "packages/client-runtime/src/state/environmentHttpAuth.test.ts",
     "apps/server/src/auth/",
     "apps/web/src/components/settings/SessionPermissions.tsx",
     "apps/server/src/persistence/AuthPairingLinks.ts",
@@ -60,6 +62,7 @@ const DELETED_PATHS = {
   ],
   // Device: no device hosts, device hub, or agent device shim.
   device: [
+    "packages/client-runtime/src/state/deviceHubAccess.ts",
     "apps/server/src/device/",
     "apps/server/src/mcp/McpDeviceToolkit.test.ts",
     "apps/server/src/mcp/toolkits/device/",
@@ -101,6 +104,7 @@ const DELETED_PATHS = {
   ],
   // Other provider packages: Codex, Claude Code, Pi, and Kilo Code are the only providers.
   "other provider packages": [
+    "apps/server/src/provider/antigravityAuthSupport.ts",
     "apps/server/scripts/record-fx-acp-replay-fixture.ts",
     "apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts",
     "apps/server/src/orchestration-v2/Adapters/FxAdapterV2.ts",
@@ -130,6 +134,7 @@ const DELETED_PATHS = {
   // Kilo Code runs upstream's ACP Registry driver from its local command only: no registry
   // installs, agent sign-in, per-agent flavors, or native protocol logging.
   "ACP Registry surfaces": [
+    "docs/user/providers-acp.md",
     "packages/provider-acp-registry/src/server/auth.ts",
     "packages/provider-acp-registry/src/server/authenticationState.ts",
     "packages/provider-acp-registry/src/server/copilotAcp.ts",
@@ -142,6 +147,9 @@ const DELETED_PATHS = {
   // Desktop: no Electron app, local primary environment, desktop updates, OS permission
   // checklist, native helpers, or packaging.
   desktop: [
+    "apps/web/src/lib/desktopPasteAsText.ts",
+    "apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts",
+    "patches/app-builder-lib@26.16.1.patch",
     "apps/desktop/",
     "apps/server/src/desktopUpdate/",
     "apps/web/src/components/desktop/",
@@ -159,9 +167,10 @@ const DELETED_PATHS = {
     "scripts/fixtures/desktop-launch/",
   ],
   // Mobile: no mobile app.
-  mobile: ["apps/mobile/", "patches/@expo__ui@58.0.20.patch"],
+  mobile: ["apps/mobile/", "patches/@expo__ui@58.0.20.patch", "patches/expo-sharing@58.0.19.patch"],
   // Hosted web: no hosted app, cloud accounts, marketing site, or welcome onboarding.
   "hosted web": [
+    "packages/client-runtime/src/promptLinks.ts",
     "apps/marketing/",
     "apps/server/src/cloud/",
     "apps/web/src/cloud/",
@@ -175,6 +184,7 @@ const DELETED_PATHS = {
   // Upstream's runtime startup and state tests build its own server; the helper's startup is
   // coderServer.ts.
   "server CLI": [
+    "apps/server/src/binCli.ts",
     "apps/server/src/cli/",
     "apps/server/src/environment/ServerEnvironment.ts",
     "apps/server/src/serverRuntimeStartup.autoPull.test.ts",
@@ -215,6 +225,9 @@ const DELETED_PATHS = {
   ],
   // Relay: no relay, Tailscale, or SSH transport.
   relay: [
+    "apps/server/src/environment/DirectEndpoints.ts",
+    "packages/client-runtime/src/connection/resolver.test.ts",
+    "docs/internals/connection-runtime.md",
     "apps/server/src/relay/",
     "apps/web/src/state/relay.ts",
     "docs/internals/remote.md",
@@ -237,6 +250,8 @@ const DELETED_PATHS = {
   // Telemetry: no T3-owned telemetry, usage dashboards or plan-window usage limits, diagnostics,
   // or trace export.
   telemetry: [
+    "packages/shared/src/usageFormat.ts",
+    "packages/shared/src/httpObservability.ts",
     "apps/server/src/diagnostics/",
     "apps/server/src/provider/Drivers/claudeUsage.ts",
     "apps/server/src/provider/Drivers/claudeUsage.test.ts",
@@ -271,6 +286,7 @@ const DELETED_PATHS = {
   // Updates and releases: no server self-update, update pill or fleet tracks, npm launcher, CLI
   // archives, or release notes.
   "updates and releases": [
+    "apps/web/src/components/sidebar/updateEverythingRun.tsx",
     "apps/server/src/persistence/databaseMigrationHead.ts",
     "apps/server/src/serverOwnership.ts",
     "apps/web/src/components/ServerUpdateAction.tsx",

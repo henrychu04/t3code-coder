@@ -17,6 +17,7 @@ describe("thread details items", () => {
     expect(visibility.automations).toBe(false);
     expect(visibility.lineage).toBe(true);
     expect("usage" in visibility).toBe(false);
+    expect(visibility.context).toBe(false);
   });
 
   it("stores only choices that differ from the default", () => {

@@ -1084,6 +1084,7 @@ export interface AcpSessionRuntimeStartResult {
 export interface AcpSessionActivationOptions {
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly acpMcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
+  // Coder: no `httpMcpServers` (#26968); no MCP server reaches an agent.
 }
 
 export class AcpSessionRuntime extends Context.Service<
@@ -2094,11 +2095,9 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     initializeResult: EffectAcpSchema.InitializeResponse,
     activationOptions?: AcpSessionActivationOptions,
   ): ReadonlyArray<EffectAcpSchema.McpServer> => {
+    const mcpCapabilities = initializeResult.agentCapabilities?.mcpCapabilities;
     const acpServers = activationOptions?.acpMcpServers ?? options.acpMcpServers ?? [];
-    if (
-      initializeResult.agentCapabilities?.mcpCapabilities?.acp === true &&
-      acpServers.length > 0
-    ) {
+    if (mcpCapabilities?.acp === true && acpServers.length > 0) {
       return acpServers;
     }
     return activationOptions?.mcpServers ?? options.mcpServers ?? [];

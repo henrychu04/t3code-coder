@@ -16,8 +16,19 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("./useSettingsProjectGroups", () => ({ useSettingsProjectGroups: mocks.groups }));
 vi.mock("./ProjectFaviconPickerDialog", () => ({ ProjectFaviconPickerDialog: () => null }));
-vi.mock("../../state/environments", () => ({ useEnvironments: mocks.environments }));
+// Coder: upstream's project group update (#26154) reads each member's environment and configs.
+vi.mock("../../state/environments", () => ({
+  useEnvironments: mocks.environments,
+  readEnvironment: (environmentId: string) =>
+    mocks
+      .environments()
+      .environments.find(
+        (environment: { environmentId: string }) => environment.environmentId === environmentId,
+      ),
+}));
 vi.mock("../../state/entities", () => ({
+  useProjects: () => [],
+  useServerConfigs: () => new Map(),
   useThreadShells: () => [],
   waitForProjectRemoval: async () => true,
 }));

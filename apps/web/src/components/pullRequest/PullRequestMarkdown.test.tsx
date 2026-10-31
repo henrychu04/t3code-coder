@@ -65,7 +65,7 @@ it("opens a recognized MR in the page panel and updates its URL selection", asyn
     root.render(
       <PullRequestMarkdownContext
         value={{
-          autolinks: null,
+          remarkPlugins: [],
           lineBreaks: false,
           repositoryUrl: "https://gitlab.example/group/project",
           threadRef: null,
@@ -112,7 +112,7 @@ it("plays videos from their host and links other attachments, as on main", async
     root.render(
       <PullRequestMarkdownContext
         value={{
-          autolinks: null,
+          remarkPlugins: [],
           lineBreaks: false,
           repositoryUrl: "https://gitlab.example/group/project",
           threadRef: null,

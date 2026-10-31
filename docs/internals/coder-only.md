@@ -600,7 +600,9 @@ checks that every name here still exists and that every modified upstream file i
   agent provider configuration are account and provider management.
 - provider-acp's `adapter.ts` gives ACP sessions no MCP server and sends `t3ToolBridgeInstructions`
   with the first prompt through provider-core's `t3AcpPromptWithInstructions`; `mcpOverAcpBridge.ts`
-  and `clientTerminals.ts` stay dormant (cutting them would add about 34 seams).
+  and `clientTerminals.ts` stay dormant (cutting them would add about 34 seams). HTTP MCP servers
+  (#26968) are cut: the adapter's flavors have no `mcpOverHttp` (only Copilot's uncarried flavor set
+  it) and `AcpSessionRuntime.ts` takes no `httpMcpServers`.
   `scripts/acp-mock-agent.ts` keeps `T3_ACP_COMMAND_ADVERTISEMENT_DELAY_MS` for the adapter test.
   The user guide is the fork's `docs/user/providers-kilo.md`, adapted from upstream's
   `providers-acp.md` (not carried).
@@ -702,7 +704,7 @@ checks that every name here still exists and that every modified upstream file i
   (`server/GitLabMediaFetch.ts`) reads with `glab api` in the minted `cwd` (no `--hostname`),
   buffering at most `GITLAB_MEDIA_MAX_BYTES`. The package also exports `server/GitLabCli`, which
   `ws.projects.test.ts` stubs.
-- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 80a2351fcb): merge
+- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 15fe283272): merge
   requests between projects post to the source project with a numeric `target_project_id`; merge
   request URLs reach `glab` as `--repo <url> … -- <iid>`. `glab auth status` lines with a token
   label or `glpat-` token are never surfaced; clones accept only GitLab URLs without credentials,
@@ -721,7 +723,9 @@ checks that every name here still exists and that every modified upstream file i
 - Web merge requests: diffs come over `pullRequests.diff` without GitHub routing; a project's
   default merge method is a workspace setting whose `null` means "last selected"; client-runtime
   `pullRequestMarkdown.ts`'s `resolveGitLabUploadUrl` resolves `/uploads/` below the repository, and
-  `PullRequestMarkdown.tsx`'s `remarkGitLabUploads` applies the context's `repositoryUrl`; video
+  `pullRequestMarkdown.logic.ts`'s `pullRequestAutolinkPlugins` adds `remarkGitLabUploads` to each
+  repository's cached plugin list, and `PullRequestMarkdown.tsx` splits the body against the
+  context's `repositoryUrl`; video
   uploads play inline.
 - `lib/openPullRequestLink.ts` always offers the "Open link" toast for a commit outside the
   thread's workspace; `changeRequestLinks.ts`'s `isGitLabProject` (also used by
@@ -836,8 +840,9 @@ checks that every name here still exists and that every modified upstream file i
   `useRightPanelSurfaceClose` closes no preview sessions; `useSystemComposerBanners` shows only the
   offline or reconnecting banner, whose Reconnect only retries; `useDraftEnvironmentRouting` keeps
   only the manual machine switch; `useComposerSend` has no feedback upload, `/usage-limits`, load
-  balancing, or preview-annotation send (`composerSend.logic.ts` has no load-balancing helpers);
-  `useRightPanelActions` has no browser or device surfaces; `useChatTerminalActions` opens no script
+  balancing, or preview-annotation send (`composerSend.logic.ts` has no load-balancing helpers), and
+  its `/side` text-only check reads no annotations; `useRightPanelActions` has
+  no browser or device surfaces, so no `embedded` flag; `useChatTerminalActions` opens no script
   preview; `useProjectCloneBanner` shows no file-copy banner; `useComposerResume` and
   `useThreadLifecycle` call no `clearUsageLimitsFor`; `ThreadErrorBanner` and `ChatBannerLane` take
   no error code; `ChatOverlayHosts.tsx` has no device setup host.
@@ -846,7 +851,8 @@ checks that every name here still exists and that every modified upstream file i
 - `chatCanvasLayout.ts` has no preview obstacles (it accepts `findBar` and ignores it).
 - `RightPanelTabs.tsx` is upstream's strip and `PreviewPanelShell` without browser, device, and
   preview surfaces or per-tab memoization (#20853); never-opened preview surfaces get a plain title
-  and icon. The branch toolbar's workspace options are never primary and use the server's machine
+  and icon. Its inline tabs render `RightPanelTabContent`, which reads a side chat's shell for the
+  tab's title and state where upstream's memoized `RightPanelTab` does. The branch toolbar's workspace options are never primary and use the server's machine
   kind, with no "Auto balance" or server-update control; the branch picker adds "Rename current
   branch…" (`vcs.renameThreadBranch`).
 - Preview annotations, element captures, and SnapShot frames are absent from the composer and
@@ -877,7 +883,9 @@ checks that every name here still exists and that every modified upstream file i
   (`FileDiffContentsLoader` and `LoadedPartialDiffContents` types), which 1.6.1 still lacks.
 - Project actions: repository actions come from `projects.getConfig`, which drops `iconPath` and
   script preview fields; the editor has no preview URL; the thread details card has no Open in or
-  usage items, so `threadDetailsUsageEnabled` is never read.
+  usage items, so `threadDetailsUsageEnabled` is never read and the Context window item (#27892)
+  starts hidden. `chat/ThreadDetailsUsage.tsx` keeps only `ThreadDetailsContext`, so
+  `ThreadDetailsUsageInput` carries only `contextWindow`.
 - Servers (`chat/ThreadServersPanel.tsx`): selecting an unforwarded server is **Forward** in place
   of opening the browser panel (`coder/serverForwards.ts`): the gateway's
   `/api/port-forwards/free-port` picks the server's port or the next one free on `127.0.0.1` and
@@ -1061,7 +1069,9 @@ them, the file is named here.
   (`MobileAppSettingsRow`), hosted app, or prompt links (`components/promptLinks/`, the "Copy prompt
   link" actions, the automation row's link). `Icons.tsx` drops `OnePasswordIcon`.
 - **Auth, pairing, and relay.** No HTTP/WebSocket listener, session scopes, pairing, DPoP, relay,
-  or connection catalog; `settings/AddEnvironmentDialog.tsx` is cut. With no session scopes,
+  or connection catalog; `settings/AddEnvironmentDialog.tsx` is cut. The server's `auth/` keeps
+  `ServerSecretStore`, its utils, and `serverInternalPaths.ts` (#28041), which the carried file
+  readers import. With no session scopes,
   scheduled task lists show every webhook URL.
 - **Browser preview and devices.** No in-app browser, preview panel, mini-player, preview MCP
   toolkits, device hosts, or agent device shim (port discovery stays: `preview/PortScanner.ts`); provider-core's device instructions never reach an
@@ -1071,8 +1081,8 @@ them, the file is named here.
   metrics, OTLP or trace export (upstream's OTLP `config.test.ts`), diagnostics page, NDJSON event
   logs, resource telemetry, `observability/EventLoopMonitor.ts` (no host-freeze toast or
   `lastEventLoopStall`), usage page or dashboard (`shared/usageLimits.ts`, provider-core and
-  provider-pi `usage.ts`; `ProviderDriver.usage` is `never`), Labs' usage view
-  (`ThreadDetailsUsage`), `useUsageLimitsPanel`, or upstream's out-of-usage fallback (#26164;
+  provider-pi `usage.ts`; `ProviderDriver.usage` is `never`), the thread details usage-limit rows
+  (`ThreadDetailsUsage`'s limit windows), `useUsageLimitsPanel`, or upstream's out-of-usage fallback (#26164;
   `fallbackModelSelection` stays in the schema only). Without the usage page, `timestampFormat.ts`
   has no `resolveHour12`.
 - **Server self-update and CLI.** No npm release check (`cloud/npmRelease.ts`), "Update

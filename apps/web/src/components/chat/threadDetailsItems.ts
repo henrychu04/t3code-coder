@@ -1,8 +1,8 @@
 import type { ClientSettings } from "@t3tools/contracts";
 
 // Ids are stored in client settings, so never rename one.
-// Coder: no "openIn" (no local editor) or "usage" (no plan windows) items; the retired Labs usage
-// flag therefore has no item to default.
+// Coder: no "openIn" (no local editor) or "usage" (no plan windows) items. The retired Labs usage
+// flag, which T3 Coder never offered, defaults nothing, so Context starts hidden.
 export const THREAD_DETAILS_ITEMS = [
   { id: "environment", label: "Environment and worktree", defaultVisible: true },
   { id: "scripts", label: "Project scripts", defaultVisible: true },
@@ -12,6 +12,8 @@ export const THREAD_DETAILS_ITEMS = [
   { id: "servers", label: "Servers", defaultVisible: true },
   { id: "automations", label: "Automations", defaultVisible: true },
   { id: "lineage", label: "Lineage", defaultVisible: true },
+  { id: "sideChats", label: "Side chats", defaultVisible: true },
+  { id: "context", label: "Context window", defaultVisible: false },
 ] as const;
 
 export type ThreadDetailsItemId = (typeof THREAD_DETAILS_ITEMS)[number]["id"];

@@ -21,6 +21,15 @@ image thumbnails appear above the input; their workspace references are added wh
 You can drag or paste images into the composer. HEIC and HEIF photos are converted to JPEG in
 the browser, and photos over the image limit are resized to fit.
 
+Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
+on an empty line moves out one level, then leaves it; **Tab** nests a list item
+under the one above and **Shift+Tab** moves it back out. In a code block, Enter
+starts a new line at the current indentation, **Tab** and **Shift+Tab** indent
+the selected lines, and a closing ` ``` ` followed by Enter, or two blank lines
+at the end, leave the block. **Backspace** at the start of a code block turns it
+back into plain lines. Choose the language in a code block's corner to change
+it. Very large code blocks are shown without syntax highlighting.
+
 Attach up to 100 images per message. Each image can be up to 10 MiB, with at most 80 MiB of
 images in one message. Provider and model limits still apply, including images already in the
 conversation.

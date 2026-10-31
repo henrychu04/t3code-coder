@@ -138,6 +138,11 @@ already removed belongs in the script: `git rm` it and add the path to `DELETED_
 stage (6d450a4284 added 56). The files it lists are untouched but staged, so removing
 one needs `git rm -f`.
 
+A feature the sync carries can live in a file the fork deleted (15fe283272: #27892's context meter
+is `ThreadDetailsContext` in the cut `chat/ThreadDetailsUsage.tsx`). Before leaving a
+modify/delete deleted, check the range's commit list for features to carry, and restore only the
+carried part of such a file.
+
 An upstream file added under a deleted path can still be needed: a carried file may import it
 (upstream #28041 adds `apps/server/src/auth/serverInternalPaths.ts`, which the carried
 `AssetAccess.ts`, `GitVcsDriverCore.ts`, and `WorkspaceFileSystem.ts` import). The script lists
@@ -420,6 +425,11 @@ foreground command limit, so run it in the background and read its log. Known re
   ("There was an error when mocking a module") or time out, because Vite re-optimizes
   dependencies mid-run and reloads ("optimized dependencies changed. reloading"). Rerun
   `pnpm test:web:coder` until no reload is logged; failures that remain are real.
+- Under the full suite's load, browser tests time out in large numbers (15fe283272: 105 failures,
+  then 19 in a second run, all passing alone), and ClaudeAdapterV2's "persists a todo_list from
+  inline Claude task-tool frames" can hit its 60-second timeout. Rerun the failed files alone:
+  `pnpm exec vp test run --project browser <files>` from `apps/web`. Unit failures that repeat
+  across runs are real.
 - Fork-adapted unit tests that match rendered HTML as strings (`ChatMarkdown.test.tsx`) fail when
   upstream adds an attribute its browser tests never assert (ed3f965e07: #22777's `dir`). Add
   the attribute to the expected string.

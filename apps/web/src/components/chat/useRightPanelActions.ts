@@ -25,6 +25,7 @@ interface RightPanelActionsInput {
   readonly pullRequestPanelTarget: ReturnType<typeof threadPullRequestPanelTarget> | null;
   readonly threadPanelPresentation: ThreadPanelPresentation;
   readonly isServerThread: boolean;
+  // Coder: no `embedded` flag; it only kept side chat panes off the cut preview action bus.
   readonly isGitRepo: boolean;
   readonly diffOpen: boolean;
   readonly rightPanelOpen: boolean;

@@ -20,7 +20,8 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
-import { APP_VERSION, HOSTED_APP_CHANNEL } from "../../branding";
+import { HOSTED_APP_CHANNEL } from "../../branding";
+import { AboutVersionTitle } from "./AboutVersionTitle";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
@@ -109,15 +110,6 @@ const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
 };
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
-function AboutVersionTitle() {
-  return (
-    <span className="inline-flex items-baseline gap-2">
-      <span>Version</span>
-      <code className="text-2xs font-medium text-muted-foreground">{APP_VERSION}</code>
-    </span>
-  );
-}
-
 // Coder: the gateway installs the matching helper; there is no desktop or hosted-app update track.
 function AboutVersionSection() {
   return (
