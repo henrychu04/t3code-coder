@@ -485,6 +485,49 @@ const readMerged = (path) => {
     return "";
   }
 };
+// Workspace packages by name, so `@t3tools/<pkg>/<sub>` imports resolve through their `exports`.
+const workspacePackages = new Map(
+  git("ls-files", "-z", "--", "apps/*/package.json", "packages/*/package.json")
+    .split("\0")
+    .filter(Boolean)
+    .flatMap((manifest) => {
+      try {
+        const parsed = JSON.parse(readFileSync(manifest, "utf8"));
+        return [[parsed.name, { dir: NodePath.posix.dirname(manifest), exports: parsed.exports }]];
+      } catch {
+        return [];
+      }
+    }),
+);
+const exportTarget = (value) =>
+  typeof value === "string" ? value : (value?.import ?? value?.default ?? value?.types);
+/** The repository path an import specifier names, for relative, package, and `~/` imports. */
+const resolveSpecifier = (importer, specifier) => {
+  if (specifier.startsWith("./") || specifier.startsWith("../")) {
+    return NodePath.posix.join(NodePath.posix.dirname(importer), specifier);
+  }
+  // The web app's `~` alias (apps/web/tsconfig.json and vite.config.ts).
+  if (specifier.startsWith("~/")) return `apps/web/src/${specifier.slice(2)}`;
+  const match = /^(@[^/]+\/[^/]+)(?:\/(.+))?$/.exec(specifier);
+  const pkg = match ? workspacePackages.get(match[1]) : undefined;
+  if (!pkg || typeof pkg.exports !== "object" || pkg.exports === null) return undefined;
+  const key = match[2] === undefined ? "." : `./${match[2]}`;
+  for (const [pattern, value] of Object.entries(pkg.exports)) {
+    const target = exportTarget(value);
+    if (typeof target !== "string") continue;
+    if (pattern === key) return NodePath.posix.join(pkg.dir, target);
+    const star = pattern.indexOf("*");
+    if (
+      star !== -1 &&
+      key.startsWith(pattern.slice(0, star)) &&
+      key.endsWith(pattern.slice(star + 1))
+    ) {
+      const captured = key.slice(star, key.length - (pattern.length - star - 1));
+      return NodePath.posix.join(pkg.dir, target.replace("*", captured));
+    }
+  }
+  return undefined;
+};
 const importersOf = (path) => {
   const stem = NodePath.posix.basename(stripExtension(path));
   let hits = "";
@@ -497,10 +540,11 @@ const importersOf = (path) => {
     .split("\0")
     .filter((file) => file && file !== path && !categoryOf(file))
     .filter((file) =>
-      [...readMerged(file).matchAll(/(?:from\s+|import\s*\(\s*)["'](\.{1,2}\/[^"']+)["']/g)].some(
-        ([, specifier]) =>
-          stripExtension(NodePath.posix.join(NodePath.posix.dirname(file), specifier)) ===
-          stripExtension(path),
+      [...readMerged(file).matchAll(/(?:from\s+|import\s*\(\s*)["']([^"']+)["']/g)].some(
+        ([, specifier]) => {
+          const resolved = resolveSpecifier(file, specifier);
+          return resolved !== undefined && stripExtension(resolved) === stripExtension(path);
+        },
       ),
     );
 };

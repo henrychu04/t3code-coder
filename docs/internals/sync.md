@@ -146,7 +146,9 @@ carried part of such a file.
 An upstream file added under a deleted path can still be needed: a carried file may import it
 (upstream #28041 adds `apps/server/src/auth/serverInternalPaths.ts`, which the carried
 `AssetAccess.ts`, `GitVcsDriverCore.ts`, and `WorkspaceFileSystem.ts` import). The script lists
-such files apart, under "Keep candidates", with their importers. Keep each one a carried file
+such files apart, under "Keep candidates", with their importers; it resolves relative imports,
+the web app's `~/` alias, and `@t3tools/<pkg>/...` imports through each package's `exports`.
+Keep each one a carried file
 needs (narrow the `DELETED_PATHS` entry if the directory is otherwise cut, and add the file to
 the seams doc); an importer that is itself an uncarried upstream addition (`binCli.ts` for
 `cli/up.ts`) means neither is needed. To remove every other listed upstream-added file at once:
@@ -357,7 +359,8 @@ result. Read every line it prints; it changes nothing. Its checks (`--only <name
 - `markers`: each upstream-modified file's `Coder:` marker count against `$PREV`. A drop must be
   inside a block upstream deleted, or be a seam that upstream's own mechanism now expresses (name
   it in the merge commit body).
-- `lost`: lines upstream added in `$MB..$SHA` that the result lacks; each must be a listed seam or
+- `lost`: lines upstream added in `$MB..$SHA` under `apps/` and `packages/`, outside test files,
+  that the result lacks; each must be a listed seam or
   a deleted surface. It uses the merged range, never `upstream/main`'s tip (later work would show
   as losses).
 - `both-sides`: lines both `$PREV` and `$SHA` have that the result lacks. Neither side deleted

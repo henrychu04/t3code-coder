@@ -5,6 +5,9 @@ import { Button } from "../ui/button";
 import { CircleAlertIcon, XIcon } from "lucide-react";
 import { ExpandableText } from "../settings/ExpandableText";
 
+// Coder: no ChatGPT usage-limit branch (`ChatGptUsageButton`, the workspace admin request, and
+// the `errorCode` prop); ChatGPT accounts and plan limits are cut.
+
 export function getThreadErrorBannerMessage(error: string): string {
   let payload: unknown;
   try {
