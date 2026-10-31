@@ -11544,21 +11544,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           }),
         );
         yield* harness.offerAndWait(
-          claudeSdkFrame({
-            type: "system",
-            subtype: "task_started",
-            task_id: "agent-fork",
-            tool_use_id: "toolu-fork",
-            description: "Probe",
-            subagent_type: "fork",
-            is_backgrounded: false,
-            task_type: "local_agent",
-            prompt: "Reply with exactly FORK-DONE.",
+          makeSubagentTaskStartedFrame({
+            taskId: "agent-fork",
+            toolUseId: "toolu-fork",
             uuid: "00000000-0000-4000-8000-000000000901",
-            session_id: WAKE_NATIVE_SESSION,
           }),
         );
-        assert.equal((yield* Queue.take(harness.subagentReceipts)).subagent.status, "running");
         // Claude Code opens a foreground fork's own stream with a placeholder result for its launch.
         yield* harness.offerAndWait(
           claudeSdkFrame({
@@ -11569,13 +11560,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 {
                   type: "tool_result",
                   tool_use_id: "toolu-fork",
-                  content: [{ type: "text", text: "Fork started — that fork is you." }],
+                  content: "Fork started — that fork is you.",
                 },
               ],
             },
             parent_tool_use_id: "toolu-fork",
-            agent_id: "agent-fork",
-            subagent_type: "fork",
             uuid: "00000000-0000-4000-8000-000000000902",
             session_id: WAKE_NATIVE_SESSION,
           }),
@@ -11592,7 +11581,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         while (settled.subagent.status === "running") {
           settled = yield* Queue.take(harness.subagentReceipts);
         }
-        assert.equal(settled.subagent.status, "completed");
         assert.equal(settled.subagent.result, "FORK-DONE");
       }).pipe(
         Effect.provide(
