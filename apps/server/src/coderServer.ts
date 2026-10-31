@@ -222,8 +222,8 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   // As upstream's `layerBackground`: periodic merge request discovery asks the (always-allow)
   // background policy before each sweep.
   Layer.provideMerge(BackgroundPolicy.layer),
-  // Linked-workspace forwarding and the hub name this workspace by upstream's identity service.
-  Layer.provideMerge(CoderEnvironment.layerIdentity),
+  // Linked-workspace forwarding and the hub name this workspace by upstream's identity service,
+  // which this layer also provides.
   Layer.provideMerge(CoderEnvironment.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
   // Coder: credentials are workspace file bridges that carry upstream's T3 toolkits.
