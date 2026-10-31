@@ -27,7 +27,7 @@ const contextChipVariants = cva(
         "pr-closed": "[--context-chip-accent:var(--context-chip-pr-closed)]",
         skill: "[--context-chip-accent:var(--context-chip-skill)]",
         thread: "[--context-chip-accent:var(--context-chip-thread)]",
-        // Coder: no machine (environment) chips; the @-machine picker is not carried.
+        environment: "[--context-chip-accent:var(--context-chip-environment)]",
         citation: "[--context-chip-accent:var(--context-chip-citation)]",
         "doc-pdf": "[--context-chip-accent:var(--context-chip-doc-pdf)]",
         "doc-word": "[--context-chip-accent:var(--context-chip-doc-word)]",
