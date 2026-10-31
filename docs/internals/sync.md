@@ -136,10 +136,18 @@ paths listed in the script and prints every other conflict and every upstream-ad
 those paths, untouched, for you to decide. It never resolves a content conflict. A modify/delete it leaves for a human on a surface the fork
 already removed belongs in the script: `git rm` it and add the path to `DELETED_PATHS` in the same
 stage (6d450a4284 added 56). The files it lists are untouched but staged, so removing
-one needs `git rm -f`. To remove every listed upstream-added file at once:
+one needs `git rm -f`.
+
+An upstream file added under a deleted path can still be needed: a carried file may import it
+(upstream #28041 adds `apps/server/src/auth/serverInternalPaths.ts`, which the carried
+`AssetAccess.ts`, `GitVcsDriverCore.ts`, and `WorkspaceFileSystem.ts` import). The script lists
+such files apart, under "Keep candidates", with their importers. Keep each one a carried file
+needs (narrow the `DELETED_PATHS` entry if the directory is otherwise cut, and add the file to
+the seams doc); an importer that is itself an uncarried upstream addition (`binCli.ts` for
+`cli/up.ts`) means neither is needed. To remove every other listed upstream-added file at once:
 
 ```sh
-node scripts/sync-resolve-deleted.mjs | awk '/^Added by upstream/ { on = 1; next } on && /^  / { print $1 }' > /tmp/sync-added.txt
+node scripts/sync-resolve-deleted.mjs | awk '/^Added by upstream/ { on = 1; next } /^$/ { on = 0 } on && /^  / { print $1 }' > /tmp/sync-added.txt
 git rm -q -f --pathspec-from-file=/tmp/sync-added.txt
 ```
 
@@ -337,48 +345,30 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
 
 ## 6. Mechanical checks after the merge
 
-Before committing the merge, compare each upstream-modified file's `Coder:` marker count with
-`$PREV`; a drop must be inside a block upstream deleted, or be a seam that upstream's own
-mechanism now expresses (name it in the merge commit body).
+Before committing the merge, run `node scripts/sync-check.mjs "$PREV" "$SHA"` from the merge
+result. Read every line it prints; it changes nothing. Its checks (`--only <name>` runs one):
 
-```sh
-git diff --name-only "$MB" "$SHA" | while IFS= read -r f; do [ -f "$f" ] || continue
-  a=$(git show "$PREV:$f" 2>/dev/null | grep -c 'Coder:'); b=$(grep -c 'Coder:' "$f")
-  [ "$a" = "$b" ] || echo "$f: $a -> $b"; done
-```
+- `markers`: each upstream-modified file's `Coder:` marker count against `$PREV`. A drop must be
+  inside a block upstream deleted, or be a seam that upstream's own mechanism now expresses (name
+  it in the merge commit body).
+- `lost`: lines upstream added in `$MB..$SHA` that the result lacks; each must be a listed seam or
+  a deleted surface. It uses the merged range, never `upstream/main`'s tip (later work would show
+  as losses).
+- `both-sides`: lines both `$PREV` and `$SHA` have that the result lacks. Neither side deleted
+  them, so each is a merge loss unless the line moved (7df7cb9999 lost `projectScriptEditor.tsx`'s
+  run-on-settle switch this way; `lost` misses it because the line predates `$MB`).
+- `unused-locals`: unused imports and locals (`tsc --noUnusedLocals` over every package, about a
+  minute). Knip does not see them, and cutting a surface or replaying the fork's delta into
+  upstream's split modules leaves them behind (688ee52f0e left about 50, including a dead Claude
+  worker). A name that upstream's own file has as often is upstream's and is skipped. Remove each
+  listed name, then rerun with `--only unused-locals` until it prints nothing: removing a
+  declaration can leave its imports unused in turn.
 
-Then list lines upstream added in `$MB..$SHA` that the result lacks; each must be a listed seam or
-a deleted surface. Use the merged range, never `upstream/main`'s tip (later work shows as losses).
-
-```sh
-git diff --name-only --diff-filter=AM "$MB" "$SHA" -- apps packages ':!*.test.*' | while IFS= read -r f; do
-  [ -f "$f" ] || continue
-  git diff -U0 "$MB" "$SHA" -- "$f" | sed -n 's/^+[[:space:]]*//p' | grep -v '^++ ' | awk 'length > 3' |
-    while IFS= read -r line; do grep -qF -- "$line" "$f" || printf '%s: %s\n' "$f" "$line"; done
-done
-```
-
-Then list lines that both `$PREV` and `$SHA` have but the result lacks: neither side deleted them,
-so each is a merge loss unless the line moved (7df7cb9999 lost `projectScriptEditor.tsx`'s
-run-on-settle switch this way; the check above misses it because the line predates `$MB`):
-
-```sh
-python3 - "$PREV" "$SHA" <<'PY'
-import subprocess, sys; from collections import Counter
-prev, sha = sys.argv[1:3]
-show = lambda r, f: subprocess.run(["git", "show", f"{r}:{f}"], capture_output=True, text=True)
-lines = lambda s: Counter(l.strip() for l in s.splitlines() if len(l.strip()) > 3)
-files = subprocess.run(["git", "diff", "--name-only", "--diff-filter=AM", prev, "--", "apps", "packages"], capture_output=True, text=True).stdout.split()
-for f in files:
-    a, b = show(prev, f), show(sha, f)
-    if a.returncode or b.returncode: continue
-    try: res = lines(open(f).read())
-    except FileNotFoundError: continue
-    pa, pb = lines(a.stdout), lines(b.stdout)
-    for l, n in pa.items():
-        if res[l] < min(n, pb[l]): print(f"{f}: {l}")
-PY
-```
+Then run `node scripts/seams-check.mjs "$SHA"`. It fails when a backticked name in the seams doc's
+"Upstream seams" or "Cut surfaces" section exists in neither the result nor `$SHA` (a stale
+entry), or when an upstream file the fork modified, outside tests and docs, has no `Coder:`
+marker in its fork lines, no mention in `coder-only.md`, and is not a pure merge-request wording
+swap. Fix the doc or mark the code until it passes.
 
 Check that no `patch` backup or reject file was staged:
 `git ls-files | grep -E '\.(orig|rej)$'` must print nothing (a `BranchToolbar.tsx.orig` slipped
@@ -388,37 +378,10 @@ Finish with `pnpm knip:check`. Upstream's test pruning can leave an export used 
 surface (mobile, relay, other providers) once the test that imported it is gone; list that file
 in `knip.jsonc`'s `ignoreIssues`, and delete the export instead when it is in a fork-only file.
 
-Knip does not see unused imports and locals. Cutting a surface, or replaying the fork's delta into
-upstream's split modules, leaves them behind (688ee52f0e left about 50, including a dead Claude
-worker). List the ones the fork caused; an unused name that upstream's own file also has is
-upstream's, so leave it:
-
-```sh
-for p in apps/web apps/server apps/coder-gateway $(ls -d packages/*/ | sed 's#/$##'); do
-  [ -f "$p/tsconfig.json" ] && pnpm exec tsc --noEmit -p "$p/tsconfig.json" --noUnusedLocals 2>&1
-done | grep -E 'TS61(33|92|96)' | sort -u | python3 -c '
-import re, subprocess, sys
-sha = sys.argv[1]
-for line in sys.stdin:
-    m = re.match(r"(\S+)\((\d+),\d+\): error TS\d+: (?:.(\w+).|All imports)", line)
-    f, n, name = m.group(1), int(m.group(2)), m.group(3)
-    text = open(f).read()
-    if name is None:
-        name = re.findall(r"\w+", text.split("\n")[n - 1].split("{")[-1])[0]
-    up = subprocess.run(["git", "show", f"{sha}:{f}"], capture_output=True, text=True)
-    count = lambda s: len(re.findall(rf"\b{name}\b", s))
-    if up.returncode != 0 or count(up.stdout) != count(text):
-        print(line.strip())
-' "$SHA"
-```
-
-Remove each listed name, then rerun until it prints nothing: removing a declaration can leave
-its imports unused in turn.
-
 ## 7. Verify
 
 In this order, fixing each failure before the next: `pnpm test:coder`; every typecheck listed in
-`AGENTS.md`; `pnpm knip:check`; `pnpm build`; then
+`AGENTS.md`; `pnpm knip:check`; `node scripts/seams-check.mjs "$SHA"`; `pnpm build`; then
 `pnpm exec vp fmt --check $(git diff --name-only "$PREV" HEAD -- '*.ts' '*.tsx' '*.mjs' '*.md')`
 over the files the merge changed, since a comment deletion can leave a doubled blank line that
 typecheck and tests never see (cfafb4bb54: `ModelManifest.test.ts`). Typecheck before the full suite finds most merge
@@ -476,7 +439,8 @@ foreground command limit, so run it in the background and read its log. Known re
    requires a review the owner cannot give themselves. Keep the branch (no `--delete-branch`).
 8. `git fetch origin && git log -1 --format=%P origin/coder-only`: the second parent is `<sha>`.
 
-9. Update the seams doc's "checked against" SHAs for carried fixes still present upstream, and
-   add to this file wherever it fell short during the sync.
+9. Update the seams doc's "checked against" SHAs for carried fixes still present upstream, set
+   `SYNC_BASE` in `scripts/seams-check.mjs` to the merged upstream commit, and add to this file
+   wherever it fell short during the sync.
 10. Close the issues the sync resolved, with a comment naming the upstream commit, and open issues
     for bugs it surfaced but left unfixed.

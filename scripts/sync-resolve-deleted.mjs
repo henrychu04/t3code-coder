@@ -3,8 +3,11 @@
 // Run after `git merge <upstream sha>` stops with conflicts (see docs/internals/sync.md). A
 // conflict is resolved with `git rm` only when the fork deleted the file, upstream modified it,
 // and the path falls under DELETED_PATHS. Content conflicts and every other path are listed for a
-// human to decide. Upstream files added under DELETED_PATHS are listed too, never removed.
+// human to decide. Upstream files added under DELETED_PATHS are listed too, never removed; those
+// a carried file imports are listed apart as keep candidates.
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import * as NodePath from "node:path";
 
 // A trailing `/` names a directory. A RegExp matches whole paths. Any other entry names one file
 // and its siblings that share the stem (`project/http.ts` also covers `project/http.test.ts`). Derived from
@@ -458,7 +461,53 @@ const added = git(
 )
   .split("\0")
   .filter((path) => path && categoryOf(path));
-if (added.length > 0) {
-  console.log(`\nAdded by upstream under deleted paths, not touched (${added.length}):`);
-  for (const path of added) console.log(`  ${path}  [${categoryOf(path)}]`);
+// A carried file (one outside DELETED_PATHS) can import a file upstream adds under a cut prefix
+// (#28041's auth/serverInternalPaths.ts, imported by AssetAccess.ts, GitVcsDriverCore.ts, and
+// WorkspaceFileSystem.ts). Such a file must be kept, so it is listed apart from the removable ones.
+const stripExtension = (path) => path.replace(/\.[cm]?[jt]sx?$/, "");
+const readMerged = (path) => {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return "";
+  }
+};
+const importersOf = (path) => {
+  const stem = NodePath.posix.basename(stripExtension(path));
+  let hits = "";
+  try {
+    hits = git("grep", "-l", "-z", "-F", "-e", stem, "--", "apps", "packages");
+  } catch (error) {
+    if (error.status !== 1) throw error;
+  }
+  return hits
+    .split("\0")
+    .filter((file) => file && file !== path && !categoryOf(file))
+    .filter((file) =>
+      [...readMerged(file).matchAll(/(?:from\s+|import\s*\(\s*)["'](\.{1,2}\/[^"']+)["']/g)].some(
+        ([, specifier]) =>
+          stripExtension(NodePath.posix.join(NodePath.posix.dirname(file), specifier)) ===
+          stripExtension(path),
+      ),
+    );
+};
+const keep = [];
+const removable = [];
+for (const path of added) {
+  const importers = importersOf(path);
+  if (importers.length > 0) keep.push({ path, importers });
+  else removable.push(path);
+}
+if (removable.length > 0) {
+  console.log(`\nAdded by upstream under deleted paths, not touched (${removable.length}):`);
+  for (const path of removable) console.log(`  ${path}  [${categoryOf(path)}]`);
+}
+if (keep.length > 0) {
+  console.log(
+    `\nKeep candidates: added under deleted paths but imported by a carried file (${keep.length}):`,
+  );
+  for (const { path, importers } of keep) {
+    console.log(`  ${path}  [${categoryOf(path)}]`);
+    for (const importer of importers) console.log(`    imported by ${importer}`);
+  }
 }
