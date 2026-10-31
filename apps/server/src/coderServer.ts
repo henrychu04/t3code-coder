@@ -28,6 +28,7 @@ import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
+import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as ProviderRegistryLayer from "./provider/ProviderRegistry.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
@@ -243,6 +244,10 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   // Provider hydration builds the Claude runner, which reports agents to the same scanner the
   // terminal layer and the RPC handlers share.
   Layer.provideMerge(layerPortScanner),
+  // Coder: the RPC layer serializes Kilo Code native session imports through the ACP Registry
+  // runtime coordinator. Upstream provides it with the registry catalog
+  // (`AcpRegistrySupport.layerFromHost`), which the RPC layer does not use.
+  Layer.provideMerge(AcpRegistryRuntimeCoordinator.layer),
   Layer.provideMerge(ModelManifest.layerBundled),
   Layer.provideMerge(SqlitePersistenceLayerLive),
   // As upstream's runtime: every source control driver is built with an HTTP client, though

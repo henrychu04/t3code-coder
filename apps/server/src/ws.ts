@@ -11,11 +11,15 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { rpcInitialItems } from "./rpcInitialItems.ts";
 import {
+  AcpRegistryOperationError,
   CommandId,
   type GitActionProgressEvent,
+  type AcpRegistryImportSessionInput,
+  type AcpRegistryListSessionsInput,
   type GitManagerServiceError,
   OrchestrationGetFullThreadDiffError,
   OrchestrationSearchThreadsError,
@@ -42,6 +46,9 @@ import {
   ProjectWriteFileError,
   ProjectMutationError,
   type ServerLifecycleStreamEvent,
+  type ProjectId,
+  type ProviderDriverKind,
+  type ProviderInstanceId,
   type ServerProvider,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
@@ -118,6 +125,7 @@ import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErr
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { latestProviderVersionCacheKeys } from "@t3tools/provider-core/server/maintenanceResolver";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -154,6 +162,7 @@ import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
+import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 // Coder: the helper's group, its Coder services, and the fork-only methods.
 import { CoderWsRpcGroup } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
@@ -920,6 +929,9 @@ const layerWsRpc = () =>
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+      // Coder: of upstream's ACP Registry services, only the runtime coordinator is used here.
+      const acpRegistryRuntimeCoordinator =
+        yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
       const providerLatestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const config = yield* ServerConfig.ServerConfig;
@@ -938,6 +950,191 @@ const layerWsRpc = () =>
         yield* SourceControlRepositoryService.SourceControlRepositoryService;
       // Coder: GitLab uses the workspace glab login; no viewer routing credential exists.
       const withPullRequestViewer = <T>(_reference: unknown, effect: T) => effect;
+
+      // Coder: of upstream's ACP Registry handlers, only Kilo Code's native session list and
+      // import are carried.
+      const acpRegistryProject = Effect.fn("ws.acpRegistry.project")(function* (
+        projectId: ProjectId,
+      ) {
+        const project = yield* projectService.getById(projectId).pipe(
+          Effect.mapError(
+            (cause) =>
+              new AcpRegistryOperationError({
+                reason: "project_not_found",
+                message: `Project ${projectId} is unavailable.`,
+                cause,
+              }),
+          ),
+        );
+        return yield* Effect.fromOption(
+          project,
+          () =>
+            new AcpRegistryOperationError({
+              reason: "project_not_found",
+              message: `Project ${projectId} was not found.`,
+            }),
+        );
+      });
+
+      const acpSessionManager = Effect.fn("ws.acpRegistry.sessionManager")(function* (
+        instanceId: ProviderInstanceId,
+      ) {
+        const instance = yield* providerInstances.getInstance(instanceId);
+        if (instance === undefined) {
+          return yield* new AcpRegistryOperationError({
+            reason: "instance_not_found",
+            message: `Provider instance ${instanceId} was not found.`,
+          });
+        }
+        if (instance.acpSessionManagement === undefined) {
+          return yield* new AcpRegistryOperationError({
+            reason: "session_list_unsupported",
+            message: `Provider instance ${instanceId} does not expose ACP session management.`,
+          });
+        }
+        return { instance, manager: instance.acpSessionManagement };
+      });
+
+      const importedAcpThreadId = (input: {
+        readonly driver: ProviderDriverKind;
+        readonly instanceId: ProviderInstanceId;
+        readonly sessionId: string;
+      }) =>
+        IdAllocator.deriveThreadFromProviderThread({
+          driver: input.driver,
+          providerInstanceId: input.instanceId,
+          nativeThreadId: input.sessionId,
+        });
+
+      const listAcpRegistrySessions = Effect.fn("ws.acpRegistry.listSessions")(function* (
+        input: AcpRegistryListSessionsInput,
+      ) {
+        const project = yield* acpRegistryProject(input.projectId);
+        const { instance, manager } = yield* acpSessionManager(input.instanceId);
+        const listed = yield* manager.listSessions({
+          cwd: project.workspaceRoot,
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+        });
+        const sessions = yield* Effect.forEach(
+          listed.sessions,
+          (session) => {
+            const threadId = importedAcpThreadId({
+              driver: instance.driverKind,
+              instanceId: input.instanceId,
+              sessionId: session.sessionId,
+            });
+            return threadManagement.getThreadShell(threadId).pipe(
+              Effect.map((thread) => ({
+                ...session,
+                importedThreadId: thread === null ? null : threadId,
+              })),
+              Effect.mapError(
+                (cause) =>
+                  new AcpRegistryOperationError({
+                    reason: "session_import_failed",
+                    message: "Could not inspect existing imported ACP sessions.",
+                    cause,
+                  }),
+              ),
+            );
+          },
+          { concurrency: 16 },
+        );
+        return { ...listed, sessions };
+      });
+
+      const importAcpRegistrySession = Effect.fn("ws.acpRegistry.importSession")(function* (
+        input: AcpRegistryImportSessionInput,
+      ) {
+        return yield* acpRegistryRuntimeCoordinator.withSessionMutation(
+          Effect.gen(function* () {
+            yield* acpRegistryProject(input.projectId);
+            const { instance } = yield* acpSessionManager(input.instanceId);
+            const providerSnapshot = yield* instance.snapshot.getSnapshot;
+            if (
+              providerSnapshot.nativeSessions?.canLoad !== true &&
+              providerSnapshot.nativeSessions?.canResume !== true
+            ) {
+              return yield* new AcpRegistryOperationError({
+                reason: "session_resume_unsupported",
+                message: "The ACP agent cannot load or resume native sessions.",
+              });
+            }
+            const threadId = importedAcpThreadId({
+              driver: instance.driverKind,
+              instanceId: input.instanceId,
+              sessionId: input.sessionId,
+            });
+            const existing = yield* threadManagement.getThreadShell(threadId).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AcpRegistryOperationError({
+                    reason: "session_import_failed",
+                    message: "Could not inspect the imported ACP session mapping.",
+                    cause,
+                  }),
+              ),
+            );
+            if (existing !== null) return { threadId, imported: false } as const;
+
+            const provider = (yield* providerRegistry.getProviders).find(
+              (candidate) => candidate.instanceId === input.instanceId,
+            );
+            const model =
+              provider?.models.find((candidate) => candidate.isDefault)?.slug ??
+              provider?.models[0]?.slug ??
+              "default";
+            const commandId = CommandId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+            // Coder: no startup command queue; workspace startup completes before this layer is
+            // built.
+            const launched = yield* Effect.result(
+              threadLaunch.launch({
+                commandId,
+                threadId,
+                projectId: input.projectId,
+                title: input.title ?? "Imported ACP session",
+                modelSelection: { instanceId: input.instanceId, model },
+                runtimeMode: "approval-required",
+                interactionMode: "default",
+                workspaceStrategy: { type: "root" },
+                importedNativeThread: {
+                  ref: {
+                    driver: instance.driverKind,
+                    nativeId: input.sessionId,
+                    strength: "strong",
+                  },
+                  metadata: {
+                    itemIdentityVersion: 2,
+                    ...(input.title === undefined ? {} : { title: input.title }),
+                    ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
+                  },
+                },
+                createdBy: "user",
+                creationSource: "web",
+              }),
+            );
+            if (Result.isFailure(launched)) {
+              const racedImport = yield* threadManagement.getThreadShell(threadId).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new AcpRegistryOperationError({
+                      reason: "session_import_failed",
+                      message: "Could not inspect the imported ACP session after launch failed.",
+                      cause,
+                    }),
+                ),
+              );
+              if (racedImport !== null) return { threadId, imported: false } as const;
+              return yield* new AcpRegistryOperationError({
+                reason: "session_import_failed",
+                message: "Could not create a T3 thread for the ACP session.",
+                cause: launched.failure,
+              });
+            }
+            return { threadId, imported: true } as const;
+          }),
+        );
+      });
 
       // Coder: publish the trimmed workspace config without auth, editors, telemetry, usage
       // limits, or event-loop stall notices.
@@ -1405,6 +1602,16 @@ const layerWsRpc = () =>
             return ServerSettings.redactServerSettingsForClient(settings);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
+        [WS_METHODS.serverListAcpRegistrySessions]: (input) =>
+          Effect.annotateCurrentSpan({
+            "provider.instance_id": input.instanceId,
+            "project.id": input.projectId,
+          }).pipe(Effect.andThen(listAcpRegistrySessions(input))),
+        [WS_METHODS.serverImportAcpRegistrySession]: (input) =>
+          Effect.annotateCurrentSpan({
+            "provider.instance_id": input.instanceId,
+            "project.id": input.projectId,
+          }).pipe(Effect.andThen(importAcpRegistrySession(input))),
         [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
         [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
         [WS_METHODS.pullRequestsFilterOptions]: (input) => pullRequests.filterOptions(input),

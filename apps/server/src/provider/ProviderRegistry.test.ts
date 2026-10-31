@@ -860,6 +860,7 @@ it.layer(
       const probedProvider = {
         ...readinessProvider,
         checkedAt: "2026-08-13T00:01:00.000Z",
+        nativeSessions: { canList: true, canLoad: true, canResume: true, canDelete: false },
         models: [
           { slug: "kilo/auto", name: "Kilo Auto", isCustom: false, capabilities: null },
           { slug: "kilo/removed", name: "Removed", isCustom: false, capabilities: null },

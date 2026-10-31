@@ -1,4 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 import * as TestClock from "effect/testing/TestClock";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
@@ -15,6 +17,7 @@ import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSession
 import {
   acpRegistryProbeFailure,
   acpRegistryProbeResult,
+  listAcpRegistrySessions,
   normalizeAcpRegistryAuthMethods,
   normalizeAcpRegistryCommands,
   probeAcpRegistryConfiguration,
@@ -23,6 +26,8 @@ import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRe
 
 const instanceId = ProviderInstanceId.make("acpRegistry_codex");
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
+const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+const mockAgentPath = NodePath.join(__dirname, "../../scripts/acp-mock-agent.ts");
 
 describe("ACP Registry probe", () => {
   it("returns advertised auth methods and de-duplicated models", () => {
@@ -345,7 +350,52 @@ describe("ACP Registry probe", () => {
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 
-  // Coder: native session listing, deletion, and logout are not carried.
+  // Coder: the registry catalog resolves only a local command, and logout is not carried.
+  it.effect("lists native sessions through generic ACP lifecycle methods", () => {
+    const catalog = AcpRegistrySupport.AcpRegistryCatalog.of({
+      inspect: () => Effect.die("unused inspect"),
+      resolve: () =>
+        Effect.succeed({
+          distribution: "local" as const,
+          spawn: {
+            command: "node",
+            args: [mockAgentPath],
+            env: {
+              ...process.env,
+              T3_ACP_SESSION_LIFECYCLE: "1",
+              T3_ACP_AUTH_METHOD_ID: "mock-login",
+            },
+          },
+        }),
+    });
+    const input = {
+      instanceId,
+      settings: decodeSettings({}),
+      cwd: process.cwd(),
+      environment: process.env,
+    };
+
+    return Effect.gen(function* () {
+      const listed = yield* listAcpRegistrySessions(input);
+      expect(listed).toMatchObject({
+        canLoad: true,
+        canResume: true,
+        nextCursor: null,
+        sessions: [
+          {
+            sessionId: "mock-session-1",
+            cwd: process.cwd(),
+            importedThreadId: null,
+          },
+        ],
+      });
+    }).pipe(
+      Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
+      Effect.provide(NodeServices.layer),
+      Effect.scoped,
+    );
+  });
+
   it("distinguishes authentication failures from generic probe failures", () => {
     const advertised = normalizeAcpRegistryAuthMethods([
       { id: "grok-login", name: "Log in with Grok" },

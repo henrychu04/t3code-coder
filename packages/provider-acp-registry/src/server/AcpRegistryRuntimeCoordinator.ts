@@ -1,5 +1,4 @@
-// Coder: agent sign-in is not carried, so upstream's URL authentication consent is absent, and
-// native sessions are not imported, so there is no session mutation permit.
+// Coder: agent sign-in is not carried, so upstream's URL authentication consent is absent.
 import { type ProviderInstanceId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -7,6 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import type { AcpRegistryAvailableCommands, AcpRegistryLiveConfiguration } from "./probe.ts";
@@ -32,6 +32,9 @@ export class AcpRegistryRuntimeCoordinator extends Context.Service<
       agentId: string,
       effect: Effect.Effect<A, E, R>,
     ) => Effect.Effect<Option.Option<A>, E, R>;
+    readonly withSessionMutation: <A, E, R>(
+      effect: Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E, R>;
     readonly clearAvailableCommands: (instanceId: ProviderInstanceId) => Effect.Effect<void>;
     readonly publishAvailableCommands: (
       instanceId: ProviderInstanceId,
@@ -70,6 +73,7 @@ const make = Effect.gen(function* () {
   const liveConfigurationByInstance = yield* Ref.make(
     new Map<ProviderInstanceId, AcpRegistryLiveConfiguration>(),
   );
+  const sessionMutationPermit = yield* Semaphore.make(1);
 
   const withForegroundStartup: AcpRegistryRuntimeCoordinator["Service"]["withForegroundStartup"] = (
     agentId,
@@ -111,6 +115,10 @@ const make = Effect.gen(function* () {
         return yield* Effect.raceFirst(effect.pipe(Effect.asSome), foregroundStarted);
       }),
     );
+
+  const withSessionMutation: AcpRegistryRuntimeCoordinator["Service"]["withSessionMutation"] = (
+    effect,
+  ) => sessionMutationPermit.withPermit(effect);
 
   const clearAvailableCommands: AcpRegistryRuntimeCoordinator["Service"]["clearAvailableCommands"] =
     (instanceId) =>
@@ -204,6 +212,7 @@ const make = Effect.gen(function* () {
   return AcpRegistryRuntimeCoordinator.of({
     withForegroundStartup,
     runBackgroundProbe,
+    withSessionMutation,
     clearAvailableCommands,
     publishAvailableCommands,
     getAvailableCommands,
