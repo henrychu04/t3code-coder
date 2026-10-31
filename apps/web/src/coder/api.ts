@@ -21,7 +21,6 @@ export type {
   CoderWorkspaceRuntimeStatus,
   WorkspaceDiagnosticPhase,
   WorkspaceDiagnosticEvent,
-  CoderWorkspaceResourceUsage,
   CoderWorkspaceMetrics,
   CoderDeploymentAuthenticationStatus,
 } from "@t3tools/contracts";

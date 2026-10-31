@@ -213,13 +213,9 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       );
       setWorkspaceRuntime((current) => ({ ...current, ...applicableRuntime }));
       for (const [workspaceId, status] of Object.entries(applicableRuntime)) {
-        if (
-          status.status !== "stopped" &&
-          status.status !== "starting" &&
-          status.status !== "unavailable"
-        ) {
-          continue;
-        }
+        // "unavailable" means Coder could not report the status; a live helper connection is
+        // left alone and reconnects on its own if it really dropped.
+        if (status.status !== "stopped" && status.status !== "starting") continue;
         connectionAttemptGenerations.current[workspaceId] =
           (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
         removeCoderWorkspaceEnvironment(workspaceId);
@@ -244,16 +240,24 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     );
     let cancelled = false;
     let retryTimer: number | undefined;
+    let pausedWhileHidden = false;
     let retryCount = 0;
     const connectAvailableWorkspaces = async (): Promise<void> => {
       retryTimer = undefined;
+      // A hidden tab waits for `wake` instead of polling Coder in the background.
+      if (document.visibilityState === "hidden") {
+        pausedWhileHidden = true;
+        return;
+      }
       const requestGeneration = ++runtimeRequestGeneration.current;
       const runtime = await readWorkspaceRuntime(config);
       if (cancelled) return;
       if (requestGeneration !== runtimeRequestGeneration.current) {
+        // Another read superseded this one and only applied its status; read again soon so
+        // running workspaces still get connected.
         retryTimer = window.setTimeout(
           () => void connectAvailableWorkspaces(),
-          STABLE_RUNTIME_REFRESH_MS,
+          workspaceRuntimeRetryDelayMs(0),
         );
         return;
       }
@@ -263,7 +267,6 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
         if (pendingWorkspaceActions.current.has(workspace.id)) continue;
         const status = runtime[workspace.id]?.status;
         if (status === "stopped" || status === "starting" || status === "unavailable") {
-          removeCoderWorkspaceEnvironment(workspace.id);
           hasPendingWorkspaceStatus ||= status === "starting" || status === "unavailable";
           continue;
         }
@@ -284,9 +287,11 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       }
     };
     const wake = () => {
-      if (document.visibilityState !== "visible" || retryTimer === undefined) return;
-      window.clearTimeout(retryTimer);
+      if (document.visibilityState !== "visible") return;
+      if (retryTimer === undefined && !pausedWhileHidden) return;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       retryTimer = undefined;
+      pausedWhileHidden = false;
       retryCount = 0;
       void connectAvailableWorkspaces();
     };
@@ -339,8 +344,17 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     });
   }, []);
 
-  const completeWorkspaceAction = useCallback(
-    async (workspaceId: string, action: (workspaceId: string) => Promise<void>) => {
+  /**
+   * Runs a Coder workspace action while the status loop leaves the workspace alone. Returns
+   * false when a later action or connection attempt superseded this one.
+   */
+  const runWorkspaceAction = useCallback(
+    async (
+      workspaceId: string,
+      action: (workspaceId: string) => Promise<void>,
+      pendingStatus: "starting" | null,
+      onSuccess?: () => void,
+    ): Promise<boolean> => {
       removeCoderWorkspaceEnvironment(workspaceId);
 
       runtimeRequestGeneration.current += 1;
@@ -353,82 +367,24 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
         delete next[workspaceId];
         return next;
       });
-      setWorkspaceRuntime((current) => ({
-        ...current,
-        [workspaceId]: {
-          status: "starting",
-          updateAvailable: current[workspaceId]?.updateAvailable ?? false,
-          healthy: null,
-          autostopAt: current[workspaceId]?.autostopAt ?? null,
-          requiredStopAt: current[workspaceId]?.requiredStopAt ?? null,
-        },
-      }));
-      let failed = false;
-      try {
-        await action(workspaceId);
-      } catch (cause) {
-        if (connectionAttemptGenerations.current[workspaceId] === actionGeneration) {
-          const message = cause instanceof Error ? cause.message : String(cause);
-          setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
-        }
-        failed = true;
-        throw cause;
-      } finally {
-        if (pendingWorkspaceActions.current.get(workspaceId) === actionGeneration) {
-          pendingWorkspaceActions.current.delete(workspaceId);
-          runtimeRequestGeneration.current += 1;
-          if (failed && connectionAttemptGenerations.current[workspaceId] === actionGeneration) {
-            void refreshWorkspaceRuntime();
-          }
-        }
-      }
-      if (connectionAttemptGenerations.current[workspaceId] !== actionGeneration) {
-        throw new Error("Workspace action was superseded.");
-      }
-      try {
-        const descriptor = await connectWorkspace(workspaceId);
-        void refreshWorkspaceRuntime();
-        return descriptor;
-      } catch (cause) {
-        void refreshWorkspaceRuntime();
-        throw cause;
-      }
-    },
-    [connectWorkspace, refreshWorkspaceRuntime],
-  );
-
-  const startWorkspace = useCallback(
-    (workspaceId: string) => completeWorkspaceAction(workspaceId, startCoderWorkspace),
-    [completeWorkspaceAction],
-  );
-  const stopWorkspace = useCallback(
-    async (workspaceId: string) => {
-      removeCoderWorkspaceEnvironment(workspaceId);
-
-      runtimeRequestGeneration.current += 1;
-      const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
-      connectionAttemptGenerations.current[workspaceId] = actionGeneration;
-      pendingWorkspaceActions.current.set(workspaceId, actionGeneration);
-      setConnectionErrors((current) => {
-        if (current[workspaceId] === undefined) return current;
-        const next = { ...current };
-        delete next[workspaceId];
-        return next;
-      });
-      let failed = false;
-      try {
-        await stopCoderWorkspace(workspaceId);
-        if (connectionAttemptGenerations.current[workspaceId] !== actionGeneration) return;
+      if (pendingStatus !== null) {
         setWorkspaceRuntime((current) => ({
           ...current,
           [workspaceId]: {
-            status: "stopped",
+            status: pendingStatus,
             updateAvailable: current[workspaceId]?.updateAvailable ?? false,
             healthy: null,
-            autostopAt: null,
-            requiredStopAt: null,
+            autostopAt: current[workspaceId]?.autostopAt ?? null,
+            requiredStopAt: current[workspaceId]?.requiredStopAt ?? null,
           },
         }));
+      }
+      let failed = false;
+      try {
+        await action(workspaceId);
+        if (connectionAttemptGenerations.current[workspaceId] !== actionGeneration) return false;
+        onSuccess?.();
+        return true;
       } catch (cause) {
         if (connectionAttemptGenerations.current[workspaceId] === actionGeneration) {
           const message = cause instanceof Error ? cause.message : String(cause);
@@ -447,6 +403,45 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       }
     },
     [refreshWorkspaceRuntime],
+  );
+
+  const completeWorkspaceAction = useCallback(
+    async (workspaceId: string, action: (workspaceId: string) => Promise<void>) => {
+      if (!(await runWorkspaceAction(workspaceId, action, "starting"))) {
+        throw new Error("Workspace action was superseded.");
+      }
+      try {
+        const descriptor = await connectWorkspace(workspaceId);
+        void refreshWorkspaceRuntime();
+        return descriptor;
+      } catch (cause) {
+        void refreshWorkspaceRuntime();
+        throw cause;
+      }
+    },
+    [connectWorkspace, refreshWorkspaceRuntime, runWorkspaceAction],
+  );
+
+  const startWorkspace = useCallback(
+    (workspaceId: string) => completeWorkspaceAction(workspaceId, startCoderWorkspace),
+    [completeWorkspaceAction],
+  );
+  const stopWorkspace = useCallback(
+    async (workspaceId: string) => {
+      await runWorkspaceAction(workspaceId, stopCoderWorkspace, null, () =>
+        setWorkspaceRuntime((current) => ({
+          ...current,
+          [workspaceId]: {
+            status: "stopped",
+            updateAvailable: current[workspaceId]?.updateAvailable ?? false,
+            healthy: null,
+            autostopAt: null,
+            requiredStopAt: null,
+          },
+        })),
+      );
+    },
+    [runWorkspaceAction],
   );
   const restartWorkspace = useCallback(
     (workspaceId: string) => completeWorkspaceAction(workspaceId, restartCoderWorkspace),

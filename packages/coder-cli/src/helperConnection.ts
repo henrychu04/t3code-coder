@@ -20,9 +20,14 @@ import {
   REMOTE_PREFLIGHT_FAILED_PREFIX,
   type CoderInvocation,
 } from "./command.ts";
-import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION, CoderHelperInfo } from "./rpc.ts";
+import {
+  CODER_HELPER_INFO_METHOD,
+  CODER_HELPER_PROTOCOL_VERSION,
+  CODER_RPC_FRAME_MAX_BYTES,
+  CoderHelperInfo,
+} from "./rpc.ts";
 
-const MAX_HELPER_LINE_BYTES = 8 * 1024 * 1024;
+const MAX_HELPER_LINE_BYTES = CODER_RPC_FRAME_MAX_BYTES;
 const MAX_HELPER_ERROR_BYTES = 32 * 1024;
 const MAX_HELPER_PREAMBLE_BYTES = 32 * 1024;
 const PREAMBLE_TAIL_CHARS = 2 * 1024;
@@ -238,6 +243,8 @@ export function connectCoderHelper(
     readonly readySentinel?: string;
     readonly spawnProcess?: SpawnCoderProcess;
     readonly terminationGraceMs?: number;
+    /** Aborting before negotiation completes stops the child and fails the connection. */
+    readonly signal?: AbortSignal;
   },
 ): Effect.Effect<CoderHelperConnection, CoderHelperConnectionError, Scope.Scope> {
   return Effect.gen(function* () {
@@ -271,6 +278,7 @@ export function connectCoderHelper(
           negotiationTimer = undefined;
           child.off("error", onError);
           child.off("exit", onEarlyExit);
+          options?.signal?.removeEventListener("abort", onAbort);
         };
         const fail = (cause: unknown) => {
           if (settled) return;
@@ -299,6 +307,7 @@ export function connectCoderHelper(
           runFork(terminateCoderProcess(process, terminationGraceMs));
         };
         const onError = (cause: Error) => fail(cause);
+        const onAbort = () => terminateForFailure("Coder workspace connection was cancelled.");
         const startTimer = (timeoutMs: number, message: string) => {
           if (negotiationTimer !== undefined) clearTimeout(negotiationTimer);
           negotiationTimer = setTimeout(() => {
@@ -544,7 +553,14 @@ export function connectCoderHelper(
         child.once("exit", onEarlyExit);
         child.stdin.on("error", onStdinError);
         child.stdout.on("data", onStdout);
-        if (ready) {
+        if (options?.signal?.aborted) {
+          onAbort();
+        } else {
+          options?.signal?.addEventListener("abort", onAbort, { once: true });
+        }
+        if (settled) {
+          // Already cancelled: the abort failed the connection and is stopping the child.
+        } else if (ready) {
           startTimer(negotiationTimeoutMs, NEGOTIATION_TIMEOUT_MESSAGE);
           writeInfoRequest();
         } else {

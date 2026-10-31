@@ -54,6 +54,7 @@ import {
   connectCoderPortForward,
   type CoderPortForwardConnection,
 } from "@t3tools/coder-cli/portForward";
+import { CODER_RPC_FRAME_MAX_BYTES } from "@t3tools/coder-cli/rpc";
 import { hashCoderHelperBundle, installCoderHelper } from "@t3tools/coder-cli/transfer";
 import {
   MAX_FORWARDED_UPLOAD_BYTES,
@@ -72,7 +73,6 @@ import { makeCoderHub } from "./hub.ts";
 
 export const CODER_GATEWAY_HOST = "127.0.0.1";
 const MAX_CONFIG_BODY_BYTES = 64 * 1024;
-const MAX_RPC_MESSAGE_BYTES = 8 * 1024 * 1024;
 const MAX_CODER_LIST_BYTES = 2 * 1024 * 1024;
 const MAX_CODER_AUTH_STATUS_BYTES = 64 * 1024;
 const MAX_CODER_WORKSPACE_ACTION_BYTES = 64 * 1024;
@@ -81,6 +81,7 @@ const MAX_WORKSPACE_DIAGNOSTIC_EVENTS = 24;
 const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
 const DEFAULT_PROCESS_TERMINATION_GRACE_MS = 5_000;
 const DEFAULT_CODER_WORKSPACE_STATS_TIMEOUT_MS = 15_000;
+const DEFAULT_CODER_WORKSPACE_LIST_TIMEOUT_MS = 30_000;
 
 const indexHtml = `<!doctype html>
 <html lang="en">
@@ -363,11 +364,26 @@ function discoveredWorkspaceMatches(
   );
 }
 
+/** Fails once `signal` aborts; racing it interrupts the other effect, which stops its child. */
+function failWhenAborted(signal: AbortSignal): Effect.Effect<never, Error> {
+  return Effect.callback<never, Error>((resume) => {
+    const onAbort = () =>
+      resume(Effect.fail(new Error("Coder workspace connection was cancelled.")));
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
 function runCoderWorkspaceList(
   invocation: CoderInvocation,
 ): Effect.Effect<readonly DiscoveredCoderWorkspace[], GatewayProcessError, never> {
   return runGatewayProcess(invocation, {
     label: "Coder workspace discovery",
+    timeoutMs: DEFAULT_CODER_WORKSPACE_LIST_TIMEOUT_MS,
     maxStdoutBytes: MAX_CODER_LIST_BYTES,
     maxStderrBytes: MAX_CODER_LIST_BYTES,
     stdoutMode: "error",
@@ -533,6 +549,8 @@ type WorkspaceLifecycleState =
       readonly _tag: "Connecting";
       readonly generation: number;
       readonly operation: Promise<WorkspaceConnection>;
+      // Interrupts the attempt, killing its `coder ssh` child, so a close need not wait for it.
+      readonly cancel: AbortController;
     }
   | {
       readonly _tag: "Connected";
@@ -597,6 +615,7 @@ type WorkspaceCloseClaim =
   | {
       readonly _tag: "Close";
       readonly pending: Promise<WorkspaceConnection> | undefined;
+      readonly cancel: AbortController | undefined;
       readonly scope: Scope.Closeable | undefined;
       readonly previous:
         | Extract<WorkspaceLifecycleState, { _tag: "Connected" | "ShutdownFailed" }>
@@ -628,6 +647,7 @@ type WorkspaceActionClaim =
   | {
       readonly _tag: "Start";
       readonly pending: Promise<WorkspaceConnection> | undefined;
+      readonly cancel: AbortController | undefined;
       readonly scope: Scope.Closeable | undefined;
       readonly previous:
         | Extract<WorkspaceLifecycleState, { _tag: "Connected" | "ShutdownFailed" }>
@@ -645,7 +665,7 @@ export interface LocalCoderGatewayEffectOptions {
   readonly portPath?: string;
   readonly connectHelper?: (
     invocation: CoderInvocation,
-    hooks: { readonly onReady: () => void },
+    hooks: { readonly onReady: () => void; readonly signal: AbortSignal },
   ) => Effect.Effect<CoderHelperConnection, unknown, Scope.Scope>;
   readonly helperBundlePath?: string;
   readonly staticDir?: string;
@@ -755,10 +775,14 @@ export function makeLocalCoderGateway(
     };
     const openHelper =
       options?.connectHelper ??
-      ((invocation: CoderInvocation, hooks: { readonly onReady: () => void }) =>
+      ((
+        invocation: CoderInvocation,
+        hooks: { readonly onReady: () => void; readonly signal: AbortSignal },
+      ) =>
         connectCoderHelper(invocation, {
           readySentinel: REMOTE_HELPER_READY_SENTINEL,
           onReady: hooks.onReady,
+          signal: hooks.signal,
           ...(options?.workspaceProbeTimeoutMs === undefined
             ? {}
             : { preflightTimeoutMs: options.workspaceProbeTimeoutMs }),
@@ -874,7 +898,7 @@ export function makeLocalCoderGateway(
     };
     const webSocketServer = new WebSocketServer({
       noServer: true,
-      maxPayload: MAX_RPC_MESSAGE_BYTES,
+      maxPayload: CODER_RPC_FRAME_MAX_BYTES,
       perMessageDeflate: false,
     });
 
@@ -882,6 +906,7 @@ export function makeLocalCoderGateway(
       if (gatewayClosed) throw new Error("Coder gateway is closed.");
       const lifecycle = workspaceLifecycle(workspaceId);
       const deferred = makeDeferredPromise<WorkspaceConnection>();
+      const cancel = new AbortController();
       const claim = await runPromise(
         SynchronizedRef.modify<WorkspaceLifecycleState, WorkspaceConnectionClaim>(
           lifecycle,
@@ -908,6 +933,7 @@ export function makeLocalCoderGateway(
                     _tag: "Connecting" as const,
                     generation: state.generation,
                     operation: deferred.promise,
+                    cancel,
                   },
                 ];
             }
@@ -965,7 +991,7 @@ export function makeLocalCoderGateway(
               finishPreflight("completed");
               finishNegotiation = beginDiagnosticPhase(workspaceId, attempt, "negotiating_helper");
             };
-            return openHelper(helperInvocation, { onReady }).pipe(
+            return openHelper(helperInvocation, { onReady, signal: cancel.signal }).pipe(
               Scope.provide(connectionScope),
               Effect.onExit((exit) =>
                 Effect.sync(() => {
@@ -1001,7 +1027,7 @@ export function makeLocalCoderGateway(
                         workspace,
                         helperBundlePath: helperBundlePath!,
                         invocationOptions,
-                      }),
+                      }).pipe(Effect.raceFirst(failWhenAborted(cancel.signal))),
                     );
                     yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
                     return yield* launchHelper;
@@ -1137,6 +1163,7 @@ export function makeLocalCoderGateway(
             {
               _tag: "Close",
               pending: state._tag === "Connecting" ? state.operation : undefined,
+              cancel: state._tag === "Connecting" ? state.cancel : undefined,
               scope:
                 state._tag === "Connected" || state._tag === "ShutdownFailed"
                   ? state.scope
@@ -1158,6 +1185,7 @@ export function makeLocalCoderGateway(
           if (claim.previous) await runPromise(claim.previous.connection.close);
           if (claim.scope)
             await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
+          claim.cancel?.abort();
           if (claim.pending)
             await claim.pending.catch((cause) => {
               const state = SynchronizedRef.getUnsafe(lifecycle);
@@ -1571,6 +1599,7 @@ export function makeLocalCoderGateway(
               {
                 _tag: "Start" as const,
                 pending: state._tag === "Connecting" ? state.operation : undefined,
+                cancel: state._tag === "Connecting" ? state.cancel : undefined,
                 scope:
                   state._tag === "Connected" || state._tag === "ShutdownFailed"
                     ? state.scope
@@ -1622,6 +1651,7 @@ export function makeLocalCoderGateway(
             if (claim.scope !== undefined) {
               await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
             }
+            claim.cancel?.abort();
             if (claim.pending !== undefined)
               await claim.pending.catch((cause) => {
                 const state = SynchronizedRef.getUnsafe(lifecycle);
@@ -1811,6 +1841,12 @@ export function makeLocalCoderGateway(
             workspaceId = decodeURIComponent(resourceUsageRoute[1] ?? "");
           } catch {
             sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+            return;
+          }
+          // This GET runs `coder` commands, so a cross-site page may not trigger it.
+          const fetchSite = request.headers["sec-fetch-site"];
+          if (fetchSite !== undefined && fetchSite !== "same-origin" && fetchSite !== "none") {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
             return;
           }
           const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
@@ -2339,6 +2375,10 @@ export function makeLocalCoderGateway(
           webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
             cleanupPendingUpgrade();
             workspaceSockets.set(workspaceId, webSocket);
+            // ws reports a protocol failure, such as a frame over `maxPayload`, as an `error`
+            // event and then closes the socket; without a listener Node would crash the gateway.
+            // The `close` listener below does the cleanup.
+            webSocket.on("error", () => undefined);
             const { connection: helper, rpcBridge } = workspaceConnection;
             const sessionPromise: Promise<RpcBridgeSession> = runPromise(
               rpcBridge.attach({

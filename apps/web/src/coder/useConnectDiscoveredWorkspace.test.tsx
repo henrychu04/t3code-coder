@@ -8,10 +8,9 @@ const state = vi.hoisted(() => ({
   config: { version: 1, deployments: [], workspaces: [] } as CoderProfileConfig,
   saveConfig: vi.fn(),
   connectWorkspace: vi.fn(),
-  start: vi.fn(),
+  startWorkspace: vi.fn(),
 }));
 vi.mock("./CoderBootstrap", () => ({ useCoder: () => state }));
-vi.mock("./api", () => ({ startCoderWorkspace: state.start }));
 let root: Root;
 let connect: ReturnType<typeof useConnectDiscoveredWorkspace>;
 function Consumer() {
@@ -43,19 +42,17 @@ it("saves a new profile before starting and connecting", async () => {
   state.saveConfig.mockImplementation(async () => {
     order.push("save");
   });
-  state.start.mockImplementation(async () => {
+  state.startWorkspace.mockImplementation(async () => {
     order.push("start");
-  });
-  state.connectWorkspace.mockImplementation(async () => {
-    order.push("connect");
     return "descriptor";
   });
   expect(await connect("deployment", workspace)).toBe("descriptor");
-  expect(order).toEqual(["save", "start", "connect"]);
+  expect(order).toEqual(["save", "start"]);
   const profile = state.saveConfig.mock.calls[0]![0].workspaces[0];
   expect(profile).toMatchObject({ deploymentId: "deployment", workspace: workspace.target });
-  expect(state.start).toHaveBeenCalledWith(profile.id);
-  expect(state.connectWorkspace).toHaveBeenCalledWith(profile.id);
+  // The context's start connects the workspace once it is running.
+  expect(state.startWorkspace).toHaveBeenCalledWith(profile.id);
+  expect(state.connectWorkspace).not.toHaveBeenCalled();
 });
 it("reuses a running profile without saving or starting it", async () => {
   state.config = {
@@ -72,13 +69,13 @@ it("reuses a running profile without saving or starting it", async () => {
   await act(async () => root.render(<Consumer />));
   await connect("deployment", { ...workspace, status: "running" });
   expect(state.saveConfig).not.toHaveBeenCalled();
-  expect(state.start).not.toHaveBeenCalled();
+  expect(state.startWorkspace).not.toHaveBeenCalled();
   expect(state.connectWorkspace).toHaveBeenCalledWith("existing");
 });
 it("does not start or connect if saving fails", async () => {
   state.saveConfig.mockRejectedValue(new Error("Save failed"));
   await expect(connect("deployment", workspace)).rejects.toThrow("Save failed");
-  expect(state.start).not.toHaveBeenCalled();
+  expect(state.startWorkspace).not.toHaveBeenCalled();
   expect(state.connectWorkspace).not.toHaveBeenCalled();
 });
 
@@ -89,7 +86,7 @@ it.each(["starting", "unknown"] as const)(
       "Select a running or stopped workspace",
     );
     expect(state.saveConfig).not.toHaveBeenCalled();
-    expect(state.start).not.toHaveBeenCalled();
+    expect(state.startWorkspace).not.toHaveBeenCalled();
     expect(state.connectWorkspace).not.toHaveBeenCalled();
   },
 );

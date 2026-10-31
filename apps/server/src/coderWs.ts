@@ -1,4 +1,5 @@
 // Coder: the helper's fork-only RPC methods, served beside upstream's handlers in `ws.ts`.
+import { CODER_RPC_FRAME_MAX_BYTES } from "@t3tools/coder-cli/rpc";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -53,8 +54,8 @@ export const CODER_WS_METHODS = [
   WS_METHODS.reviewReadDiffFileChunk,
 ] as const;
 
-// Helper stdio frames are limited to 8 MiB, including RPC overhead.
-const HELPER_STDIO_FRAME_LIMIT_BYTES = 8 * 1024 * 1024 - 64 * 1024;
+// Leaves room for the RPC envelope around the value inside one helper stdio frame.
+const HELPER_STDIO_FRAME_LIMIT_BYTES = CODER_RPC_FRAME_MAX_BYTES - 64 * 1024;
 
 /** Fail a snapshot that cannot fit one helper stdio frame before transport encoding. */
 export function exceedsHelperStdioFrame(value: unknown): boolean {
