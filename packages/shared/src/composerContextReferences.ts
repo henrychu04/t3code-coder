@@ -361,7 +361,8 @@ export function projectComposerContextForProvider(input: {
   return `${body}\n\n<${CONTEXT_ENVELOPE_TAG} version="1">\n${entries.join("\n")}\n</${CONTEXT_ENVELOPE_TAG}>`;
 }
 
-// Thread reads are environment-local even when a draft moves between machines.
+// Coder: threads on linked machines (#26201) are not carried, so there is no `linkedEnvironments`
+// input. Thread reads are environment-local even when a draft moves between machines.
 export function threadContextsOutsideEnvironment(input: {
   text: string;
   records: ReadonlyArray<ComposerContextRecord>;

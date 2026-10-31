@@ -85,7 +85,8 @@ workspace stops its helper and the work running there; the task waits and report
 ended once the workspace is connected again.
 
 To point an agent at a linked workspace in a message, type `@` and part of the workspace's name in
-the composer and pick it. The list shows the connected workspaces the current one links to.
+the composer and pick it. The list shows the connected workspaces the current one links to, once
+**Linked environments** is turned on in **Settings → Labs** for the current workspace.
 
 ## Data ownership
 

@@ -23,6 +23,8 @@ export interface ComposerThreadItem {
   readonly description: string;
 }
 
+// Coder: threads on linked machines (#26201) are not carried, so there is no `linkedEnvironments`
+// input and candidates come only from the composer's own environment.
 /**
  * Threads to reference from the composer, matched and ranked like the command
  * palette, without subagent or side chat threads. The agent can only read threads on its

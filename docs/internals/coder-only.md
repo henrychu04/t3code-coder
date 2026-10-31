@@ -600,7 +600,9 @@ checks that every name here still exists and that every modified upstream file i
   `coderServer.ts` provides the runtime coordinator alone (upstream: `layerFromHost`);
   `rpc.ts`, client-runtime's `state/server.ts`, and `AcpSessionManagementSection.tsx` carry only
   those two. Session delete is cut because Kilo Code advertises no `session/delete`; logout and
-  agent provider configuration are account and provider management.
+  agent provider configuration are account and provider management. The section keeps upstream's
+  `readOnly` prop (upstream's browser test passes it) and `probe.ts` keeps upstream's
+  `managementFailure` reasons for the cut actions; neither is read here.
 - provider-acp's `adapter.ts` gives ACP sessions no MCP server and sends `t3ToolBridgeInstructions`
   with the first prompt through provider-core's `t3AcpPromptWithInstructions`; `mcpOverAcpBridge.ts`
   and `clientTerminals.ts` stay dormant (cutting them would add about 34 seams). HTTP MCP servers
