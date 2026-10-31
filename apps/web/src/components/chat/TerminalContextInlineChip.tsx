@@ -6,9 +6,8 @@ import { ContextChipPopover, ContextChipShell } from "../contextChipParts";
 interface TerminalContextInlineChipProps {
   label: string;
   terminalLabel: string;
-  /** Coder transcripts may carry a terminal header without a line range. */
-  lineStart?: number;
-  lineEnd?: number;
+  lineStart: number;
+  lineEnd: number;
   text: string;
   detailsMode: ContextPresentationCapability["details"];
   expired?: boolean;
@@ -32,11 +31,7 @@ export function TerminalContextInlineChip(props: TerminalContextInlineChipProps)
               {terminalLabel}
             </span>
             <span className="ml-auto shrink-0 text-secondary-label text-xs">
-              {lineStart === undefined
-                ? null
-                : lineStart === lineEnd
-                  ? `Line ${lineStart}`
-                  : `Lines ${lineStart}–${lineEnd}`}
+              {lineStart === lineEnd ? `Line ${lineStart}` : `Lines ${lineStart}–${lineEnd}`}
             </span>
           </div>
           <pre

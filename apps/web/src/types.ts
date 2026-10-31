@@ -1,4 +1,3 @@
-import { DEFAULT_RUNTIME_MODE as CONTRACT_DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 import { imageMimeType } from "@t3tools/shared/image";
 import type {
   ChatFileAttachment as ContractChatFileAttachment,
@@ -28,8 +27,7 @@ import { videoMimeType } from "@t3tools/shared/video";
 export { videoMimeType } from "@t3tools/shared/video";
 
 export type SessionPhase = "disconnected" | "connecting" | "ready" | "running";
-// Coder keeps the contract default: new threads require approval.
-export const DEFAULT_RUNTIME_MODE: RuntimeMode = CONTRACT_DEFAULT_RUNTIME_MODE;
+export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
 export const DEFAULT_INTERACTION_MODE: ProviderInteractionMode = "default";
 export const DEFAULT_THREAD_TERMINAL_HEIGHT = 280;
