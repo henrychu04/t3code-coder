@@ -1522,7 +1522,7 @@ function PullRequestCodeTab({
             defaultWidth={320}
             defaultWidthFraction={0.4}
             minWidth={192}
-            resizeLabel="Resize PR Code files"
+            resizeLabel="Resize MR Code files"
           >
             <DiffFileTree
               // Coder: GitLab references merge requests as `!123`.

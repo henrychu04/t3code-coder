@@ -93,7 +93,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "pull-request",
   ),
   link_pull_requests: tool(
-    ["Link", "Linking", "Linked", "pull requests"],
+    ["Link", "Linking", "Linked", "merge requests"],
     "link-pr",
     "pull-request",
   ),
@@ -103,7 +103,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "pull-request",
   ),
   unlink_pull_requests: tool(
-    ["Unlink", "Unlinking", "Unlinked", "pull requests by state"],
+    ["Unlink", "Unlinking", "Unlinked", "merge requests by state"],
     "unlink-pr",
     "pull-request",
   ),
