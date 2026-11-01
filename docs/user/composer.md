@@ -81,7 +81,8 @@ Each shows its text and any attached images. **Send now** sends a message right 
 running turn if there is one. You can also edit or remove it.
 
 If you stop the agent or the workspace helper restarts, queued messages keep their order and are
-held. Press **Resume** in an empty composer to continue. Sending a new message also resumes the
+held. Press **Resume** in an empty composer to continue. **Resume** also continues a stopped run or
+one that hit a usage limit, even with nothing queued. Sending a new message also resumes the
 queue, unless it steers a turn that is already running. You can edit or remove held messages
 without starting them.
 
@@ -220,15 +221,17 @@ the provider’s own configuration in the workspace.
 
 ## Context meter
 
-The context meter stays visible in the composer footer and shows how much of the selected
-provider's context window the conversation uses. As Codex or Claude threads grow old and large,
+Turn on **Settings → Labs → Legacy → Context window indicator (legacy)** to see context usage. The
+meter is off by default and appears in the composer footer once the provider reports usage; it
+shows how much of the selected provider's context window the conversation uses. As Codex or Claude threads grow old and large,
 T3 Coder offers to compact the conversation into a summary before you continue; you can also start
 compaction yourself from the meter. Compaction runs through the workspace provider session,
 summarizes history without changing the model's context window, and remains visible in the
 conversation even when it is the only activity in that turn.
 
 Compacting from the context meter preserves the current draft and its images. You can also send
-`/compact` in an existing conversation when the provider supports it.
+`/compact` in an existing conversation when the provider supports it, even with the context meter
+turned off.
 
 **Compact idle threads** in **Settings > General** controls idle Claude threads over 200,000
 tokens. Each Claude provider's settings can override it:

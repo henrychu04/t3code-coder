@@ -165,6 +165,10 @@ const DELETED_PATHS = {
     "scripts/apply-web-brand-assets.ts",
     "scripts/build-desktop-artifact.ts",
     "scripts/fixtures/desktop-launch/",
+    // The desktop build's server bytecode cache (#28572).
+    "scripts/lib/server-compile-cache.ts",
+    "scripts/lib/server-compile-cache.test.ts",
+    "scripts/prepare-server-compile-cache.cjs",
   ],
   // Mobile: no mobile app.
   mobile: ["apps/mobile/", "patches/@expo__ui@58.0.20.patch", "patches/expo-sharing@58.0.19.patch"],
@@ -186,6 +190,8 @@ const DELETED_PATHS = {
   "server CLI": [
     "apps/server/src/binCli.ts",
     "apps/server/src/cli/",
+    "apps/server/src/cliCompileCache.ts",
+    "apps/server/src/cliCompileCache.test.ts",
     "apps/server/src/environment/ServerEnvironment.ts",
     "apps/server/src/serverRuntimeStartup.autoPull.test.ts",
     "apps/server/src/serverRuntimeStartup.test.ts",
@@ -196,6 +202,9 @@ const DELETED_PATHS = {
   "local editors and provider setup": [
     "apps/server/src/process/externalLauncher.ts",
     "apps/server/src/process/externalLauncher.test.ts",
+    // Late editor and SSH target discovery (#14519); only the cut launcher and open targets use it.
+    "apps/server/src/environment/staleWhileRevalidate.ts",
+    "apps/server/src/environment/staleWhileRevalidate.test.ts",
     "apps/web/src/components/settings/CodexSetupSection.tsx",
     "packages/shared/src/editor.ts",
     "apps/server/src/provider/CodexChatGptModels.ts",
@@ -391,6 +400,10 @@ const DELETED_PATHS = {
     "scripts/check-changed.ts",
     "scripts/dev-runner.ts",
     "scripts/dev-runner.test.ts",
+    // Startup profiling (#28566) preloads into upstream's dev runner and CLI, neither carried.
+    "scripts/profile-startup.mjs",
+    "scripts/profile-startup-modules.mjs",
+    "scripts/profile-startup.test.ts",
     // Upstream's ChatMarkdown browser test, which the fork has not carried since its first commit.
     "apps/web/src/components/ChatMarkdown.browser.test.tsx",
     // CodeRabbit's configuration and upstream's MCP tool-use evals.

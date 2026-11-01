@@ -1,11 +1,34 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import { TestClock } from "effect/testing";
 import { ChildProcessSpawner } from "effect/process";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { make } from "./RepositoryIdentityResolver.ts";
+
+// Coder: the mocked cases resolve made-up workspace paths, so every path reads as a folder holding
+// the entries the resolver checks before it probes with Git (#27980).
+const existingFolders = Layer.merge(
+  FileSystem.layerNoop({
+    stat: () => Effect.succeed({ type: "Directory" } as FileSystem.File.Info),
+    exists: () => Effect.succeed(true),
+  }),
+  Path.layer,
+);
+
+const git = (cwd: string, args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const processRunner = yield* ProcessRunner.ProcessRunner;
+    return yield* processRunner.run({
+      command: "git",
+      args: ["-C", cwd, ...args],
+    });
+  }).pipe(Effect.provide(ProcessRunner.layer));
 
 function output(stdout: string): ProcessRunner.ProcessRunOutput {
   return {
@@ -33,6 +56,7 @@ describe("RepositoryIdentityResolver", () => {
       });
       const resolver = yield* make().pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, process),
+        Effect.provide(existingFolders),
       );
 
       const identity = yield* resolver.resolve("/workspace/project/src");
@@ -61,6 +85,7 @@ describe("RepositoryIdentityResolver", () => {
       });
       const resolver = yield* make().pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, process),
+        Effect.provide(existingFolders),
       );
 
       const first = yield* resolver.resolve("/workspace/project/src");
@@ -91,6 +116,7 @@ describe("RepositoryIdentityResolver", () => {
       });
       const resolver = yield* make().pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, process),
+        Effect.provide(existingFolders),
       );
 
       expect(yield* resolver.resolve("/workspace/project/src")).toBeNull();
@@ -126,6 +152,7 @@ describe("RepositoryIdentityResolver", () => {
       });
       const resolver = yield* make().pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, process),
+        Effect.provide(existingFolders),
       );
 
       const identity = yield* resolver.resolve("/workspace/project");
@@ -159,6 +186,7 @@ describe("RepositoryIdentityResolver", () => {
       });
       const resolver = yield* make().pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, process),
+        Effect.provide(existingFolders),
       );
 
       const identity = yield* resolver.resolve("/workspace/project");
@@ -193,6 +221,7 @@ describe("RepositoryIdentityResolver", () => {
         });
         const resolver = yield* make().pipe(
           Effect.provideService(ProcessRunner.ProcessRunner, process),
+          Effect.provide(existingFolders),
         );
 
         expect(yield* resolver.resolve("/workspace/project")).toBeNull();
@@ -223,6 +252,7 @@ describe("RepositoryIdentityResolver", () => {
         });
         const resolver = yield* make().pipe(
           Effect.provideService(ProcessRunner.ProcessRunner, process),
+          Effect.provide(existingFolders),
         );
 
         const identity = yield* resolver.resolve(layout === "dot-bare" ? "/srv/smoke" : gitDir);
@@ -247,9 +277,50 @@ describe("RepositoryIdentityResolver", () => {
       });
       const resolver = yield* make().pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, process),
+        Effect.provide(existingFolders),
       );
 
       expect(yield* resolver.resolve("/workspace/project/.git")).toBeNull();
     }),
+  );
+
+  // Coder: upstream's case on real temporary folders, outside its `it.layer`.
+  it.effect(
+    "returns null for non-git, missing and no-remote folders, probing only what can exist",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const nonGitDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-repository-identity-non-git-",
+        });
+        const gitDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-repository-identity-no-remote-",
+        });
+
+        yield* git(gitDir, ["init"]);
+
+        const runner = yield* ProcessRunner.ProcessRunner;
+        const runs: Array<ReadonlyArray<string>> = [];
+        const resolver = yield* make().pipe(
+          Effect.provideService(ProcessRunner.ProcessRunner, {
+            run: (input) =>
+              Effect.suspend(() => {
+                runs.push(input.args);
+                return runner.run(input);
+              }),
+          }),
+        );
+        const bareProbes = () =>
+          runs.filter((args) => args.some((arg) => arg.startsWith("--git-dir=")));
+
+        expect(yield* resolver.resolve(path.join(nonGitDir, "deleted"))).toBeNull();
+        expect(runs).toEqual([]);
+
+        expect(yield* resolver.resolve(nonGitDir)).toBeNull();
+        expect(bareProbes()).toEqual([]);
+
+        expect(yield* resolver.resolve(gitDir)).toBeNull();
+      }).pipe(Effect.provide(ProcessRunner.layer), Effect.provide(NodeServices.layer)),
   );
 });
