@@ -1006,31 +1006,7 @@ describe("composer fallback to another instance of the same driver", () => {
       expect(traits.modelOptionsForDispatch).toBeUndefined();
     });
 
-    it("does not carry options through an alias that names another model per instance", () => {
-      // "antigravity-default" is each Antigravity instance's current model.
-      const antigravity = ProviderDriverKind.make("antigravity");
-      const disabledAntigravity = ProviderInstanceId.make("antigravity");
-      const current = { isDefault: true, aliases: [ANTIGRAVITY_DEFAULT_MODEL] };
-      const { state, traits } = composerFor({
-        providers: [
-          {
-            ...provider({ provider: antigravity, instanceId: disabledAntigravity }),
-            enabled: false,
-            models: [reasoningModel("gemini-3-pro", "thinking", current)],
-          },
-          {
-            ...provider({ provider: antigravity, instanceId: "antigravity_work" }),
-            models: [reasoningModel("claude-sonnet-4-6", "thinking", current)],
-          },
-        ],
-        threadModelSelection: createModelSelection(disabledAntigravity, ANTIGRAVITY_DEFAULT_MODEL, [
-          { id: "thinking", value: "high" },
-        ]),
-      });
-
-      expect(state.selectedModel).toBe("claude-sonnet-4-6");
-      expect(traits.modelOptionsForDispatch).toBeUndefined();
-    });
+    // Coder: upstream's Antigravity alias case (#27859) is cut; Antigravity is never offered.
   });
 
   it("does not carry options to another driver", () => {

@@ -231,6 +231,8 @@ const DELETED_PATHS = {
     "apps/web/src/components/settings/AddProviderInstanceDialog.environment.browser.test.tsx",
     "apps/web/test/fakeEnvironment.ts",
     "packages/client-runtime/src/state/server.test.ts",
+    // Bulk provider updates' management-scope gate (#23183), which the always-grant scopes open.
+    "apps/web/src/components/ProviderUpdatesAction.browser.test.tsx",
   ],
   // Relay: no relay, Tailscale, or SSH transport.
   relay: [
