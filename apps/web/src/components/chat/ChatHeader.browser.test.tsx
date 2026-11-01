@@ -16,6 +16,8 @@ vi.mock(import("../../state/use-orchestration-command"), async (importOriginal) 
       return { _tag: "Success" };
     }) as never,
 }));
+// Coder: the header's workspace latency badge reads the Coder context the app shell provides.
+vi.mock(import("../CoderWorkspaceLatency"), () => ({ CoderWorkspaceLatency: () => null }));
 vi.mock(import("~/hooks/useThreadActionMenu"), () => ({
   useThreadActionMenu: () => ({ openMenu: () => {}, closeMenu: () => {} }),
 }));

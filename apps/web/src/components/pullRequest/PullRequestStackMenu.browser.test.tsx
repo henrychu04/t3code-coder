@@ -31,12 +31,7 @@ const HEAD_MOVED = "The stack head moved. Refresh the stack before trying again.
 it.each([
   { label: "Merge stack", detail: HEAD_MOVED, description: HEAD_MOVED },
   { label: "Rebase stack", detail: HEAD_MOVED, description: HEAD_MOVED },
-  {
-    label: "Rebase stack",
-    detail: "GitHub CLI command failed.",
-    description:
-      "The host refused the rebase. A rebase stops at the first commit that does not apply cleanly.",
-  },
+  // Coder: the GitHub CLI refusal case is cut; GitHub's client is not registered.
 ])("$label refused with $detail shows $description", async (row) => {
   setup(row.detail);
   await using screen = await render(

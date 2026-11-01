@@ -48,19 +48,20 @@ it("updates palette PR status from linked snapshots without a legacy link or bra
       />
     </AppAtomRegistryProvider>
   );
+  // Coder: the labels use merge request wording.
   await using screen = await render(row(link));
-  await expect.element(screen.getByLabelText("PR #7 - Merged: Linked change")).toBeVisible();
-  await expect.element(screen.getByLabelText("PR #7, status pending")).not.toBeInTheDocument();
+  await expect.element(screen.getByLabelText("MR !7 - Merged: Linked change")).toBeVisible();
+  await expect.element(screen.getByLabelText("MR !7, status pending")).not.toBeInTheDocument();
 
   await screen.rerender(row({ ...link, snapshot: null }));
-  await expect.element(screen.getByLabelText("PR #7, status pending")).toBeVisible();
+  await expect.element(screen.getByLabelText("MR !7, status pending")).toBeVisible();
   await expect
-    .element(screen.getByLabelText("PR #7 - Merged: Linked change"))
+    .element(screen.getByLabelText("MR !7 - Merged: Linked change"))
     .not.toBeInTheDocument();
 
   await screen.rerender(
     row({ ...link, snapshot: { ...link.snapshot!, state: "open", isDraft: true } }),
   );
-  await expect.element(screen.getByLabelText("PR #7 - Draft: Linked change")).toBeVisible();
-  await expect.element(screen.getByLabelText("PR #7, status pending")).not.toBeInTheDocument();
+  await expect.element(screen.getByLabelText("MR !7 - Draft: Linked change")).toBeVisible();
+  await expect.element(screen.getByLabelText("MR !7, status pending")).not.toBeInTheDocument();
 });
