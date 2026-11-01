@@ -30,6 +30,7 @@ function stubGateway(
     vi.fn(async (path: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? "GET"} ${path}${init?.body ? ` ${String(init.body)}` : ""}`);
       if (path === "/api/port-forwards/free-port") return Response.json({ port: 5174 });
+      if (path === "/api/config") return Response.json(read());
       polls += 1;
       return Response.json({
         portForwards: (read().portForwards ?? []).map((entry) => ({
@@ -44,9 +45,13 @@ function stubGateway(
 
 function fakeUpdateConfig() {
   let current = config;
-  const updateConfig = vi.fn(async (update: (value: CoderProfileConfig) => CoderProfileConfig) => {
-    current = update(current);
-  });
+  const updateConfig = vi.fn(
+    async (
+      update: (value: CoderProfileConfig) => CoderProfileConfig | Promise<CoderProfileConfig>,
+    ) => {
+      current = await update(current);
+    },
+  );
   return { updateConfig, read: () => current };
 }
 
@@ -95,6 +100,7 @@ describe("server forwards", () => {
     expect(read().portForwards?.at(-1)).toEqual(rule);
     expect(calls).toEqual([
       'POST /api/port-forwards/free-port {"port":5173}',
+      "GET /api/config",
       "GET /api/port-forwards",
       "GET /api/port-forwards",
     ]);

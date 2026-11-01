@@ -86,7 +86,7 @@ it("edits an existing forward without changing its ID or duplicating it", async 
         existingRules={[rule]}
         workspaces={[workspace]}
         updateConfig={async (update) => {
-          config = update(config);
+          config = await update(config);
         }}
         onClose={close}
       />,

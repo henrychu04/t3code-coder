@@ -43,6 +43,13 @@ export interface PortForwardManagerOptions {
 export type PortForwardManager = ReturnType<typeof makePortForwardManager>;
 
 /** The saved port-forward rules' lifecycles: one foreground `coder port-forward` child each. */
+/** A rule held back only because its workspace was starting; any later start retries it. */
+const WORKSPACE_STARTING_ERROR = "Coder workspace is starting.";
+
+/** A rule whose own forward failed stays stopped until it is restarted or changed. */
+const isFailedRule = (state: PortForwardLifecycleState) =>
+  state._tag === "Failed" && state.error !== WORKSPACE_STARTING_ERROR;
+
 export function makePortForwardManager(deps: PortForwardManagerOptions) {
   const {
     runPromise,
@@ -376,7 +383,7 @@ export function makePortForwardManager(deps: PortForwardManagerOptions) {
       (config().portForwards ?? []).map(async (portForward) => {
         if (
           options?.retryFailed === false &&
-          SynchronizedRef.getUnsafe(portForwardLifecycle(portForward.id))._tag === "Failed"
+          isFailedRule(SynchronizedRef.getUnsafe(portForwardLifecycle(portForward.id)))
         ) {
           return;
         }
@@ -408,7 +415,7 @@ export function makePortForwardManager(deps: PortForwardManagerOptions) {
                 ({
                   _tag: "Failed",
                   generation: state.generation,
-                  error: "Coder workspace is starting.",
+                  error: WORKSPACE_STARTING_ERROR,
                 }) as const,
             ),
           );

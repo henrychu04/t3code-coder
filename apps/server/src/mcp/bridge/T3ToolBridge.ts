@@ -137,6 +137,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
     // Calls still inside their inline budget, per thread; they count toward the cap before they
     // become jobs, so concurrent calls cannot all pass the check.
     const inlineCalls = new Map<string, number>();
+    let abandonedCalls = 0;
 
     const run = (
       scope: McpInvocationContext.McpInvocationScope,
@@ -263,6 +264,18 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
           const fiber = yield* run(scope, request).pipe(Effect.forkIn(jobScope));
           const exit = yield* Fiber.await(fiber).pipe(
             Effect.timeoutOption(options.inlineBudgetMs ?? INLINE_BUDGET_MS),
+            // A caller that leaves mid-call does not stop the tool, which could half-apply it;
+            // the call stays counted as a job until it ends or the retention sweep drops it.
+            Effect.onInterrupt(() =>
+              Effect.sync(() => {
+                abandonedCalls += 1;
+                jobs.set(`${BRIDGE_JOB_PREFIX}abandoned-${abandonedCalls}`, {
+                  threadId,
+                  startedAt: now,
+                  fiber,
+                });
+              }),
+            ),
           );
           if (Option.isSome(exit)) return { _tag: "Done" as const, exit: exit.value };
           const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`;

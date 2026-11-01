@@ -485,7 +485,7 @@ const readMerged = (path) => {
     return "";
   }
 };
-// Workspace packages by name, so `@t3tools/<pkg>/<sub>` imports resolve through their `exports`.
+// Workspace packages by name, so `<pkg>/<sub>` imports resolve through their `exports`.
 const workspacePackages = new Map(
   git("ls-files", "-z", "--", "apps/*/package.json", "packages/*/package.json")
     .split("\0")
@@ -508,7 +508,8 @@ const resolveSpecifier = (importer, specifier) => {
   }
   // The web app's `~` alias (apps/web/tsconfig.json and vite.config.ts).
   if (specifier.startsWith("~/")) return `apps/web/src/${specifier.slice(2)}`;
-  const match = /^(@[^/]+\/[^/]+)(?:\/(.+))?$/.exec(specifier);
+  // Scoped (`@t3tools/shared/...`) and unscoped (`effect-acp/compat`) workspace packages.
+  const match = /^((?:@[^/]+\/)?[^/@.][^/]*)(?:\/(.+))?$/.exec(specifier);
   const pkg = match ? workspacePackages.get(match[1]) : undefined;
   if (!pkg || typeof pkg.exports !== "object" || pkg.exports === null) return undefined;
   const key = match[2] === undefined ? "." : `./${match[2]}`;

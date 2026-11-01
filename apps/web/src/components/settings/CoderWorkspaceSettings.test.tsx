@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { CoderProfileConfig } from "../../coder/api";
 import { CoderWorkspaceSettings } from "./CoderWorkspaceSettings";
 import { SettingsResource } from "./SettingsResource";
+import type { UpdateCoderSettingsConfig } from "./useCoderSettingsConfig";
 
 const state = vi.hoisted(() => ({
   confirm: vi.fn(),
@@ -68,8 +69,8 @@ vi.mock("../ui/menu", () => ({
   ),
 }));
 let renderer: ReactTestRenderer;
-const save = vi.fn(async (update: (config: CoderProfileConfig) => CoderProfileConfig) => {
-  state.config = update(state.config);
+const save = vi.fn(async (update: Parameters<UpdateCoderSettingsConfig>[0]) => {
+  state.config = await update(state.config);
 });
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
