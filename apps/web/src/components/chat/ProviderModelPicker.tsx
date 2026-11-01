@@ -273,16 +273,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           : (props.getModelDisabledReason?.(instanceId, model) ?? null)
       }
       onInstanceModelChange={handleInstanceModelChange}
-      {...(docked
-        ? {
-            docked,
-            onFocusEffort: () => void focusEffort("any"),
-            // Inside the fixed height, so switching to or from a ChatGPT plan never resizes it.
-            ...(props.selectedModels === undefined
-              ? { listFooter: <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} /> }
-              : {}),
-          }
-        : {})}
+      // Coder: no ChatGPT sharing footer; subscription plans are out of scope.
+      {...(docked ? { docked, onFocusEffort: () => void focusEffort("any") } : {})}
     />
   );
 
