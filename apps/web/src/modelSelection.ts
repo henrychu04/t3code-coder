@@ -31,7 +31,7 @@ import {
 import { ModelEsque } from "./components/chat/providerIconUtils";
 import {
   type ProviderInstanceEntry,
-  // Coder: pickers and fallbacks only offer Codex, Claude, and Pi instances.
+  // Coder: pickers and fallbacks only offer Codex, Claude, Pi, and Kilo Code instances.
   deriveCoderProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
   resolveDefaultProviderModelSelection,

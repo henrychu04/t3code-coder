@@ -943,7 +943,9 @@ checks that every name here still exists and that every modified upstream file i
   section has only the Linked environments switch (no guest links or Simlock row); About has no
   mobile app row, privacy link, or update track switch.
 - Search carries `sourceControlHostSearchItems` but not `SOURCE_CONTROL_HOST_LABELS`; the MR link
-  target row lives on Diffs with GitLab search terms.
+  target row lives on Diffs with GitLab search terms. Agent-credit removal applies only to GitHub
+  merges, so `ProjectDefaultsSettings.tsx` has no `removeAgentCreditsOnMerge` row and search has
+  no "Remove agent credits when merging" item.
 - Appearance's **Add theme** is `ThemeImportDialog` without the remote catalog or desktop picker.
 - Each workspace row carries `EnvironmentIconMenu`; the helper reports no `platform.machine`.
   `environmentTransportLabel` names every workspace "Coder workspace", so
@@ -1064,7 +1066,10 @@ checks that every name here still exists and that every modified upstream file i
   the GitLab-only registry, `ProjectSettingsPanel` keeps `projects.getConfig` pending and drops the
   fallback-model search target, `ExpandedImageDialog` drops the SnapShot accessibility case, and
   `ProviderSettingsForm`, `ProviderModelPicker.composition`, and `ReopenClosedViewShortcut` drop
-  secret-source, provider, and preview cases. The fork-only `hooks/useThreadActionMenu.test.tsx`
+  secret-source, provider, and preview cases, `ChatHeader` mocks `CoderWorkspaceLatency`, and
+  `PullRequestStackMenu` drops the GitHub CLI refusal case. `modelSelection.test.ts` runs
+  upstream's OpenCode instance cases on Claude instances and drops the Antigravity alias case
+  (#27859). The fork-only `hooks/useThreadActionMenu.test.tsx`
   keeps upstream's deleted hook test.
 
 ## Cut surfaces
