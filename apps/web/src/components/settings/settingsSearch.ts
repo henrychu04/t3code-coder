@@ -245,6 +245,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
     searchTerms: ["new thread project provider reasoning effort"],
   },
+  // Coder: no "Fallback model" row; upstream's out-of-usage fallback is not carried.
   {
     id: "default-permissions",
     title: "Permissions",
@@ -519,9 +520,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "proactive-panels",
-    title: "Proactive panels",
+    title: "Open merge requests and changes panels proactively",
     to: "/settings/diffs",
-    searchTerms: ["automatically open diff merge request mr right panel agent completion"],
+    searchTerms: [
+      "proactive automatically open diff merge request mr right panel agent completion",
+    ],
   },
   {
     id: "pull-request-links-open-in-app",

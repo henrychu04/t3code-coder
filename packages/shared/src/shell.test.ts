@@ -1045,3 +1045,5 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
     }),
   );
 });
+
+// Coder: upstream's desktop shell environment update case (#28556) is cut with `applyShellEnvironment`.

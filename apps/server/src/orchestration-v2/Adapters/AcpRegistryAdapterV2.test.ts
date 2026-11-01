@@ -1022,4 +1022,7 @@ describe("AcpRegistryAdapterV2", () => {
       assert.notInclude(text, "preview_");
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
+
+  // Coder: upstream's Copilot lost-session restart cases (#26651) are not carried; the adapter has
+  // no Copilot flavor.
 });

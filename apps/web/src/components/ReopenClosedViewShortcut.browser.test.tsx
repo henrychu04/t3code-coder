@@ -164,4 +164,5 @@ describe("root reopen shortcut", () => {
       expect(useClosedViewStore.getState().entries).toEqual([]);
     },
   );
+  // Coder: no desktop browser page forwards address-bar focus (#22328).
 });

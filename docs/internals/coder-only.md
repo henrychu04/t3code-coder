@@ -710,7 +710,7 @@ checks that every name here still exists and that every modified upstream file i
   (`server/GitLabMediaFetch.ts`) reads with `glab api` in the minted `cwd` (no `--hostname`),
   buffering at most `GITLAB_MEDIA_MAX_BYTES`. The package also exports `server/GitLabCli`, which
   `ws.projects.test.ts` stubs.
-- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 15fe283272): merge
+- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 8760d063e9): merge
   requests between projects post to the source project with a numeric `target_project_id`; merge
   request URLs reach `glab` as `--repo <url> … -- <iid>`. `glab auth status` lines with a token
   label or `glpat-` token are never surfaced; clones accept only GitLab URLs without credentials,
@@ -787,7 +787,8 @@ checks that every name here still exists and that every modified upstream file i
   on a disconnect. `connection/registry.ts` starts every registered supervisor desired, applies
   every reconcile (no #26511 skip), carries no cached unsupported-host rejection, and has no
   `assertKnownAddress` or `knownAddressOnly`; `connection/resolver.ts` has no remote HTTP prepare
-  path. `state/shell.ts` treats every workspace as remote.
+  path. `state/shell.ts` treats every workspace as remote, so upstream's `shell.test.ts`, which tests
+  its primary-environment factory, is not carried.
 - client-runtime's `threadSnapshotHttp.ts`, `shellSnapshotHttp.ts`, and `threadHistoryHttp.ts` keep
   upstream's paths but load over helper stdio; shell snapshots use upstream's socket fallback.
 - client-runtime's `rpc/protocol.ts` builds its client from `CoderWsRpcGroup`, and `rpc/index.ts`
@@ -948,6 +949,8 @@ checks that every name here still exists and that every modified upstream file i
   `environmentTransportLabel` names every workspace "Coder workspace", so
   `useEnvironmentTransportLabel` ignores the prepared connection; older links naming one checkout
   resolve to its group.
+- `ProviderModelPicker.tsx` has no `ChatGptSharingControl`, inline or in the docked list footer
+  (subscription plans are out of scope).
 - Providers lists only the four drivers, without sign-in, setup, managed install, per-instance
   environment variables, ACP registry, or usage-limit sources; Source Control appends GitLab
   workspace status; update checks and the health interval do not mention model catalog updates.
@@ -1039,11 +1042,12 @@ checks that every name here still exists and that every modified upstream file i
   with a branded exit code; `ProviderInstanceRegistry.test.ts` runs the Claude one-probe fallback
   against the CLI `query`; `ProviderRegistry.test.ts` runs without the Antigravity and OpenCode
   layers; `SourceControlProviderRegistry.test.ts`, `SourceControlRepositoryService.test.ts`, and
-  `RepositoryIdentityResolver.test.ts` run upstream's cases on GitLab remotes with the fork's mocks;
+  `RepositoryIdentityResolver.test.ts` run upstream's cases on GitLab remotes with the fork's mocks
+  (the resolver's folder checks, #27980, read a FileSystem that reports every path as a folder);
   `PullRequestService.test.ts` passes branded GitLab kinds; `chatCanvasLayout.test.ts` and
   `canvasStore.test.ts` carry no preview cases; the ACP Registry replay harness
-  (`AcpRegistryAdapterV2.testkit.ts`, `AcpAdapterV2.testkit.ts`) runs without registry, Devin, and
-  session-management cases, plus a Coder test that the bridge command reaches the prompt;
+  (`AcpRegistryAdapterV2.testkit.ts`, `AcpAdapterV2.testkit.ts`) runs without registry, Devin,
+  Copilot lost-session (#26651), and session-management cases, plus a Coder test that the bridge command reaches the prompt;
   `AgentScope.test.ts` drops the launcher check (`agentScopeLauncherScript` is cut);
   `GitLabPullRequestCli.legacy.test.ts` expects `DIFF_MAX_OUTPUT_BYTES`; `ProviderReplayFixtures.ts`
   lists only the carried drivers.
@@ -1057,7 +1061,8 @@ checks that every name here still exists and that every modified upstream file i
   `CommandPalette.composition` mocks `useCoder` and picks the workspace first, `StorageSettings`
   keys on the saved-image-artifacts title, `useComposerContextImport` drops linked environments,
   images, and annotations, `FilePreviewPanel` has no remote-open mock, `PullRequestMarkdown` runs on
-  the GitLab-only registry, `ProjectSettingsPanel` keeps `projects.getConfig` pending, and
+  the GitLab-only registry, `ProjectSettingsPanel` keeps `projects.getConfig` pending and drops the
+  fallback-model search target, `ExpandedImageDialog` drops the SnapShot accessibility case, and
   `ProviderSettingsForm`, `ProviderModelPicker.composition`, and `ReopenClosedViewShortcut` drop
   secret-source, provider, and preview cases. The fork-only `hooks/useThreadActionMenu.test.tsx`
   keeps upstream's deleted hook test.
@@ -1090,7 +1095,8 @@ them, the file is named here.
   `lastEventLoopStall`), usage page or dashboard (`shared/usageLimits.ts`, provider-core and
   provider-pi `usage.ts`; `ProviderDriver.usage` is `never`), the thread details usage-limit rows
   (`ThreadDetailsUsage`'s limit windows), `useUsageLimitsPanel`, or upstream's out-of-usage fallback (#26164;
-  `fallbackModelSelection` stays in the schema only). Without the usage page, `timestampFormat.ts`
+  `fallbackModelSelection` stays in the schema only; `ProjectDefaultsSettings.tsx` has no fallback
+  row or effort picker and `settingsSearch.ts` no "Fallback model" item). Without the usage page, `timestampFormat.ts`
   has no `resolveHour12`.
 - **Server self-update and CLI.** No npm release check (`cloud/npmRelease.ts`), "Update
   everything", update tracks, `t3 doctor` storage status (`DatabaseStorageNotice`, client-runtime's
@@ -1155,7 +1161,8 @@ them, the file is named here.
   `artifacts` are not shown, as on upstream.
 - Shared helpers only cut surfaces used: `shared/projectFavicon.ts` keeps
   `PROJECT_FAVICON_EXTENSIONS` private, `shared/t3ProjectFile.ts` drops
-  `buildT3ProjectFileJsonSchema`, shared `AgentScope.ts` drops `agentScopeLauncherScript`, and
+  `buildT3ProjectFileJsonSchema`, shared `AgentScope.ts` drops `agentScopeLauncherScript`, shared
+  `shell.ts` drops the desktop's `applyShellEnvironment` (#28556), and
   `PullRequestsPage.tsx` drops its preview-session placeholders.
 
 ## Distribution

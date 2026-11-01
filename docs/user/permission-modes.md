@@ -11,6 +11,9 @@ thread keeps that thread's mode. Other new threads use the default from **Settin
 threads → Permissions** (**Full access** at first), which a project can override, unless you pick
 something else before sending.
 
+Subagent approval requests appear in the parent conversation with the subagent's name, so you can
+respond without switching threads.
+
 ## The modes
 
 **Supervised** asks before commands and file changes. Use it when you want to inspect actions before
@@ -26,7 +29,9 @@ Provider policy decides the exact approval boundary.
 a question.
 
 Claude can still ask in **Full access** when its settings disable bypass permissions or require
-approval for an action.
+approval for an action. Dangerous-removal safety checks in bypass mode reject the command with
+the original warning. Claude can use a safe rewrite when the warning supplies one; otherwise it
+continues without the removal and tells you what it skipped.
 While a Claude approval is pending, type a text reply to decline that request and give feedback
 directly to the agent that asked, including a subagent. Other pending requests stay unanswered.
 

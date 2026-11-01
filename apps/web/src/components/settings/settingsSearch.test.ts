@@ -61,6 +61,7 @@ describe("searchSettings", () => {
     ]);
     expect(searchSettings("claude", ITEMS).map((item) => item.id)).toEqual(["providers"]);
     expect(searchSettings("long lines", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
+    // Coder: no "Fallback model" item; the out-of-usage fallback is not carried.
   });
 
   it("matches normalized title substrings", () => {
@@ -146,7 +147,7 @@ describe("searchSettings", () => {
 });
 
 describe("settings search targets", () => {
-  // Coder: no OpenTelemetry export settings, so there is no telemetry export target to resolve.
+  // Coder: no OpenTelemetry export settings or fallback model, so neither target is resolved.
   it("keeps environment-wide settings out of project scopes", () => {
     const updates = getSettingsSearchTargetScope("background-activity")!;
     expect(updates.scope).toBe("environment-defaults");
