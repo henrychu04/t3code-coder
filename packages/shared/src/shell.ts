@@ -10,7 +10,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import type { ShellEnvironmentPatch } from "@t3tools/contracts";
 import * as HostProcess from "./HostProcess.ts";
 import * as Context from "effect/Context";
 const SHELL_ENV_NAME_PATTERN = /^[A-Z0-9_]+$/;
@@ -967,14 +966,5 @@ export const resolveWindowsEnvironment = Effect.fn("shell.resolveWindowsEnvironm
     : baselinePatch;
 });
 
-export function applyShellEnvironment(
-  env: NodeJS.ProcessEnv,
-  patch: ShellEnvironmentPatch,
-  platform: NodeJS.Platform,
-): void {
-  for (const [key, value] of Object.entries(patch)) {
-    if (key === "PATH" && platform === "win32") setWindowsPath(env, value);
-    else if (value === null) delete env[key];
-    else env[key] = value;
-  }
-}
+// Coder: upstream's `applyShellEnvironment` (#28556) is not carried; only the desktop shell applies
+// a discovered environment, and its patch type lives in the uncarried resource telemetry contracts.
