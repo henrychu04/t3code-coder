@@ -233,6 +233,8 @@ const DELETED_PATHS = {
     "packages/client-runtime/src/state/server.test.ts",
     // Bulk provider updates' management-scope gate (#23183), which the always-grant scopes open.
     "apps/web/src/components/ProviderUpdatesAction.browser.test.tsx",
+    // The primary-environment shell factory, which the fork's every-workspace-remote atom replaces.
+    "apps/web/src/state/shell.test.ts",
   ],
   // Relay: no relay, Tailscale, or SSH transport.
   relay: [
