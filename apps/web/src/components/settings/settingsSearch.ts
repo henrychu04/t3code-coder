@@ -522,7 +522,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "proactive-panels",
     title: "Open merge requests and changes panels proactively",
     to: "/settings/diffs",
-    searchTerms: ["proactive automatically open diff merge request mr right panel agent completion"],
+    searchTerms: [
+      "proactive automatically open diff merge request mr right panel agent completion",
+    ],
   },
   {
     id: "pull-request-links-open-in-app",

@@ -489,7 +489,8 @@ describe("pull request toolkit handlers", () => {
       const harness = yield* makeHarness({
         thread: makeThread([makeLink(1), { ...makeLink(2), source: "stack-dismissed" }]),
       });
-      const url = (number: number) => `https://gitlab.com/t3tools/t3code/-/merge_requests/${number}`;
+      const url = (number: number) =>
+        `https://gitlab.com/t3tools/t3code/-/merge_requests/${number}`;
       const result = yield* harness.call("link_pull_requests", {
         urls: [url(1), url(2), url(3), url(3), "https://example.com/not-a-pr"],
       });
