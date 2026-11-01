@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { CoderProfileConfig } from "../../coder/api";
 
 export type UpdateCoderSettingsConfig = (
-  update: (current: CoderProfileConfig) => CoderProfileConfig,
+  update: (current: CoderProfileConfig) => CoderProfileConfig | Promise<CoderProfileConfig>,
 ) => Promise<void>;
 /** Resource edits operate on the latest config and cannot overwrite another queued edit. */
 export function useCoderSettingsConfig(
@@ -18,7 +18,7 @@ export function useCoderSettingsConfig(
   }, [config, save]);
   return useCallback((update) => {
     const next = queue.current.then(async () => {
-      current.current = await saveRef.current(update(current.current));
+      current.current = await saveRef.current(await update(current.current));
     });
     queue.current = next.catch(() => {});
     return next;

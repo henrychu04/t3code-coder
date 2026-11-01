@@ -10,12 +10,19 @@ import {
 import { randomUUID } from "../lib/utils";
 import {
   findFreeCoderForwardPort,
+  loadCoderConfig,
   loadCoderPortForwardStatuses,
   type CoderPortForwardProfile,
   type CoderProfileConfig,
 } from "./api";
 import { useCoder } from "./CoderBootstrap";
 import { coderWorkspaceIdForEnvironment } from "./environmentStore";
+
+/**
+ * The gateway's current configuration. A save replaces the whole configuration, and another tab
+ * may have saved since this one loaded, so forward edits start from what the gateway holds.
+ */
+const latestConfig = () => loadCoderConfig();
 
 /** How long Forward waits for Coder to report its listener ready before opening the tab anyway. */
 const FORWARD_READY_TIMEOUT_MS = 20_000;
@@ -76,7 +83,8 @@ export async function forwardServer(input: {
   // Saving starts the forward; the gateway answers once its process has spawned. Another tab may
   // have forwarded the same server first; that rule is used instead of adding a second one.
   let forwarded = rule;
-  await updateConfig((current) => {
+  await updateConfig(async () => {
+    const current = await latestConfig();
     const existing = findServerForward(current, rule.workspaceId, remotePort);
     if (existing !== undefined) {
       forwarded = existing;
@@ -96,7 +104,7 @@ export async function forwardServer(input: {
       // A forward this click added and that never ran is not kept, so Settings shows no rule to
       // explain; a rule another tab added stays.
       if (forwarded === rule) {
-        await updateConfig((current) => removeServerForward(current, rule.id));
+        await updateConfig(async () => removeServerForward(await latestConfig(), rule.id));
       }
       throw new Error(status?.error ?? "The port forward did not start.");
     }
@@ -123,7 +131,7 @@ export function useServerForwards(environmentId: EnvironmentId) {
 
   const stopForwarding = useCallback(
     (rule: CoderPortForwardProfile) =>
-      updateConfig((current) => removeServerForward(current, rule.id)),
+      updateConfig(async () => removeServerForward(await latestConfig(), rule.id)),
     [updateConfig],
   );
 
