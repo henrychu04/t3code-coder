@@ -571,16 +571,17 @@ describe("instance-scoped model selection", () => {
     ).toEqual(createModelSelection(instanceId, "openai/gpt-5.5"));
   });
 
+  // Coder: upstream's OpenCode instances become Claude ones; OpenCode is never offered.
   it("keeps the default instance's draft model off a custom instance of the same driver", () => {
-    const driver = ProviderDriverKind.make("opencode");
-    const defaultInstanceId = ProviderInstanceId.make("opencode");
-    const kimiInstanceId = ProviderInstanceId.make("kimi_api");
-    const kimiModel = "kimi-code-plan-global/k3.1-pro";
+    const driver = ProviderDriverKind.make("claudeAgent");
+    const defaultInstanceId = ProviderInstanceId.make("claudeAgent");
+    const kimiInstanceId = ProviderInstanceId.make("claude_work");
+    const kimiModel = "claude-opus-4-1";
     const providers = [
       provider({
         provider: driver,
         instanceId: defaultInstanceId,
-        models: ["opencode-go/kimi-k3.1-pro"],
+        models: ["claude-sonnet-4-6"],
       }),
       provider({ provider: driver, instanceId: kimiInstanceId, models: [kimiModel] }),
     ];
@@ -588,7 +589,7 @@ describe("instance-scoped model selection", () => {
       draft: {
         activeProvider: kimiInstanceId,
         modelSelectionByProvider: {
-          [defaultInstanceId]: createModelSelection(defaultInstanceId, "opencode-go/kimi-k3.1-pro"),
+          [defaultInstanceId]: createModelSelection(defaultInstanceId, "claude-sonnet-4-6"),
         },
       },
       providers,

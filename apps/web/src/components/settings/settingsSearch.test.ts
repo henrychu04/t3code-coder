@@ -61,13 +61,7 @@ describe("searchSettings", () => {
     ]);
     expect(searchSettings("claude", ITEMS).map((item) => item.id)).toEqual(["providers"]);
     expect(searchSettings("long lines", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
-    for (const query of ["fallback", "fallback agent", "fallback model"]) {
-      expect(searchSettings(query)[0]).toMatchObject({
-        id: "fallback-model",
-        to: "/settings/threads",
-        scope: "environment-defaults",
-      });
-    }
+    // Coder: no "Fallback model" item; the out-of-usage fallback is not carried.
   });
 
   it("matches normalized title substrings", () => {
@@ -153,18 +147,13 @@ describe("searchSettings", () => {
 });
 
 describe("settings search targets", () => {
-  // Coder: no OpenTelemetry export settings, so there is no telemetry export target to resolve.
+  // Coder: no OpenTelemetry export settings or fallback model, so neither target is resolved.
   it("keeps environment-wide settings out of project scopes", () => {
     const updates = getSettingsSearchTargetScope("background-activity")!;
     expect(updates.scope).toBe("environment-defaults");
     expect(isSettingsSearchScopeAvailable(updates.scope, "environment")).toBe(true);
     expect(isSettingsSearchScopeAvailable(updates.scope, "all")).toBe(true);
     expect(isSettingsSearchScopeAvailable(updates.scope, "project")).toBe(false);
-    const fallback = getSettingsSearchTargetScope("fallback-model")!;
-    expect(fallback.scope).toBe("environment-defaults");
-    expect(isSettingsSearchScopeAvailable(fallback.scope, "environment")).toBe(true);
-    expect(isSettingsSearchScopeAvailable(fallback.scope, "all")).toBe(true);
-    expect(isSettingsSearchScopeAvailable(fallback.scope, "project")).toBe(false);
     const streaming = getSettingsSearchTargetScope("response-streaming")!;
     expect(streaming.scope).toBe("project-defaults");
     expect(isSettingsSearchScopeAvailable(streaming.scope, "project")).toBe(true);
