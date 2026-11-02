@@ -146,7 +146,7 @@ describe("searchSettings", () => {
       ["Delete settled worktrees", "storage-worktrees"],
       ["Delete old browser artifacts", "storage-artifacts"],
       ["Delete old rotated logs", "storage-artifacts"],
-      ["Custom search URL", "browser-search-engine"],
+      // Coder: no browser settings page, so no "Custom search URL" row.
       ["Native sessions", "providers"],
       ["CODEX_HOME path", "providers"],
       ["Shadow home path", "providers"],
