@@ -252,7 +252,7 @@ patchedDependencies:
   '@effect/vitest@4.0.5': 2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02
   '@ff-labs/fff-node@0.11.0': 765c192f75289d2a65d54011f65e3c9397603298eefb7203e7e05260352e47c8
   '@legendapp/list@3.3.5': 892caa00d83adda6135574b04ea63752bcedf1d9103f013eef1fe9289a5e02a6
-  '@pierre/diffs@1.6.1': cbfbe7f36010a8973f57955ed43a7ee2895db5c15e5b336dbf9e850d342d6d26
+  '@pierre/diffs@1.6.1': 55b422eb72cf142519ee504ff8078bd825c0707299e55bd835b1148c219cf7d1
   mdast-util-math@3.0.0: afe6b2c89e1eaddfd3c90cf2723f12c9a17d513e65beff51653781486013251c
   mdast-util-to-hast@13.2.1: 57ea46c73aea3c876ab8d351fe0482ddd081dcb4a0610576e399dbe5eb59d2b1
   micromark-extension-gfm-table@2.1.1: 9ad23a530e45d9f83cba1da8654fe16d5af8b59d5c73d5c7a7c91fd25b9be1d8
@@ -470,7 +470,7 @@ importers:
         version: 3.3.5(patch_hash=892caa00d83adda6135574b04ea63752bcedf1d9103f013eef1fe9289a5e02a6)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/diffs':
         specifier: 1.6.1
-        version: 1.6.1(patch_hash=cbfbe7f36010a8973f57955ed43a7ee2895db5c15e5b336dbf9e850d342d6d26)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 1.6.1(patch_hash=55b422eb72cf142519ee504ff8078bd825c0707299e55bd835b1148c219cf7d1)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/trees':
         specifier: 1.0.0-beta.6
         version: 1.0.0-beta.6(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.2.0)
@@ -717,7 +717,7 @@ importers:
     dependencies:
       '@pierre/diffs':
         specifier: 1.6.1
-        version: 1.6.1(patch_hash=cbfbe7f36010a8973f57955ed43a7ee2895db5c15e5b336dbf9e850d342d6d26)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 1.6.1(patch_hash=55b422eb72cf142519ee504ff8078bd825c0707299e55bd835b1148c219cf7d1)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -6018,7 +6018,7 @@ snapshots:
 
   '@oxlint/plugins@1.89.0': {}
 
-  '@pierre/diffs@1.6.1(patch_hash=cbfbe7f36010a8973f57955ed43a7ee2895db5c15e5b336dbf9e850d342d6d26)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@pierre/diffs@1.6.1(patch_hash=55b422eb72cf142519ee504ff8078bd825c0707299e55bd835b1148c219cf7d1)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@pierre/highlights': 0.2.0
       '@pierre/theme': 2.0.0

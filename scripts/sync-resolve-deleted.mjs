@@ -130,6 +130,10 @@ const DELETED_PATHS = {
     "apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts",
     "apps/server/src/textGeneration/OpenCode2TextGeneration.test.ts",
     "apps/server/src/provider/antigravityUsageLimits.ts",
+    "apps/server/src/provider/GrokProvider.test.ts",
+    // Antigravity subagent child work (#28629): the native child work query and its dialog.
+    "apps/server/src/orchestration-v2/NativeChildWorkQuery.ts",
+    "apps/web/src/components/chat/NativeChildWorkDialog.tsx",
   ],
   // Kilo Code runs upstream's ACP Registry driver from its local command only: no registry
   // installs, agent sign-in, per-agent flavors, or native protocol logging.
@@ -148,6 +152,10 @@ const DELETED_PATHS = {
   // checklist, native helpers, or packaging.
   desktop: [
     "apps/web/src/lib/desktopPasteAsText.ts",
+    // Desktop folder path lookup for dropped and pasted folders.
+    "apps/web/src/components/chat/folderDrop.ts",
+    // Client activity leases; the helper's background policy always allows work.
+    "apps/web/src/lib/backgroundActivityReporter.ts",
     "apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts",
     "patches/app-builder-lib@26.16.1.patch",
     "apps/desktop/",
@@ -181,6 +189,7 @@ const DELETED_PATHS = {
     "apps/web/src/components/clerk/",
     "apps/web/src/components/cloud/",
     "apps/web/src/components/onboarding/",
+    "docs/user/t3-connect-troubleshooting.md",
     "apps/web/src/components/promptLinks/copyPromptLink.ts",
   ],
   // Server CLI: the helper starts over `coder ssh`, never as upstream's `t3` command, and
@@ -196,6 +205,7 @@ const DELETED_PATHS = {
     "apps/server/src/serverRuntimeStartup.autoPull.test.ts",
     "apps/server/src/serverRuntimeStartup.test.ts",
     "apps/server/src/serverRuntimeState.test.ts",
+    "apps/web/src/components/settings/CliCommandSettingsRow.tsx",
   ],
   // Local editors and provider setup: the helper cannot open an editor on the laptop, and
   // providers are configured in the workspace without in-app sign-in or setup.
@@ -210,6 +220,9 @@ const DELETED_PATHS = {
     "apps/server/src/provider/CodexChatGptModels.ts",
     "apps/server/src/provider/CodexInstallation.ts",
     "apps/web/src/components/settings/ProviderSetupSection.tsx",
+    "apps/web/src/components/settings/ProviderAuthenticationSection.tsx",
+    "docs/user/providers-claude.md",
+    "docs/user/providers-opencode.md",
     "docs/user/welcome-wizard.md",
   ],
   // Tests for cut surfaces: the provider environment panel test drives managed Codex accounts and
@@ -235,6 +248,8 @@ const DELETED_PATHS = {
     "apps/web/src/components/ProviderUpdatesAction.browser.test.tsx",
     // The primary-environment shell factory, which the fork's every-workspace-remote atom replaces.
     "apps/web/src/state/shell.test.ts",
+    // The per-instance environment variable section, which Providers does not carry.
+    "apps/web/src/components/settings/ProviderInstanceCard.environment.browser.test.tsx",
   ],
   // Relay: no relay, Tailscale, or SSH transport.
   relay: [
@@ -275,7 +290,9 @@ const DELETED_PATHS = {
     "apps/server/src/observability/Observability.ts",
     "apps/server/src/observability/RpcInstrumentation.ts",
     "apps/server/src/resourceTelemetry/",
-    "apps/server/src/telemetry/",
+    // ProviderUsageAnalytics.ts stays as types and the no-op ProviderTurnAnalytics reference,
+    // which carried orchestration files import (#29001).
+    /^apps\/server\/src\/telemetry\/(?!ProviderUsageAnalytics\.ts$)/,
     "apps/server/src/usage/",
     "apps/web/src/components/usage/",
     "apps/web/src/components/settings/AddUsageLimitSourceDialog.logic.ts",
@@ -294,6 +311,9 @@ const DELETED_PATHS = {
     "apps/server/src/provider/EventNdjsonLogger.test.ts",
     "apps/server/src/serverLogger.ts",
     "packages/provider-pi/src/server/usage.ts",
+    "packages/shared/src/usageMerge.ts",
+    "docs/internals/product-analytics.md",
+    "docs/user/telemetry.md",
     "packages/shared/src/observability.ts",
   ],
   // Updates and releases: no server self-update, update pill or fleet tracks, npm launcher, CLI
@@ -306,6 +326,7 @@ const DELETED_PATHS = {
     "apps/server/src/serverOwnership.ts",
     "apps/web/src/components/ServerUpdateAction.tsx",
     "apps/web/src/components/sidebar/SidebarUpdatePill.tsx",
+    "apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx",
     "apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx",
     "apps/web/src/components/sidebar/UpdateEverythingDialog.tsx",
     "apps/web/src/components/sidebar/updateEverything.logic.ts",
@@ -334,6 +355,8 @@ const DELETED_PATHS = {
     "apps/server/src/mcp/linkOrigin.test.ts",
     "apps/server/src/peer/PeerForwarding.test.ts",
     "apps/server/src/peer/RemoteDelegation.test.ts",
+    "apps/server/src/peer/PeerLinkRequests.ts",
+    "apps/server/src/peer/PeerLinks.test.ts",
   ],
   // Guest sharing: no guest share links, guest page, or guest HTTP routes.
   "guest sharing": [
@@ -381,6 +404,8 @@ const DELETED_PATHS = {
   "other web surfaces": [
     "apps/web/src/components/GitHubStarPrompt.tsx",
     "apps/web/src/components/chat/hostImageUrl.ts",
+    // Add to another machine (#22180), which copies ignored files between workspaces.
+    "apps/web/src/components/AddProjectToMachineDialog.tsx",
   ],
   // Upstream repository tooling: vendored sources, CI, hooks, editor and agent configuration,
   // and operations docs. The fork's .github/ keeps only SECURITY.md.
@@ -404,6 +429,7 @@ const DELETED_PATHS = {
     "docs/internals/open-source-licenses.md",
     "docs/user/faq.md",
     "scripts/check-changed.ts",
+    "scripts/check-changed-command.ts",
     "scripts/dev-runner.ts",
     "scripts/dev-runner.test.ts",
     // Startup profiling (#28566) preloads into upstream's dev runner and CLI, neither carried.

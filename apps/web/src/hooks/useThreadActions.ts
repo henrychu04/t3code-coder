@@ -44,6 +44,8 @@ import {
   readThreadShells,
 } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
+import { useDiffPanelStore } from "../diffPanelStore";
+import { useRightPanelStore } from "../rightPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
@@ -232,6 +234,12 @@ const LIST_PLACEMENT_UNDO_KINDS = ["settle", "snooze", "pin"];
 
 function expireThreadUndos(target: ScopedThreadRef, kinds: readonly string[]) {
   for (const kind of kinds) ThreadUndo.invalidate(kind, scopedThreadKey(target));
+}
+
+// Coder: no browser preview, so there is no preview or mini-player state to clear.
+function clearDeletedThreadPanelState(ref: ScopedThreadRef) {
+  useRightPanelStore.getState().removeThread(ref);
+  useDiffPanelStore.getState().removeThread(ref);
 }
 
 /** A No project thread that already has its own folder, on a server that can promote it. */
@@ -432,6 +440,7 @@ export function useThreadActions() {
       if (result._tag === "Success") {
         expireThreadUndos(target, [...LIST_PLACEMENT_UNDO_KINDS, "archive"]);
         refreshArchivedThreadsForEnvironment(target.environmentId);
+        clearDeletedThreadPanelState(target);
       }
       return result;
     }
@@ -553,6 +562,7 @@ export function useThreadActions() {
       threadRef,
     );
     clearTerminalUiState(threadRef);
+    clearDeletedThreadPanelState(threadRef);
 
     if (shouldNavigateToFallback) {
       const fallbackThread = fallbackThreadId
