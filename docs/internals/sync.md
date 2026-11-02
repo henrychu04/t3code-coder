@@ -89,6 +89,17 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   comment blocks whole: removing upstream's lines one at a time can drop a `/**` or `*/` the
   fork's text still needs (typecheck catches the orphaned lines). Afterwards, list comment lines
   upstream deleted that the result still has, since an auto-merged hunk can keep them too.
+- To cut one upstream commit whole (47f2c8d29e: managed policy, #27197), make it the last commit
+  of its own stage. Merge its parent on a temporary branch and commit; then, on the sync branch,
+  `git merge --no-ff --no-commit <commit>` and `git read-tree --reset -u <temporary branch>`, so the
+  merge records the commit as merged with none of its hunks. Later commits that edit its lines then
+  conflict in the next stage, and `lost` lists its lines; name every carried file it touched in the
+  seams doc. Where a later commit builds on one of its non-feature refactors (#24664's
+  `CodexDriver.ts` passing `HostProcess.Environment`), take upstream's form.
+- A keep candidate whose importers only need a few declarations (#29001's
+  `telemetry/ProviderUsageAnalytics.ts`, whose analytics layer is cut) can stay as a reduced upstream
+  file under the deleted directory: keep the declarations the carried files import, mark it
+  `Coder:`, and narrow the `DELETED_PATHS` entry with a RegExp.
 - A mechanical upstream refactor (e.g. e85539ab59's traced `Effect.fn` wrappers, #21989–#22000)
   re-indents whole functions, so conflicts span the fork's rewrites. Merge it in its own stage. For a
   file the refactor alone touched, take upstream's file and replay the fork's delta
