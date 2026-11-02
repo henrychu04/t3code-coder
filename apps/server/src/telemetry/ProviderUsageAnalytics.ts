@@ -64,7 +64,6 @@ export interface RunSettledReport {
   readonly childrenRunning: boolean;
 }
 
-
 export class ProviderTurnAnalytics extends Context.Reference<{
   readonly runStarted: (input: {
     readonly runId: RunId;
