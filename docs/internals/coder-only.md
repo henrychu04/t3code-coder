@@ -1064,8 +1064,9 @@ checks that every name here still exists and that every modified upstream file i
   `GitLabPullRequestCli.legacy.test.ts` expects `DIFF_MAX_OUTPUT_BYTES`; `ProviderReplayFixtures.ts`
   lists only the carried drivers; `CodexAdapterV2.test.ts` expects `T3CODE_THREAD_ID` without
   the MCP servers; client-runtime's `assets.test.ts` builds the gateway `ConnectionTarget` in
-  place of upstream's primary target; `ChatView.logic.test.ts` drops preview annotations and
-  `useThreadActions.permissions.test.ts` the mini-player state.
+  place of upstream's primary target; `ChatView.logic.test.ts` drops preview annotations,
+  `useThreadActions.permissions.test.ts` the mini-player state, `mediaContent.test.ts` the desktop
+  media read, and `settingsSearch.test.ts` the browser search row.
 - Upstream's `*.browser.test.*` files run in headless Chromium as the `browser` Vitest project;
   `reactCompilerCoverage.test.ts` skips `CODER_UNCOMPILED_FILES`. The fork keeps `jsdom` and
   `react-test-renderer` for its unit tests and for `ChatMarkdown.test.tsx`,
