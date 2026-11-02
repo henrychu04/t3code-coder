@@ -55,3 +55,5 @@ it("keeps remote media on the fetch path", async () => {
   expect(await readMediaPng("https://example.com/image.png")).toEqual(png);
   expect(fetch).toHaveBeenCalledWith("https://example.com/image.png");
 });
+
+// Coder: no desktop bridge, so upstream's native media read case (#29079) is cut.

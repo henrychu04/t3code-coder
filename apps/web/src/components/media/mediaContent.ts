@@ -40,19 +40,20 @@ function readDataUrlBlob(src: string): Blob {
   }
 }
 
+// Coder: no desktop bridge, so there is no native media read after a failed fetch (#29079).
+async function fetchMediaBlob(src: string): Promise<Blob> {
+  const response = await fetch(src).catch(() => null);
+  if (response?.ok) return response.blob();
+  const status = response?.status;
+  if (status !== undefined) throw new Error(`The file could not be fetched (HTTP ${status}).`);
+  throw new Error(
+    "The file could not be fetched. The host may block browser access (CORS), or the connection may be unavailable.",
+  );
+}
+
 async function readMediaBlob(src: string): Promise<Blob> {
   if (/^data:/i.test(src)) return readDataUrlBlob(src);
-  let response: Response;
-  try {
-    response = await fetch(src);
-  } catch (cause) {
-    throw new Error(
-      "The file could not be fetched. The host may block browser access (CORS), or the connection may be unavailable.",
-      { cause },
-    );
-  }
-  if (!response.ok) throw new Error(`The file could not be fetched (HTTP ${response.status}).`);
-  const blob = await response.blob();
+  const blob = await fetchMediaBlob(src);
   if (blob.type.split(";", 1)[0] === "text/html") {
     throw new Error("This link returned a web page instead of media. Open the original URL.");
   }

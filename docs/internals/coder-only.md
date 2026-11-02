@@ -552,7 +552,9 @@ checks that every name here still exists and that every modified upstream file i
 - provider-core's `server/t3ToolBridgeInstructions.ts` reuses upstream's orchestration sections,
   rewriting "`html_preview`, then `html_render`" to "`html_render`" and dropping the `preview_*`
   bullet; its test fails if upstream rewords them.
-- `CodexAdapterV2.ts` configures no `mcp_servers`, attaches T3 context only when the bridge exists,
+- `CodexAdapterV2.ts` configures no `mcp_servers` (neither `t3-code` nor the direct-only
+  `t3-code-direct` server for `t3_thread_wait`, #29026 and #29068; `codexThreadRuntimeParams` adds
+  only upstream's per-thread `T3CODE_THREAD_ID`), attaches T3 context only when the bridge exists,
   and takes the bridge text as `t3ToolBridgeSections` (one context entry per section, under
   `CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES`); `CodexDeveloperInstructions.ts` and
   `ClaudeAdapterV2.ts` describe the bridge command, and Claude pre-approves it as a Bash prefix
@@ -633,7 +635,11 @@ checks that every name here still exists and that every modified upstream file i
 - No metrics: `Orchestrator.ts` and `ProjectService.ts` have no `withCommandMetrics`,
   `ProviderSessionManager.ts` no session or turn metrics, `ScheduledTaskService.ts` no webhook
   metrics, `SecretRequests.ts` no consumed-ref count, `EventSink.ts` no run outcome metrics
-  (`RunMetrics.ts`), and `RunExecutionService.ts` no `PreviewAgentActivity`. `EventNdjsonLogger` and
+  (`RunMetrics.ts`), and `RunExecutionService.ts` no `PreviewAgentActivity`. Provider token
+  analytics (#29001) is cut: `telemetry/ProviderUsageAnalytics.ts` keeps only its report types and
+  the no-op `ProviderTurnAnalytics` reference that `ProviderEventIngestor.ts`,
+  `ProviderTurnStartService.ts`, and `RunExecutionService.ts` call, with no analytics layer or
+  request ledger; the token usage counts those turns carry are upstream's. `EventNdjsonLogger` and
   `ProviderEventLoggers` keep only the no-op service. provider-core's `maintenanceResolver.ts` and
   `providerStatusCache.ts` log the first cause tag in place of the omitted observability helper.
 - No `lastErrorCode`: the server's `threadErrorSummary`, `ProjectionStore.ts`'s shell state,
@@ -665,7 +671,8 @@ checks that every name here still exists and that every modified upstream file i
   Upstream's `WsRpcGroup` stays dormant (`knip.jsonc` ignores `rpc.ts`'s unused exports).
   `CoderWsRpcGroup` omits `server.getDatabaseStorage`, `server.getNpmRelease`,
   `server.prepareTriage`, the browser preview's RPCs (it keeps `preview.stopLocalServer` and
-  `subscribeDiscoveredLocalServers`), guest share creation, the peer-link RPCs, and
+  `subscribeDiscoveredLocalServers`), guest share creation, the peer-link RPCs,
+  `orchestration.getNativeChildWork` (Antigravity's native child work, #28629), and
   the `sourceControl.signIn*`, `sourceControl.appAccess`, and `sourceControl.starred` RPCs.
 - `server.ts` (contracts) mirrors `ipc.ts`'s `DesktopUpdateChannelSchema` for
   `ServerSelfUpdateInput`, because `ipc.ts` is not carried.
@@ -676,6 +683,9 @@ checks that every name here still exists and that every modified upstream file i
   events carry the raw payload.
 - Terminal attach input adds `afterSequence` and `afterEpoch`, snapshots add `attachEpoch`, and the
   attach stream adds a `resumed` event.
+- `settings.ts` declares `UsageModelFilter` for the `usageModelFilter` server setting (#28952)
+  because contracts' `usage.ts` is not carried; client-runtime's `state/server.ts` has no usage
+  atoms.
 - Client settings keep `providerPreferencesByEnvironment`, read only as the legacy lists each
   workspace migrates (see [Web state and persistence](#web-state-and-persistence)).
 
@@ -710,7 +720,7 @@ checks that every name here still exists and that every modified upstream file i
   (`server/GitLabMediaFetch.ts`) reads with `glab api` in the minted `cwd` (no `--hostname`),
   buffering at most `GITLAB_MEDIA_MAX_BYTES`. The package also exports `server/GitLabCli`, which
   `ws.projects.test.ts` stubs.
-- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 8760d063e9): merge
+- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 47f2c8d29e): merge
   requests between projects post to the source project with a numeric `target_project_id`; merge
   request URLs reach `glab` as `--repo <url> … -- <iid>`. `glab auth status` lines with a token
   label or `glpat-` token are never surfaced; clones accept only GitLab URLs without credentials,
@@ -1052,7 +1062,11 @@ checks that every name here still exists and that every modified upstream file i
   Copilot lost-session (#26651), and session-management cases, plus a Coder test that the bridge command reaches the prompt;
   `AgentScope.test.ts` drops the launcher check (`agentScopeLauncherScript` is cut);
   `GitLabPullRequestCli.legacy.test.ts` expects `DIFF_MAX_OUTPUT_BYTES`; `ProviderReplayFixtures.ts`
-  lists only the carried drivers.
+  lists only the carried drivers; `CodexAdapterV2.test.ts` expects `T3CODE_THREAD_ID` without
+  the MCP servers; client-runtime's `assets.test.ts` builds the gateway `ConnectionTarget` in
+  place of upstream's primary target; `ChatView.logic.test.ts` drops preview annotations,
+  `useThreadActions.permissions.test.ts` the mini-player state, `mediaContent.test.ts` the desktop
+  media read, and `settingsSearch.test.ts` the browser search row.
 - Upstream's `*.browser.test.*` files run in headless Chromium as the `browser` Vitest project;
   `reactCompilerCoverage.test.ts` skips `CODER_UNCOMPILED_FILES`. The fork keeps `jsdom` and
   `react-test-renderer` for its unit tests and for `ChatMarkdown.test.tsx`,
@@ -1085,6 +1099,8 @@ them, the file is named here.
   navigation (`HistorySwipeNavigation.tsx`, `navigationHistory.ts`), mobile app links
   (`MobileAppSettingsRow`), hosted app, or prompt links (`components/promptLinks/`, the "Copy prompt
   link" actions, the automation row's link). `Icons.tsx` drops `OnePasswordIcon`.
+  `media/mediaContent.ts`'s `fetchMediaBlob` has no desktop native read after a failed fetch
+  (#29079).
 - **Auth, pairing, and relay.** No HTTP/WebSocket listener, session scopes, pairing, DPoP, relay,
   or connection catalog; `settings/AddEnvironmentDialog.tsx` is cut. The server's `auth/` keeps
   `ServerSecretStore`, its utils, and `serverInternalPaths.ts` (#28041), which the carried file
@@ -1093,7 +1109,9 @@ them, the file is named here.
 - **Browser preview and devices.** No in-app browser, preview panel, mini-player, preview MCP
   toolkits, device hosts, or agent device shim (port discovery stays: `preview/PortScanner.ts`); provider-core's device instructions never reach an
   agent. Without browser preview, `composerDraftStore.ts` keeps no empty draft alive for an open
-  page, and `mergeDirectPreviewAnnotation` is not carried.
+  page, and `mergeDirectPreviewAnnotation` is not carried. Deleting a thread clears its
+  right-panel and diff-panel state (`useThreadActions.ts`'s `clearDeletedThreadPanelState`, #28386)
+  but has no preview or mini-player state to clear.
 - **Telemetry, usage, and diagnostics.** No T3 telemetry, analytics, client-origin attribution,
   metrics, OTLP or trace export (upstream's OTLP `config.test.ts`), diagnostics page, NDJSON event
   logs, resource telemetry, `observability/EventLoopMonitor.ts` (no host-freeze toast or
@@ -1115,7 +1133,10 @@ them, the file is named here.
   entries), managed Codex (`CodexManagedTokenBroker`, `__managed-chatgpt-token`, ChatGPT Business
   admin requests #23361), provider sign-in, and Kilo Code's registry index, installs, auth
   controller, logout, native session deletion, and agent provider configuration (`copilotAcp.ts`,
-  `devinAcp.ts`, `nativeLogging.ts`, `@noble/hashes`), and the Antigravity send block. Codex
+  `devinAcp.ts`, `nativeLogging.ts`, `@noble/hashes`), the Antigravity send block, and
+  Antigravity's native child work (#28629: `NativeChildWorkQuery.ts`, `NativeChildWorkDialog.tsx`,
+  client-runtime `state/orchestration.ts`'s `nativeChildWork` atom, and the `ChatView.tsx` slot
+  that rendered it). Codex
   feedback upload (client-runtime `threadCommands.ts` has no `uploadFeedback`) and SnapShot sources
   are cut.
 - **Hosted source control other than GitLab.** GitHub, Azure DevOps, Bitbucket, Forgejo, and
@@ -1153,6 +1174,29 @@ them, the file is named here.
   reads no reference (an instance whose variable points at one is unavailable with upstream's "Could
   not read …" reason) and lists no kind (`secretProviders` writes are rejected); `ws.ts` does not
   advertise `secretReferences`.
+- **Managed policy** (#27197). Organization-wide policy files, the Windows registry and macOS
+  profile readers (`ffi-rs`), `t3 policy`, policy-locked settings and providers, runtime-mode
+  ceilings, and their notices are cut: no contracts `managedPolicy.ts`, shared
+  `managedPolicyFile.ts`, server `policy/`, web `ManagedPolicy.tsx` or `state/managedPolicy.ts`, or
+  `docs/user/managed-policy.md`. The sync merged #27197 with the tree of its parent, so these carried
+  files keep upstream's code from before it in place of its hunks: contracts `auth.ts`, `index.ts`,
+  `orchestratorMcp.ts`, `providerPolicy.ts` (no `isRuntimeModeAbove`), `scheduledTask.ts`
+  (`blockedByPolicy`), `server.ts`, and `settings.ts`; provider-core `ProviderAdapter.ts`
+  (`maxRuntimeMode`) and `instanceEnvironment.ts`; provider-acp `adapter.ts`
+  (`runtimeModeForSessionMode`); server `auth/utils.ts`, `mcp/McpInvocationContext.ts`,
+  `mcp/OrchestratorMcpService.ts`, `mcp/threadAccess.ts`, `mcp/toolkits/project/handlers.ts`,
+  `ClaudeAdapterV2.ts`, `CheckpointRollbackService.ts`, `DispatchModeLimit.ts`, `Orchestrator.ts`,
+  `ProviderTurnStartService.ts`, `RestartContinuation.ts`, `RuntimePolicy.ts`,
+  `ThreadMessageIntake.ts`, `testkit/ProviderReplayHarness.ts`, `AgentSessionImporter.ts`,
+  `ProviderInstanceRegistry.ts`, `ProviderInstanceRegistryHydration.ts`, `ScheduledTaskService.ts`,
+  `server.ts`, `serverSettings.ts`, and `ws.ts`; web `ChatComposer.tsx`,
+  `ComposerFooterControls.tsx`, `ModelPickerSidebar.tsx`, `ThreadAutomationsPanel.tsx`,
+  `AddProviderInstanceDialog.tsx`, `LabsSettingsPanel.tsx`, `ProjectDefaultsSettings.tsx`,
+  `ProviderInstanceCard.tsx`, `ProviderSettingsForm.tsx`, `ProviderSettingsPanel.tsx`,
+  `ScheduledTasksSettings.tsx`, `SettingsPanels.tsx`, `StorageSettings.tsx`, and
+  `settingsLayout.tsx`; and `docs/user/install.md` and `permission-modes.md`. Later upstream code
+  that builds on #27197's non-policy refactors takes upstream's form (`CodexDriver.ts` passes
+  `HostProcess.Environment` to `mergeProviderInstanceEnvironment`).
 - **Add to another machine** (#22180, #22254). It copies ignored files such as `.env` between
   workspaces through the browser: no `listIgnoredFiles`, `projects.listIgnoredFiles`
   (`ignoredFileListing` omitted), client-runtime `projectCommands.ts` command, `BranchToolbar.tsx`

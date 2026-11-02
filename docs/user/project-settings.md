@@ -239,6 +239,8 @@ the helper is running. Offline workspaces retain their settings and resume clean
 Worktree rules can remove T3-managed checkouts after inactivity, after a thread settles, after
 their branch is merged, when unchanged from the remote default branch, or after deleting their last
 thread. Set settled retention to 0 days to remove a worktree at the next cleanup after settlement.
+In repositories without remotes, unchanged-worktree cleanup compares against the branch checked out
+in the project workspace; if that checkout has a detached HEAD, the worktree is kept.
 Active sessions, terminals, and shared checkouts prevent removal. **Keep worktrees with local
 changes** defaults to **Uncommitted changes**, which protects tracked edits and untracked files but
 deletes ignored files such as `.env` and build output. **Any local files** also protects ignored

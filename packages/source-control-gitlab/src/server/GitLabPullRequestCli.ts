@@ -20,6 +20,7 @@ import type {
   PullRequestReaction,
   PullRequestReactionContent,
   PullRequestReviewCommentDraft,
+  PullRequestReviewDecision,
   PullRequestReviewPosition,
   PullRequestReviewThread,
   PullRequestReviewVerdict,
@@ -46,12 +47,14 @@ import {
   decodeProjectLabelsJson,
   decodeProjectUsersJson,
   decodeRepositoryBlobsJson,
+  decodeReviewDecisionsJson,
   decodeTriggerJobChecksJson,
   decodeViewerJson,
   gitLabAwardName,
   MERGE_REQUEST_FILE_STATS_GRAPHQL_QUERY,
   MERGE_REQUEST_STATS_GRAPHQL_QUERY,
   REPOSITORY_BLOBS_GRAPHQL_QUERY,
+  REVIEW_DECISIONS_GRAPHQL_QUERY,
   type GitLabDiffRefs,
   type GitLabMergeRequestDetail,
   type GitLabMergeRequestListItem,
@@ -251,6 +254,16 @@ export class GitLabPullRequestCli extends Context.Service<
       /** `false` skips the trigger job read; the permission check before every write does. */
       readonly downstreamChecks?: boolean;
     }) => Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError>;
+
+    readonly getReviewDecisions: (input: {
+      readonly cwd: string;
+      readonly host?: string | undefined;
+      readonly repository: string;
+      readonly numbers: ReadonlyArray<number>;
+    }) => Effect.Effect<
+      ReadonlyMap<number, PullRequestReviewDecision | null>,
+      GitLabPullRequestCliError
+    >;
 
     /** Line counts for the given merge requests; one with no answer is left out. */
     readonly listMergeRequestStats: (input: {
@@ -1296,6 +1309,24 @@ export const make = Effect.gen(function* () {
           }),
         );
 
+  const reviewDecisionsOf = (input: {
+    readonly cwd: string;
+    readonly host?: string | undefined;
+    readonly repository: string;
+    readonly numbers: ReadonlyArray<number>;
+  }): Effect.Effect<
+    ReadonlyMap<number, PullRequestReviewDecision | null>,
+    GitLabPullRequestCliError
+  > =>
+    graphqlRead({
+      cwd: input.cwd,
+      host: input.host,
+      operation: "getReviewDecisions",
+      query: REVIEW_DECISIONS_GRAPHQL_QUERY,
+      variables: { fullPath: input.repository, iids: input.numbers.map(String) },
+      decode: decodeReviewDecisionsJson,
+    });
+
   const viewerUsername = (input: { readonly cwd: string; readonly host?: string | undefined }) =>
     api({ cwd: input.cwd, host: input.host, path: "user" }).pipe(
       Effect.flatMap((result): Effect.Effect<string, GitLabPullRequestCliError> => {
@@ -1338,6 +1369,16 @@ export const make = Effect.gen(function* () {
           : { ...detail, checks: [...detail.checks, ...downstream] };
       },
     ),
+
+    getReviewDecisions: Effect.fn("GitLabPullRequestCli.getReviewDecisions")(function (input) {
+      const batches: Array<ReadonlyArray<number>> = [];
+      for (let at = 0; at < input.numbers.length; at += MAX_PAGE_SIZE) {
+        batches.push(input.numbers.slice(at, at + MAX_PAGE_SIZE));
+      }
+      return Effect.forEach(batches, (numbers) => reviewDecisionsOf({ ...input, numbers }), {
+        concurrency: 2,
+      }).pipe(Effect.map((pages) => new Map(pages.flatMap((page) => [...page]))));
+    }),
 
     listMergeRequestStats,
 

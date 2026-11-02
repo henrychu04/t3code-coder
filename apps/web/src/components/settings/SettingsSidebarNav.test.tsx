@@ -70,7 +70,9 @@ async function search(value: string) {
 }
 it("opens a matching setting with its anchor and leaves scope retention to the router", async () => {
   await search("fast forward");
-  await act(async () => input().props.onKeyDown({ key: "Enter", preventDefault() {} }));
+  await act(async () =>
+    input().props.onKeyDown({ key: "Enter", nativeEvent: {}, preventDefault() {} }),
+  );
   expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({
     to: "/settings/source-control",
     hash: "automatic-pull",
@@ -82,11 +84,18 @@ it("opens a matching setting with its anchor and leaves scope retention to the r
 });
 it("moves through results with arrow keys and clears search on Escape", async () => {
   await search("model");
-  await act(async () => input().props.onKeyDown({ key: "ArrowDown", preventDefault() {} }));
+  await act(async () =>
+    input().props.onKeyDown({ key: "ArrowDown", nativeEvent: {}, preventDefault() {} }),
+  );
   expect(input().props["aria-activedescendant"]).toBe(
     `settings-search-result-${searchSettings("model")[1]!.id}`,
   );
-  const event = { key: "Escape", preventDefault: vi.fn(), stopPropagation: vi.fn() };
+  const event = {
+    key: "Escape",
+    nativeEvent: {},
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn(),
+  };
   await act(async () => input().props.onKeyDown(event));
   expect(event.stopPropagation).toHaveBeenCalledOnce();
   expect(input().props.value).toBe("");
