@@ -1320,6 +1320,7 @@ export const CODEX_THREAD_CONFIG = {
   mcp_optional_startup_grace_ms: 10_000,
 } as const;
 
+// Coder: exported for CodexAdapterV2.test.ts, which checks T3CODE_THREAD_ID without the MCP servers.
 export function codexThreadRuntimeParams(input: {
   readonly threadId: ThreadId | null;
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;

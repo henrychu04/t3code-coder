@@ -107,6 +107,7 @@
     "packages/provider-core/src/server/maintenanceResolver.ts": ["exports", "nsExports"],
     "packages/provider-core/src/server/mcpSession.ts": ["exports", "nsExports"],
     "packages/provider-core/src/server/orchestrationInstructions.ts": ["exports", "nsExports"],
+    "packages/provider-core/src/server/runtimeInstructions.ts": ["exports", "nsExports"],
     "packages/provider-core/src/server/snapshotProbe.ts": ["exports", "nsExports"],
     "packages/provider-core/src/server/textGenerationOperations.ts": ["exports", "nsExports"],
     "packages/provider-testing/src/fakeCli.ts": ["exports", "nsExports"],

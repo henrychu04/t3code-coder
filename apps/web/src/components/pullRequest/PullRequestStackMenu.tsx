@@ -159,7 +159,7 @@ export function PullRequestStackMenu({
             }
           />
           <TooltipPopup>
-            View stack !{stack.number}, layer {position} of {stack.layers.length}
+            View stack #{stack.number}, layer {position} of {stack.layers.length}
             {notice ? ` · ${notice}` : null}
           </TooltipPopup>
         </Tooltip>
@@ -249,7 +249,7 @@ export function PullRequestStackMenu({
             </DialogTitle>
             <DialogDescription>
               {confirmation === "merge"
-                ? `Merge !${reference.number} and its unmerged layers below into ${stack.base} using ${mergeMethod}. ${hostLabel} checks their rules before merging or queueing them and rebases the remaining stack after merging.`
+                ? `Merge #${reference.number} and its unmerged layers below into ${stack.base} using ${mergeMethod}. ${hostLabel} checks their rules before merging or queueing them and rebases the remaining stack after merging.`
                 : `Rebase the remote branches from bottom to top onto ${stack.base}. This rewrites branch history and may restart checks. If a layer fails, earlier updates remain.`}
             </DialogDescription>
           </DialogHeader>
