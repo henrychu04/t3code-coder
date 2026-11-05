@@ -588,12 +588,11 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
           .pipe(Effect.flatMap(decodeCodexRuntimeRequirementsResponse)),
         deadlineMs,
         CODEX_CONFIG_PROBE_TIMEOUT_MS,
-      ).pipe(Effect.catch(() => Effect.succeed(undefined))),
+      ).pipe(Effect.orElseSucceed(() => undefined)),
       // Usage is an enrichment: a failure or a slow answer degrades to "no
       // usage this probe" rather than costing the account and models.
       input.skipNativeUsage
-        ? // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-          Effect.succeed(undefined)
+        ? Effect.undefined
         : withCodexDiscoveryDeadline(
             client.request("account/rateLimits/read", null),
             deadlineMs,

@@ -20,6 +20,7 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as CoderEnvironment from "../coderEnvironment.ts";
@@ -78,6 +79,12 @@ const shellWord = (value: string) =>
  */
 const bridgeName = (environmentId: string, threadId: string) =>
   `t3-tools-${NodeCrypto.createHash("sha256").update(`${environmentId}\0${threadId}`).digest("hex").slice(0, 20)}`;
+
+/** Coder: a bridge directory could not be created; the session runs without T3 tools. */
+class T3ToolBridgeUnavailableError extends Schema.TaggedError<T3ToolBridgeUnavailableError>()(
+  "T3ToolBridgeUnavailableError",
+  { cause: Schema.Defect() },
+) {}
 
 const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   options: { readonly livenessWindowMs?: number; readonly bridgeParent?: string } = {},
@@ -150,20 +157,26 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       };
       // Startup binds the toolkits before any provider session opens; until then, no tools.
       const binding = yield* tools.binding;
+      const context = yield* Effect.context<never>();
+      const runPromise = Effect.runPromiseWith(context);
+      const runSync = Effect.runSyncWith(context);
       const bridge =
         binding === undefined
           ? undefined
-          : yield* Effect.tryPromise(async () => {
-              await closingByThread.get(scope.thread.threadId);
-              return createFileBridge(
-                (call, signal) => Effect.runPromise(tools.dispatch(scope, call), { signal }),
-                {
-                  catalog: binding.catalog,
-                  name: bridgeName(environmentId, scope.thread.threadId),
-                  onPublished: (call) => Effect.runSync(tools.published(scope, call)),
-                  ...(options.bridgeParent === undefined ? {} : { parent: options.bridgeParent }),
-                },
-              );
+          : yield* Effect.tryPromise({
+              try: async () => {
+                await closingByThread.get(scope.thread.threadId);
+                return createFileBridge(
+                  (call, signal) => runPromise(tools.dispatch(scope, call), { signal }),
+                  {
+                    catalog: binding.catalog,
+                    name: bridgeName(environmentId, scope.thread.threadId),
+                    onPublished: (call) => runSync(tools.published(scope, call)),
+                    ...(options.bridgeParent === undefined ? {} : { parent: options.bridgeParent }),
+                  },
+                );
+              },
+              catch: (cause) => new T3ToolBridgeUnavailableError({ cause }),
             }).pipe(
               // Upstream's issue cannot fail; a turn without T3 tools still runs.
               Effect.catch(() =>
@@ -235,9 +248,14 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     issue,
     resolve,
     touch,
-    revokeProviderSession: (providerSessionId) =>
-      revokeWhere((record) => record.scope.thread.providerSessionId === providerSessionId),
-    revokeThread: (threadId) => revokeWhere((record) => record.scope.thread.threadId === threadId),
+    revokeProviderSession: Effect.fn("McpSessionRegistry.revokeProviderSession")(
+      function* (providerSessionId) {
+        yield* revokeWhere((record) => record.scope.thread.providerSessionId === providerSessionId);
+      },
+    ),
+    revokeThread: Effect.fn("McpSessionRegistry.revokeThread")(function* (threadId) {
+      yield* revokeWhere((record) => record.scope.thread.threadId === threadId);
+    }),
     revokeAll,
   });
 });

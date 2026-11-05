@@ -59,6 +59,11 @@ import {
 } from "./threads.ts";
 import * as ThreadSnapshotLoader from "./threadSnapshotHttp.ts";
 
+// Coder: helper RPC fakes fail with a tagged error where upstream answers HTTP 503.
+class FakeRpcFailure extends Schema.TaggedError<FakeRpcFailure>()("FakeRpcFailure", {
+  message: Schema.String,
+}) {}
+
 const TARGET = new ConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
   label: "Test environment",
@@ -318,6 +323,32 @@ const PENDING_QUESTION = {
   resolvedAt: null,
 };
 
+const QUESTION_CARD: OrchestrationV2TurnItem = {
+  id: TurnItemId.make("question-card"),
+  threadId: THREAD_ID,
+  runId: null,
+  nodeId: PENDING_QUESTION.nodeId,
+  providerThreadId: null,
+  providerTurnId: null,
+  nativeItemRef: null,
+  parentItemId: null,
+  ordinal: 1,
+  status: "running",
+  title: null,
+  startedAt: v2Now,
+  completedAt: null,
+  updatedAt: v2Now,
+  type: "user_input_request",
+  requestId: PENDING_QUESTION.id,
+  questions: [{ id: "scope", header: "Scope", question: "Which scope?", options: [] }],
+};
+
+const PROJECTION_WITH_QUESTION = {
+  ...BASE_PROJECTION,
+  runtimeRequests: [PENDING_QUESTION],
+  turnItems: [QUESTION_CARD],
+};
+
 const questionResolved = (sequence: number): OrchestrationV2ThreadStreamItem => ({
   kind: "event",
   sequence,
@@ -398,6 +429,62 @@ describe("EnvironmentThreads", () => {
       }),
     );
   }
+
+  it.effect.each([
+    ["disk", false],
+    ["retained", false],
+    ["disk", true],
+    ["retained", true],
+  ] as const)(
+    "recovers a %s cache only when its pending question card is missing: %s",
+    ([cacheKind, hasCard]) =>
+      Effect.gen(function* () {
+        const projection = {
+          ...PROJECTION_WITH_QUESTION,
+          turnItems: hasCard ? [QUESTION_CARD] : [],
+        };
+        const schema = Schema.fromJsonString(StoredOrchestrationThreadSnapshot);
+        const encoded = yield* Schema.encodeEffect(schema)({
+          schemaVersion: ORCHESTRATION_THREAD_CACHE_SCHEMA_VERSION,
+          environmentId: TARGET.environmentId,
+          threadId: THREAD_ID,
+          snapshot: { snapshotSequence: CACHED_SNAPSHOT_SEQUENCE, projection },
+        });
+        const stored = yield* Schema.decodeEffect(schema)(encoded);
+        const h = yield* makeHarness({
+          loadCached: Effect.succeedSome(stored.snapshot),
+          ...(cacheKind === "retained"
+            ? {
+                resumeCache: {
+                  owner: undefined,
+                  snapshot: {
+                    state: {
+                      ...EMPTY_ENVIRONMENT_THREAD_STATE,
+                      data: Option.some(projection),
+                      status: "live",
+                    },
+                    sequence: CACHED_SNAPSHOT_SEQUENCE,
+                    persisted: true,
+                  },
+                },
+              }
+            : {}),
+          httpSnapshot: {
+            _tag: "present",
+            snapshot: {
+              snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
+              projection: PROJECTION_WITH_QUESTION,
+            },
+          },
+          completionMarker: true,
+        });
+        yield* Queue.offer(h.inputs, synchronized());
+        const state = yield* awaitThreadState(h.observed, (value) => value.status === "live");
+        expect(yield* Ref.get(h.loaderCalls)).toBe(hasCard ? 0 : 1);
+        expect(Option.getOrThrow(state.data)).toEqual(PROJECTION_WITH_QUESTION);
+        expect(yield* Ref.get(h.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE);
+      }),
+  );
 
   it.effect("discards an oversized version-4 cache and requests a fresh bounded snapshot", () =>
     Effect.gen(function* () {
@@ -598,7 +685,7 @@ describe("EnvironmentThreads", () => {
         Scope.close(scope, Exit.void),
       );
       const old = yield* makeHarness({
-        cached: { ...BASE_PROJECTION, runtimeRequests: [PENDING_QUESTION] },
+        cached: PROJECTION_WITH_QUESTION,
         resumeCache,
       }).pipe(Effect.provideService(Scope.Scope, oldScope));
       yield* awaitThreadState(old.observed, (value) => value.status === "live");
@@ -835,7 +922,7 @@ describe("EnvironmentThreads", () => {
             if (cursor === "before-user") return historyPage([], cursor);
             if (cursor === "925" && !failed) {
               failed = true;
-              return Effect.fail(new Error("Unavailable"));
+              return Effect.fail(new FakeRpcFailure({ message: "Unavailable" }));
             }
             const end = Number(cursor);
             expect(Number.isFinite(end)).toBe(true);
@@ -882,7 +969,7 @@ describe("EnvironmentThreads", () => {
             requests.push(cursor);
             if (cursor === "second" && !failed) {
               failed = true;
-              return Effect.fail(new Error("Unavailable"));
+              return Effect.fail(new FakeRpcFailure({ message: "Unavailable" }));
             }
             return historyPage(
               [localRow(command(`work-${cursor}`, "completed", 0, cursor === "first" ? 3 : 2), 0)],
@@ -1007,7 +1094,7 @@ describe("EnvironmentThreads", () => {
           historyPage: ({ view }) => {
             views.push(view ?? null);
             return view === "work"
-              ? Effect.fail(new Error("Unavailable"))
+              ? Effect.fail(new FakeRpcFailure({ message: "Unavailable" }))
               : historyPage([localRow(message, 0)], null);
           },
         });
@@ -1579,7 +1666,8 @@ describe("EnvironmentThreads", () => {
               if (!conversationOnly && activityRequests++ === 0) {
                 yield* Deferred.succeed(activityStarted, undefined);
                 yield* Deferred.await(releaseActivity);
-                if (mode === "retry") return yield* Effect.fail(new Error("Activity unavailable"));
+                if (mode === "retry")
+                  return yield* new FakeRpcFailure({ message: "Activity unavailable" });
               }
               return {
                 snapshotSequence: 14,
@@ -2170,7 +2258,7 @@ describe("EnvironmentThreads", () => {
         (unsubscribe) => Effect.sync(unsubscribe),
       );
       const harness = yield* makeHarness({
-        cached: { ...BASE_PROJECTION, runtimeRequests: [PENDING_QUESTION] },
+        cached: PROJECTION_WITH_QUESTION,
         completionMarker: true,
       });
       yield* awaitThreadState(

@@ -6,6 +6,7 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -46,6 +47,7 @@ export class ServerEnvironmentIdentity extends Context.Service<
   {
     readonly getEnvironmentId: Effect.Effect<EnvironmentId>;
   }
+  // @effect-diagnostics-next-line deterministicKeys:off - upstream's key for the service ThreadManagementService reads.
 >()("t3/environment/ServerEnvironment/ServerEnvironmentIdentity") {}
 
 // Coder: upstream's capabilities minus the cut surfaces in CODER_OMITTED_CAPABILITIES. Every
@@ -236,13 +238,14 @@ export const layer = Layer.effect(
     const config = yield* ServerConfig.ServerConfig;
     const path = yield* Path.Path;
     const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
-    const configuredLabel = process.env.T3_CODER_WORKSPACE_LABEL?.trim();
+    const env = yield* HostProcess.Environment;
+    const configuredLabel = env.T3_CODER_WORKSPACE_LABEL?.trim();
     return CoderEnvironment.of({
       descriptor: {
         environmentId,
         label: configuredLabel || path.basename(config.cwd) || "Coder workspace",
         platform: { os: "linux", arch: platformArch() },
-        serverVersion: process.env.T3_CODER_BUILD_VERSION?.trim() || packageJson.version,
+        serverVersion: env.T3_CODER_BUILD_VERSION?.trim() || packageJson.version,
         orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
         capabilities: CODER_ENVIRONMENT_CAPABILITIES,
       },

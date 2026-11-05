@@ -61,10 +61,7 @@ export const deriveServerPaths = Effect.fn(function* (baseDir: string) {
 
 export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerivedPaths) {
   const fileSystem = yield* FileSystem.FileSystem;
-  yield* Effect.all(
-    /**
-     * ServerConfig - Service tag for server runtime configuration.
-     */
+  yield* Effect.forEach(
     [
       paths.stateDir,
       paths.logsDir,
@@ -72,8 +69,9 @@ export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerived
       paths.providerStatusCacheDir,
       paths.worktreesDir,
       paths.attachmentsDir,
-    ].map((directory) => fileSystem.makeDirectory(directory, { recursive: true })),
-    { concurrency: "unbounded" },
+    ],
+    (directory) => fileSystem.makeDirectory(directory, { recursive: true }),
+    { concurrency: "unbounded", discard: true },
   );
   // Logs, traces and the database are written with the process umask; keep them owner-only.
   yield* fileSystem

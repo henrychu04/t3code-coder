@@ -346,6 +346,6 @@ describe("RepositoryIdentityResolver", () => {
         expect(bareProbes()).toEqual([]);
 
         expect(yield* resolver.resolve(gitDir)).toBeNull();
-      }).pipe(Effect.provide(ProcessRunner.layer), Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer)))),
   );
 });

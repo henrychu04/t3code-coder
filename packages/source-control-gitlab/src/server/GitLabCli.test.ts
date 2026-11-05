@@ -109,7 +109,6 @@ layer("GitLabCli.layer", (it) => {
         mockedRun.mockReturnValueOnce(
           Effect.succeed(
             processOutput(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 iid: 42,
                 title: "Checkout by URL",

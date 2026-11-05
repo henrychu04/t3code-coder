@@ -114,6 +114,7 @@ keep a thread active; automatic settlement can proceed once every linked review 
 to the workspace's settlement settings. GitHub-native stack merge and rebase actions are not supported.
 
 Press Command-Enter (Control-Enter on Windows) to save an edited review description or comment.
+Where you can edit a description, you can also tick its checkboxes from the Summary tab.
 Recent review summaries are cached in the workspace across helper restarts. Review contents and
 linked-review panel state remain in browser memory while displayed.
 
@@ -171,6 +172,11 @@ background. Its new-thread banner shows progress. You can cancel or retry a fail
 messages wait until cloning succeeds. Removing a failed project is also available from the banner.
 When GitLab refuses the workspace's SSH key, T3 Coder clones over HTTPS with Git's credentials for
 that host instead, and the project's remote uses the HTTPS URL.
+
+To lay clones out like [ghq](https://github.com/x-motemen/ghq), turn on **Clone into host folders**
+under **Settings → Threads**. Clones then default to `<host>/<owner>/<repo>` under **Add project
+starts in**, so set that to `~/ghq` to share ghq's folders. You can still change the destination
+before cloning.
 
 Mark files **Viewed** in a merge request's Code tab to track your review. Marks are saved in the
 Coder workspace and shared by connected clients. A later push marks changed files as stale so

@@ -13,6 +13,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
@@ -363,6 +364,16 @@ function claudeGatewayDiscoveryGraceMs(environment: Readonly<Record<string, unkn
   return Number.isFinite(configured) && configured > 0 ? configured : 3_000;
 }
 
+class ClaudeCapabilitiesProbeSdkError extends Schema.TaggedError<ClaudeCapabilitiesProbeSdkError>()(
+  "ClaudeCapabilitiesProbeSdkError",
+  // Coder: `settings` reads the effective permission policy through the CLI transport.
+  { operation: Schema.Literals(["initialize", "settings", "usage"]), cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Claude capability probe ${this.operation} failed.`;
+  }
+}
+
 /** A never-yielding prompt allows local initialization IPC without sending an Anthropic request. */
 const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
@@ -385,22 +396,25 @@ const probeClaudeCapabilities = (
           ...(yield* readClaudeSettingsEnv(claudeSettings, cwd, claudeEnvironment)),
         })
       : 0;
-    return yield* Effect.tryPromise(async () => {
-      const q = claudeQuery({
-        // oxlint-disable-next-line require-yield -- never yields, so no prompt reaches the API
-        prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
-          await waitForAbortSignal(abort.signal);
-        })(),
-        options: buildClaudeCapabilitiesProbeQueryOptions({
-          executablePath,
-          abortController: abort,
-          environment: claudeEnvironment,
-          cwd,
-          managedMcpConfig,
-        }),
-      });
-      const init = await q.initializationResult();
-      return { q, init, graceMs };
+    return yield* Effect.tryPromise({
+      try: async () => {
+        const q = claudeQuery({
+          // oxlint-disable-next-line require-yield -- never yields, so no prompt reaches the API
+          prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+            await waitForAbortSignal(abort.signal);
+          })(),
+          options: buildClaudeCapabilitiesProbeQueryOptions({
+            executablePath,
+            abortController: abort,
+            environment: claudeEnvironment,
+            cwd,
+            managedMcpConfig,
+          }),
+        });
+        const init = await q.initializationResult();
+        return { q, init, graceMs };
+      },
+      catch: (cause) => new ClaudeCapabilitiesProbeSdkError({ operation: "initialize", cause }),
     });
   }).pipe(
     Effect.timeout(CAPABILITIES_PROBE_TIMEOUT_MS),
@@ -408,21 +422,23 @@ const probeClaudeCapabilities = (
       Effect.gen(function* () {
         // Coder: read the effective permission policy before usage; a CLI that cannot report it
         // fails closed below.
-        const settings = yield* Effect.tryPromise(() =>
-          q.getSettings(CAPABILITIES_SETTINGS_TIMEOUT_MS),
-        ).pipe(Effect.option);
+        const settings = yield* Effect.tryPromise({
+          try: () => q.getSettings(CAPABILITIES_SETTINGS_TIMEOUT_MS),
+          catch: (cause) => new ClaudeCapabilitiesProbeSdkError({ operation: "settings", cause }),
+        }).pipe(Effect.option);
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
         // `behaviors`: with a few GB of transcripts it outlasts the deadline.
         const usageCheckedAt = DateTime.formatIso(yield* DateTime.now);
         const usageResult = includeUsage
-          ? yield* Effect.tryPromise(
+          ? yield* Effect.tryPromise({
               // Coder: the workspace CLI transport answers the SDK's usage control request.
-              () =>
+              try: () =>
                 q.getUsage({
                   skipBehaviors: true,
                 }) as unknown as Promise<SDKControlGetUsageResponse>,
-            ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
+              catch: (cause) => new ClaudeCapabilitiesProbeSdkError({ operation: "usage", cause }),
+            }).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
           : undefined;
         const usage =
           usageResult && Result.isSuccess(usageResult)

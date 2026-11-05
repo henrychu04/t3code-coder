@@ -63,9 +63,9 @@ export const layer = Layer.effect(
           );
       }),
       // Coder: there is no browser preview, so a thread has no preview sessions to close.
-      cleanupPreviews: () => Effect.void,
+      cleanupPreviews: Effect.fn("ResourceCleanupService.cleanupPreviews")(function* () {}),
       // Coder: deleting or reverting a thread never deletes its attachments.
-      cleanupAttachments: () => Effect.void,
+      cleanupAttachments: Effect.fn("ResourceCleanupService.cleanupAttachments")(function* () {}),
     };
   }),
 );

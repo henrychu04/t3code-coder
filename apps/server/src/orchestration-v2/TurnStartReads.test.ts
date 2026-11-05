@@ -429,7 +429,7 @@ it.effect.each(["sqlite"] as const)(
         "answer-image",
         "attachment:old",
         "message-file",
-        recordingId,
+        // Coder: agent preview recordings (#29853) are not carried, so the recording is not listed.
       ]);
     }).pipe(Effect.provide(layerDatabase)),
 );

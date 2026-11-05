@@ -17,6 +17,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { HttpServerResponse } from "effect/http";
 import { vi } from "vite-plus/test";
 
+import * as AssetSigner from "./AssetSigner.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -105,7 +106,9 @@ const layerTest = Layer.mergeAll(
     Layer.provide(WorkspacePaths.layer),
     Layer.provide(T3ProjectFileLoader.layer),
   ),
-  ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),
+  AssetSigner.layer.pipe(
+    Layer.provideMerge(ServerSecretStore.layer.pipe(Layer.provide(layerConfig))),
+  ),
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 // Coder: native app icon and GitHub media cases are not carried.

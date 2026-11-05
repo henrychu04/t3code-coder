@@ -17,6 +17,10 @@ const DELETED_PATHS = {
   // The server's auth/ keeps only ServerSecretStore, utils, and serverInternalPaths (which carried
   // file readers import); a modify/delete cannot name them.
   "auth and pairing": [
+    "packages/client-runtime/src/state/environmentHttpAuth.ts",
+    "packages/client-runtime/src/connection/errors.test.ts",
+    "packages/shared/src/desktopBootstrapToken.ts",
+    "apps/web/src/components/settings/SavedEnvironmentRows.tsx",
     "apps/web/src/components/settings/AuthorizedClientsSettings.tsx",
     "packages/client-runtime/src/connection/diagnosis.ts",
     "apps/web/src/components/settings/useHostConnectionChecks.ts",
@@ -107,6 +111,7 @@ const DELETED_PATHS = {
   ],
   // Other provider packages: Codex, Claude Code, Pi, and Kilo Code are the only providers.
   "other provider packages": [
+    "apps/server/src/provider/Drivers/antigravityUsageReader.ts",
     "apps/server/scripts/record-grok-acp-replay-fixture.ts",
     "apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.testkit.ts",
     "apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.testkit.ts",
@@ -199,6 +204,10 @@ const DELETED_PATHS = {
   mobile: ["apps/mobile/", "patches/@expo__ui@58.0.20.patch", "patches/expo-sharing@58.0.19.patch"],
   // Hosted web: no hosted app, cloud accounts, marketing site, or welcome onboarding.
   "hosted web": [
+    "apps/web/src/cloud/",
+    "packages/contracts/src/desktopBrowser.ts",
+    /^patches\/react-native-image-viewing@/,
+    "scripts/mobile-e2e/",
     "apps/web/vercel.ts",
     // Mobile app links for copied thread links (#29815) and the mobile layout guide.
     "apps/web/public/.well-known/",
@@ -244,6 +253,7 @@ const DELETED_PATHS = {
   // Local editors and provider setup: the helper cannot open an editor on the laptop, and
   // providers are configured in the workspace without in-app sign-in or setup.
   "local editors and provider setup": [
+    "apps/server/src/provider/CodexManagedErrors.ts",
     "apps/server/src/provider/CodexChatGptAuth.ts",
     "apps/server/src/provider/CodexManagedRuntime.test.ts",
     "apps/server/src/provider/ProviderCredentialStore.ts",
@@ -271,6 +281,7 @@ const DELETED_PATHS = {
   // ACP sign-in, the theme import test the remote catalog and desktop picker, the MCP core test
   // peer links and client scopes, and the app render scenarios upstream's fake environment.
   "tests for cut surfaces": [
+    "apps/web/src/lib/resourceTelemetryState.browser.test.tsx",
     "apps/server/src/mcp/McpToolAccess.test.ts",
     "apps/server/src/mcp/McpToolAccess.race.test.ts",
     "apps/server/src/peer/PeerLinks.testkit.ts",
@@ -323,10 +334,15 @@ const DELETED_PATHS = {
     "packages/client-runtime/src/connection/routes.ts",
     "packages/client-runtime/src/state/relayDiscovery.ts",
     "packages/shared/src/relayClient.ts",
+    "packages/shared/src/relayJwt.ts",
+    "packages/shared/src/Net.ts",
+    "apps/server/src/scheduledTasks/RelayDeliveryProof.ts",
   ],
   // Telemetry: no T3-owned telemetry, usage dashboards or plan-window usage limits, diagnostics,
   // or trace export.
   telemetry: [
+    "apps/server/src/observability/EventLoopMonitor.ts",
+    "apps/server/src/observability/HeapSnapshot.ts",
     "packages/shared/src/usageFormat.ts",
     "packages/shared/src/httpObservability.ts",
     "apps/server/src/diagnostics/",
@@ -399,6 +415,7 @@ const DELETED_PATHS = {
   // Peer links: the gateway hub replaces upstream's peer stack, so there is no link request card
   // or client peer-link state.
   "peer links": [
+    "packages/client-runtime/src/state/peerPairingCode.ts",
     "apps/web/src/components/chat/LinkRequestCard.tsx",
     "packages/client-runtime/src/state/peerLinks.ts",
     "apps/server/src/mcp/linkOrigin.test.ts",
@@ -466,6 +483,14 @@ const DELETED_PATHS = {
   // Upstream repository tooling: vendored sources, CI, hooks, editor and agent configuration,
   // and operations docs. The fork's .github/ keeps only SECURITY.md.
   "upstream repository tooling": [
+    ".pnpmfile.cjs",
+    // Upstream's editor settings; `.vscode/tsdk/tsgo` (#31028) is carried.
+    /^\.vscode\/(?!tsdk\/)/,
+    "scripts/package.json",
+    "apps/server/scripts/record-codex-app-server-replay-fixture.ts",
+    "apps/server/scripts/verify-background-live.ts",
+    "apps/server/src/compileCache.ts",
+    "packages/effect-codex-app-server/test/examples/codex-app-server-probe.ts",
     "docs/internals/overview.md",
     /^patches\/(?:@alchemy\.run__(?:test|drizzle)|alchemy)@/,
     "scripts/linux-after-pack.ts",
@@ -479,7 +504,6 @@ const DELETED_PATHS = {
     ".macroscope/",
     ".repos/",
     ".vite-hooks/",
-    ".vscode/",
     // CI-only checks: the transfer budget harness, the agent context budget test, and the built
     // web boot check.
     "apps/server/integration/",

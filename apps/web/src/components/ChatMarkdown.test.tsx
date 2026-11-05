@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { SourceControlIconArtwork } from "./SourceControlIconArtwork";
 import { Button } from "./ui/button";
-import { setMarkdownTaskChecked } from "./files/filePreviewMode";
+import { setMarkdownTaskChecked } from "@t3tools/shared/markdownTaskList";
 
 vi.mock("../hooks/useFileMetadata", () => ({ useFileMetadata: () => null }));
 // Markdown reads only the config fields atom; every other atom reads as empty.

@@ -1,3 +1,4 @@
+// @effect-diagnostics anyUnknownInErrorContext:off -- Coder: test helpers run untyped gateway effects.
 import {
   startLocalCoderGateway,
   type PromiseCoderHelperConnection as CoderHelperConnection,

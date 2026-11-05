@@ -28,7 +28,7 @@ import {
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 
 // Coder: the replay runtime replaces the local Kilo command, so the defaults serve.
-const REPLAY_SETTINGS = Schema.decodeUnknownSync(AcpRegistrySettings)({});
+const REPLAY_SETTINGS = Schema.decodeSync(AcpRegistrySettings)({});
 
 function layerAcpRegistryProviderAdapterRegistryReplay(
   transcript: AcpReplayTranscript,

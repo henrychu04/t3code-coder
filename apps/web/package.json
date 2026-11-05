@@ -7,7 +7,7 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit",
     "test": "vp test run --passWithNoTests --project unit --project browser"
   },
   "dependencies": {

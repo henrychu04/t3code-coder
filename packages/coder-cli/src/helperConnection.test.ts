@@ -1,3 +1,4 @@
+// @effect-diagnostics globalTimers:off -- Coder: waits in real time for fake helper stdio traffic.
 // @effect-diagnostics nodeBuiltinImport:off
 import { deepStrictEqual, rejects, strictEqual } from "node:assert";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";

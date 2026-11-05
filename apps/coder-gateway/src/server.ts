@@ -1,3 +1,7 @@
+// @effect-diagnostics unknownInEffectCatch:off -- Coder: route failures are rendered by message at the HTTP boundary.
+// @effect-diagnostics anyUnknownInErrorContext:off -- Coder: route failures are rendered by message at the HTTP boundary.
+// @effect-diagnostics globalErrorInEffectCatch:off -- Coder: route failures are rendered by message at the HTTP boundary.
+// @effect-diagnostics globalErrorInEffectFailure:off -- Coder: route failures are rendered by message at the HTTP boundary.
 import type { DiscoveredCoderWorkspace } from "@t3tools/contracts";
 export type {
   DiscoveredCoderWorkspace,
@@ -179,7 +183,7 @@ export function makeLocalCoderGateway(
     const helperBundlePath = options?.helperBundlePath;
     const helperBundleHash =
       helperBundlePath === undefined
-        ? Effect.succeed(undefined)
+        ? Effect.undefined
         : yield* Effect.cached(
             Effect.tryPromise({
               try: () => hashCoderHelperBundle(helperBundlePath),

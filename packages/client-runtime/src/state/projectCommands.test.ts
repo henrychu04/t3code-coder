@@ -21,7 +21,7 @@ import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Stream from "effect/Stream";
 import { Atom, AtomRegistry, AsyncResult } from "effect/reactivity";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import { AVAILABLE_CONNECTION_STATE, ConnectionTarget } from "../connection/model.ts";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
@@ -53,7 +53,13 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
     missing: false,
   };
   const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
-    target: { environmentId: ENVIRONMENT_ID },
+    // Coder: the gateway target stands in for upstream's bearer target.
+    target: new ConnectionTarget({
+      environmentId: ENVIRONMENT_ID,
+      label: "Test",
+      httpBaseUrl: "http://127.0.0.1",
+      wsBaseUrl: "ws://127.0.0.1",
+    }),
     session: yield* SubscriptionRef.make(
       Option.some({
         client: {

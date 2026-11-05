@@ -2,8 +2,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ClaudeSettings, type ServerProvider } from "@t3tools/contracts";
 import { vi } from "vite-plus/test";
-import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
 import { assert, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
@@ -14,6 +14,7 @@ import {
   probeClaudeCapabilities,
   probeClaudeWorkspaceSnapshot,
 } from "./ClaudeProvider.ts";
+import * as ClaudeCli from "./Drivers/ClaudeCli.ts";
 
 // Coder: the probe runs the workspace CLI transport, not the SDK query.
 vi.mock("./Drivers/ClaudeCli.ts", { spy: true });
@@ -50,7 +51,8 @@ it.effect("reports a deleted worktree's scan as finished, not pending", () =>
 it.effect("keeps the probe subprocess alive while gateway model discovery can finish", () =>
   Effect.gen(function* () {
     let abortSignal: AbortSignal | undefined;
-    const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(({ options }) => {
+    // Coder: the probe's query is the workspace CLI transport's, which reads usage with `getUsage`.
+    const query = vi.spyOn(ClaudeCli, "query").mockImplementation(({ options }) => {
       abortSignal = options?.abortController?.signal;
       return {
         initializationResult: async () => ({
@@ -58,9 +60,9 @@ it.effect("keeps the probe subprocess alive while gateway model discovery can fi
           commands: [{ name: "review", description: "Review changes", argumentHint: "[path]" }],
           models: [{ value: "gateway/claude-relay", displayName: "Relay", description: "" }],
         }),
-        usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
-          new Promise((_, reject) => reject(new Error("usage unavailable"))),
-      } as ReturnType<typeof ClaudeSdk.query>;
+        getSettings: async () => ({}),
+        getUsage: () => new Promise((_, reject) => reject(new Error("usage unavailable"))),
+      } as unknown as ReturnType<typeof ClaudeCli.query>;
     });
     yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
     const fileSystem = yield* FileSystem.FileSystem;
@@ -77,7 +79,7 @@ it.effect("keeps the probe subprocess alive while gateway model discovery can fi
     );
     const capabilities = yield* probeClaudeCapabilities(
       yield* decodeClaudeSettings({ binaryPath: "claude" }),
-      { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: configDir },
+      { PATH: (yield* HostProcess.Environment).PATH, CLAUDE_CONFIG_DIR: configDir },
     );
     assert.deepEqual(
       capabilities.models?.map((model) => model.value),

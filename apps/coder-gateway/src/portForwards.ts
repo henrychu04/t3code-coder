@@ -1,3 +1,5 @@
+// @effect-diagnostics globalErrorInEffectFailure:off -- Coder: port-forward errors reach the settings UI by message.
+// @effect-diagnostics anyUnknownInErrorContext:off -- Coder: coder port-forward process errors are untyped in coder-cli.
 import type { DiscoveredCoderWorkspace } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

@@ -59,6 +59,7 @@ export function reportErrorDiagnostic(source: string, error: unknown): void {
     reporter({
       ...safeErrorLogAttributes(error),
       source,
+      // @effect-diagnostics-next-line globalDate:off -- Coder: reports run synchronously, outside Effect.
       timestamp: new Date().toISOString(),
       message: diagnosticMessage(error),
     });

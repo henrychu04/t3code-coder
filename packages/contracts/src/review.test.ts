@@ -9,7 +9,7 @@ import {
 
 describe("ReviewDiffFileError", () => {
   it("decodes an oversized-file failure as a typed error", () => {
-    const error = Schema.decodeUnknownSync(ReviewDiffFileError)({
+    const error = Schema.decodeSync(ReviewDiffFileError)({
       _tag: "ReviewDiffFileTooLargeError",
       path: "src/large.ts",
       maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
@@ -22,7 +22,7 @@ describe("ReviewDiffFileError", () => {
 
   it("rejects a non-positive expansion limit", () => {
     expect(() =>
-      Schema.decodeUnknownSync(ReviewDiffFileError)({
+      Schema.decodeSync(ReviewDiffFileError)({
         _tag: "ReviewDiffFileTooLargeError",
         path: "src/large.ts",
         maxBytes: 0,
@@ -34,14 +34,14 @@ describe("ReviewDiffFileError", () => {
 describe("ReviewDiffFileSnapshotResult", () => {
   it("decodes opened and oversized outcomes", () => {
     expect(
-      Schema.decodeUnknownSync(ReviewDiffFileSnapshotResult)({
+      Schema.decodeSync(ReviewDiffFileSnapshotResult)({
         _tag: "opened",
         oldFile: null,
         newFile: null,
       }),
     ).toEqual({ _tag: "opened", oldFile: null, newFile: null });
     expect(
-      Schema.decodeUnknownSync(ReviewDiffFileSnapshotResult)({
+      Schema.decodeSync(ReviewDiffFileSnapshotResult)({
         _tag: "tooLarge",
         path: "src/large.ts",
         maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
@@ -55,7 +55,7 @@ describe("ReviewDiffFileSnapshotResult", () => {
 
   it("rejects an invalid oversized outcome", () => {
     expect(() =>
-      Schema.decodeUnknownSync(ReviewDiffFileSnapshotResult)({
+      Schema.decodeSync(ReviewDiffFileSnapshotResult)({
         _tag: "tooLarge",
         path: "src/large.ts",
         maxBytes: 0,

@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Coder: esbuild script that runs outside any Effect runtime.
 import { readBuildVersion } from "../../../scripts/build-info.ts";
 import { build } from "esbuild";
 import * as NodeFS from "node:fs/promises";

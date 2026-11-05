@@ -168,16 +168,16 @@ export const make = Effect.gen(function* () {
 
   return CoderHub.of({
     outbox,
-    reply: (reply) =>
-      Effect.suspend(() => {
-        const deferred = pending.get(reply.id);
-        return deferred === undefined ? Effect.void : Deferred.succeed(deferred, reply);
-      }).pipe(Effect.asVoid),
-    call: (input) =>
+    reply: Effect.fn("CoderHub.reply")(function* (reply) {
+      const deferred = pending.get(reply.id);
+      if (deferred !== undefined) yield* Deferred.succeed(deferred, reply);
+    }),
+    call: Effect.fn("CoderHub.call")((input) =>
       request(
         (id) => ({ _tag: "Call", id, ...input }),
         (reply) => (reply._tag === "Call" ? reply.outcome : undefined),
       ),
+    ),
     listLinks: request(
       (id) => ({ _tag: "ListLinks", id }),
       (reply) => (reply._tag === "ListLinks" ? reply.links : undefined),

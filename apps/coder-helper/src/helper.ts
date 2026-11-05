@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeStdio from "@effect/platform-node/NodeStdio";
 import { CoderWsRpcGroup } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -46,9 +47,10 @@ const coderServerConfigLayer = Layer.effect(
   ServerConfig.ServerConfig,
   Effect.gen(function* () {
     const path = yield* Path.Path;
-    const baseDir =
-      process.env.T3_CODER_HOME?.trim() || path.join(process.env.HOME ?? ".", ".t3-coder");
-    const cwd = process.env.T3_CODER_CWD?.trim() || process.env.HOME?.trim() || process.cwd();
+    const env = yield* HostProcess.Environment;
+    const baseDir = env.T3_CODER_HOME?.trim() || path.join(env.HOME ?? ".", ".t3-coder");
+    const cwd =
+      env.T3_CODER_CWD?.trim() || env.HOME?.trim() || (yield* HostProcess.WorkingDirectory);
     const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir);
     yield* ServerConfig.ensureServerDirectories(derivedPaths);
     return ServerConfig.ServerConfig.of({

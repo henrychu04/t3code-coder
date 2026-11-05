@@ -11,5 +11,5 @@ export class ShellSnapshotLoader extends Context.Reference<{
     options?: { readonly omitIdleSubagents?: boolean; readonly omitOlderSettled?: boolean },
   ) => Effect.Effect<Option.Option<DeferredShellSnapshot>>;
 }>("@t3tools/client-runtime/state/shellSnapshotHttp/ShellSnapshotLoader", {
-  defaultValue: () => ({ load: () => Effect.succeed(Option.none()) }),
+  defaultValue: () => ({ load: () => Effect.succeedNone }),
 }) {}

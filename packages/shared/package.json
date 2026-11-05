@@ -200,6 +200,10 @@
       "types": "./src/delimitedPreview.ts",
       "import": "./src/delimitedPreview.ts"
     },
+    "./socketFrameParts": {
+      "types": "./src/socketFrameParts.ts",
+      "import": "./src/socketFrameParts.ts"
+    },
     "./thirdPartyLicenses": {
       "types": "./src/thirdPartyLicenses.ts",
       "import": "./src/thirdPartyLicenses.ts"
@@ -328,6 +332,10 @@
       "types": "./src/markdownFrontmatter.ts",
       "import": "./src/markdownFrontmatter.ts"
     },
+    "./markdownTaskList": {
+      "types": "./src/markdownTaskList.ts",
+      "import": "./src/markdownTaskList.ts"
+    },
     "./markdownListIndentation": {
       "types": "./src/markdownListIndentation.ts",
       "import": "./src/markdownListIndentation.ts"
@@ -394,7 +402,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit",
     "test": "vp test run"
   },
   "dependencies": {

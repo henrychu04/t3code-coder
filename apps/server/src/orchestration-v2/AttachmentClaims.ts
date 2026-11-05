@@ -156,17 +156,14 @@ export const claimPendingAttachments = Effect.fn("AttachmentClaims.claimPendingA
           // bytes exclusively, so a symlink or a file swapped mid-claim never reaches the thread.
           // Images must carry a PNG, JPEG, or WebP signature matching their declared type.
           // Like upstream's copy, the pending file stays behind as the retry source.
-          const bytes = yield* Effect.tryPromise(() =>
-            readStagedAttachment(claim.currentPath, attachment),
-          ).pipe(
-            Effect.mapError(
-              (cause) =>
-                new AttachmentClaimError({
-                  message: `Attachment '${attachment.name}' cannot be sent: attachment not found or size does not match.`,
-                  cause,
-                }),
-            ),
-          );
+          const bytes = yield* Effect.tryPromise({
+            try: () => readStagedAttachment(claim.currentPath, attachment),
+            catch: (cause) =>
+              new AttachmentClaimError({
+                message: `Attachment '${attachment.name}' cannot be sent: attachment not found or size does not match.`,
+                cause,
+              }),
+          });
           if (normalized.type === "image") {
             const detectedMimeType = detectImageMimeType(bytes);
             if (

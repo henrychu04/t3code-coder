@@ -1,3 +1,5 @@
+// @effect-diagnostics globalDate:off -- Coder: waits in real time for fake helper stdio traffic.
+// @effect-diagnostics globalTimers:off -- Coder: waits in real time for fake helper stdio traffic.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -36,7 +38,7 @@ interface FakeHelper {
 function fakeHelper(environmentId: string, protocolVersion = 3): FakeHelper {
   const sent: Array<SentRequest> = [];
   const listeners = new Set<(message: unknown) => void>();
-  const closed = Effect.runSync(Deferred.make<CoderHelperExit>());
+  const closed = Deferred.makeUnsafe<CoderHelperExit>();
   const requests = (tag: string) => sent.filter((message) => message.tag === tag);
   const outboxId = () => {
     const outbox = requests(CODER_HUB_OUTBOX_METHOD)[0];

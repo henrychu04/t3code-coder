@@ -11,6 +11,7 @@ import { terminateChildProcess } from "./processTermination.ts";
 const MAX_ERROR_BYTES = 16 * 1024;
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class CoderPortForwardError extends Error {
   readonly _tag = "CoderPortForwardError";
 

@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Coder: plain vitest fixtures for the synchronous config reader.
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";

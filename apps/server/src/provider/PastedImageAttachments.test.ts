@@ -109,10 +109,7 @@ it.layer(NodeServices.layer)("resolvePastedImageAttachment", (it) => {
       const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-image-" });
       const outside = NodePath.join(attachmentsDir, "outside.png");
       yield* fileSystem.writeFile(outside, PNG_BYTES);
-      yield* Effect.tryPromise({
-        try: () => NodeFS.symlink(outside, NodePath.join(attachmentsDir, IMAGE_FILE)),
-        catch: (cause) => cause,
-      });
+      yield* fileSystem.symlink(outside, NodePath.join(attachmentsDir, IMAGE_FILE));
 
       const symlinkError = yield* Effect.flip(
         resolvePastedImageAttachment({
@@ -122,10 +119,7 @@ it.layer(NodeServices.layer)("resolvePastedImageAttachment", (it) => {
       );
       assert.instanceOf(symlinkError, PastedImageAttachmentError);
 
-      yield* Effect.tryPromise({
-        try: () => NodeFS.rm(NodePath.join(attachmentsDir, IMAGE_FILE)),
-        catch: (cause) => cause,
-      });
+      yield* fileSystem.remove(NodePath.join(attachmentsDir, IMAGE_FILE));
       yield* fileSystem.writeFileString(NodePath.join(attachmentsDir, IMAGE_FILE), "not an image");
       const signatureError = yield* Effect.flip(
         resolvePastedImageAttachment({

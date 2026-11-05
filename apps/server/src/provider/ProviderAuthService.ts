@@ -73,14 +73,30 @@ const unavailable = (instanceId: ProviderInstanceId, operation: string) =>
 export const layer = Layer.succeed(
   ProviderAuthService,
   ProviderAuthService.of({
-    reconnectProfile: (input) => Effect.fail(unavailable(input.instanceId, "reconnectProfile")),
-    importProfile: (input) => Effect.fail(unavailable(input.instanceId, "importProfile")),
-    start: (input) => Effect.fail(unavailable(input.instanceId, "start")),
-    complete: (input) => Effect.fail(unavailable(input.instanceId, "complete")),
-    respond: (input) => Effect.fail(unavailable(input.instanceId, "respond")),
-    cancel: (input) => Effect.fail(unavailable(input.instanceId, "cancel")),
-    logout: (input) => Effect.fail(unavailable(input.instanceId, "logout")),
+    reconnectProfile: Effect.fn("ProviderAuthService.reconnectProfile")(function* (input) {
+      return yield* unavailable(input.instanceId, "reconnectProfile");
+    }),
+    importProfile: Effect.fn("ProviderAuthService.importProfile")(function* (input) {
+      return yield* unavailable(input.instanceId, "importProfile");
+    }),
+    start: Effect.fn("ProviderAuthService.start")(function* (input) {
+      return yield* unavailable(input.instanceId, "start");
+    }),
+    complete: Effect.fn("ProviderAuthService.complete")(function* (input) {
+      return yield* unavailable(input.instanceId, "complete");
+    }),
+    respond: Effect.fn("ProviderAuthService.respond")(function* (input) {
+      return yield* unavailable(input.instanceId, "respond");
+    }),
+    cancel: Effect.fn("ProviderAuthService.cancel")(function* (input) {
+      return yield* unavailable(input.instanceId, "cancel");
+    }),
+    logout: Effect.fn("ProviderAuthService.logout")(function* (input) {
+      return yield* unavailable(input.instanceId, "logout");
+    }),
     subscribe: (input) => Stream.fail(unavailable(input.instanceId, "subscribe")),
-    tryHandlePromptCommand: () => Effect.succeed(false),
+    tryHandlePromptCommand: Effect.fn("ProviderAuthService.tryHandlePromptCommand")(function* () {
+      return false;
+    }),
   }),
 );

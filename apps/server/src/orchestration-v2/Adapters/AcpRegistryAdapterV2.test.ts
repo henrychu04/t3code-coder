@@ -762,19 +762,19 @@ describe("AcpRegistryAdapterV2", () => {
                       startupActive = false;
                     }),
                 ),
-              runBackgroundProbe: (_agentId, effect) => effect.pipe(Effect.map(Option.some)),
+              runBackgroundProbe: (_agentId, effect) => effect.pipe(Effect.asSome),
               clearAvailableCommands: () => Effect.void,
               publishAvailableCommands: (publishedInstanceId, commands) =>
                 Deferred.succeed(commandsPublished, {
                   instanceId: publishedInstanceId,
                   commands,
                 }).pipe(Effect.asVoid),
-              getAvailableCommands: () => Effect.succeed(Option.none()),
+              getAvailableCommands: () => Effect.succeedNone,
               watchAvailableCommands: () => Effect.never,
               clearLiveConfiguration: () => Effect.void,
               publishLiveConfiguration: (_publishedInstanceId, configuration) =>
                 Deferred.succeed(configurationPublished, configuration).pipe(Effect.asVoid),
-              getLiveConfiguration: () => Effect.succeed(Option.none()),
+              getLiveConfiguration: () => Effect.succeedNone,
               watchLiveConfiguration: () => Effect.never,
             }),
             Layer.mock(AcpRegistrySupport.AcpRegistryCatalog)({
@@ -933,8 +933,10 @@ describe("AcpRegistryAdapterV2", () => {
                   env: { T3_ACP_SESSION_LIFECYCLE: "1" },
                 },
                 authMethodId: "test",
+                // The adapter logs nothing by default (#29100), so this runtime logs its frames.
                 protocolLogging: {
                   ...runtimeInput.protocolLogging,
+                  logOutgoing: true,
                   logger: (event) => Queue.offer(protocolEvents, event).pipe(Effect.asVoid),
                 },
               }).pipe(

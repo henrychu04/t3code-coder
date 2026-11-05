@@ -1,6 +1,7 @@
 import {
   ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
+  type EnvironmentId,
   type OrchestrationGetTurnDiffResult,
 } from "@t3tools/contracts";
 import * as Stream from "effect/Stream";
@@ -15,10 +16,15 @@ import {
   type QueryAnswerHandler,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import type { EnvironmentShellState } from "./shell.ts";
 
 export function createOrchestrationEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
   options: {
+    /** Re-checks `threadTitles` when one of their threads leaves the shell. */
+    readonly shellState?: (
+      environmentId: EnvironmentId,
+    ) => Atom.Atom<Pick<EnvironmentShellState, "removedAt">>;
     /** Runs on each turn-range and full-thread diff the server answers. */
     readonly onCheckpointDiffAnswer?: QueryAnswerHandler<
       { readonly ignoreWhitespace?: boolean },
@@ -30,7 +36,24 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
     options.onCheckpointDiffAnswer === undefined
       ? {}
       : { onAnswer: options.onCheckpointDiffAnswer };
+  const shellState = options.shellState;
   return {
+    threadTitles: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:thread-titles",
+      tag: ORCHESTRATION_V2_WS_METHODS.getThreadTitles,
+      staleTimeMs: 0,
+      idleTtlMs: 0,
+      // Deleting a thread the shell already left out keeps these ids, so the query would not rerun.
+      // A removal can also be an archive, so it only prompts a re-check.
+      refreshTrigger: ({ environmentId, input }) => {
+        if (shellState === undefined) return undefined;
+        const state = shellState(environmentId);
+        return Atom.make((get) => {
+          const { removedAt } = get(state);
+          return Math.max(-1, ...input.threadIds.map((threadId) => removedAt.get(threadId) ?? -1));
+        });
+      },
+    }),
     // Coder: upstream's authenticated HTTP transcript fetch, read over helper stdio instead.
     threadTranscript: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:orchestration:thread-transcript",

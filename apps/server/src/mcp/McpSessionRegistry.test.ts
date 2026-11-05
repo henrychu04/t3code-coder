@@ -1,23 +1,19 @@
-import { execFile } from "node:child_process";
-import { access, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
-
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as CoderEnvironment from "../coderEnvironment.ts";
 import * as T3ToolDispatch from "./bridge/T3ToolDispatch.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
-const exec = promisify(execFile);
 const THREAD_ID = ThreadId.make("thread/with spaces 'and' quotes");
 const OTHER_THREAD_ID = ThreadId.make("thread-other");
 const CODEX = ProviderInstanceId.make("codex");
@@ -48,9 +44,11 @@ const services = Layer.mergeAll(
 );
 
 const harness = Effect.fn(function* (options: { readonly livenessWindowMs?: number } = {}) {
-  const parent = yield* Effect.acquireRelease(
-    Effect.promise(() => mkdtemp(join(tmpdir(), "t3-mcp-registry-"))),
-    (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),
+  const parent = yield* FileSystem.FileSystem.pipe(
+    Effect.flatMap((fileSystem) =>
+      fileSystem.makeTempDirectoryScoped({ prefix: "t3-mcp-registry-" }),
+    ),
+    Effect.provide(NodeServices.layer),
   );
   const registry = yield* McpSessionRegistry.__testing
     .make({ bridgeParent: parent, ...options })
@@ -61,18 +59,20 @@ const harness = Effect.fn(function* (options: { readonly livenessWindowMs?: numb
 });
 
 const call = (toolCommand: string) =>
-  Effect.promise(() =>
-    exec("/bin/sh", ["-c", `${toolCommand} any_tool '{}'`]).then((result) =>
-      JSON.parse(result.stdout),
+  ChildProcessSpawner.ChildProcessSpawner.pipe(
+    Effect.flatMap((spawner) =>
+      spawner.string(ChildProcess.make("/bin/sh", ["-c", `${toolCommand} any_tool '{}'`])),
     ),
+    Effect.map((stdout): unknown => JSON.parse(stdout)),
+    Effect.provide(NodeServices.layer),
+    Effect.orDie,
   );
 
 const exists = (path: string) =>
-  Effect.promise(() =>
-    access(path).then(
-      () => true,
-      () => false,
-    ),
+  FileSystem.FileSystem.pipe(
+    Effect.flatMap((fileSystem) => fileSystem.exists(path)),
+    Effect.provide(NodeServices.layer),
+    Effect.orDie,
   );
 
 it.live("keeps one hashed bridge directory per thread across session rotation", () =>

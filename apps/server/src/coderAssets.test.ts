@@ -12,6 +12,7 @@ import * as Stream from "effect/Stream";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import * as AssetSigner from "./assets/AssetSigner.ts";
 import { makeServeAsset } from "./coderAssets.ts";
 import * as ServerConfig from "./config.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -26,11 +27,13 @@ const layerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
 });
 const layerTest = Layer.mergeAll(
   Layer.mock(Orchestrator.OrchestratorV2)({ getTurnItem: () => Effect.succeed(null) }),
-  Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.succeed(undefined) }),
+  Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.undefined }),
   Layer.succeed(BuiltInDrivers.SourceControlDrivers, []),
   layerConfig,
   WorkspacePaths.layer,
-  ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),
+  AssetSigner.layer.pipe(
+    Layer.provideMerge(ServerSecretStore.layer.pipe(Layer.provide(layerConfig))),
+  ),
   ProjectFaviconResolver.layer.pipe(
     Layer.provide(WorkspacePaths.layer),
     Layer.provide(T3ProjectFileLoader.layer),

@@ -1,3 +1,5 @@
+// @effect-diagnostics globalDate:off -- Coder: waits in real time for fake helper stdio traffic.
+// @effect-diagnostics globalTimers:off -- Coder: waits in real time for fake helper stdio traffic.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

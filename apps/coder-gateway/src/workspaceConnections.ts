@@ -1,3 +1,7 @@
+// @effect-diagnostics globalDate:off -- Coder: diagnostic phase durations use wall-clock milliseconds.
+// @effect-diagnostics globalErrorInEffectFailure:off -- Coder: connection errors reach the settings UI by message.
+// @effect-diagnostics anyUnknownInErrorContext:off -- Coder: coder ssh and helper errors are untyped in coder-cli.
+// @effect-diagnostics unknownInEffectCatch:off -- Coder: start-is-current checks rethrow the conflict error unchanged.
 import type { WorkspaceDiagnosticEvent, WorkspaceDiagnosticPhase } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

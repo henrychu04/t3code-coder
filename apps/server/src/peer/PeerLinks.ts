@@ -68,16 +68,18 @@ const make = Effect.gen(function* () {
     ),
   );
 
+  const get: PeerLinks["Service"]["get"] = (environmentId) =>
+    list.pipe(
+      Effect.map((links) =>
+        Option.fromNullishOr(links.find((link) => link.environmentId === environmentId)),
+      ),
+      Effect.map(Option.map(({ status: _status, ...link }): PeerLink => link)),
+    );
+
   return PeerLinks.of({
     enabled,
     list,
-    get: (environmentId) =>
-      list.pipe(
-        Effect.map((links) =>
-          Option.fromNullishOr(links.find((link) => link.environmentId === environmentId)),
-        ),
-        Effect.map(Option.map(({ status: _status, ...link }): PeerLink => link)),
-      ),
+    get,
   });
 });
 

@@ -1,5 +1,3 @@
-import * as NodeFS from "node:fs";
-import * as NodePath from "node:path";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -32,12 +30,15 @@ const TestLayer = Layer.mergeAll(
   }),
   Layer.mock(GitVcsDriver.GitVcsDriver)({
     execute: (input) =>
-      Effect.sync(() => {
-        const directoryName = input.args.at(-1)!;
-        const destination = NodePath.join(input.cwd, directoryName);
-        NodeFS.mkdirSync(destination, { recursive: true });
-        NodeFS.writeFileSync(NodePath.join(destination, "partial-clone"), "partial\n");
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const destination = path.join(input.cwd, input.args.at(-1)!);
+        yield* fileSystem.makeDirectory(destination, { recursive: true });
+        yield* fileSystem.writeFileString(path.join(destination, "partial-clone"), "partial\n");
       }).pipe(
+        Effect.orDie,
+        Effect.provide(NodeServices.layer),
         Effect.andThen(
           Effect.fail(
             new GitCommandError({
@@ -88,27 +89,27 @@ for (const [repository, protocol, expectedUrl] of [
       const calls: Array<ReadonlyArray<string>> = [];
       const service = yield* SourceControlRepositoryService.make.pipe(
         Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => undefined,
-            get: () => Effect.succeed(provider),
-          }),
-        ),
-        Effect.provide(
-          Layer.mock(GitVcsDriver.GitVcsDriver)({
-            execute: (input) =>
-              Effect.gen(function* () {
-                // Upstream creates missing parent folders before cloning.
-                assert.isTrue(yield* fileSystem.exists(input.cwd).pipe(Effect.orDie));
-                calls.push(input.args);
-                return {
-                  stdout: "",
-                  stderr: "",
-                  exitCode: ChildProcessSpawner.ExitCode(0),
-                  stdoutTruncated: false,
-                  stderrTruncated: false,
-                };
-              }),
-          }),
+          Layer.mergeAll(
+            Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+              resolveLink: () => undefined,
+              get: () => Effect.succeed(provider),
+            }),
+            Layer.mock(GitVcsDriver.GitVcsDriver)({
+              execute: (input) =>
+                Effect.gen(function* () {
+                  // Upstream creates missing parent folders before cloning.
+                  assert.isTrue(yield* fileSystem.exists(input.cwd).pipe(Effect.orDie));
+                  calls.push(input.args);
+                  return {
+                    stdout: "",
+                    stderr: "",
+                    exitCode: ChildProcessSpawner.ExitCode(0),
+                    stdoutTruncated: false,
+                    stderrTruncated: false,
+                  };
+                }),
+            }),
+          ),
         ),
       );
       const result = yield* service.cloneRepository({
@@ -158,41 +159,41 @@ for (const remoteUrl of [
 function makePublishService(reason?: GitCommandError["reason"]) {
   return SourceControlRepositoryService.make.pipe(
     Effect.provide(
-      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-        resolveLink: () => undefined,
-        get: () =>
-          SourceControlProvider.SourceControlProvider.pipe(
-            Effect.provide(
-              Layer.mock(SourceControlProvider.SourceControlProvider)({
-                kind: SourceControlProviderKind.make("gitlab"),
-                createRepository: () => Effect.succeed(cloneUrls),
+      Layer.mergeAll(
+        Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+          resolveLink: () => undefined,
+          get: () =>
+            SourceControlProvider.SourceControlProvider.pipe(
+              Effect.provide(
+                Layer.mock(SourceControlProvider.SourceControlProvider)({
+                  kind: SourceControlProviderKind.make("gitlab"),
+                  createRepository: () => Effect.succeed(cloneUrls),
+                }),
+              ),
+            ),
+        }),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({
+          execute: () =>
+            Effect.succeed({
+              stdout: "",
+              stderr: "",
+              exitCode: ChildProcessSpawner.ExitCode(0),
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            }),
+          ensureRemote: () => Effect.succeed("origin"),
+          pushCurrentBranch: (cwd: string) =>
+            Effect.fail(
+              new GitCommandError({
+                operation: "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
+                command: "git",
+                cwd,
+                ...(reason === undefined ? {} : { reason }),
+                detail: "Git command exited with a non-zero status.",
               }),
             ),
-          ),
-      }),
-    ),
-    Effect.provide(
-      Layer.mock(GitVcsDriver.GitVcsDriver)({
-        execute: () =>
-          Effect.succeed({
-            stdout: "",
-            stderr: "",
-            exitCode: ChildProcessSpawner.ExitCode(0),
-            stdoutTruncated: false,
-            stderrTruncated: false,
-          }),
-        ensureRemote: () => Effect.succeed("origin"),
-        pushCurrentBranch: (cwd: string) =>
-          Effect.fail(
-            new GitCommandError({
-              operation: "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
-              command: "git",
-              cwd,
-              ...(reason === undefined ? {} : { reason }),
-              detail: "Git command exited with a non-zero status.",
-            }),
-          ),
-      }),
+        }),
+      ),
     ),
   );
 }
@@ -227,53 +228,53 @@ it.effect("switches an auto-selected remote to HTTPS when the SSH push is refuse
   return Effect.gen(function* () {
     const service = yield* SourceControlRepositoryService.make.pipe(
       Effect.provide(
-        Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-          resolveLink: () => undefined,
-          get: () =>
-            SourceControlProvider.SourceControlProvider.pipe(
-              Effect.provide(
-                Layer.mock(SourceControlProvider.SourceControlProvider)({
-                  kind: SourceControlProviderKind.make("gitlab"),
-                  createRepository: () => Effect.succeed(cloneUrls),
-                }),
-              ),
-            ),
-        }),
-      ),
-      Effect.provide(
-        Layer.mock(GitVcsDriver.GitVcsDriver)({
-          execute: (input) =>
-            Effect.sync(() => {
-              gitArgs.push(input.args);
-              return {
-                stdout: "",
-                stderr: "",
-                exitCode: ChildProcessSpawner.ExitCode(0),
-                stdoutTruncated: false,
-                stderrTruncated: false,
-              };
-            }),
-          ensureRemote: () => Effect.succeed("origin"),
-          pushCurrentBranch: (cwd: string) => {
-            pushAttempts += 1;
-            return pushAttempts === 1
-              ? Effect.fail(
-                  new GitCommandError({
-                    operation: "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
-                    command: "git",
-                    cwd,
-                    reason: "authentication_failed",
-                    detail: "Git command exited with a non-zero status.",
+        Layer.mergeAll(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => undefined,
+            get: () =>
+              SourceControlProvider.SourceControlProvider.pipe(
+                Effect.provide(
+                  Layer.mock(SourceControlProvider.SourceControlProvider)({
+                    kind: SourceControlProviderKind.make("gitlab"),
+                    createRepository: () => Effect.succeed(cloneUrls),
                   }),
-                )
-              : Effect.succeed({
-                  status: "pushed" as const,
-                  branch: "main",
-                  upstreamBranch: "origin/main",
-                  setUpstream: true,
-                });
-          },
-        }),
+                ),
+              ),
+          }),
+          Layer.mock(GitVcsDriver.GitVcsDriver)({
+            execute: (input) =>
+              Effect.sync(() => {
+                gitArgs.push(input.args);
+                return {
+                  stdout: "",
+                  stderr: "",
+                  exitCode: ChildProcessSpawner.ExitCode(0),
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                };
+              }),
+            ensureRemote: () => Effect.succeed("origin"),
+            pushCurrentBranch: (cwd: string) => {
+              pushAttempts += 1;
+              return pushAttempts === 1
+                ? Effect.fail(
+                    new GitCommandError({
+                      operation: "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
+                      command: "git",
+                      cwd,
+                      reason: "authentication_failed",
+                      detail: "Git command exited with a non-zero status.",
+                    }),
+                  )
+                : Effect.succeed({
+                    status: "pushed" as const,
+                    branch: "main",
+                    upstreamBranch: "origin/main",
+                    setUpstream: true,
+                  });
+            },
+          }),
+        ),
       ),
     );
     const result = yield* service.publishRepository({

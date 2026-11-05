@@ -43,6 +43,7 @@ import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Context from "effect/Context";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -124,6 +125,8 @@ const TERMINAL_ENV_BLOCKLIST = new Set([
   "ZELLIJ_SESSION_NAME",
   "ZELLIJ_PANE_ID",
 ]);
+// Coder: sizes attach replay events for the bounded resume window.
+const encodeAttachEventJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const MAX_TERMINAL_LABEL_LENGTH = 128;
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
@@ -1653,7 +1656,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       const sequence = event.sequence;
       if (attachEvent !== null && sequence !== undefined) {
         const key = toSessionKey(event.threadId, event.terminalId);
-        const encodedBytes = Buffer.byteLength(JSON.stringify(attachEvent), "utf8");
+        const encodedBytes = Buffer.byteLength(encodeAttachEventJson(attachEvent), "utf8");
         let replay = attachReplay.get(key);
         if (
           replay === undefined ||
@@ -2882,7 +2885,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         exitSignal: null,
         updatedAt: yield* nowIso,
         eventSequence: 0,
-        attachEpoch: crypto.randomUUID(),
+        attachEpoch: SecureRandom.uuidV4Unsafe(),
         inputCount: 0,
         cols,
         rows,

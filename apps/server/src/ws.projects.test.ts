@@ -23,6 +23,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ProcessRunner from "./processRunner.ts";
 import * as ServerConfig from "./config.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import * as AssetSigner from "./assets/AssetSigner.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
 import * as BuiltInDrivers from "./sourceControl/builtInDrivers.ts";
@@ -231,6 +232,7 @@ const harness = (
       stub(StorageCleanup.StorageCleanup),
       stub(CommandOutputHub.CommandOutputHub),
       stub(ServerSecretStore.ServerSecretStore),
+      stub(AssetSigner.AssetSigner),
       stub(ProjectFaviconResolver.ProjectFaviconResolver),
       stub(DocumentText.DocumentText),
       stub(ProcessRunner.ProcessRunner),

@@ -22,9 +22,9 @@ agent chose and shrinks to fit a shorter page; a longer page scrolls inside it.
 
 Some MCP servers return an interactive app with their tool results, following the
 [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) standard. When an agent calls one of
-those tools, the app appears in the thread in place of the tool call. Codex supports this today, for
-any MCP server configured for it in the workspace; other providers show these calls as ordinary
-tool calls.
+those tools, the app appears in the thread in place of the tool call. Codex and Claude support this
+today, for any MCP server configured for them in the workspace. Claude needs Claude Code 2.1.301 or
+newer; older versions and other providers show these calls as ordinary tool calls.
 
 Apps follow your theme. An app can call tools on its own server and post a message to the thread;
 T3 Coder asks first unless the server marks the tool as read-only, and it asks before every

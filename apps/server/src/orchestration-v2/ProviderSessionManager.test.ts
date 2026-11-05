@@ -1,4 +1,3 @@
-import * as NodeFS from "node:fs/promises";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -636,8 +635,7 @@ function layerTest(input: {
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
-          // @effect-diagnostics-next-line effectSucceedWithVoid:off - Optional instances require undefined rather than void.
-          getInstance: () => Effect.succeed(undefined),
+          getInstance: () => Effect.undefined,
         }),
         layerConfiguredEventSink,
         IdAllocator.layer,
@@ -1818,7 +1816,12 @@ it.effect(
         assert.equal(captured?.providerInstanceId, modelSelection.instanceId);
         // Coder: the credential is a workspace file bridge with its own tool command.
         assert.match(captured?.toolCommand ?? "", /t3\.mjs'?$/);
-        yield* Effect.promise(() => NodeFS.access(captured!.endpoint));
+        const bridgeExists = FileSystem.FileSystem.pipe(
+          Effect.flatMap((fileSystem) => fileSystem.exists(captured!.endpoint)),
+          Effect.provide(NodeServices.layer),
+          Effect.orDie,
+        );
+        assert.isTrue(yield* bridgeExists);
         const token = captured?.authorizationHeader.replace(/^Bearer\s+/, "");
         assert.isDefined(token);
         const resolved = yield* registry.resolve(token!);
@@ -1832,12 +1835,7 @@ it.effect(
         assert.isUndefined(yield* mcpSessions.read(threadId));
         assert.isUndefined(yield* registry.resolve(token!));
         // Coder: revoking the credential removes its bridge.
-        yield* Effect.promise(() =>
-          NodeFS.access(captured!.endpoint).then(
-            () => assert.fail("bridge directory still exists"),
-            () => undefined,
-          ),
-        );
+        assert.isFalse(yield* bridgeExists, "bridge directory still exists");
       });
 
       yield* effect.pipe(

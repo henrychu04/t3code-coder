@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off -- Coder: asserts wall-clock transfer timing.
 // @effect-diagnostics nodeBuiltinImport:off
 import { match, rejects, strictEqual } from "node:assert";
 import { existsSync } from "node:fs";

@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Coder: the CLI entry point reads its static files with Node fs.
+// @effect-diagnostics anyUnknownInErrorContext:off -- Coder: the entry point runs the gateway whose route errors stay untyped (rendered by message).
 import { readFile } from "node:fs/promises";
 // @effect-diagnostics nodeBuiltinImport:off
 import { spawn } from "node:child_process";

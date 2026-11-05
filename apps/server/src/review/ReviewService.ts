@@ -1,10 +1,13 @@
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as NodeCrypto from "node:crypto";
+import * as Schema from "effect/Schema";
 import * as NodeZlib from "node:zlib";
 
 import {
@@ -57,6 +60,8 @@ export class ReviewService extends Context.Service<
   }
 >()("t3/review/ReviewService") {}
 
+const isGitCommandError = Schema.is(GitCommandError);
+
 /** @public */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -65,6 +70,8 @@ export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const knownWorkspaces = yield* KnownWorkspaces.KnownWorkspaces;
+  const random = yield* SecureRandom.SecureRandom;
+  const digest = yield* Digest.Digest;
   // Coder: review file snapshots live in helper memory (64 MiB, 256 entries, two-minute idle TTL).
   const snapshotCache = new Map<string, { readonly data: Buffer; readonly expiresAt: number }>();
   let snapshotCacheBytes = 0;
@@ -85,16 +92,18 @@ export const make = Effect.gen(function* () {
     }
   };
 
-  const cacheSnapshot = (contents: string, filePath: string) => {
-    const now = Date.now();
-    pruneExpiredSnapshots(now);
+  const cacheSnapshot = Effect.fnUntraced(function* (contents: string, filePath: string) {
     const data = Buffer.from(contents, "utf8");
     if (data.byteLength > MAX_REVIEW_DIFF_FILE_BYTES) {
-      throw new ReviewDiffFileTooLargeError({
+      return yield* new ReviewDiffFileTooLargeError({
         path: filePath,
         maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
       });
     }
+    const snapshotId = yield* random.uuidV4();
+    const hash = yield* digest.digestHex(Digest.sha256, data);
+    const now = yield* Clock.currentTimeMillis;
+    pruneExpiredSnapshots(now);
     while (
       snapshotCache.size > 0 &&
       (snapshotCache.size >= snapshotCacheEntryLimit ||
@@ -104,12 +113,10 @@ export const make = Effect.gen(function* () {
       if (oldestId === undefined) break;
       removeSnapshot(oldestId);
     }
-    const snapshotId = NodeCrypto.randomUUID();
-    const hash = NodeCrypto.createHash("sha256").update(data).digest("hex");
     snapshotCache.set(snapshotId, { data, expiresAt: now + snapshotCacheTtlMs });
     snapshotCacheBytes += data.byteLength;
     return { snapshotId, totalBytes: data.byteLength, contentHash: hash };
-  };
+  });
 
   const canonicalizePath = (value: string) => {
     const resolvedPath = path.resolve(value);
@@ -210,37 +217,21 @@ export const make = Effect.gen(function* () {
   )(function* (input) {
     return yield* Effect.gen(function* () {
       const contents = yield* getDiffFileContents(input);
-      return yield* Effect.try({
-        try: () => {
-          const oldFile =
-            input.changeType === "new" || input.changeType === "rename-pure"
-              ? null
-              : cacheSnapshot(contents.oldContents, input.oldPath);
-          try {
-            return {
-              _tag: "opened" as const,
-              oldFile,
-              newFile:
-                input.changeType === "deleted"
-                  ? null
-                  : cacheSnapshot(contents.newContents, input.newPath),
-            };
-          } catch (cause) {
-            if (oldFile !== null) removeSnapshot(oldFile.snapshotId);
-            throw cause;
-          }
-        },
-        catch: (cause) =>
-          cause instanceof GitCommandError || cause instanceof ReviewDiffFileTooLargeError
-            ? cause
-            : new GitCommandError({
-                operation: "ReviewService.openDiffFileContents",
-                command: "snapshot review file",
-                cwd: input.cwd,
-                detail: "Could not create a review file snapshot.",
-                cause,
-              }),
-      });
+      const oldFile =
+        input.changeType === "new" || input.changeType === "rename-pure"
+          ? null
+          : yield* cacheSnapshot(contents.oldContents, input.oldPath);
+      const newFile =
+        input.changeType === "deleted"
+          ? null
+          : yield* cacheSnapshot(contents.newContents, input.newPath).pipe(
+              Effect.onError(() =>
+                Effect.sync(() => {
+                  if (oldFile !== null) removeSnapshot(oldFile.snapshotId);
+                }),
+              ),
+            );
+      return { _tag: "opened" as const, oldFile, newFile };
     }).pipe(
       Effect.catchTag("ReviewDiffFileTooLargeError", ({ path: filePath, maxBytes }) =>
         Effect.succeed({ _tag: "tooLarge" as const, path: filePath, maxBytes }),
@@ -250,10 +241,10 @@ export const make = Effect.gen(function* () {
 
   const readDiffFileChunk: ReviewService["Service"]["readDiffFileChunk"] = Effect.fn(
     "ReviewService.readDiffFileChunk",
-  )((input) =>
-    Effect.try({
+  )(function* (input) {
+    const now = yield* Clock.currentTimeMillis;
+    return yield* Effect.try({
       try: () => {
-        const now = Date.now();
         pruneExpiredSnapshots(now);
         const snapshot = snapshotCache.get(input.snapshotId);
         if (!snapshot) {
@@ -292,7 +283,7 @@ export const make = Effect.gen(function* () {
         };
       },
       catch: (cause) =>
-        cause instanceof GitCommandError
+        isGitCommandError(cause)
           ? cause
           : new GitCommandError({
               operation: "ReviewService.readDiffFileChunk",
@@ -301,8 +292,8 @@ export const make = Effect.gen(function* () {
               detail: "Could not read the review file snapshot.",
               cause,
             }),
-    }),
-  );
+    });
+  });
 
   return ReviewService.of({
     getBranchCommits,

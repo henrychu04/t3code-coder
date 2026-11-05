@@ -18,6 +18,15 @@ vi.mock(import("../../portDiscoveryState"), async (importOriginal) => ({
     ),
 }));
 
+// Coder: the Forward action reads the gateway's saved forwards.
+vi.mock("../../coder/CoderBootstrap", () => ({
+  useCoder: () => ({
+    config: { deployments: [], workspaces: [], portForwards: [], workspaceLinks: [] },
+    saveConfig: async () => undefined,
+    connectWorkspace: async () => undefined,
+  }),
+}));
+
 import { render } from "../../../test/render";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 

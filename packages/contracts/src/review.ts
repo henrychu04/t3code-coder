@@ -3,25 +3,19 @@ import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchema
 import { GitCommandError } from "./git.ts";
 import { VcsError } from "./vcs.ts";
 
-export const ReviewDiffPreviewSourceKind = Schema.Literals([
-  "working-tree",
-  "branch-range",
-  "commit",
-]);
-export type ReviewDiffPreviewSourceKind = typeof ReviewDiffPreviewSourceKind.Type;
-
 export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   baseRef: Schema.optional(TrimmedNonEmptyString),
   commitSha: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
-  // Coder: a branch preview may ask for one top-level source.
-  sourceKind: Schema.optionalKey(ReviewDiffPreviewSourceKind),
+  sourceKind: Schema.optionalKey(Schema.Literals(["working-tree", "branch-range"])),
+  trackedOnly: Schema.optionalKey(Schema.Boolean),
+  metadataOnly: Schema.optionalKey(Schema.Boolean),
   file: Schema.optionalKey(
     Schema.Struct({
       path: Schema.NonEmptyString,
       previousPath: Schema.NullOr(Schema.NonEmptyString),
-      sourceKind: ReviewDiffPreviewSourceKind,
+      sourceKind: Schema.Literals(["working-tree", "branch-range", "commit"]),
     }),
   ),
 });
@@ -45,6 +39,13 @@ export const ReviewBranchCommitsResult = Schema.Struct({
 });
 export type ReviewBranchCommitsResult = typeof ReviewBranchCommitsResult.Type;
 
+export const ReviewDiffPreviewSourceKind = Schema.Literals([
+  "working-tree",
+  "branch-range",
+  "commit",
+]);
+export type ReviewDiffPreviewSourceKind = typeof ReviewDiffPreviewSourceKind.Type;
+
 export const ReviewDiffFileStat = Schema.Struct({
   path: Schema.String,
   previousPath: Schema.NullOr(Schema.String),
@@ -63,6 +64,7 @@ export const ReviewDiffPreviewSource = Schema.Struct({
   diff: Schema.String,
   diffHash: TrimmedNonEmptyString,
   truncated: Schema.Boolean,
+  patchesDeferred: Schema.optionalKey(Schema.Boolean),
   files: Schema.optionalKey(Schema.Array(ReviewDiffFileStat)),
 });
 export type ReviewDiffPreviewSource = typeof ReviewDiffPreviewSource.Type;
@@ -142,6 +144,7 @@ export const ReviewDiffPreviewResult = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   generatedAt: Schema.DateTimeUtc,
   sources: Schema.Array(ReviewDiffPreviewSource),
+  incomplete: Schema.optionalKey(Schema.Boolean),
 });
 export type ReviewDiffPreviewResult = typeof ReviewDiffPreviewResult.Type;
 

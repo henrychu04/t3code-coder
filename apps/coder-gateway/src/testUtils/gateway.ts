@@ -1,3 +1,5 @@
+// @effect-diagnostics unknownInEffectCatch:off -- Coder: test harness wraps the gateway's untyped effects.
+// @effect-diagnostics anyUnknownInErrorContext:off -- Coder: test harness wraps the gateway's untyped effects.
 import { CoderHelperConnectionError } from "@t3tools/coder-cli/helperConnection";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Coder: spawns and drives the real gateway over Node HTTP.
+// @effect-diagnostics globalFetch:off -- Coder: drives the real gateway over loopback HTTP, as a browser would.
+// @effect-diagnostics anyUnknownInErrorContext:off -- Coder: test helpers run untyped gateway effects.
 import { it } from "node:test";
 import { channel } from "node:diagnostics_channel";
 import type { IncomingMessage } from "node:http";

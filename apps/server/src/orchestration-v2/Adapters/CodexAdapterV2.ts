@@ -1662,8 +1662,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const readMcpSession = (threadId: ThreadId | null) =>
-    // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-    threadId === null ? Effect.succeed(undefined) : mcpSessions.read(threadId);
+    threadId === null ? Effect.undefined : mcpSessions.read(threadId);
   const { clientFactory, digest, fileSystem, idAllocator, serverConfig } = adapterOptions;
   const continuationRequests = adapterOptions.continuationRequests;
 
@@ -4442,8 +4441,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const previous = yield* Ref.getAndUpdate(rateLimitSnapshot, (previous) =>
               mergeCodexRateLimits(previous, payload.rateLimits),
             );
-            const resetAt = codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot));
+            const snapshot = yield* Ref.get(rateLimitSnapshot);
             for (const item of (yield* Ref.get(limitedTurnItems)).values()) {
+              // Coder: no ChatGPT sharing failures (`CodexManagedErrors` is not carried), so every
+              // usage limit resets with the ordinary allowance.
+              const resetAt = codexUsageLimitResetAt(snapshot);
               if (resetAt === null || item.failure.resetAt != null) continue;
               const updated = {
                 ...item,

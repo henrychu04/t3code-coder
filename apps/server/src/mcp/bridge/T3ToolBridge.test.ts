@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Coder: runs the bridge CLI as an agent would and reads its files.
 import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
@@ -20,7 +21,6 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 
 import * as CoderEnvironment from "../../coderEnvironment.ts";
 import * as ServerConfig from "../../config.ts";
@@ -32,6 +32,7 @@ import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as RemoteDelegation from "../../peer/RemoteDelegation.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
+import * as AssetSigner from "../../assets/AssetSigner.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
@@ -114,7 +115,7 @@ const harness = (options: {
           ),
       }),
       Layer.mock(ProjectService.ProjectService)({
-        getShell: () => Effect.succeed(Option.some(project)),
+        getShell: () => Effect.succeedSome(project),
         listShells: () => Effect.succeed([project]),
       }),
       Layer.succeed(
@@ -141,6 +142,7 @@ const harness = (options: {
       Layer.mock(RemoteDelegation.RemoteDelegation)({}),
       Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
+      Layer.mock(AssetSigner.AssetSigner)({}),
       Layer.mock(ProviderRegistry.ProviderRegistry)({}),
       Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
       Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),

@@ -10,8 +10,10 @@
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
+import type * as Schema from "effect/Schema";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
+import type * as SqlError from "effect/sql/SqlError";
 
 import RepairPendingUserInputCounts from "./Migrations/CoderLegacy/050_RepairPendingUserInputCounts.ts";
 import ProjectionMessageAttachments from "./Migrations/CoderLegacy/055_ProjectionMessageAttachments.ts";
@@ -19,7 +21,7 @@ import ProjectionMessageAttachments from "./Migrations/CoderLegacy/055_Projectio
 type MigrationEntry = readonly [
   id: number,
   name: string,
-  migration: Effect.Effect<void, unknown, SqlClient.SqlClient>,
+  migration: Effect.Effect<void, SqlError.SqlError | Schema.SchemaError, SqlClient.SqlClient>,
 ];
 
 /** Upstream IDs the old registry omitted. */
