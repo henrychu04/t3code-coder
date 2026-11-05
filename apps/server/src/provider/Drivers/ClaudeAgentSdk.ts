@@ -189,8 +189,8 @@ function toSdkQuery(cli: Cli.Query): Sdk.Query {
     applyFlagSettings: (settings) => cli.applyFlagSettings(settings),
     updateSettings: reject("settings updates"),
     reinitialize: reject("reinitialize"),
-    mcpServerStatus: reject("MCP server status"),
-    readMcpResource: reject("MCP resource reads"),
+    mcpServerStatus: () => cli.mcpServerStatus().then((statuses) => [...statuses]),
+    readMcpResource: (serverName, uri) => cli.readMcpResource(serverName, uri),
     reconnectMcpServer: reject("MCP reconnects"),
     toggleMcpServer: reject("MCP toggles"),
     setMcpServers: (servers) => {
@@ -212,7 +212,11 @@ function toSdkQuery(cli: Cli.Query): Sdk.Query {
     backgroundTasks: (toolUseId) => cli.backgroundTasks(toolUseId),
     streamInput: reject("stream input after start"),
   };
-  return Object.assign(messages(), query) as Sdk.Query;
+  // The SDK's private `request`, which ClaudeAdapterV2 reaches with `Reflect.get` for the control
+  // requests SDK 0.3.316 has no method for; it resolves to `{ response }` as the SDK's does.
+  const request = (body: Readonly<Record<string, unknown>>) =>
+    cli.rawControlRequest(body).then((response) => ({ response }));
+  return Object.assign(messages(), query, { request }) as Sdk.Query;
 }
 
 /** SDK-compatible `query`, run through the workspace `claude` executable. */

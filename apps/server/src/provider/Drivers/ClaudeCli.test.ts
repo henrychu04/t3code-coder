@@ -191,6 +191,7 @@ for await (const line of lines) {
             message: { role: "user", content: "hello" },
           };
           await dialogHandled;
+          // @effect-diagnostics-next-line globalTimers:off - the CLI transport is plain async code.
           await new Promise((resolve) => setTimeout(resolve, 25));
         })(),
         options: {
@@ -549,6 +550,82 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       errors: {},
     });
     await rejects(runtime.setMcpServers({ other: servers.docs }));
+  } finally {
+    finishPrompt();
+    runtime.close();
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);
+
+it("serves MCP Apps' control requests with the Agent SDK 0.3.316 wire shapes", async () => {
+  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-mcp-apps-"));
+  const executable = NodePath.join(directory, "fake-claude");
+  // Answers only the SDK's shapes: mcp_status, mcp_read_resource { serverName, uri }, the raw
+  // mcp_call and list_permission_rules requests, and an initialize that carries the title.
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type !== "control_request") return;
+  const request = value.request;
+  const keys = Object.keys(request).sort().join(",");
+  const response =
+    request.subtype === "initialize" && request.title === "Named thread"
+      ? {}
+      : request.subtype === "mcp_status" && keys === "subtype"
+        ? { mcpServers: [{ name: "docs", status: "connected", tools: [{ name: "show" }] }] }
+        : request.subtype === "mcp_read_resource" && keys === "serverName,subtype,uri" &&
+            request.serverName === "docs" && request.uri === "ui://docs/app.html"
+          ? { contents: [{ uri: request.uri, text: "<p>app</p>" }] }
+          : request.subtype === "mcp_call" && request.tool === "mcp__docs__show" &&
+              request.result_not_for_model === true
+            ? { content: [{ type: "text", text: "shown" }] }
+            : request.subtype === "list_permission_rules" && keys === "subtype"
+              ? { state: { rules: [] } }
+              : undefined;
+  process.stdout.write(JSON.stringify({
+    type: "control_response",
+    response: response === undefined
+      ? { subtype: "error", request_id: value.request_id, error: JSON.stringify(request) }
+      : { subtype: "success", request_id: value.request_id, response },
+  }) + "\\n");
+});
+`,
+    { mode: 0o700 },
+  );
+  let finishPrompt!: () => void;
+  const promptFinished = new Promise<void>((resolve) => {
+    finishPrompt = resolve;
+  });
+  const runtime = query({
+    prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+      await promptFinished;
+    })(),
+    options: { pathToClaudeCodeExecutable: executable, env: process.env, title: "Named thread" },
+  });
+  try {
+    await runtime.initializationResult();
+    assert.deepEqual(await runtime.mcpServerStatus(), [
+      { name: "docs", status: "connected", tools: [{ name: "show" }] },
+    ]);
+    assert.deepEqual(await runtime.readMcpResource("docs", "ui://docs/app.html"), {
+      contents: [{ uri: "ui://docs/app.html", text: "<p>app</p>" }],
+    });
+    assert.deepEqual(
+      await runtime.rawControlRequest({
+        subtype: "mcp_call",
+        tool: "mcp__docs__show",
+        arguments: {},
+        result_not_for_model: true,
+      }),
+      { content: [{ type: "text", text: "shown" }] },
+    );
+    assert.deepEqual(await runtime.rawControlRequest({ subtype: "list_permission_rules" }), {
+      state: { rules: [] },
+    });
+    await rejects(runtime.rawControlRequest({ subtype: "set_model" }));
   } finally {
     finishPrompt();
     runtime.close();
