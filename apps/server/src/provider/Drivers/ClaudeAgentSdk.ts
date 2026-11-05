@@ -53,6 +53,7 @@ const SUPPORTED_QUERY_OPTIONS: ReadonlySet<string> = new Set([
   "supportedDialogKinds",
   "systemPrompt",
   "thinking",
+  "title",
   "tools",
 ]);
 
@@ -129,6 +130,7 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
       : {}),
     ...(options.strictMcpConfig ? { strictMcpConfig: true } : {}),
     ...(options.supportedDialogKinds ? { supportedDialogKinds: options.supportedDialogKinds } : {}),
+    ...(options.title !== undefined ? { title: options.title } : {}),
     ...(systemPrompt
       ? {
           systemPrompt: {
@@ -188,6 +190,7 @@ function toSdkQuery(cli: Cli.Query): Sdk.Query {
     updateSettings: reject("settings updates"),
     reinitialize: reject("reinitialize"),
     mcpServerStatus: reject("MCP server status"),
+    readMcpResource: reject("MCP resource reads"),
     reconnectMcpServer: reject("MCP reconnects"),
     toggleMcpServer: reject("MCP toggles"),
     setMcpServers: (servers) => {

@@ -10,23 +10,26 @@ import { redactServerSettingsForClient } from "./serverSettings.ts";
 describe("redactServerSettingsForClient", () => {
   it("blanks sensitive provider environment values", () => {
     const instanceId = ProviderInstanceId.make("claude-workspace");
-    const redacted = redactServerSettingsForClient({
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [instanceId]: {
-          driver: ProviderDriverKind.make("claude"),
-          environment: [
-            { name: "ANTHROPIC_API_KEY", value: "workspace-secret", sensitive: true },
-            {
-              name: "ANTHROPIC_BASE_URL",
-              value: "https://example.test",
-              sensitive: false,
-              valueRedacted: true,
-            },
-          ],
+    const redacted = redactServerSettingsForClient(
+      {
+        ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("claude"),
+            environment: [
+              { name: "ANTHROPIC_API_KEY", value: "workspace-secret", sensitive: true },
+              {
+                name: "ANTHROPIC_BASE_URL",
+                value: "https://example.test",
+                sensitive: false,
+                valueRedacted: true,
+              },
+            ],
+          },
         },
       },
-    });
+      { secretReferences: true },
+    );
 
     expect(redacted.providerInstances[instanceId]?.environment).toEqual([
       {

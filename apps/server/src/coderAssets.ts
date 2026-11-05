@@ -16,7 +16,8 @@ import {
   type CoderWriteRequestBodyInput,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import {
@@ -119,7 +120,8 @@ export const makeServeAsset = Effect.gen(function* () {
   );
   const bodies = makeRequestBodies();
   const services = yield* Effect.context<
-    | Crypto.Crypto
+    | Digest.Digest
+    | SecureRandom.SecureRandom
     | FileSystem.FileSystem
     | Path.Path
     | Orchestrator.OrchestratorV2

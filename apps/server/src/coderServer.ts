@@ -7,7 +7,7 @@ import { FetchHttpClient } from "effect/http";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as DelegatedTaskQuestionReactor from "./orchestration-v2/DelegatedTaskQuestionReactor.ts";
-import * as EventStoreV2 from "./orchestration-v2/EventStore.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
@@ -351,12 +351,7 @@ export const makeCoderRuntimeLayer = () => {
   const startedRuntime = Layer.mergeAll(
     StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
     // Background history compaction and space reclaim, as upstream (see DatabaseStorage.ts).
-    DatabaseStorage.layer.pipe(
-      Layer.provide(ProjectionMaintenance.layer),
-      Layer.provide(
-        Layer.merge(EventStoreV2.layerFromOrchestrationEventStore, ProjectionStoreV2.layer),
-      ),
-    ),
+    DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer)),
   ).pipe(Layer.provideMerge(runtimeStartup));
   const services = Layer.mergeAll(
     startedRuntime,
@@ -367,8 +362,8 @@ export const makeCoderRuntimeLayer = () => {
     // Every agent and terminal spawn reads this, so it sits below everything.
     Layer.provideMerge(AgentScopeLive.layer),
     // As upstream's platform services: attachment uploads, agent attachments, and the project
-    // toolkit read office documents' extracted text.
-    Layer.provideMerge(DocumentText.layer),
+    // toolkit read office documents' extracted text; Node's crypto backs random ids and digests.
+    Layer.provideMerge(DocumentText.layer.pipe(Layer.provideMerge(NodeCrypto.layer))),
   );
   // Upstream provides the agent-session scanner beside its WS layer; the helper RPC layer
   // takes it here.

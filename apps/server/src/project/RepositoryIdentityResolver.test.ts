@@ -167,6 +167,31 @@ describe("RepositoryIdentityResolver", () => {
     }),
   );
 
+  // Coder: upstream's userless SSH remote case (#29457) on a GitLab remote, mocked like the tests
+  // above.
+  it.effect("identifies the host of an SSH remote that leaves its user to ssh config", () =>
+    Effect.gen(function* () {
+      const process = ProcessRunner.ProcessRunner.of({
+        run: (input) =>
+          Effect.succeed(
+            input.args.includes("--show-toplevel")
+              ? output("/workspace/project\n")
+              : output("origin\tgitlab.example.gs.com:Goldman/Smoke.git (fetch)\n"),
+          ),
+      });
+      const resolver = yield* make().pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, process),
+        Effect.provide(existingFolders),
+      );
+
+      const identity = yield* resolver.resolve("/workspace/project");
+
+      expect(identity?.canonicalKey).toBe("gitlab.example.gs.com/goldman/smoke");
+      expect(identity?.provider).toBe("gitlab");
+      expect(identity?.displayName).toBe("Goldman/Smoke");
+    }),
+  );
+
   // Coder: upstream's partial-clone case on a GitLab remote, mocked like the tests above.
   it.effect("resolves the fetch remote of a partial clone", () =>
     Effect.gen(function* () {

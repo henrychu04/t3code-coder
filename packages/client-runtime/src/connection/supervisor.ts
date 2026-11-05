@@ -244,6 +244,8 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   const connectivity = yield* Connectivity.Connectivity;
   const driver = yield* ConnectionDriver.ConnectionDriver;
   const wakeups = yield* ConnectionWakeups.ConnectionWakeups;
+  // Coder: every target is a gateway workspace, never upstream's primary environment, so no
+  // offline exemption for it (#29347).
   const initialIntent: SupervisorIntent = {
     desired: options?.initiallyDesired ?? false,
     network: yield* connectivity.status,

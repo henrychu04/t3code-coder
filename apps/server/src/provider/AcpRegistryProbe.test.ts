@@ -5,7 +5,9 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Layer from "effect/Layer";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "@t3tools/provider-acp-registry/settings";
 import { describe, expect, it } from "@effect/vitest";
@@ -348,7 +350,7 @@ describe("ACP Registry probe", () => {
         reason: "probe_failed",
         message: expect.stringContaining("within 60 seconds"),
       });
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   // Coder: the registry catalog resolves only a local command, and logout is not carried.
@@ -392,7 +394,7 @@ describe("ACP Registry probe", () => {
       });
     }).pipe(
       Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Effect.scoped,
     );
   });

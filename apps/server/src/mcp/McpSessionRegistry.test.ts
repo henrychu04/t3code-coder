@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
@@ -43,6 +44,7 @@ const services = Layer.mergeAll(
     ),
   ).pipe(Layer.provide(T3ToolDispatch.layer)),
   NodeServices.layer,
+  NodeCrypto.layer,
 );
 
 const harness = Effect.fn(function* (options: { readonly livenessWindowMs?: number } = {}) {

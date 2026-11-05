@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { ProviderDriverKind, ProviderReplayTranscript } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -260,7 +261,7 @@ export function layerWithRegistry<Error>(
         ThreadCommandExecutor.layer,
         GitVcsDriver.layer.pipe(
           Layer.provide(layerServerConfig),
-          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),
@@ -268,11 +269,11 @@ export function layerWithRegistry<Error>(
   const layerVcsDriverRegistry = VcsDriverRegistry.layer.pipe(
     Layer.provide(VcsProcess.layer),
     Layer.provide(layerServerConfig),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   const layerCheckpointStore = CheckpointStore.layer.pipe(
     Layer.provide(layerVcsDriverRegistry),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   const layerCheckpointServiceProvided = CheckpointService.layer.pipe(
     Layer.provide(Layer.mergeAll(layerCheckpointStore, IdAllocator.layer)),
@@ -449,7 +450,10 @@ export function layerWithRegistry<Error>(
     layerEventSinkProvided,
     layerContinuationWorkerProvided,
     layerCommandOutputHubProvided,
-  ).pipe(Layer.provide(ProviderTurnStartServiceTestkit.layer), Layer.provide(NodeServices.layer));
+  ).pipe(
+    Layer.provide(ProviderTurnStartServiceTestkit.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
 
   if (options.runEffectWorker === false) {
     return layerReplayRuntime;

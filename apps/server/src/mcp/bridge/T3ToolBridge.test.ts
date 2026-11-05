@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -148,9 +149,9 @@ const harness = (options: {
       McpProviderSessions.layer,
       T3ToolDispatch.layer,
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-tool-bridge-" }).pipe(
-        Layer.provide(NodeServices.layer),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
-      NodeServices.layer,
+      Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     );
     const context = yield* Layer.build(services);
     const tools = Context.get(context, T3ToolDispatch.T3ToolDispatch);

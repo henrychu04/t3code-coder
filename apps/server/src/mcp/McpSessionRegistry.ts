@@ -17,7 +17,7 @@ import * as NodeCrypto from "node:crypto";
 import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SynchronizedRef from "effect/SynchronizedRef";
@@ -82,7 +82,7 @@ const bridgeName = (environmentId: string, threadId: string) =>
 const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   options: { readonly livenessWindowMs?: number; readonly bridgeParent?: string } = {},
 ) {
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const environment = yield* CoderEnvironment.CoderEnvironment;
   const tools = yield* T3ToolDispatch.T3ToolDispatch;
   const environmentId = environment.descriptor.environmentId;
@@ -125,8 +125,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const issue: McpSessionRegistryShape["issue"] = Effect.fn("McpSessionRegistry.issue")(
     function* (request) {
       const issuedAt = yield* Clock.currentTimeMillis;
-      const providerSessionId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
-      const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+      const providerSessionId = yield* random.uuidV4();
+      const token = yield* random.uuidV4();
       const scope: McpInvocationContext.McpThreadInvocationScope = {
         environmentId,
         requestNamespace: providerSessionId,

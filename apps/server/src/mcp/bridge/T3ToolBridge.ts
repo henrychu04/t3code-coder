@@ -9,7 +9,7 @@
  */
 import type { ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -131,7 +131,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
     // Handlers also read services when they run, as upstream's MCP server provides them.
     const services = yield* Effect.context<never>();
     const engine = yield* Orchestrator.OrchestratorV2;
-    const crypto = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
     const jobScope = yield* Effect.scope;
     const jobs = new Map<string, BridgeJob>();
     // Calls still inside their inline budget, per thread; they count toward the cap before they
@@ -278,7 +278,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
             ),
           );
           if (Option.isSome(exit)) return { _tag: "Done" as const, exit: exit.value };
-          const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`;
+          const taskId = `${BRIDGE_JOB_PREFIX}${yield* random.uuidV4()}`;
           // Registered before the inline slot is released, so the call is counted throughout.
           jobs.set(taskId, { threadId, startedAt: now, fiber });
           return { _tag: "Job" as const, taskId };

@@ -1,6 +1,6 @@
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 
 import * as DateTime from "effect/DateTime";
@@ -124,9 +124,7 @@ import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import { latestProviderVersionCacheKeys } from "@t3tools/provider-core/server/maintenanceResolver";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -342,6 +340,7 @@ const canReplayPersistedRange = Effect.fnUntraced(function* (
   if (replayGap < 0 || replayGap > maxGap) {
     return false;
   }
+  if (afterSequence < (yield* applicationEvents.prunedThroughSequence)) return false;
   const stats = yield* applicationEvents.getReplayStats({
     afterSequence,
     throughSequence: headSequence,
@@ -537,7 +536,21 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
             }),
         ),
       );
-      if (input.afterSequence > highWater) {
+      const prunedThrough = yield* applicationEvents.prunedThroughSequence.pipe(
+        Effect.mapError(
+          (cause) =>
+            new OrchestrationV2GetThreadProjectionError({
+              threadId: input.threadId,
+              message: `Failed to prepare orchestration V2 thread ${input.threadId} replay`,
+              cause,
+            }),
+        ),
+      );
+      // An idle thread's cursor sits at its own high-water: nothing was missed, so replay nothing.
+      if (
+        input.afterSequence > highWater ||
+        (input.afterSequence < highWater && input.afterSequence < prunedThrough)
+      ) {
         return yield* snapshotThenLive();
       }
       const stats = yield* applicationEvents
@@ -578,9 +591,25 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
         // Retained creation events may describe deleted threads; replace replay only if a snapshot exists.
         if (shell !== null) return yield* snapshotThenLive();
       }
-      const replay = coalesceLiveUpdatedEvents(
-        yield* loadReplayThrough(input.afterSequence, highWater),
-      );
+      const replayed = yield* loadReplayThrough(input.afterSequence, highWater);
+      // Pruning publishes its boundary before deleting, so a pass during the read shows up here.
+      if (
+        input.afterSequence < highWater &&
+        input.afterSequence <
+          (yield* applicationEvents.prunedThroughSequence.pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationV2GetThreadProjectionError({
+                  threadId: input.threadId,
+                  message: `Failed to prepare orchestration V2 thread ${input.threadId} replay`,
+                  cause,
+                }),
+            ),
+          ))
+      ) {
+        return yield* snapshotThenLive();
+      }
+      const replay = coalesceLiveUpdatedEvents(replayed);
       const plan = decideThreadResume({
         afterSequence: input.afterSequence,
         highWater,
@@ -695,14 +724,37 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     const projectShellItems = Effect.fn("ws.orchestrationV2.projectShellItems")(function* (
       events: ReadonlyArray<ShellApplicationEvent>,
     ) {
+      const coalesced = coalesceShellApplicationEvents(events);
+      const threadIds = coalesced.flatMap((stored) =>
+        "aggregateKind" in stored ? [] : [stored.event.threadId],
+      );
+      // A failed batch can't name its thread, so the scalar reads below report which one is bad.
+      const batch =
+        threadIds.length > 1
+          ? yield* threadManagement
+              .getShellSnapshot({ threadIds })
+              .pipe(Effect.orElseSucceed(() => null))
+          : null;
+      const batchedShells =
+        batch === null
+          ? null
+          : new Map(
+              [...batch.threads, ...batch.archivedThreads].map(
+                (shell) => [shell.id, shell] as const,
+              ),
+            );
       return yield* Effect.forEach(
-        coalesceShellApplicationEvents(events),
+        coalesced,
         (stored) =>
           Effect.gen(function* () {
             if ("aggregateKind" in stored) {
               return yield* projectItem(stored);
             }
-            const shell = yield* threadManagement.getThreadShell(stored.event.threadId);
+            const threadId = stored.event.threadId;
+            const shell =
+              batchedShells === null
+                ? yield* threadManagement.getThreadShell(threadId)
+                : (batchedShells.get(threadId) ?? null);
             return shellStreamItemFromThreadShell({ stored, shell });
           }),
         { concurrency: 8 },
@@ -798,31 +850,38 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         });
       }
 
-      const highWater = yield* applicationEvents.latestApplicationSequence;
-      if (!(yield* canReplayPersistedRange(input.afterSequence, highWater, SHELL_RESUME_MAX_GAP))) {
+      const fromSnapshot = Effect.gen(function* () {
         const loaded = yield* loadSnapshot();
         return composeShellStreamWithEnrichment({
           initial: initialSnapshotItems(loaded),
           tail: completionThenLive(loaded.snapshot.snapshotSequence),
           enrichment: enrichmentRefreshes,
         });
+      });
+      const highWater = yield* applicationEvents.latestApplicationSequence;
+      if (!(yield* canReplayPersistedRange(input.afterSequence, highWater, SHELL_RESUME_MAX_GAP))) {
+        return yield* fromSnapshot;
       }
 
       subagentThreadIds = new Set(yield* threadManagement.listActiveSubagentThreadIds());
 
       const loaded = yield* loadProjectMetadataSnapshot(highWater);
-      const replay = toShellStream(
-        applicationEvents
-          .readApplicationEvents({
-            afterSequence: input.afterSequence,
-            throughSequence: highWater,
-            // A row a newer build wrote (e.g. after a downgrade) must not fail
-            // every shell resubscribe. The live tail below resumes from
-            // highWater, so a dropped row never hides later events.
-            skipUnknownEventTypes: true,
-          })
-          .pipe(Stream.filter(filterSubagentTranscript)),
-      );
+      // Read before replying: the range is budgeted above, and a prune pass during the read
+      // publishes its boundary first, so the recheck below catches deleted rows.
+      const replayed = yield* applicationEvents
+        .readApplicationEvents({
+          afterSequence: input.afterSequence,
+          throughSequence: highWater,
+          // A row a newer build wrote (e.g. after a downgrade) must not fail
+          // every shell resubscribe. The live tail below resumes from
+          // highWater, so a dropped row never hides later events.
+          skipUnknownEventTypes: true,
+        })
+        .pipe(Stream.filter(filterSubagentTranscript), Stream.runCollect);
+      if (input.afterSequence < (yield* applicationEvents.prunedThroughSequence)) {
+        return yield* fromSnapshot;
+      }
+      const replay = toShellStream(Stream.fromIterable(replayed));
       return composeShellStreamWithEnrichment({
         initial: initialEnrichmentItems(loaded),
         tail: Stream.concat(Stream.concat(replay, completionMarker), liveFrom(highWater)),
@@ -892,13 +951,16 @@ const layerWsRpc = () =>
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
-      const crypto = yield* Crypto.Crypto;
+      const random = yield* SecureRandom.SecureRandom;
+      // Coder: upstream reads the client's settings capabilities from the WebSocket URL; the
+      // helper's only client is this checkout's web build, which reads secret references.
+      const settingsClient = { secretReferences: true } as const;
       // RPC client ids are only unique within one socket; terminals share viewers across sockets.
-      const terminalViewerPrefix = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+      const terminalViewerPrefix = yield* random.uuidV4();
       const terminalViewerId = (metadata: { readonly client: { readonly id: number } }) =>
         `${terminalViewerPrefix}:${metadata.client.id}`;
       const serverCommandId = (tag: string) =>
-        crypto.randomUUIDv4().pipe(
+        random.uuidV4().pipe(
           Effect.orDie,
           Effect.map((id) => CommandId.make(`server:${tag}:${id}`)),
         );
@@ -932,7 +994,6 @@ const layerWsRpc = () =>
       // Coder: of upstream's ACP Registry services, only the runtime coordinator is used here.
       const acpRegistryRuntimeCoordinator =
         yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
-      const providerLatestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
@@ -1084,7 +1145,7 @@ const layerWsRpc = () =>
               provider?.models.find((candidate) => candidate.isDefault)?.slug ??
               provider?.models[0]?.slug ??
               "default";
-            const commandId = CommandId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+            const commandId = CommandId.make(yield* random.uuidV4());
             // Coder: no startup command queue; workspace startup completes before this layer is
             // built.
             const launched = yield* Effect.result(
@@ -1151,6 +1212,7 @@ const layerWsRpc = () =>
           : currentProviders;
         const settings = ServerSettings.redactServerSettingsForClient(
           yield* serverSettings.getSettings,
+          settingsClient,
         );
         const scratchWorkspaceRoot = yield* managedFolders.scratchRoot;
         return {
@@ -1512,31 +1574,12 @@ const layerWsRpc = () =>
         [WS_METHODS.serverRefreshProviders]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
-            // Coder: the model manifest is bundled, so a manual check only drops cached versions.
             if (input.refreshModels) {
-              const instances = yield* providerInstances.listInstances;
-              yield* Effect.forEach(
-                instances.filter(
-                  (instance) =>
-                    input.instanceId === undefined || input.instanceId === instance.instanceId,
-                ),
-                (instance) =>
-                  Effect.gen(function* () {
-                    yield* instance.invalidateCaches ?? Effect.void;
-                    const maintenance = yield* instance.snapshot.resolveMaintenance({
-                      fresh:
-                        input.instanceId !== undefined &&
-                        input.cwd !== undefined &&
-                        input.fresh !== true,
-                    });
-                    yield* Effect.forEach(
-                      latestProviderVersionCacheKeys(maintenance),
-                      providerLatestVersions.invalidate,
-                      { discard: true },
-                    );
-                  }),
-                { concurrency: "unbounded", discard: true },
-              );
+              yield* providerRegistry.invalidateModelCaches({
+                instanceId: input.instanceId,
+                cwd: input.cwd,
+                fresh: input.fresh,
+              });
             }
             // Coder: host credentials hold no secret references (#27746), so a secret reload has
             // no host-secret cache to invalidate.
@@ -1598,7 +1641,7 @@ const layerWsRpc = () =>
             const settings = yield* providerInstanceMutation === undefined
               ? serverSettings.updateSettings(patch)
               : serverSettings.updateProviderInstance(providerInstanceMutation, patch);
-            return ServerSettings.redactServerSettingsForClient(settings);
+            return ServerSettings.redactServerSettingsForClient(settings, settingsClient);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
         [WS_METHODS.serverListAcpRegistrySessions]: (input) =>
@@ -2123,7 +2166,9 @@ const layerWsRpc = () =>
                     )
                   : Stream.empty;
               const settingsUpdates = settingsChanges.pipe(
-                Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),
+                Stream.map((settings) =>
+                  ServerSettings.redactServerSettingsForClient(settings, settingsClient),
+                ),
                 Stream.map((settings) => ({
                   version: 1 as const,
                   type: "settingsUpdated" as const,

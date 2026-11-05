@@ -47,6 +47,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         mcpSession: undefined,
         extensionPath: undefined,
         ephemeral: true,
+        shortLived: true,
         // Coder: keep the workspace's Pi extensions, which may register the only model providers.
         disableExtensions: false,
         // Background naming/content helpers must never mutate the workspace.

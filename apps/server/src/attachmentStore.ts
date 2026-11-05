@@ -13,7 +13,7 @@ import {
 import { inferImageExtension, SAFE_IMAGE_FILE_EXTENSIONS } from "./imageMime.ts";
 
 const ATTACHMENT_FILENAME_EXTENSIONS = [...SAFE_IMAGE_FILE_EXTENSIONS, ".bin"];
-const ATTACHMENT_ID_THREAD_SEGMENT_MAX_CHARS = 80;
+export const ATTACHMENT_ID_THREAD_SEGMENT_MAX_CHARS = 80;
 const ATTACHMENT_ID_THREAD_SEGMENT_PATTERN = "[a-z0-9_]+(?:-[a-z0-9_]+)*";
 const ATTACHMENT_ID_UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const ATTACHMENT_ID_FILE_EXTENSION_PATTERN = "[a-z0-9]{1,10}";
@@ -148,6 +148,7 @@ export function threadHtmlRenderAttachmentIds(
   if (segment === null) return [];
   return Array.from(items).flatMap((item) => {
     const attachmentId =
+      // Coder: no agent preview recordings (#29853); the preview toolkits are not carried.
       htmlRenderFromToolItem(item)?.attachmentId ?? mcpAppFromToolItem(item)?.attachmentId;
     return attachmentId !== undefined &&
       parseThreadSegmentFromAttachmentId(attachmentId) === segment

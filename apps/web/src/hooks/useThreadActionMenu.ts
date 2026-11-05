@@ -290,7 +290,10 @@ export function useThreadActionMenu(input: {
           }
           return;
         case "copy-thread":
-          void copyThreadReference(threadChipCopyTarget(threadRef, thread.title));
+          void copyThreadReference(
+            // Coder: thread links open on the gateway's own origin; there is no hosted app.
+            threadChipCopyTarget(threadRef, thread.title, window.location.origin),
+          );
           return;
         case "copy-thread-id":
           copyThreadIdToClipboard(thread.id, { threadId: thread.id });

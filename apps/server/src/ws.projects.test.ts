@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Context from "effect/Context";
@@ -237,7 +238,7 @@ const harness = (
       Layer.succeed(BuiltInDrivers.SourceControlDrivers, []),
       ServerConfig.layer(config),
       WorkspacePaths.layer,
-    ).pipe(Layer.provideMerge(NodeServices.layer));
+    ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
     const client = yield* RpcTest.makeClient(CoderWsRpcGroup).pipe(
       Effect.provide(CoderWs.layer.pipe(Layer.provide(dependencies))),
     );
@@ -264,7 +265,7 @@ describe("Coder RPC seams", () => {
         "identity:/workspace/project",
         "status:/workspace/project",
       ]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -299,7 +300,7 @@ describe("Coder RPC seams", () => {
           threadId: ThreadId.make("thread-too-large"),
         }).pipe(Effect.flip);
         assert.equal(error._tag, "OrchestrationThreadTranscriptTooLargeError");
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("synthesizes welcome and ready before legacy thread migration progress", () =>
@@ -331,6 +332,6 @@ describe("Coder RPC seams", () => {
           [3, "legacyThreadMigration"],
         ],
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

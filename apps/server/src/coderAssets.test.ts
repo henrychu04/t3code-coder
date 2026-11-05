@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CODER_ASSET_BODY_CHUNK_BYTES, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -34,7 +35,7 @@ const layerTest = Layer.mergeAll(
     Layer.provide(WorkspacePaths.layer),
     Layer.provide(T3ProjectFileLoader.layer),
   ),
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 type ServeAsset = Effect.Success<typeof makeServeAsset>;
 

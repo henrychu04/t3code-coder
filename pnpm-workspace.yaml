@@ -28,11 +28,11 @@ allowBuilds:
   utf-8-validate: false
 
 catalog:
-  "@effect/atom-react": 4.0.5
-  "@effect/openapi-generator": 4.0.5
-  "@effect/platform-node": 4.0.5
-  "@effect/platform-node-shared": 4.0.5
-  "@effect/vitest": 4.0.5
+  "@effect/atom-react": 4.1.2
+  "@effect/openapi-generator": 4.1.2
+  "@effect/platform-node": 4.1.2
+  "@effect/platform-node-shared": 4.1.2
+  "@effect/vitest": 4.1.2
   "@legendapp/list": 3.3.5
   "@pierre/diffs": 1.6.1
   "@tailwindcss/node": 4.3.3
@@ -44,7 +44,7 @@ catalog:
   react: 19.3.0
   react-dom: 19.3.0
   typescript: 7.0.2
-  effect: 4.0.5
+  effect: 4.1.2
   lightningcss: 1.33.0
   tailwindcss: 4.3.3
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
@@ -65,12 +65,12 @@ catalog:
   unified: 11.0.5
 
 minimumReleaseAgeExclude:
-  - "@effect/atom-react@4.0.5"
-  - "@effect/openapi-generator@4.0.5"
-  - "@effect/platform-node-shared@4.0.5"
-  - "@effect/platform-node@4.0.5"
-  - "@effect/vitest@4.0.5"
-  - "effect@4.0.5"
+  - "@effect/atom-react@4.1.2"
+  - "@effect/openapi-generator@4.1.2"
+  - "@effect/platform-node-shared@4.1.2"
+  - "@effect/platform-node@4.1.2"
+  - "@effect/vitest@4.1.2"
+  - "effect@4.1.2"
   - "@legendapp/list@3.3.5"
   - pele@1.8.0
   - "@pierre/diffs@1.6.1"
@@ -136,7 +136,7 @@ patchedDependencies:
   micromark@4.0.2: patches/micromark@4.0.2.patch
   mdast-util-to-hast@13.2.1: patches/mdast-util-to-hast@13.2.1.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
-  "@effect/vitest@4.0.5": patches/@effect__vitest@4.0.5.patch
+  "@effect/vitest@4.1.2": patches/@effect__vitest@4.1.2.patch
   "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch
   "@legendapp/list@3.3.5": patches/@legendapp__list@3.3.5.patch
   "@pierre/diffs@1.6.1": patches/@pierre%2Fdiffs@1.6.1.patch

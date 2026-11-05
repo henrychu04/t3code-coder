@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Option from "effect/Option";
 import type { AcpRegistryAvailableCommands } from "@t3tools/provider-acp-registry/testing";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -57,7 +58,9 @@ const decodeAcpRegistryAdapterSettings = Schema.decodeUnknownEffect(
   AcpRegistryAdapterV2Driver.configSchema,
 );
 
-const layerHost = TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer));
+const layerHost = TestProviderHost.layer().pipe(
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
@@ -78,6 +81,7 @@ const layerInjectedRuntimeCatalog = Layer.mock(AcpRegistrySupport.AcpRegistryCat
 
 const layerTest = Layer.mergeAll(
   NodeServices.layer,
+  NodeCrypto.layer,
   IdAllocator.layer,
   McpProviderSessions.layer,
   layerHost,

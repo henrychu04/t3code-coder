@@ -46,7 +46,7 @@ const clientLaunchHarness = (input: {
   readonly launched: Array<ThreadLaunch.ThreadLaunchInput>;
   readonly workspaceRoot?: string;
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
-  readonly webOrigin?: string;
+  readonly hostedAppUrl?: string;
   readonly providers?: readonly ServerProvider[];
 }) => {
   const projectId = ProjectId.make("project:client-target");
@@ -75,7 +75,6 @@ const clientLaunchHarness = (input: {
             },
           }),
     }),
-    NodeCrypto.layer,
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
       requestNamespace: "client:session-1",
@@ -84,7 +83,7 @@ const clientLaunchHarness = (input: {
         sessionId: "session-1",
         label: "Claude Code",
         access: input.runtimeModeCeiling,
-        webOrigin: input.webOrigin,
+        hostedAppUrl: input.hostedAppUrl,
       },
       issuedAt: 0,
       capabilities: new Set(["orchestration" as const]),
@@ -146,7 +145,7 @@ const clientLaunchHarness = (input: {
         Layer.provide(NodeServices.layer),
       ),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   return { projectId, modelSelection, projectDefaults, dependencies: layerDependencies };
 };
@@ -164,17 +163,17 @@ it.effect(
           readonly runtimeMode?: RuntimeMode;
           readonly targeted?: false;
           readonly overrideModel?: ModelSelection;
-          readonly webOrigin?: string;
+          readonly hostedAppUrl?: string;
         },
       ) {
-        const { targeted, overrideModel, webOrigin, ...input } = params;
+        const { targeted, overrideModel, hostedAppUrl, ...input } = params;
         const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
         const { projectId, modelSelection, dependencies } = clientLaunchHarness({
           runtimeModeCeiling,
           defaultRuntimeMode,
           launched,
           ...(overrideModel === undefined ? {} : { overrideModel }),
-          ...(webOrigin === undefined ? {} : { webOrigin }),
+          ...(hostedAppUrl === undefined ? {} : { hostedAppUrl }),
         });
         const toolkit = yield* ProjectToolkit.pipe(
           Effect.provide(
@@ -203,11 +202,11 @@ it.effect(
 
       const aboveCeiling = yield* launchWith("auto-accept-edits", "full-access", {
         title: "Fix",
-        webOrigin: "https://box.example.ts.net",
+        hostedAppUrl: "https://t3.example.com",
       });
       expect(aboveCeiling.launched[0]?.runtimeMode).toBe("auto-accept-edits");
       expect(aboveCeiling.result).toMatchObject({
-        link: `https://box.example.ts.net/environment/${encodeURIComponent(aboveCeiling.launched[0]?.threadId ?? "")}`,
+        link: `https://t3.example.com/threads/environment/${encodeURIComponent(aboveCeiling.launched[0]?.threadId ?? "")}`,
       });
 
       const requested = yield* launchWith("full-access", "approval-required", {
