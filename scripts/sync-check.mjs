@@ -110,10 +110,11 @@ const checks = {
   },
 
   "unused-locals"() {
+    // Upstream typechecks through @effect/tsgo (#31028); its CLI runs the bundled tsrs.
     const require = createRequire(import.meta.url);
-    const tsc = NodePath.join(
-      NodePath.dirname(require.resolve("typescript/package.json")),
-      "bin/tsc",
+    const tsgo = NodePath.join(
+      NodePath.dirname(require.resolve("@effect/tsgo/package.json")),
+      "dist/effect-tsgo.cjs",
     );
     const projects = ["apps/web", "apps/server", "apps/coder-gateway"];
     for (const entry of readdirSync("packages")) projects.push(`packages/${entry}`);
@@ -125,7 +126,7 @@ const checks = {
       try {
         output = execFileSync(
           process.execPath,
-          [tsc, "--noEmit", "-p", config, "--noUnusedLocals"],
+          [tsgo, "tsrs", "--noEmit", "-p", config, "--noUnusedLocals"],
           {
             encoding: "utf8",
             maxBuffer: 1 << 28,

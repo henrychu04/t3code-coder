@@ -465,7 +465,10 @@ checks that every name here still exists and that every modified upstream file i
   newest requested turn, and fail before encoding when over the stdio frame; a transcript over the
   limit fails with `OrchestrationThreadTranscriptTooLargeError`.
 - `ws.ts`: `withPullRequestViewer` is an identity (GitLab uses the workspace's `glab` login); the
-  on-demand workspace-snapshot stripping (`workspaceSnapshotsOnDemand`) has no usage-limit commands.
+  on-demand workspace-snapshot stripping (`workspaceSnapshotsOnDemand`) has no usage-limit commands;
+  settings redaction gets a constant `settingsClient` (`secretReferences: true`), because the helper
+  has no WebSocket query to read upstream's `clientCapabilities` from (#27760), and its one client
+  is the fork's web build.
 - `persistence/DatabaseStorage.ts` is built beside `StorageCleanup` once startup completes; its
   `t3 doctor` file-size status is cut (no CLI in the helper).
 - `coderServer.ts` runs upstream's idle Claude compaction worker (`layerIdleCompactionWorker`) in
@@ -518,7 +521,10 @@ checks that every name here still exists and that every modified upstream file i
   `Query` methods sent as control requests: `interrupt`, `stopTask`, `setModel`,
   `setPermissionMode`, `setMaxThinkingTokens`, `applyFlagSettings`, `getContextUsage`,
   `getSettings`, `getUsage` (with `skipBehaviors`), `setMcpServers` (no deadline), `backgroundTasks`
-  (resolves to `backgrounded`, true when absent), `initializationResult`, and `close`.
+  (resolves to `backgrounded`, true when absent), `mcpServerStatus`, `readMcpResource`,
+  `initializationResult`, and `close`; `initialize` carries the session `title` (#28910). MCP Apps
+  (#29803) reach the SDK's private `request` for `mcp_call` and `list_permission_rules`, which
+  `ClaudeCli.ts` sends as raw control requests (`RAW_CONTROL_REQUEST_SUBTYPES`, nothing else).
   `can_use_tool` passes `matchedAskRule` and `suppressAlwaysAllowRule` to `canUseTool`.
 - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
   typed as the full SDK `Query` so a new method fails typecheck until mapped or rejected; it answers
@@ -559,7 +565,8 @@ checks that every name here still exists and that every modified upstream file i
   `CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES`); `CodexDeveloperInstructions.ts` and
   `ClaudeAdapterV2.ts` describe the bridge command, and Claude pre-approves it as a Bash prefix
   (read-only tools in a read-only sandbox). `CodexAdapterV2` does not rewrite failures through
-  `CodexManagedErrors`.
+  `CodexManagedErrors`, so a usage-limit failure's reset time is `codexUsageLimitResetAt` alone
+  (#25341's sharing-cap case is managed Codex).
 - `PastedImageAttachments.ts` is the only provider image reader: `localImage` paths for Codex,
   base64 for Claude; Read-tool image views are limited to PNG, JPEG, and WebP; Codex branch-name and
   title generation read images through it.
@@ -608,7 +615,11 @@ checks that every name here still exists and that every modified upstream file i
   `managementFailure` reasons for the cut actions; neither is read here.
 - provider-acp's `adapter.ts` gives ACP sessions no MCP server and sends `t3ToolBridgeInstructions`
   with the first prompt through provider-core's `t3AcpPromptWithInstructions`; `mcpOverAcpBridge.ts`
-  and `clientTerminals.ts` stay dormant (cutting them would add about 34 seams). HTTP MCP servers
+  and `clientTerminals.ts` stay dormant (cutting them would add about 34 seams), as do the flavor
+  hooks Kiro (#14693) added to `adapter.ts` and `AcpSessionRuntime.ts` (steering, fork from turn,
+  `compactSession`, `cancelAfterPromptStarts`, `ignoreSessionUpdate`, `configOptionChanges`) and
+  `runtimeModel.ts`'s Kiro tool-name parsing; Kiro's package, registration, fixtures, and guide are
+  cut. HTTP MCP servers
   (#26968) are cut: the adapter's flavors have no `mcpOverHttp` (only Copilot's uncarried flavor set
   it) and `AcpSessionRuntime.ts` takes no `httpMcpServers`.
   `scripts/acp-mock-agent.ts` keeps `T3_ACP_COMMAND_ADVERTISEMENT_DELAY_MS` for the adapter test.
@@ -636,7 +647,7 @@ checks that every name here still exists and that every modified upstream file i
   `ProviderSessionManager.ts` no session or turn metrics, `ScheduledTaskService.ts` no webhook
   metrics, `SecretRequests.ts` no consumed-ref count, `EventSink.ts` no run outcome metrics
   (`RunMetrics.ts`), and `RunExecutionService.ts` no `PreviewAgentActivity`. Provider token
-  analytics (#29001) is cut: `telemetry/ProviderUsageAnalytics.ts` keeps only its report types and
+  analytics (#29001) and its service tiers (#29348) are cut: `telemetry/ProviderUsageAnalytics.ts` keeps only its report types and
   the no-op `ProviderTurnAnalytics` reference that `ProviderEventIngestor.ts`,
   `ProviderTurnStartService.ts`, and `RunExecutionService.ts` call, with no analytics layer or
   request ledger; the token usage counts those turns carry are upstream's. `EventNdjsonLogger` and
@@ -698,7 +709,8 @@ checks that every name here still exists and that every modified upstream file i
   directories on `PATH`.
 - client-runtime adds `TerminalBufferCache`, a bounded memory cache that seeds a reattach and
   supplies its `afterSequence` and `afterEpoch`; a resumed attach of a closed terminal gets
-  upstream's `closed` event. `ThreadTerminalDrawer` never opens terminal links.
+  upstream's `closed` event. `ThreadTerminalDrawer` never opens terminal links, so it has no
+  file-metadata link check (#30526: `validateLink`, `onLinkHover`).
 
 ### Source control and merge requests
 
@@ -720,7 +732,7 @@ checks that every name here still exists and that every modified upstream file i
   (`server/GitLabMediaFetch.ts`) reads with `glab api` in the minted `cwd` (no `--hostname`),
   buffering at most `GITLAB_MEDIA_MAX_BYTES`. The package also exports `server/GitLabCli`, which
   `ws.projects.test.ts` stubs.
-- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 47f2c8d29e): merge
+- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 337c5858c3): merge
   requests between projects post to the source project with a numeric `target_project_id`; merge
   request URLs reach `glab` as `--repo <url> … -- <iid>`. `glab auth status` lines with a token
   label or `glpat-` token are never surfaced; clones accept only GitLab URLs without credentials,
@@ -754,8 +766,8 @@ checks that every name here still exists and that every modified upstream file i
 - `SettingsPanels.tsx`'s Diffs page defines the "Open merge requests in T3 Coder" row, because
   upstream's Integrations page is not carried.
 - `pullRequestList.logic.ts`'s filter haystack also matches `!123`.
-- `pullRequestEditing.ts` has no `canEditPullRequestMaintainerEdits`; GitHub maintainer edits
-  (#25588) have no web control.
+- `pullRequestEditing.ts` has no `canEditPullRequestMaintainerEdits`, and keeps
+  `maintainerEditsChoiceInForce` unexported; GitHub maintainer edits (#25588) have no web control.
 - `GitManager.ts`: merge request wording in its ref fetch and uncommitted-changes errors.
 
 ### Git layer
@@ -764,7 +776,7 @@ checks that every name here still exists and that every modified upstream file i
   thread's worktree folder with its branch, under the 5-minute worktree remove deadline) and
   `refStatusLocal` (never refreshes the real index); review file expansion allows up to
   `MAX_REVIEW_DIFF_FILE_BYTES` and fails with `ReviewDiffFileTooLargeError`, rejecting malformed
-  UTF-8; a top-level review `sourceKind` returns only that source; worktree creation reads `t3.json`
+  UTF-8; worktree creation reads `t3.json`
   through the bounded `readProjectConfig`; checkpoint commits use the "T3 Coder" identity.
 - `vcs/VcsProcess.ts` records no Git command metrics.
 - `git/GitWorkflowService.ts` adds `moveWorktree` and `localRefStatus` pass-throughs.
@@ -792,7 +804,8 @@ checks that every name here still exists and that every modified upstream file i
   client-runtime's `connection/driver.ts`, `connection/index.ts`, `connection/wakeups.ts`, and
   `platform/persistence.ts` drop multi-route checks, credential and profile stores, saved targets,
   onboarding, GitHub routing, host updates, and the mobile `network-changed` wakeup.
-  `connection/supervisor.ts` gives the route no kind, so probe timeouts treat it as remote (#25824);
+  `connection/supervisor.ts` gives the route no kind, so probe timeouts treat it as remote (#25824),
+  and has no primary-target offline exemption (#29347) or learned-route lease (`ConnectedLease`);
   `checkHost` never answers (the gateway answers either way); `connectedLeaseEnd` ends a lease only
   on a disconnect. `connection/registry.ts` starts every registered supervisor desired, applies
   every reconcile (no #26511 skip), carries no cached unsupported-host rejection, and has no
@@ -893,8 +906,8 @@ checks that every name here still exists and that every modified upstream file i
   and closes, keeping its commit message; `projectFilesQueryState.ts` has no `isFile`.
 - Diff panel (`DiffPanel.tsx`): expanded context loads through the chunked review RPCs
   (`createChunkedGitDiffFileContentsLoader`), a file over the limit is listed in
-  `DiffFileExpansionErrorNotice`, branch previews ask for one top-level `sourceKind`, and a file
-  title opens the Files surface with no local-editor fallback.
+  `DiffFileExpansionErrorNotice`, and a file title opens the Files surface with no local-editor
+  fallback.
 - `patches/@pierre%2Fdiffs@1.6.1.patch` adds a guard that ignores loaded contents unless the diff
   is still the partial diff that asked, and lets a contents loader return `null`
   (`FileDiffContentsLoader` and `LoadedPartialDiffContents` types), which 1.6.1 still lacks.
@@ -1013,11 +1026,14 @@ checks that every name here still exists and that every modified upstream file i
   `overrides` pin only the patched packages the fork carries plus Tailwind and lightningcss;
   `@effect/platform-node>undici` is removed; the gateway pins its own `ws`/`@types/ws`;
   `ignoredOptionalDependencies` keeps the Agent SDK's Claude binaries and `@napi-rs/canvas` off the
-  laptop.
-- TypeScript is Microsoft's TypeScript 7 (`typescript: 7.0.2`), not the `@tsc-rs/typescript`
-  drop-in whose unsigned Windows `tsc.exe` endpoint security may block; the fork omits its build
-  approval, peer rule, and `.pnpmfile.cjs` hook, and never ran `@effect/tsgo`. Root `engines.node`
-  stays `^24.13.1`.
+  laptop. Peers are not auto-installed, so with upstream's `strictPeerDependencies`
+  `peerDependencyRules.ignoreMissing` also lists `@effect/platform-node`'s unused `redis` peer.
+- Typechecks run upstream's `@effect/tsgo` (`effect-tsgo tsrs`, #31028), whose platform
+  packages ship native binaries. The root `typecheck:*` scripts are the fork's and run the same
+  command per app; `typescript-legacy` sits in the root devDependencies, because knip's
+  `scripts/knip-schemas.ts` preprocessor needs the JavaScript compiler API (upstream keeps it in the
+  uncarried `scripts/package.json`). Of `.vscode/`, only `tsdk/tsgo` is carried. Root
+  `engines.node` stays `^24.13.1`.
 - Package manifests (`package.json`) and `tsconfig.json` files drop dependencies, scripts, exports,
   and includes for cut surfaces and uncarried tooling; `routeTree.gen.ts` is regenerated without cut
   routes; `third-party-licenses.config.json` lists no desktop bundle or desktop-only assets;
@@ -1041,6 +1057,10 @@ checks that every name here still exists and that every modified upstream file i
   and `refs/merge-requests/<n>/head`; tests of uncarried hosts' behaviour are cut;
   `GitManager.test.ts` is upstream's fake-provider harness with a GitLab default kind;
   `PullRequestSyncReactor.test.ts` closes with `glab mr merge`/`glab mr close`;
+  `RuntimePolicy.test.ts` drops upstream's Antigravity Auto case (#23698); the fork-only
+  `AcpRegistryAdapterV2.test.ts` bridge case turns on outgoing protocol logging, which the adapter
+  no longer enables by default (#29100); client-runtime's `fileMetadata`, `projectCommands`, and
+  `threadCommands` tests build the gateway target in place of upstream's bearer target (#31028);
   `ClaudeAdapterV2.test.ts` drives the MCP control-channel tests through a fake `claude`;
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query`;
   `ProviderSessionManager.test.ts`'s parallel shutdown test waits in real time;
@@ -1097,19 +1117,28 @@ them, the file is named here.
   (`contracts/ipc.ts`, `resolveDesktopTheme`), desktop update notices or pills, window controls,
   `DesktopWebLinkCoordinator`, desktop folder path lookup (`folderDrop.ts`), back/forward swipe
   navigation (`HistorySwipeNavigation.tsx`, `navigationHistory.ts`), mobile app links
-  (`MobileAppSettingsRow`), hosted app, or prompt links (`components/promptLinks/`, the "Copy prompt
-  link" actions, the automation row's link). `Icons.tsx` drops `OnePasswordIcon`.
+  (`MobileAppSettingsRow`, #29815's `.well-known` files), hosted app, or prompt links
+  (`components/promptLinks/`, the "Copy prompt link" actions, the automation row's link). Copied
+  thread links (#26290) use the gateway's own origin: `ChatView.tsx`, `CommandPalette.tsx`,
+  `Sidebar.tsx`, `useThreadActionMenu.ts`, and `MarkdownThreadLink.tsx` pass
+  `window.location.origin` where upstream calls `configuredHostedAppUrl`, and shared
+  `threadLinks.ts` declares `DEFAULT_HOSTED_APP_URL` (upstream's `connectAuth.ts` is cut), so
+  upstream's hosted links still parse. Cloud link state (`cloud/cloudLinkState.ts`) is cut from
+  `ScheduledTasksSettings.tsx` and `useAvailableSettingsSearchItems.ts`. `Icons.tsx` drops `OnePasswordIcon`.
   `media/mediaContent.ts`'s `fetchMediaBlob` has no desktop native read after a failed fetch
   (#29079).
 - **Auth, pairing, and relay.** No HTTP/WebSocket listener, session scopes, pairing, DPoP, relay,
   or connection catalog; `settings/AddEnvironmentDialog.tsx` is cut. The server's `auth/` keeps
-  `ServerSecretStore`, its utils, and `serverInternalPaths.ts` (#28041), which the carried file
-  readers import. With no session scopes,
+  `ServerSecretStore`, its utils (only the base64url helpers), `serverInternalPaths.ts` (#28041),
+  which the carried file readers import, and `PayloadSigner.ts` (#30523), which the carried
+  `assets/AssetSigner.ts` signs asset and upload URLs with; `server.ts`'s `layerServerSettings`
+  provides `AssetSigner`. With no session scopes,
   scheduled task lists show every webhook URL.
 - **Browser preview and devices.** No in-app browser, preview panel, mini-player, preview MCP
   toolkits, device hosts, or agent device shim (port discovery stays: `preview/PortScanner.ts`); provider-core's device instructions never reach an
   agent. Without browser preview, `composerDraftStore.ts` keeps no empty draft alive for an open
-  page, and `mergeDirectPreviewAnnotation` is not carried. Deleting a thread clears its
+  page, `mergeDirectPreviewAnnotation` is not carried, and `attachmentStore.ts` deletes no agent
+  preview recordings (#29853). Deleting a thread clears its
   right-panel and diff-panel state (`useThreadActions.ts`'s `clearDeletedThreadPanelState`, #28386)
   but has no preview or mini-player state to clear.
 - **Telemetry, usage, and diagnostics.** No T3 telemetry, analytics, client-origin attribution,
@@ -1137,12 +1166,15 @@ them, the file is named here.
   Antigravity's native child work (#28629: `NativeChildWorkQuery.ts`, `NativeChildWorkDialog.tsx`,
   client-runtime `state/orchestration.ts`'s `nativeChildWork` atom, and the `ChatView.tsx` slot
   that rendered it). Codex
-  feedback upload (client-runtime `threadCommands.ts` has no `uploadFeedback`) and SnapShot sources
-  are cut.
+  feedback upload (client-runtime `threadCommands.ts` has no `uploadFeedback`), the ChatGPT
+  plan-sharing notice (#25341: `UsageLimitRecoveryBanner.tsx`, `ThreadErrorBanner.tsx`'s workspace
+  limit), and SnapShot sources are cut.
 - **Hosted source control other than GitLab.** GitHub, Azure DevOps, Bitbucket, Forgejo, and
   GitCafe packages, host settings, tokens, accounts, routing, forge app sign-in (#26245,
   `SourceControlSignIn`), app-access notices (`sourceControlAppAccessToast.ts`), and the GitHub star
-  prompt (#27832, `GitHubStarPrompt`, `checkStarred`, `useComposerSend`'s `recordPromptSent`). Web
+  prompt (#27832, `GitHubStarPrompt`, `checkStarred`, `useComposerSend`'s `recordPromptSent`; the
+  idle prompt and confetti #29922 and #29987, so `sourceControl.star` is not served and
+  source-control-core's driver has no `starRepository`). Web
   `SourceControlAppAccessNotice.tsx`, `T3AppIcon.tsx`, and
   `settings/SourceControlAppSignInSettings.tsx` are cut, and client-runtime `state/sourceControl.ts`
   and `sourceControlClients.ts` have no app-access or sign-in atoms or `appSignInTargetForRemote`.
@@ -1166,7 +1198,8 @@ them, the file is named here.
 - **Triage** (#22753). `apps/server/src/triage/**`, `server.prepareTriage`, the palette entry
   (`CommandPalette.tsx`), the draft hero (`DraftHeroHeadline.tsx`), `useHandleNewThread`'s `prompt`
   option, client-runtime's `prepareTriage`, and `docs/user/triage.md`.
-- **Secret providers** (#25709, #27044, #27115, #27746). The secrets settings, 1Password, the
+- **Secret providers** (#25709, #27044, #27115, #27746, and the host-token, usage-limit-key, and
+  EAS readers #27756, #27760, #27763). The secrets settings, 1Password, the
   `T3CODE_FEATURE_SECRETS` flag, the `/settings/secrets` route, `@t3tools/secret-provider-core`, and
   the server's `secrets/SecretResolver.ts`, `secretProviderDefinitions.ts`, and
   `secrets/settingsSecretValue.ts`. `secrets/coderSecretResolver.ts` stands in for the resolver in
@@ -1194,7 +1227,10 @@ them, the file is named here.
   `AddProviderInstanceDialog.tsx`, `LabsSettingsPanel.tsx`, `ProjectDefaultsSettings.tsx`,
   `ProviderInstanceCard.tsx`, `ProviderSettingsForm.tsx`, `ProviderSettingsPanel.tsx`,
   `ScheduledTasksSettings.tsx`, `SettingsPanels.tsx`, `StorageSettings.tsx`, and
-  `settingsLayout.tsx`; and `docs/user/install.md` and `permission-modes.md`. Later upstream code
+  `settingsLayout.tsx`; and `docs/user/install.md` and `permission-modes.md`. The later Group
+  Policy template, Kiro coverage, and update mirror (#29862, #29915, #29911) are cut with it, so
+  `runtimeModeConfig.ts`'s `resolveRuntimeModeOptions` takes no policy (`ChatComposer.tsx`,
+  `ComposerContextPermissions.tsx`). Later upstream code
   that builds on #27197's non-policy refactors takes upstream's form (`CodexDriver.ts` passes
   `HostProcess.Environment` to `mergeProviderInstanceEnvironment`).
 - **Add to another machine** (#22180, #22254). It copies ignored files such as `.env` between
