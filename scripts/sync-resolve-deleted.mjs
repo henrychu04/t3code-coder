@@ -484,8 +484,9 @@ const DELETED_PATHS = {
   // and operations docs. The fork's .github/ keeps only SECURITY.md.
   "upstream repository tooling": [
     ".pnpmfile.cjs",
-    // Upstream's editor settings; `.vscode/tsdk/tsgo` (#31028) is carried.
-    /^\.vscode\/(?!tsdk\/)/,
+    // Upstream's editor settings, including the `.vscode/tsdk/tsgo` launcher (#31028), an
+    // extension-less shell script the work download scanner may reject.
+    ".vscode/",
     "scripts/package.json",
     "apps/server/scripts/record-codex-app-server-replay-fixture.ts",
     "apps/server/scripts/verify-background-live.ts",

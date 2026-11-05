@@ -1032,8 +1032,9 @@ checks that every name here still exists and that every modified upstream file i
   packages ship native binaries. The root `typecheck:*` scripts are the fork's and run the same
   command per app; `typescript-legacy` sits in the root devDependencies, because knip's
   `scripts/knip-schemas.ts` preprocessor needs the JavaScript compiler API (upstream keeps it in the
-  uncarried `scripts/package.json`). Of `.vscode/`, only `tsdk/tsgo` is carried. Root
-  `engines.node` stays `^24.13.1`.
+  uncarried `scripts/package.json`). `.vscode/` is not carried, including its `tsdk/tsgo`
+  launcher, a tracked shell script (see "No tracked shell scripts"). Root `engines.node` stays
+  `^24.13.1`.
 - Package manifests (`package.json`) and `tsconfig.json` files drop dependencies, scripts, exports,
   and includes for cut surfaces and uncarried tooling; `routeTree.gen.ts` is regenerated without cut
   routes; `third-party-licenses.config.json` lists no desktop bundle or desktop-only assets;
