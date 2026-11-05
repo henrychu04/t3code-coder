@@ -2157,7 +2157,7 @@ const layerWsRpc = () =>
                   workspaceSnapshotsOnDemand ? withoutWorkspaceSnapshots(providers) : providers,
                 ),
                 // Compare initial paired values with the snapshot; blindly dropping them loses changes between snapshot and subscription.
-                (updates) => Stream.concat(Stream.make(config.providers), updates),
+                (updates) => Stream.concat(rpcInitialItems([config.providers]), updates),
                 Stream.changesWith(
                   (previous, next) => JSON.stringify(previous) === JSON.stringify(next),
                 ),
@@ -2249,7 +2249,7 @@ const layerWsRpc = () =>
                 Stream.flatMap((event) => Stream.fromIterable(migrationEvent(event))),
               );
               return Stream.concat(
-                Stream.make(
+                rpcInitialItems([
                   {
                     version: 1 as const,
                     sequence: 1,
@@ -2269,7 +2269,7 @@ const layerWsRpc = () =>
                     payload: { at: yield* nowIso, environment: environment.descriptor },
                   },
                   ...snapshotEvents,
-                ),
+                ]),
                 liveEvents,
               );
             }),

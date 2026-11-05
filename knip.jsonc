@@ -127,7 +127,6 @@
     "packages/shared/src/orchestrationV2PendingBackgroundWork.ts": ["exports", "nsExports"],
     "packages/shared/src/serverSettings.ts": ["exports", "nsExports"],
     "packages/shared/src/shell.ts": ["exports", "nsExports"],
-    "packages/shared/src/socketFrameParts.ts": ["exports", "nsExports"],
     "packages/shared/src/sourceControl.ts": ["exports", "nsExports"],
     "packages/shared/src/t3McpToolPresentation.ts": ["exports", "nsExports"],
     "packages/shared/src/themePalettes.ts": ["exports", "nsExports"],

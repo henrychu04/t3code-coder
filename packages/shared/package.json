@@ -200,10 +200,6 @@
       "types": "./src/delimitedPreview.ts",
       "import": "./src/delimitedPreview.ts"
     },
-    "./socketFrameParts": {
-      "types": "./src/socketFrameParts.ts",
-      "import": "./src/socketFrameParts.ts"
-    },
     "./thirdPartyLicenses": {
       "types": "./src/thirdPartyLicenses.ts",
       "import": "./src/thirdPartyLicenses.ts"

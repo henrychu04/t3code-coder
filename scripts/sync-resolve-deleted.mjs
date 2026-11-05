@@ -98,6 +98,9 @@ const DELETED_PATHS = {
     "apps/server/src/scheduledTasks/webhookRoute.ts",
     "packages/client-runtime/src/rpc/http.ts",
     "packages/contracts/src/environmentHttp.ts",
+    // Socket frame parts (#23758) split frames on upstream's /ws upgrade; the gateway forwards
+    // whole helper stdio frames.
+    "packages/shared/src/socketFrameParts.ts",
   ],
   // Hosted source-control providers: GitLab is the only one carried.
   "Forgejo, GitHub, Azure DevOps, Bitbucket, and GitCafe packages": [

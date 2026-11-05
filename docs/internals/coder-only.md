@@ -814,6 +814,9 @@ checks that every name here still exists and that every modified upstream file i
   its primary-environment factory, is not carried.
 - client-runtime's `threadSnapshotHttp.ts`, `shellSnapshotHttp.ts`, and `threadHistoryHttp.ts` keep
   upstream's paths but load over helper stdio; shell snapshots use upstream's socket fallback.
+- client-runtime's `rpc/session.ts` opens the socket without upstream's socket frame parts
+  (#23758) and `shared/socketFrameParts.ts` is not carried: the gateway forwards whole helper stdio
+  frames, and the split lives on upstream's uncarried `/ws` upgrade.
 - client-runtime's `rpc/protocol.ts` builds its client from `CoderWsRpcGroup`, and `rpc/index.ts`
   exports it without the HTTP client; `client-runtime/environment/index.ts` and
   `client-runtime/platform/index.ts` export no endpoint, descriptor, capability, or storage document
@@ -862,6 +865,9 @@ checks that every name here still exists and that every modified upstream file i
 
 ### Web chat, composer, and files
 
+- `browser/useOpenLink.ts` is the only carried file of web's cut `browser/`: upstream's link opener
+  without the in-app browser preview, sending every link to the system browser through the
+  HTTP(S)-only `shell.openExternal`.
 - `ChatView.tsx`: no browser or device panels, mini-player, automatic machine placement,
   self-update or version-skew banners, usage-limit panel, feedback upload, `OpenInPicker`, or
   favicon store; the active workspace stands in for the primary environment and drafts read their
@@ -1125,7 +1131,7 @@ them, the file is named here.
   `window.location.origin` where upstream calls `configuredHostedAppUrl`, and shared
   `threadLinks.ts` declares `DEFAULT_HOSTED_APP_URL` (upstream's `connectAuth.ts` is cut), so
   upstream's hosted links still parse. Cloud link state (`cloud/cloudLinkState.ts`) is cut from
-  `ScheduledTasksSettings.tsx` and `useAvailableSettingsSearchItems.ts`. `Icons.tsx` drops `OnePasswordIcon`.
+  `ScheduledTasksSettings.tsx` and `useAvailableSettingsSearchItems.ts`. `Icons.tsx` drops `OnePasswordIcon` and `KiroIcon`.
   `media/mediaContent.ts`'s `fetchMediaBlob` has no desktop native read after a failed fetch
   (#29079).
 - **Auth, pairing, and relay.** No HTTP/WebSocket listener, session scopes, pairing, DPoP, relay,

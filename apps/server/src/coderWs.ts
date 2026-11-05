@@ -232,7 +232,7 @@ export const makeHandlers = Effect.fn("makeHandlers")(function* ({
       path.dirname(currentParent) !== worktreesRoot
     ) {
       return yield* renameThreadBranchError(
-        "Only worktree folders managed by T3 Code can be renamed from the UI.",
+        "Only worktree folders managed by T3 Coder can be renamed from the UI.",
       );
     }
 

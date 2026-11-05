@@ -36,9 +36,14 @@ conversation.
 
 ## Rich text and multiple models
 
-The composer formats supported Markdown as you type. Turn off **Rich text composer** in
-**Settings → Chat** to show formatting markers literally. File mentions, skills, images,
-terminal context, and review comments remain editable context chips in either mode.
+The composer formats supported Markdown as you type. When your cursor is on styled text, its
+Markdown shows instead, such as `**bold**`, and the markers edit like any other text: delete them
+to remove the style, or change `**` to `*` for italic. The style updates when your cursor leaves.
+Some styled text containing or touching literal Markdown characters, such as a bold `path\` or
+`2*3`, keeps its styling without showing markers; use formatting shortcuts or turn off rich text to
+edit those ranges. Turn off **Rich text composer** in **Settings → Chat** to show formatting
+markers literally. File mentions, skills, images, terminal context, and review comments remain
+editable context chips in either mode.
 
 In a new draft, select multiple models to send the same prompt to separate background threads.
 Each selected model gets its own new worktree in the current Coder workspace. Select a base branch
