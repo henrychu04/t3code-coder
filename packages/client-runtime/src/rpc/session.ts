@@ -4,10 +4,6 @@ import {
   WsSubscribeServerConfigRpc,
   WS_METHODS,
 } from "@t3tools/contracts";
-import {
-  joinSocketFrameParts,
-  SOCKET_FRAME_PARTS_QUERY_PARAM,
-} from "@t3tools/shared/socketFrameParts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -122,7 +118,7 @@ function mapSessionRpcError(
     case "KeybindingsConfigParseError":
     case "ServerSettingsError":
       return new ConnectionTransientErrorClass({
-        reason: "transport",
+        reason: "remote-unavailable",
         detail: error.message,
       });
     case "RpcClientError":
@@ -180,17 +176,10 @@ const make = Effect.gen(function* () {
       });
       return socket;
     };
-    const socketUrl = new URL(connection.socketUrl);
-    socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
-    const layerSocket = Layer.effect(
-      Socket.Socket,
-      Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),
-    ).pipe(
-      Layer.provide(
-        Socket.layerWebSocket(socketUrl.toString(), {
-          openTimeout: SOCKET_OPEN_TIMEOUT,
-        }),
-      ),
+    // Coder: no socket frame parts (#23758); the gateway forwards whole helper stdio frames.
+    const layerSocket = Socket.layerWebSocket(connection.socketUrl, {
+      openTimeout: SOCKET_OPEN_TIMEOUT,
+    }).pipe(
       Layer.provide(Layer.succeed(Socket.WebSocketConstructor, countingWebSocketConstructor)),
     );
     const layerProtocol = Layer.effect(
