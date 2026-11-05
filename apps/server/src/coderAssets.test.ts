@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CODER_ASSET_BODY_CHUNK_BYTES, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -11,6 +12,7 @@ import * as Stream from "effect/Stream";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import * as AssetSigner from "./assets/AssetSigner.ts";
 import { makeServeAsset } from "./coderAssets.ts";
 import * as ServerConfig from "./config.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -25,16 +27,18 @@ const layerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
 });
 const layerTest = Layer.mergeAll(
   Layer.mock(Orchestrator.OrchestratorV2)({ getTurnItem: () => Effect.succeed(null) }),
-  Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.succeed(undefined) }),
+  Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.undefined }),
   Layer.succeed(BuiltInDrivers.SourceControlDrivers, []),
   layerConfig,
   WorkspacePaths.layer,
-  ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),
+  AssetSigner.layer.pipe(
+    Layer.provideMerge(ServerSecretStore.layer.pipe(Layer.provide(layerConfig))),
+  ),
   ProjectFaviconResolver.layer.pipe(
     Layer.provide(WorkspacePaths.layer),
     Layer.provide(T3ProjectFileLoader.layer),
   ),
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 type ServeAsset = Effect.Success<typeof makeServeAsset>;
 

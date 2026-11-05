@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Coder: drives the real loopback server with Node HTTP and fetch, as a browser would.
+// @effect-diagnostics globalFetch:off -- Coder: drives the real loopback server with fetch, as a browser would.
+// @effect-diagnostics globalDate:off -- Coder: polls the real server against wall-clock deadlines.
+// @effect-diagnostics globalTimers:off -- Coder: polls the real server against wall-clock deadlines.
 import assert from "node:assert/strict";
 import * as NodeHttp from "node:http";
 import type { AddressInfo } from "node:net";

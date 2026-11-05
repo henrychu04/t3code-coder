@@ -4,6 +4,10 @@ import {
   WsSubscribeServerConfigRpc,
   WS_METHODS,
 } from "@t3tools/contracts";
+import {
+  joinSocketFrameParts,
+  SOCKET_FRAME_PARTS_QUERY_PARAM,
+} from "@t3tools/shared/socketFrameParts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -45,7 +49,7 @@ export interface RpcSession {
   readonly client: WsRpcProtocolClient;
   readonly initialConfig: Effect.Effect<ServerConfig, ConnectionAttemptError>;
   readonly subscribeServerConfig: (
-    input: ServerConfigSubscriptionInput,
+    input?: ServerConfigSubscriptionInput,
   ) => ServerConfigSubscription;
   readonly ready: Effect.Effect<void, ConnectionAttemptError>;
   readonly probe: Effect.Effect<void, ConnectionAttemptError>;
@@ -176,9 +180,17 @@ const make = Effect.gen(function* () {
       });
       return socket;
     };
-    const layerSocket = Socket.layerWebSocket(connection.socketUrl, {
-      openTimeout: SOCKET_OPEN_TIMEOUT,
-    }).pipe(
+    const socketUrl = new URL(connection.socketUrl);
+    socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
+    const layerSocket = Layer.effect(
+      Socket.Socket,
+      Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),
+    ).pipe(
+      Layer.provide(
+        Socket.layerWebSocket(socketUrl.toString(), {
+          openTimeout: SOCKET_OPEN_TIMEOUT,
+        }),
+      ),
       Layer.provide(Layer.succeed(Socket.WebSocketConstructor, countingWebSocketConstructor)),
     );
     const layerProtocol = Layer.effect(
@@ -281,13 +293,13 @@ const make = Effect.gen(function* () {
         Effect.flatMap(() => Effect.fail(configSubscriptionEndedError)),
       ),
     ).pipe(
-      Effect.flatMap((config) =>
-        config.environment.environmentId === connection.environmentId
-          ? Effect.succeed(config)
-          : new ConnectionBlockedError({
-              reason: "configuration",
-              detail: `Connected environment ${config.environment.environmentId} does not match ${connection.environmentId}.`,
-            }),
+      Effect.filterOrFail(
+        (config) => config.environment.environmentId === connection.environmentId,
+        (config) =>
+          new ConnectionBlockedError({
+            reason: "configuration",
+            detail: `Connected environment ${config.environment.environmentId} does not match ${connection.environmentId}.`,
+          }),
       ),
       Effect.withSpan("environment.initialSync"),
     );
@@ -342,7 +354,7 @@ const make = Effect.gen(function* () {
           }),
       ),
     );
-    const subscribeServerConfig = (input: ServerConfigSubscriptionInput) =>
+    const subscribeServerConfig = (input: ServerConfigSubscriptionInput = serverConfigInput) =>
       Stream.unwrap(
         validatedInitialConfig.pipe(
           Effect.as(

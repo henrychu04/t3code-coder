@@ -377,12 +377,12 @@ result. Read every line it prints; it changes nothing. Its checks (`--only <name
 - `both-sides`: lines both `$PREV` and `$SHA` have that the result lacks. Neither side deleted
   them, so each is a merge loss unless the line moved (7df7cb9999 lost `projectScriptEditor.tsx`'s
   run-on-settle switch this way; `lost` misses it because the line predates `$MB`).
-- `unused-locals`: unused imports and locals (`tsc --noUnusedLocals` over every package, about a
-  minute). Knip does not see them, and cutting a surface or replaying the fork's delta into
-  upstream's split modules leaves them behind (688ee52f0e left about 50, including a dead Claude
-  worker). A name that upstream's own file has as often is upstream's and is skipped. Remove each
-  listed name, then rerun with `--only unused-locals` until it prints nothing: removing a
-  declaration can leave its imports unused in turn.
+- `unused-locals`: unused imports and locals (`effect-tsgo tsrs --noUnusedLocals` over every
+  package, about a minute). Knip does not see them, and cutting a surface or replaying the fork's
+  delta into upstream's split modules leaves them behind (688ee52f0e left about 50, including a
+  dead Claude worker). A name that upstream's own file has as often is upstream's and is skipped.
+  Remove each listed name, then rerun with `--only unused-locals` until it prints nothing:
+  removing a declaration can leave its imports unused in turn.
 
 Then run `node scripts/seams-check.mjs "$SHA"`. It fails when a backticked name in the seams doc's
 "Upstream seams" or "Cut surfaces" section exists in neither the result nor `$SHA` (a stale

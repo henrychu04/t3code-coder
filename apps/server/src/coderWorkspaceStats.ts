@@ -13,6 +13,11 @@ const STAT_TIMEOUT = "15 seconds";
 const MAX_STAT_OUTPUT_BYTES = 64 * 1024;
 
 const decodeUsage = Schema.decodeUnknownEffect(CoderWorkspaceResourceUsage);
+const decodeStatJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+const usageError = () =>
+  new CoderWorkspaceResourceUsageError({
+    message: "Could not read the workspace's resource usage with `coder stat`.",
+  });
 
 /**
  * The Coder agent's own CLI. An SSH session's shell has it on PATH, but the helper's environment
@@ -34,22 +39,12 @@ export const readCoderWorkspaceResourceUsage = Effect.gen(function* () {
         maxOutputBytes: MAX_STAT_OUTPUT_BYTES,
       })
       .pipe(
-        Effect.flatMap((output) =>
-          output.code === 0
-            ? Effect.try(() => JSON.parse(output.stdout) as unknown)
-            : Effect.fail(new Error(`coder stat exited with code ${String(output.code)}.`)),
-        ),
+        Effect.filterOrFail((output) => output.code === 0, usageError),
+        Effect.flatMap((output) => decodeStatJson(output.stdout)),
       );
   const [cpu, memory, disk] = yield* Effect.all(
     [stat(["cpu"]), stat(["mem"]), stat(["disk", "--path", NodeOS.homedir()])],
     { concurrency: "unbounded" },
   );
   return yield* decodeUsage({ cpu, memory, disk });
-}).pipe(
-  Effect.mapError(
-    () =>
-      new CoderWorkspaceResourceUsageError({
-        message: "Could not read the workspace's resource usage with `coder stat`.",
-      }),
-  ),
-);
+}).pipe(Effect.mapError(usageError));

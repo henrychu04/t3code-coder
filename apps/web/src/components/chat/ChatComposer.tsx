@@ -1,11 +1,7 @@
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
 import { BackgroundThreadContext } from "./backgroundThread";
-import {
-  resolveCompatibleRuntimeMode,
-  runtimeModeConfig,
-  runtimeModeOptions as runtimeModes,
-} from "./runtimeModeConfig";
+import { resolveCompatibleRuntimeMode, resolveRuntimeModeOptions } from "./runtimeModeConfig";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { importPastedComposerText, readPastedComposerContext } from "../composerInlineTokenPaste";
 import {
@@ -238,7 +234,7 @@ import {
   resolveComposerDispatchMode,
   type ComposerDispatchMode,
 } from "@t3tools/client-runtime/state/composer-dispatch";
-import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
+import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import {
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
@@ -269,8 +265,6 @@ function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
   deadline.current = 0;
   return armed;
 }
-
-const runtimeModeOptions = runtimeModes.map((mode) => ({ mode, ...runtimeModeConfig[mode] }));
 
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
@@ -860,9 +854,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       runtimeMode,
       selectedProviderEntry?.snapshot.supportedRuntimeModes,
     );
-  const compatibleRuntimeModeOptions = runtimeModeOptions.filter((option) =>
-    compatibleRuntimeModes.includes(option.mode),
-  );
+  // Coder: no managed policy (#27197), so no mode is disabled by an administrator's ceiling.
+  const compatibleRuntimeModeOptions = resolveRuntimeModeOptions(compatibleRuntimeModes);
 
   const providerSendBlockReason: string | null = null;
   const sendDisabledReason =

@@ -35,6 +35,7 @@ import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
+import * as AssetSigner from "./assets/AssetSigner.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -45,8 +46,10 @@ import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 
 const layerPtyAdapter = NodePtyAdapter.layer;
 
-// Coder: the secret store also holds the one-use values of agent secret requests.
+// Coder: the secret store also holds the one-use values of agent secret requests, and the asset
+// signer's key.
 const layerServerSettings = ServerSettings.layer.pipe(
+  Layer.provideMerge(AssetSigner.layer),
   Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(SqlitePersistence.layerConfig),
 );

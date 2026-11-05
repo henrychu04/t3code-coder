@@ -199,6 +199,23 @@ it.effect("leaves a remote no integration claims unknown, with its server's addr
   }),
 );
 
+it.effect.each([
+  // Coder: the registry holds only GitLab, so upstream's GitHub and Bitbucket rows are cut.
+  ["gitlab.com:team/project.git", "gitlab"],
+  ["code.example.test:team/project.git", "unknown"],
+] as const)(
+  "reads the host of an SSH remote that leaves its user to ssh config: %s",
+  ([url, expected]) =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({ remotes: [{ name: "origin", url }] });
+
+      const handle = yield* registry.resolveHandle({ cwd: "/repo" });
+
+      assert.strictEqual(handle.provider.kind, kind(expected));
+      assert.strictEqual(handle.context?.remoteUrl, url);
+    }),
+);
+
 it.effect("refines the caller-selected remote instead of choosing another configured remote", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({

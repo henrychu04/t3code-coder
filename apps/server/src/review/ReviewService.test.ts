@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -29,6 +30,8 @@ function makeLayer(input: {
 }) {
   const projectRoots = input.projectRoots ?? [];
   return ReviewService.layer.pipe(
+    // Coder: review file snapshots draw ids and hashes from SecureRandom and Digest.
+    Layer.provide(NodeCrypto.layer),
     Layer.provide(KnownWorkspaces.layer),
     Layer.provide(
       Layer.effectDiscard(
@@ -269,6 +272,7 @@ describe("ReviewService", () => {
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
       const contents = { oldContents: "before\n", newContents: "after\n" };
       const layer = ReviewService.layer.pipe(
+        Layer.provide(NodeCrypto.layer),
         Layer.provide(
           Layer.mock(KnownWorkspaces.KnownWorkspaces)({
             contains: () => Effect.succeed(false),
@@ -337,6 +341,7 @@ describe("ReviewService", () => {
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
       const contents = "repeated source line\n".repeat(1_000);
       const layer = ReviewService.layer.pipe(
+        Layer.provide(NodeCrypto.layer),
         Layer.provide(
           Layer.mock(KnownWorkspaces.KnownWorkspaces)({
             contains: () => Effect.succeed(false),
@@ -395,6 +400,7 @@ describe("ReviewService", () => {
       const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
       const layer = ReviewService.layer.pipe(
+        Layer.provide(NodeCrypto.layer),
         Layer.provide(
           Layer.mock(KnownWorkspaces.KnownWorkspaces)({
             contains: () => Effect.succeed(false),
@@ -475,6 +481,7 @@ describe("ReviewService", () => {
       const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
       const layer = ReviewService.layer.pipe(
+        Layer.provide(NodeCrypto.layer),
         Layer.provide(
           Layer.mock(KnownWorkspaces.KnownWorkspaces)({
             contains: () => Effect.succeed(false),
@@ -534,6 +541,7 @@ describe("ReviewService", () => {
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
       let readCount = 0;
       const layer = ReviewService.layer.pipe(
+        Layer.provide(NodeCrypto.layer),
         Layer.provide(
           Layer.mock(KnownWorkspaces.KnownWorkspaces)({
             contains: () => Effect.succeed(false),

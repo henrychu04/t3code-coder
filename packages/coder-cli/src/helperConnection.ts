@@ -1,3 +1,5 @@
+// @effect-diagnostics globalTimers:off -- Coder: negotiation and stderr-report timers run in Node stream callbacks.
+// @effect-diagnostics globalJsonInEffect:off -- Coder: encodes RPC frames for the helper's newline-delimited stdio.
 // @effect-diagnostics nodeBuiltinImport:off -- This module adapts Node child processes to Effect.
 import {
   spawn,
@@ -40,6 +42,7 @@ const PREFLIGHT_TIMEOUT_MESSAGE =
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 const NEGOTIATION_TIMEOUT_MESSAGE = "Timed out while negotiating with the Coder workspace helper.";
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class CoderHelperConnectionError extends Error {
   readonly _tag = "CoderHelperConnectionError";
 

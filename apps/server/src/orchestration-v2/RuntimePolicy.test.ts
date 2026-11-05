@@ -107,6 +107,8 @@ const layerTest = RuntimePolicy.layerFromProjectStore.pipe(
 );
 
 it.layer(layerTest)("RuntimePolicyV2", (it) => {
+  // Coder: no Antigravity case (#23698); Antigravity is not carried, and a mode the provider does
+  // not offer steps down to the broadest offered mode below it.
   it.effect("runs a mode the provider does not offer in Supervised", () =>
     Effect.gen(function* () {
       const policy = yield* RuntimePolicy.RuntimePolicyV2;

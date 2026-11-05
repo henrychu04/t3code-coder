@@ -17,6 +17,13 @@ const DELETED_PATHS = {
   // The server's auth/ keeps only ServerSecretStore, utils, and serverInternalPaths (which carried
   // file readers import); a modify/delete cannot name them.
   "auth and pairing": [
+    "packages/client-runtime/src/state/environmentHttpAuth.ts",
+    "packages/client-runtime/src/connection/errors.test.ts",
+    "packages/shared/src/desktopBootstrapToken.ts",
+    "apps/web/src/components/settings/SavedEnvironmentRows.tsx",
+    "apps/web/src/components/settings/AuthorizedClientsSettings.tsx",
+    "packages/client-runtime/src/connection/diagnosis.ts",
+    "apps/web/src/components/settings/useHostConnectionChecks.ts",
     "packages/client-runtime/src/state/environmentHttpAuth.test.ts",
     "apps/server/src/auth/",
     "apps/web/src/components/settings/SessionPermissions.tsx",
@@ -104,6 +111,13 @@ const DELETED_PATHS = {
   ],
   // Other provider packages: Codex, Claude Code, Pi, and Kilo Code are the only providers.
   "other provider packages": [
+    "apps/server/src/provider/Drivers/antigravityUsageReader.ts",
+    "apps/server/scripts/record-grok-acp-replay-fixture.ts",
+    "apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.testkit.ts",
+    "apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.testkit.ts",
+    "apps/server/src/textGeneration/GrokTextGeneration.test.ts",
+    "apps/server/src/provider/AntigravityAuth.ts",
+    "apps/server/src/provider/Drivers/AntigravityUsage.ts",
     "apps/server/src/provider/antigravityAuthSupport.ts",
     "apps/server/scripts/record-fx-acp-replay-fixture.ts",
     "apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts",
@@ -121,12 +135,20 @@ const DELETED_PATHS = {
     "packages/provider-grok/",
     "packages/provider-muse/",
     "packages/provider-opencode/",
+    // Kiro (#14693): its package, replay recorder, adapter and provider tests, and guide.
+    "packages/provider-kiro/",
+    "apps/server/scripts/record-kiro-acp-replay-fixture.ts",
+    "apps/server/src/orchestration-v2/Adapters/KiroAdapterV2.test.ts",
+    "apps/server/src/orchestration-v2/Adapters/KiroAdapterV2.testkit.ts",
+    "apps/server/src/provider/KiroProvider.test.ts",
+    "docs/user/providers-kiro.md",
+    "apps/server/src/orchestration-v2/testkit/OpenCode2PendingSnapshots.evidence.test.ts",
     // Their orchestrator replay fixtures: whole fixture directories, transcripts and assertions
     // in shared fixture directories (except the three the ACP Registry entries reuse), and
     // per-driver test files.
-    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?:fx|grok|muse|opencode|skill_invocation)[^/]*\//,
-    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?!message_steering\/grok_output\.ts$|todo_list\/grok_output\.ts$|tool_call_read_only\/cursor_output\.ts$)[^/]+\/(?:cursor|fx|grok|muse|opencode)_[^/]+$/,
-    /^apps\/server\/src\/orchestration-v2\/testkit\/(?:Cursor|Fx|Grok|Muse|OpenCode)ReplayFixtures\./,
+    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?:fx|grok|kiro|muse|opencode|skill_invocation)[^/]*\//,
+    /^apps\/server\/src\/orchestration-v2\/testkit\/fixtures\/(?!message_steering\/grok_output\.ts$|todo_list\/grok_output\.ts$|tool_call_read_only\/cursor_output\.ts$)[^/]+\/(?:cursor|fx|grok|kiro|muse|opencode)_[^/]+$/,
+    /^apps\/server\/src\/orchestration-v2\/testkit\/(?:Cursor|Fx|Grok|Kiro|Muse|OpenCode)ReplayFixtures\./,
     "apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts",
     "apps/server/src/textGeneration/OpenCode2TextGeneration.test.ts",
     "apps/server/src/provider/antigravityUsageLimits.ts",
@@ -182,6 +204,25 @@ const DELETED_PATHS = {
   mobile: ["apps/mobile/", "patches/@expo__ui@58.0.20.patch", "patches/expo-sharing@58.0.19.patch"],
   // Hosted web: no hosted app, cloud accounts, marketing site, or welcome onboarding.
   "hosted web": [
+    "apps/web/src/cloud/",
+    "packages/contracts/src/desktopBrowser.ts",
+    /^patches\/react-native-image-viewing@/,
+    "scripts/mobile-e2e/",
+    "apps/web/vercel.ts",
+    // Mobile app links for copied thread links (#29815) and the mobile layout guide.
+    "apps/web/public/.well-known/",
+    "docs/internals/mobile-layout.md",
+    /^docs\/internals\/images\/mobile-/,
+    "apps/web/src/components/promptLinks/",
+    "packages/shared/src/promptLinks.ts",
+    "docs/user/prompt-links.md",
+    "docs/internals/t3-connect.md",
+    "docs/internals/mobile-navigation.md",
+    "packages/client-runtime/src/voice-input/",
+    "packages/contracts/src/desktopBootstrap.ts",
+    /^patches\/expo-audio@/,
+    "scripts/mobile-behavior/",
+    "scripts/mobile-native-client.ts",
     "packages/client-runtime/src/promptLinks.ts",
     "apps/marketing/",
     "apps/server/src/cloud/",
@@ -197,6 +238,8 @@ const DELETED_PATHS = {
   // Upstream's runtime startup and state tests build its own server; the helper's startup is
   // coderServer.ts.
   "server CLI": [
+    "apps/server/scripts/cli.ts",
+    "apps/server/src/serviceLauncher.ts",
     "apps/server/src/binCli.ts",
     "apps/server/src/cli/",
     "apps/server/src/cliCompileCache.ts",
@@ -210,6 +253,15 @@ const DELETED_PATHS = {
   // Local editors and provider setup: the helper cannot open an editor on the laptop, and
   // providers are configured in the workspace without in-app sign-in or setup.
   "local editors and provider setup": [
+    "apps/server/src/provider/CodexManagedErrors.ts",
+    "apps/server/src/provider/CodexChatGptAuth.ts",
+    "apps/server/src/provider/CodexManagedRuntime.test.ts",
+    "apps/server/src/provider/ProviderCredentialStore.ts",
+    "apps/server/src/provider/resetCreditCoordinator.ts",
+    "packages/provider-core/src/server/providerAuthFlow.ts",
+    "apps/web/src/components/settings/SourceControlAppSignInSettings.tsx",
+    "apps/web/src/components/settings/SourceControlTokenSettings.tsx",
+    "docs/user/cursor.md",
     "apps/server/src/process/externalLauncher.ts",
     "apps/server/src/process/externalLauncher.test.ts",
     // Late editor and SSH target discovery (#14519); only the cut launcher and open targets use it.
@@ -229,6 +281,14 @@ const DELETED_PATHS = {
   // ACP sign-in, the theme import test the remote catalog and desktop picker, the MCP core test
   // peer links and client scopes, and the app render scenarios upstream's fake environment.
   "tests for cut surfaces": [
+    "apps/web/src/lib/resourceTelemetryState.browser.test.tsx",
+    "apps/server/src/mcp/McpToolAccess.test.ts",
+    "apps/server/src/mcp/McpToolAccess.race.test.ts",
+    "apps/server/src/peer/PeerLinks.testkit.ts",
+    "apps/server/src/provider/userInputAttachments.test.ts",
+    "packages/client-runtime/src/state/serverUsage.test.ts",
+    "packages/contracts/src/preview.test.ts",
+    "packages/source-control-core/src/server/SourceControlProvider.test.ts",
     // Upstream tests built on cut surfaces: the fake environment harness, upstream's HTTP peer
     // MCP client, and host credential secret references.
     "apps/web/src/components/ChatView.browser.test.tsx",
@@ -274,10 +334,15 @@ const DELETED_PATHS = {
     "packages/client-runtime/src/connection/routes.ts",
     "packages/client-runtime/src/state/relayDiscovery.ts",
     "packages/shared/src/relayClient.ts",
+    "packages/shared/src/relayJwt.ts",
+    "packages/shared/src/Net.ts",
+    "apps/server/src/scheduledTasks/RelayDeliveryProof.ts",
   ],
   // Telemetry: no T3-owned telemetry, usage dashboards or plan-window usage limits, diagnostics,
   // or trace export.
   telemetry: [
+    "apps/server/src/observability/EventLoopMonitor.ts",
+    "apps/server/src/observability/HeapSnapshot.ts",
     "packages/shared/src/usageFormat.ts",
     "packages/shared/src/httpObservability.ts",
     "apps/server/src/diagnostics/",
@@ -350,6 +415,7 @@ const DELETED_PATHS = {
   // Peer links: the gateway hub replaces upstream's peer stack, so there is no link request card
   // or client peer-link state.
   "peer links": [
+    "packages/client-runtime/src/state/peerPairingCode.ts",
     "apps/web/src/components/chat/LinkRequestCard.tsx",
     "packages/client-runtime/src/state/peerLinks.ts",
     "apps/server/src/mcp/linkOrigin.test.ts",
@@ -383,6 +449,13 @@ const DELETED_PATHS = {
   ],
   // Secret providers: no 1Password or other secret provider settings, dialogs, or packages.
   // Contracts keep upstream's settings fields.
+  // Managed policy (#27197, #29862, #29911, #29915): organization policy files, the Windows
+  // registry and macOS profile readers, the update mirror, and their docs.
+  "managed policy": [
+    "apps/server/src/policy/",
+    "packages/shared/src/managedPolicyFile.ts",
+    "docs/user/managed-policy.md",
+  ],
   "secret providers": [
     "apps/server/src/secrets/settingsSecretValue.ts",
     "apps/web/src/components/settings/SecretProviderDialog.logic.test.ts",
@@ -410,6 +483,20 @@ const DELETED_PATHS = {
   // Upstream repository tooling: vendored sources, CI, hooks, editor and agent configuration,
   // and operations docs. The fork's .github/ keeps only SECURITY.md.
   "upstream repository tooling": [
+    ".pnpmfile.cjs",
+    // Upstream's editor settings, including the `.vscode/tsdk/tsgo` launcher (#31028), an
+    // extension-less shell script the work download scanner may reject.
+    ".vscode/",
+    "scripts/package.json",
+    "apps/server/scripts/record-codex-app-server-replay-fixture.ts",
+    "apps/server/scripts/verify-background-live.ts",
+    "apps/server/src/compileCache.ts",
+    "packages/effect-codex-app-server/test/examples/codex-app-server-probe.ts",
+    "docs/internals/overview.md",
+    /^patches\/(?:@alchemy\.run__(?:test|drizzle)|alchemy)@/,
+    "scripts/linux-after-pack.ts",
+    "scripts/lib/reference-repos.ts",
+    "scripts/sync-reference-repos.ts",
     ".agents/",
     ".claude/",
     ".cursor/",
@@ -418,7 +505,6 @@ const DELETED_PATHS = {
     ".macroscope/",
     ".repos/",
     ".vite-hooks/",
-    ".vscode/",
     // CI-only checks: the transfer budget harness, the agent context budget test, and the built
     // web boot check.
     "apps/server/integration/",
@@ -446,7 +532,10 @@ const DELETED_PATHS = {
   ],
 };
 
-const git = (...args) => execFileSync("git", args, { encoding: "utf8", shell: false });
+// The `.repos/` reference-repo syncs (#30472, #30481) conflict in about 19,000 paths at once, so
+// output gets a large buffer and paths reach `git rm` on stdin rather than as arguments.
+const git = (...args) =>
+  execFileSync("git", args, { encoding: "utf8", maxBuffer: 1 << 30, shell: false });
 
 const stem = (file) => file.slice(0, file.lastIndexOf("."));
 const categoryOf = (path) => {
@@ -499,7 +588,11 @@ for (const [path, stages] of [...stagesByPath].sort(([a], [b]) => a.localeCompar
 }
 
 if (resolved.length > 0) {
-  git("rm", "--quiet", "--", ...resolved.map(({ path }) => path));
+  execFileSync("git", ["rm", "--quiet", "--pathspec-from-file=-", "--pathspec-file-nul"], {
+    input: resolved.map(({ path }) => path).join("\0"),
+    maxBuffer: 1 << 30,
+    shell: false,
+  });
   console.log(`Kept deleted (${resolved.length}):`);
   for (const { path, category } of resolved) console.log(`  ${path}  [${category}]`);
 }

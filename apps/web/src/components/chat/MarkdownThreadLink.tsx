@@ -1,7 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
-  formatThreadLink,
+  formatHostedThreadLink,
   guessThreadLinkRef,
   percentDecodedThreadLinkId,
   type ThreadLink,
@@ -36,6 +36,10 @@ export function MarkdownThreadLink(props: {
   const ref = { environmentId: thread.environmentId, threadId: thread.id };
   const title = thread.title.trim() || props.label || "Untitled thread";
   return (
-    <ThreadContextChip record={{ ...ref, title }} copyMarkdown={formatThreadLink(ref, title)} />
+    <ThreadContextChip
+      record={{ ...ref, title }}
+      // Coder: thread links open on the gateway's own origin; there is no hosted app.
+      copyMarkdown={formatHostedThreadLink(ref, title, window.location.origin)}
+    />
   );
 }

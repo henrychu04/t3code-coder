@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
@@ -21,66 +22,69 @@ const settingsLayer = ServerSettings.layer.pipe(
   ),
 );
 
-it.layer(NodeServices.layer)("server settings persistence", (it) => {
-  it.effect("persists merge preferences and clears only the selected project's override", () =>
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const settings = yield* ServerSettings.ServerSettingsService;
-      yield* settings.start;
-      const projectA = ProjectId.make("project-a");
-      const projectB = ProjectId.make("project-b");
-      yield* settings.updateSettings({
-        pullRequestMergeMethod: "squash",
-        projectSettingsOverrides: {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
+  "server settings persistence",
+  (it) => {
+    it.effect("persists merge preferences and clears only the selected project's override", () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        yield* settings.start;
+        const projectA = ProjectId.make("project-a");
+        const projectB = ProjectId.make("project-b");
+        yield* settings.updateSettings({
+          pullRequestMergeMethod: "squash",
+          projectSettingsOverrides: {
+            [projectA]: { pullRequestMergeMethod: "rebase" },
+            [projectB]: { pullRequestMergeMethod: "merge" },
+          },
+        });
+        const saved = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
+        assert.strictEqual(saved.pullRequestMergeMethod, "squash");
+        assert.deepStrictEqual(saved.projectSettingsOverrides, {
           [projectA]: { pullRequestMergeMethod: "rebase" },
           [projectB]: { pullRequestMergeMethod: "merge" },
-        },
-      });
-      const saved = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
-      assert.strictEqual(saved.pullRequestMergeMethod, "squash");
-      assert.deepStrictEqual(saved.projectSettingsOverrides, {
-        [projectA]: { pullRequestMergeMethod: "rebase" },
-        [projectB]: { pullRequestMergeMethod: "merge" },
-      });
-      yield* settings.updateSettings({ projectSettingsOverrides: { [projectA]: null } });
-      const cleared = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
-      assert.strictEqual(cleared.pullRequestMergeMethod, "squash");
-      assert.deepStrictEqual(cleared.projectSettingsOverrides, {
-        [projectB]: { pullRequestMergeMethod: "merge" },
-      });
-    }).pipe(Effect.provide(settingsLayer)),
-  );
+        });
+        yield* settings.updateSettings({ projectSettingsOverrides: { [projectA]: null } });
+        const cleared = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
+        assert.strictEqual(cleared.pullRequestMergeMethod, "squash");
+        assert.deepStrictEqual(cleared.projectSettingsOverrides, {
+          [projectB]: { pullRequestMergeMethod: "merge" },
+        });
+      }).pipe(Effect.provide(settingsLayer)),
+    );
 
-  it.effect("writes and clears a non-default automatic Git fetch interval", () =>
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const settings = yield* ServerSettings.ServerSettingsService;
-      yield* settings.start;
+    it.effect("writes and clears a non-default automatic Git fetch interval", () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        yield* settings.start;
 
-      const updated = yield* settings.updateSettings({
-        automaticGitFetchInterval: Duration.seconds(45),
-      });
+        const updated = yield* settings.updateSettings({
+          automaticGitFetchInterval: Duration.seconds(45),
+        });
 
-      assert.strictEqual(Duration.toMillis(updated.automaticGitFetchInterval), 45_000);
-      const saved = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
-      assert.strictEqual(saved.automaticGitFetchInterval, 45_000);
-      assert.deepStrictEqual(saved.backgroundActivity.overrides, {
-        automaticGitFetchInterval: 45_000,
-      });
+        assert.strictEqual(Duration.toMillis(updated.automaticGitFetchInterval), 45_000);
+        const saved = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
+        assert.strictEqual(saved.automaticGitFetchInterval, 45_000);
+        assert.deepStrictEqual(saved.backgroundActivity.overrides, {
+          automaticGitFetchInterval: 45_000,
+        });
 
-      const reset = yield* settings.updateSettings({
-        automaticGitFetchInterval: DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
-      });
+        const reset = yield* settings.updateSettings({
+          automaticGitFetchInterval: DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
+        });
 
-      assert.strictEqual(
-        Duration.toMillis(reset.automaticGitFetchInterval),
-        Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL),
-      );
-      const reverted = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
-      assert.strictEqual(reverted.automaticGitFetchInterval, undefined);
-      assert.strictEqual(reverted.backgroundActivity, undefined);
-    }).pipe(Effect.provide(settingsLayer)),
-  );
-});
+        assert.strictEqual(
+          Duration.toMillis(reset.automaticGitFetchInterval),
+          Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL),
+        );
+        const reverted = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
+        assert.strictEqual(reverted.automaticGitFetchInterval, undefined);
+        assert.strictEqual(reverted.backgroundActivity, undefined);
+      }).pipe(Effect.provide(settingsLayer)),
+    );
+  },
+);

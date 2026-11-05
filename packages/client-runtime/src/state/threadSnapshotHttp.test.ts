@@ -7,12 +7,15 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import type * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import { fetchEnvironmentThreadHistoryPage } from "./threadHistoryHttp.ts";
 import { makeThreadSnapshotLoader } from "./threadSnapshotHttp.ts";
+
+class MissingSnapshot extends Schema.TaggedError<MissingSnapshot>()("MissingSnapshot", {}) {}
 
 type Supervisor = EnvironmentSupervisor.EnvironmentSupervisor["Service"];
 
@@ -80,7 +83,7 @@ describe("Coder thread snapshot loader", () => {
         Option.some({
           client: {
             [WS_METHODS.orchestrationGetThreadBoundedSnapshot]: () =>
-              Effect.fail(new Error("missing snapshot")),
+              Effect.fail(new MissingSnapshot()),
           },
         } as unknown as RpcSession),
       );

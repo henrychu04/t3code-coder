@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -95,7 +96,7 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
     `;
   });
 
-it.layer(NodeServices.layer)("server settings", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings", (it) => {
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
@@ -271,7 +272,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
       });
       assert.deepStrictEqual<unknown>(
-        ServerSettingsModule.redactServerSettingsForClient(settings).secretProviders,
+        ServerSettingsModule.redactServerSettingsForClient(settings, { secretReferences: true })
+          .secretProviders,
         // Coder: no secret provider kind is loaded, so 1Password's config stays on the server too.
         {
           personal: { kind: "one_password", label: "Personal" },
@@ -1309,7 +1311,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           ],
         });
         const values = ["config-secret", "env-secret", "quota-secret", "expo-secret"];
-        const client = ServerSettingsModule.redactServerSettingsForClient(saved);
+        const client = ServerSettingsModule.redactServerSettingsForClient(saved, {
+          secretReferences: true,
+        });
         const disk = yield* fs.readFileString(config.settingsPath);
         for (const value of values) {
           assert.include(JSON.stringify(saved), value);
@@ -1341,7 +1345,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             instance: { ...client.providerInstances[instanceId]!, config: { apiKey } },
           });
           assert.propertyVal(changed.providerInstances[instanceId]?.config, "apiKey", apiKey);
-          const redacted = ServerSettingsModule.redactServerSettingsForClient(changed);
+          const redacted = ServerSettingsModule.redactServerSettingsForClient(changed, {
+            secretReferences: true,
+          });
           assert.propertyVal(
             redacted.providerInstances[instanceId]?.config,
             "apiKey",
@@ -1379,9 +1385,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         });
         assert.isTrue(Option.isNone(yield* store.get(secretNames[1]!)));
         assert.deepEqual(
-          ServerSettingsModule.redactServerSettingsForClient(referenced).providerInstances[
-            instanceId
-          ]?.environment,
+          ServerSettingsModule.redactServerSettingsForClient(referenced, { secretReferences: true })
+            .providerInstances[instanceId]?.environment,
           [{ name: "API_TOKEN", value: secret, sensitive: true }],
         );
         yield* service.updateSettings({

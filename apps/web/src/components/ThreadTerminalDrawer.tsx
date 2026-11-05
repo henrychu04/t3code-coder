@@ -177,7 +177,7 @@ export function synchronizeTerminalOutput(
   const selection = cells > 0 && compared ? terminal.getSelection() : "";
   writeTerminalOutputUpdate(terminal, update);
   if (!compared || (cells > 0 && terminal.getSelection() !== selection)) {
-    terminal.clearSelection();
+    terminal.clearSelection({ source: "output" });
   }
   return update.cursor;
 }
@@ -654,6 +654,7 @@ function TerminalSessionViewport({
         beforeKey: (event) => handleBeforeKey(event),
         onLinkActivate: (text, event) => handleLinkActivate(text, event),
         canActivateLink: (text) => canActivateTerminalLink(text),
+        // Coder: no link validation against file metadata (#30526); terminal links never open.
         // Surface listeners start before WASM loading finishes and the terminal handler exists.
         onContextMenu: (event) => {
           if (terminalRef.current) void showTerminalContextMenu(event);

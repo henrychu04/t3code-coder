@@ -4,6 +4,8 @@ import { expect, it, vi } from "vite-plus/test";
 import { act, fakeTimers, render } from "../../test/render";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 
+// Coder: the terminal-link metadata check (#30526) is cut, so its fixture and case are not carried.
+
 const fixture = vi.hoisted(() => ({
   statusByThreadId: new Map<string, "running" | "exited">(),
   pendingSurfaces: [] as Array<() => void>,

@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics globalTimers:off -- Coder: waits in real time for the spawned helper bundle.
 import { deepStrictEqual, doesNotMatch, match, strictEqual } from "node:assert";
 import { spawn } from "node:child_process";
 import { once } from "node:events";

@@ -1,3 +1,6 @@
+// @effect-diagnostics globalDate:off -- Coder: formats Coder's build deadline from `coder list` JSON synchronously.
+// @effect-diagnostics globalErrorInEffectFailure:off -- Coder: a cancelled connection fails with the message the settings UI shows.
+// @effect-diagnostics globalJsonInEffect:off -- Coder: parses `coder` CLI JSON output; the caller treats a parse failure as unavailable.
 import type { DiscoveredCoderWorkspace } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
@@ -55,7 +58,7 @@ export function checkCoderAuthStatus(
         ? "unauthenticated"
         : "unavailable";
     }),
-    Effect.catch(() => Effect.succeed("unavailable" as const)),
+    Effect.orElseSucceed(() => "unavailable" as const),
   );
 }
 

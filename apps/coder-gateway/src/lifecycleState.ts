@@ -11,6 +11,7 @@ import type { WorkspaceRpcBridge } from "./rpcBridge.ts";
 export type RunPromise = <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
 export type RunFork = <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class WorkspaceActionConflictError extends Error {}
 
 export interface DeferredPromise<A> {

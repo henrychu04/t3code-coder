@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import type { CoderInvocation } from "@t3tools/coder-cli/command";
 import { terminateChildProcess } from "@t3tools/coder-cli/processTermination";
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class GatewayProcessError extends Error {
   readonly _tag = "GatewayProcessError";
 
@@ -73,10 +74,7 @@ const terminateGatewayProcess = (
     child: process.child,
     exit: process.exited,
     graceMs: terminationGraceMs,
-  }).pipe(
-    Effect.catchCause(() => Effect.void),
-    Effect.ensuring(Effect.sync(process.cleanupListeners)),
-  );
+  }).pipe(Effect.ignoreCause, Effect.ensuring(Effect.sync(process.cleanupListeners)));
 
 export function runGatewayProcess(
   invocation: CoderInvocation,

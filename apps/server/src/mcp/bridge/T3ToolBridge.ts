@@ -9,11 +9,13 @@
  */
 import type { ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
@@ -125,181 +127,181 @@ interface BridgeJob {
  * Binds upstream's handlers once the orchestrator is available. Calls that outlive the inline
  * budget run in the caller's scope, so they stop with the helper.
  */
-export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = {}) =>
-  Effect.gen(function* () {
-    const toolkit = yield* BridgedToolkit.pipe(Effect.provide(BridgedHandlersLive));
-    // Handlers also read services when they run, as upstream's MCP server provides them.
-    const services = yield* Effect.context<never>();
-    const engine = yield* Orchestrator.OrchestratorV2;
-    const crypto = yield* Crypto.Crypto;
-    const jobScope = yield* Effect.scope;
-    const jobs = new Map<string, BridgeJob>();
-    // Calls still inside their inline budget, per thread; they count toward the cap before they
-    // become jobs, so concurrent calls cannot all pass the check.
-    const inlineCalls = new Map<string, number>();
-    let abandonedCalls = 0;
+export const makeBindingWith = Effect.fn("makeBindingWith")(function* (
+  options: { readonly inlineBudgetMs?: number } = {},
+) {
+  const toolkit = yield* BridgedToolkit.pipe(Effect.provide(BridgedHandlersLive));
+  // Handlers also read services when they run, as upstream's MCP server provides them.
+  const services = yield* Effect.context<never>();
+  const engine = yield* Orchestrator.OrchestratorV2;
+  const random = yield* SecureRandom.SecureRandom;
+  const jobScope = yield* Effect.scope;
+  const jobs = new Map<string, BridgeJob>();
+  // Calls still inside their inline budget, per thread; they count toward the cap before they
+  // become jobs, so concurrent calls cannot all pass the check.
+  const inlineCalls = new Map<string, number>();
+  let abandonedCalls = 0;
 
-    const run = (
-      scope: McpInvocationContext.McpInvocationScope,
-      request: FileBridgeRequest,
-    ): Effect.Effect<unknown, FileBridgeToolFailure> =>
-      (
-        toolkit.handle as (
-          name: string,
-          params: unknown,
-        ) => Effect.Effect<
-          Stream.Stream<
-            Tool.HandlerResult<Tool.Any>,
-            unknown,
-            McpInvocationContext.McpInvocationContext
-          >,
-          unknown
-        >
-      )(request.tool, request.params).pipe(
-        Effect.flatMap(Stream.runLast),
-        Effect.flatMap((last) =>
-          Option.match(last, {
-            onNone: () => Effect.fail(failure("T3ToolFailed", "The T3 tool returned no result.")),
-            onSome: (result) =>
-              // A declared failure reaches the agent as its encoded result, like MCP's
-              // structured content.
-              result.isFailure
-                ? Effect.fail(new FileBridgeToolFailure({ value: result.encodedResult }))
-                : Effect.succeed(result.encodedResult),
+  const run = (
+    scope: McpInvocationContext.McpInvocationScope,
+    request: FileBridgeRequest,
+  ): Effect.Effect<unknown, FileBridgeToolFailure> =>
+    // @effect-diagnostics-next-line anyUnknownInErrorContext:off - name-based dispatch erases each tool's error type; mapped below.
+    (
+      toolkit.handle as (
+        name: string,
+        params: unknown,
+      ) => Effect.Effect<
+        Stream.Stream<
+          Tool.HandlerResult<Tool.Any>,
+          unknown,
+          McpInvocationContext.McpInvocationContext
+        >,
+        unknown
+      >
+    )(request.tool, request.params).pipe(
+      Effect.flatMap(Stream.runLast),
+      Effect.flatMap((last) =>
+        Option.match(last, {
+          onNone: () => Effect.fail(failure("T3ToolFailed", "The T3 tool returned no result.")),
+          onSome: (result) =>
+            // A declared failure reaches the agent as its encoded result, like MCP's
+            // structured content.
+            result.isFailure
+              ? Effect.fail(new FileBridgeToolFailure({ value: result.encodedResult }))
+              : Effect.succeed(result.encodedResult),
+        }),
+      ),
+      Effect.mapError((cause) =>
+        Schema.is(FileBridgeToolFailure)(cause) ? cause : toolFailure(cause),
+      ),
+      Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+      Effect.provide(services),
+    );
+
+  /** The bridge task a `task_status` request reads, if it names one. */
+  const jobTaskId = (request: FileBridgeRequest) => {
+    const taskId = (request.params as Record<string, unknown>).taskId;
+    return request.tool === "task_status" &&
+      typeof taskId === "string" &&
+      taskId.startsWith(BRIDGE_JOB_PREFIX)
+      ? taskId
+      : undefined;
+  };
+
+  // A finished result stays until its reply is published (`published`), so a read whose reply
+  // never reaches the agent can be retried.
+  const readJob = Effect.fn("readJob")(function* (
+    scope: McpInvocationContext.McpThreadInvocationScope,
+    taskId: string,
+  ) {
+    const job = jobs.get(taskId);
+    if (job === undefined || job.threadId !== scope.thread.threadId) {
+      return yield* failure("TaskNotFound", "No running T3 tool call has this taskId.");
+    }
+    const exit = job.fiber.pollUnsafe();
+    if (exit === undefined) return { status: "running", taskId };
+    return yield* exit;
+  });
+
+  const published: NonNullable<T3ToolBinding["published"]> = (scope, request) =>
+    Effect.sync(() => {
+      const taskId = jobTaskId(request);
+      const job = taskId === undefined ? undefined : jobs.get(taskId);
+      if (
+        taskId !== undefined &&
+        job?.threadId === scope.thread.threadId &&
+        job.fiber.pollUnsafe() !== undefined
+      ) {
+        jobs.delete(taskId);
+      }
+    });
+
+  const dispatch: T3ToolBinding["dispatch"] = Effect.fn("dispatch")(function* (scope, request) {
+    const taskIdToRead = jobTaskId(request);
+    if (taskIdToRead !== undefined) return yield* readJob(scope, taskIdToRead);
+    if (!T3_TOOL_CATALOG.some((entry) => entry.name === request.tool)) {
+      return yield* failure("UnknownTool", "Unknown T3 tool. Run --list to see the tools.");
+    }
+    // Plan mode's read-only rule needs the thread; without it, refuse rather than run.
+    const thread = yield* engine
+      .getThreadShell(scope.thread.threadId)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (thread === null) {
+      return yield* failure("ThreadUnavailable", "This thread could not be read. Retry shortly.");
+    }
+    if (thread.interactionMode === "plan" && !READ_ONLY_TOOLS.has(request.tool)) {
+      return yield* failure("PlanModeReadOnly", "Plan mode permits read-only T3 tools only.");
+    }
+
+    const now = yield* Clock.currentTimeMillis;
+    for (const [taskId, job] of jobs) {
+      if (now - job.startedAt > JOB_RETENTION_MS) {
+        jobs.delete(taskId);
+        yield* Fiber.interrupt(job.fiber);
+      }
+    }
+    // Refuse before the tool starts, so a refused call never half-applies. The count and the
+    // reservation below run without yielding, so concurrent calls see each other.
+    const threadId = scope.thread.threadId;
+    let running = inlineCalls.get(threadId) ?? 0;
+    for (const job of jobs.values()) {
+      if (job.threadId === threadId && job.fiber.pollUnsafe() === undefined) {
+        running++;
+      }
+    }
+    if (running >= MAX_JOBS_PER_THREAD) {
+      return yield* failure(
+        "TooManyRunningCalls",
+        "Too many T3 tool calls are still running. Read their results with task_status first.",
+      );
+    }
+    inlineCalls.set(threadId, (inlineCalls.get(threadId) ?? 0) + 1);
+    const releaseInline = Effect.sync(() => {
+      const remaining = (inlineCalls.get(threadId) ?? 1) - 1;
+      if (remaining > 0) inlineCalls.set(threadId, remaining);
+      else inlineCalls.delete(threadId);
+    });
+    const outcome = yield* Effect.gen(function* () {
+      const fiber = yield* run(scope, request).pipe(Effect.forkIn(jobScope));
+      const exit = yield* Fiber.await(fiber).pipe(
+        Effect.timeoutOption(options.inlineBudgetMs ?? INLINE_BUDGET_MS),
+        // A caller that leaves mid-call does not stop the tool, which could half-apply it;
+        // the call stays counted as a job until it ends or the retention sweep drops it.
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            abandonedCalls += 1;
+            jobs.set(`${BRIDGE_JOB_PREFIX}abandoned-${abandonedCalls}`, {
+              threadId,
+              startedAt: now,
+              fiber,
+            });
           }),
         ),
-        Effect.mapError((cause) =>
-          cause instanceof FileBridgeToolFailure ? cause : toolFailure(cause),
-        ),
-        Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
-        Effect.provide(services),
       );
-
-    /** The bridge task a `task_status` request reads, if it names one. */
-    const jobTaskId = (request: FileBridgeRequest) => {
-      const taskId = (request.params as Record<string, unknown>).taskId;
-      return request.tool === "task_status" &&
-        typeof taskId === "string" &&
-        taskId.startsWith(BRIDGE_JOB_PREFIX)
-        ? taskId
-        : undefined;
+      if (Option.isSome(exit)) return { _tag: "Done" as const, exit: exit.value };
+      const taskId = `${BRIDGE_JOB_PREFIX}${yield* random.uuidV4()}`;
+      // Registered before the inline slot is released, so the call is counted throughout.
+      jobs.set(taskId, { threadId, startedAt: now, fiber });
+      return { _tag: "Job" as const, taskId };
+    }).pipe(Effect.ensuring(releaseInline));
+    if (outcome._tag === "Done") return yield* outcome.exit;
+    const taskId = outcome.taskId;
+    return {
+      status: "running",
+      taskId,
+      message: "Still running. Call task_status with this taskId for the result.",
     };
-
-    // A finished result stays until its reply is published (`published`), so a read whose reply
-    // never reaches the agent can be retried.
-    const readJob = (scope: McpInvocationContext.McpThreadInvocationScope, taskId: string) =>
-      Effect.gen(function* () {
-        const job = jobs.get(taskId);
-        if (job === undefined || job.threadId !== scope.thread.threadId) {
-          return yield* failure("TaskNotFound", "No running T3 tool call has this taskId.");
-        }
-        const exit = job.fiber.pollUnsafe();
-        if (exit === undefined) return { status: "running", taskId };
-        return yield* exit;
-      });
-
-    const published: NonNullable<T3ToolBinding["published"]> = (scope, request) =>
-      Effect.sync(() => {
-        const taskId = jobTaskId(request);
-        const job = taskId === undefined ? undefined : jobs.get(taskId);
-        if (
-          taskId !== undefined &&
-          job?.threadId === scope.thread.threadId &&
-          job.fiber.pollUnsafe() !== undefined
-        ) {
-          jobs.delete(taskId);
-        }
-      });
-
-    const dispatch: T3ToolBinding["dispatch"] = (scope, request) =>
-      Effect.gen(function* () {
-        const taskIdToRead = jobTaskId(request);
-        if (taskIdToRead !== undefined) return yield* readJob(scope, taskIdToRead);
-        if (!T3_TOOL_CATALOG.some((entry) => entry.name === request.tool)) {
-          return yield* failure("UnknownTool", "Unknown T3 tool. Run --list to see the tools.");
-        }
-        // Plan mode's read-only rule needs the thread; without it, refuse rather than run.
-        const thread = yield* engine
-          .getThreadShell(scope.thread.threadId)
-          .pipe(Effect.orElseSucceed(() => null));
-        if (thread === null) {
-          return yield* failure(
-            "ThreadUnavailable",
-            "This thread could not be read. Retry shortly.",
-          );
-        }
-        if (thread.interactionMode === "plan" && !READ_ONLY_TOOLS.has(request.tool)) {
-          return yield* failure("PlanModeReadOnly", "Plan mode permits read-only T3 tools only.");
-        }
-
-        const now = Date.now();
-        for (const [taskId, job] of jobs) {
-          if (now - job.startedAt > JOB_RETENTION_MS) {
-            jobs.delete(taskId);
-            yield* Fiber.interrupt(job.fiber);
-          }
-        }
-        // Refuse before the tool starts, so a refused call never half-applies. The count and the
-        // reservation below run without yielding, so concurrent calls see each other.
-        const threadId = scope.thread.threadId;
-        let running = inlineCalls.get(threadId) ?? 0;
-        for (const job of jobs.values()) {
-          if (job.threadId === threadId && job.fiber.pollUnsafe() === undefined) {
-            running++;
-          }
-        }
-        if (running >= MAX_JOBS_PER_THREAD) {
-          return yield* failure(
-            "TooManyRunningCalls",
-            "Too many T3 tool calls are still running. Read their results with task_status first.",
-          );
-        }
-        inlineCalls.set(threadId, (inlineCalls.get(threadId) ?? 0) + 1);
-        const releaseInline = Effect.sync(() => {
-          const remaining = (inlineCalls.get(threadId) ?? 1) - 1;
-          if (remaining > 0) inlineCalls.set(threadId, remaining);
-          else inlineCalls.delete(threadId);
-        });
-        const outcome = yield* Effect.gen(function* () {
-          const fiber = yield* run(scope, request).pipe(Effect.forkIn(jobScope));
-          const exit = yield* Fiber.await(fiber).pipe(
-            Effect.timeoutOption(options.inlineBudgetMs ?? INLINE_BUDGET_MS),
-            // A caller that leaves mid-call does not stop the tool, which could half-apply it;
-            // the call stays counted as a job until it ends or the retention sweep drops it.
-            Effect.onInterrupt(() =>
-              Effect.sync(() => {
-                abandonedCalls += 1;
-                jobs.set(`${BRIDGE_JOB_PREFIX}abandoned-${abandonedCalls}`, {
-                  threadId,
-                  startedAt: now,
-                  fiber,
-                });
-              }),
-            ),
-          );
-          if (Option.isSome(exit)) return { _tag: "Done" as const, exit: exit.value };
-          const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`;
-          // Registered before the inline slot is released, so the call is counted throughout.
-          jobs.set(taskId, { threadId, startedAt: now, fiber });
-          return { _tag: "Job" as const, taskId };
-        }).pipe(Effect.ensuring(releaseInline));
-        if (outcome._tag === "Done") return yield* outcome.exit;
-        const taskId = outcome.taskId;
-        return {
-          status: "running",
-          taskId,
-          message: "Still running. Call task_status with this taskId for the result.",
-        };
-      });
-
-    // A call another workspace forwards through the gateway hub runs inline as its caller; the
-    // hub waits for it, so it takes no task id.
-    const invoke: T3ToolBinding["invoke"] = (scope, request) =>
-      T3_TOOL_CATALOG.some((entry) => entry.name === request.tool)
-        ? run(scope, request)
-        : failure("UnknownTool", "Unknown T3 tool.");
-
-    return { catalog: T3_TOOL_CATALOG, dispatch, published, invoke } satisfies T3ToolBinding;
   });
+
+  // A call another workspace forwards through the gateway hub runs inline as its caller; the
+  // hub waits for it, so it takes no task id.
+  const invoke: T3ToolBinding["invoke"] = (scope, request) =>
+    T3_TOOL_CATALOG.some((entry) => entry.name === request.tool)
+      ? run(scope, request)
+      : failure("UnknownTool", "Unknown T3 tool.");
+
+  return { catalog: T3_TOOL_CATALOG, dispatch, published, invoke } satisfies T3ToolBinding;
+});
 
 export const makeBinding = makeBindingWith();

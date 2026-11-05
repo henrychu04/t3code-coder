@@ -5,6 +5,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class CoderProcessExitUnconfirmedError extends Error {
   readonly _tag = "CoderProcessExitUnconfirmedError";
 
@@ -47,6 +48,7 @@ export const terminateChildProcess = <A>(input: {
     Effect.gen(function* () {
       if (exited()) return;
       if (input.requestExit !== undefined) {
+        // @effect-diagnostics-next-line tryCatchInEffectGen:off -- Coder: a throwing exit request falls back to signals; termination must not fail.
         try {
           input.requestExit();
         } catch {

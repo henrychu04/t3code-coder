@@ -9,6 +9,7 @@
   // longer reports unused exports.
   "ignoreIssues": {
     "apps/server/src/attachmentStore.ts": ["exports", "nsExports"],
+    "apps/server/src/auth/PayloadSigner.ts": ["exports", "nsExports"],
     "apps/server/src/auth/ServerSecretStore.ts": ["exports", "nsExports"],
     "apps/server/src/environmentTheme.ts": ["exports", "nsExports"],
     "apps/server/src/git/GitManager.ts": ["exports", "nsExports"],
@@ -126,6 +127,7 @@
     "packages/shared/src/orchestrationV2PendingBackgroundWork.ts": ["exports", "nsExports"],
     "packages/shared/src/serverSettings.ts": ["exports", "nsExports"],
     "packages/shared/src/shell.ts": ["exports", "nsExports"],
+    "packages/shared/src/socketFrameParts.ts": ["exports", "nsExports"],
     "packages/shared/src/sourceControl.ts": ["exports", "nsExports"],
     "packages/shared/src/t3McpToolPresentation.ts": ["exports", "nsExports"],
     "packages/shared/src/themePalettes.ts": ["exports", "nsExports"],

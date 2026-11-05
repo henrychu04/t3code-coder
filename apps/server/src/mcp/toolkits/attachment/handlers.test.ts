@@ -5,6 +5,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -21,6 +22,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
+import * as AssetSigner from "../../../assets/AssetSigner.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as DocumentText from "../../../provider/DocumentText.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -144,9 +146,16 @@ it.effect("only the caller that prepared a pending upload can discard it", () =>
   }).pipe(
     Effect.scoped,
     Effect.provide(
-      Layer.mergeAll(McpToolAccessTestkit.liveThreadsLayer, ServerSecretStore.layer).pipe(
+      Layer.mergeAll(
+        McpToolAccessTestkit.liveThreadsLayer,
+        AssetSigner.layer.pipe(Layer.provideMerge(ServerSecretStore.layer)),
+      ).pipe(
         Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-attachment-" })),
-        Layer.provideMerge(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+        Layer.provideMerge(
+          DocumentText.layer.pipe(
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
       ),
     ),
   ),

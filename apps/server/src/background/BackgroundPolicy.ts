@@ -14,7 +14,13 @@ export class BackgroundPolicy extends Context.Service<
   }
 >()("t3/background/BackgroundPolicy") {}
 
+const shouldRunScopeWork: BackgroundPolicy["Service"]["shouldRunScopeWork"] = Effect.fn(
+  "BackgroundPolicy.shouldRunScopeWork",
+)(function* () {
+  return true;
+});
+
 export const layer = Layer.succeed(BackgroundPolicy, {
-  shouldRunScopeWork: () => Effect.succeed(true),
+  shouldRunScopeWork,
   shouldRunOpportunisticWork: Effect.succeed(true),
 });

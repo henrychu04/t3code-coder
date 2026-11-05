@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - tests inject swaps at the native open boundary.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeFSP from "node:fs/promises";
@@ -16,6 +17,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { HttpServerResponse } from "effect/http";
 import { vi } from "vite-plus/test";
 
+import * as AssetSigner from "./AssetSigner.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -104,8 +106,10 @@ const layerTest = Layer.mergeAll(
     Layer.provide(WorkspacePaths.layer),
     Layer.provide(T3ProjectFileLoader.layer),
   ),
-  ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),
-).pipe(Layer.provideMerge(NodeServices.layer));
+  AssetSigner.layer.pipe(
+    Layer.provideMerge(ServerSecretStore.layer.pipe(Layer.provide(layerConfig))),
+  ),
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 // Coder: native app icon and GitHub media cases are not carried.
 describe("AssetAccess", () => {
@@ -122,7 +126,7 @@ describe("AssetAccess", () => {
         const bytes = yield* readMcpAppHtml(file);
         expect(bytes?.byteLength).toBe(limit);
         expect(bytes?.every((byte) => byte === 120)).toBe(true);
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
 
     it.effect("rejects snapshots one byte past the limit and much larger files", () =>
@@ -136,7 +140,7 @@ describe("AssetAccess", () => {
           yield* fileSystem.writeFile(file, new Uint8Array(size).fill(120));
           expect(yield* readMcpAppHtml(file)).toBeNull();
         }
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
 
     it.effect("preserves UTF-8 bytes across stream chunks and accepts empty snapshots", () =>
@@ -152,7 +156,7 @@ describe("AssetAccess", () => {
           expect(bytes?.byteLength).toBe(expected.byteLength);
           expect(bytes && new TextDecoder().decode(bytes)).toBe(html);
         }
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
 
     // regression: #17026 apply host color scheme to saved MCP apps
@@ -164,7 +168,7 @@ describe("AssetAccess", () => {
         const error = yield* readMcpAppHtml(path.join(directory, "missing.html")).pipe(Effect.flip);
         expect(error._tag).toBe("PlatformError");
         expect(error.reason._tag).toBe("NotFound");
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
   });
 

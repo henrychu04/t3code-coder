@@ -12,7 +12,7 @@ import {
  * Coder: return only fields Coder honors. Project icons never come from repository paths, and
  * there is no in-app preview, so `iconPath` and script preview fields are dropped.
  */
-function supportedProjectConfig(file: typeof T3ProjectFile.Type): typeof T3ProjectFile.Type {
+function supportedProjectConfig(file: T3ProjectFile): T3ProjectFile {
   const { iconPath: _iconPath, ...rest } = file;
   return {
     ...rest,
@@ -79,7 +79,7 @@ export function readProjectConfig(workspaceRoot: string): ProjectGetConfigResult
     }
     const text = readConfigMetadata(filePath, PROJECT_CONFIG_MAX_BYTES, root);
     if (text === null) return { status: "invalid", file: null };
-    const decoded = Schema.decodeUnknownExit(Schema.fromJsonString(T3ProjectFile))(text);
+    const decoded = Schema.decodeExit(Schema.fromJsonString(T3ProjectFile))(text);
     return decoded._tag === "Success"
       ? { status: "valid", file: supportedProjectConfig(decoded.value) }
       : { status: "invalid", file: null };

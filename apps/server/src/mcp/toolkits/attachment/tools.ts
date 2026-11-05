@@ -10,7 +10,7 @@ import {
   OrchestratorMcpFailure,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -31,7 +31,7 @@ const shared = {
     ServerConfig.ServerConfig,
     ServerSecretStore.ServerSecretStore,
     FileSystem.FileSystem,
-    Crypto.Crypto,
+    SecureRandom.SecureRandom,
   ],
 };
 // Coder: no MCP HTTP origin to POST to, so the upload names a workspace file the helper stages in

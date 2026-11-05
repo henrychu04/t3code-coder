@@ -28,11 +28,11 @@ allowBuilds:
   utf-8-validate: false
 
 catalog:
-  "@effect/atom-react": 4.0.5
-  "@effect/openapi-generator": 4.0.5
-  "@effect/platform-node": 4.0.5
-  "@effect/platform-node-shared": 4.0.5
-  "@effect/vitest": 4.0.5
+  "@effect/atom-react": 4.1.2
+  "@effect/openapi-generator": 4.1.2
+  "@effect/platform-node": 4.1.2
+  "@effect/platform-node-shared": 4.1.2
+  "@effect/vitest": 4.1.2
   "@legendapp/list": 3.3.5
   "@pierre/diffs": 1.6.1
   "@tailwindcss/node": 4.3.3
@@ -43,8 +43,7 @@ catalog:
   "@types/react-dom": ~19.3.0
   react: 19.3.0
   react-dom: 19.3.0
-  typescript: 7.0.2
-  effect: 4.0.5
+  effect: 4.1.2
   lightningcss: 1.33.0
   tailwindcss: 4.3.3
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
@@ -63,19 +62,6 @@ catalog:
   remark-parse: 11.0.0
   remark-rehype: 11.1.2
   unified: 11.0.5
-
-minimumReleaseAgeExclude:
-  - "@effect/atom-react@4.0.5"
-  - "@effect/openapi-generator@4.0.5"
-  - "@effect/platform-node-shared@4.0.5"
-  - "@effect/platform-node@4.0.5"
-  - "@effect/vitest@4.0.5"
-  - "effect@4.0.5"
-  - "@legendapp/list@3.3.5"
-  - pele@1.8.0
-  - "@pierre/diffs@1.6.1"
-  - "@pierre/highlights@0.2.0"
-  - "@pierre/theming@1.0.2"
 
 overrides:
   # Pin every patched package, including transitive dependencies, so lockfile-free
@@ -97,7 +83,8 @@ overrides:
   "@effect/vitest": "catalog:"
   "@effect/vitest>vitest": "-"
   "@effect/platform-node>undici": "-"
-  "@pierre/diffs>@shikijs/transformers": 4.2.0
+  # @pierre/trees pins @pierre/theming 1.0.0, whose peer range predates @pierre/theme 2.
+  "@pierre/trees>@pierre/theming": 1.0.2
   # Resolve below remark-math so Vite, Metro and Node use the same tokenizer.
   "remark-math>micromark-extension-math": npm:micromark-extension-llm-math@3.1.0
   micromark-extension-gfm-table: 2.1.1
@@ -136,17 +123,24 @@ patchedDependencies:
   micromark@4.0.2: patches/micromark@4.0.2.patch
   mdast-util-to-hast@13.2.1: patches/mdast-util-to-hast@13.2.1.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
-  "@effect/vitest@4.0.5": patches/@effect__vitest@4.0.5.patch
+  "@effect/vitest@4.1.2": patches/@effect__vitest@4.1.2.patch
   "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch
   "@legendapp/list@3.3.5": patches/@legendapp__list@3.3.5.patch
   "@pierre/diffs@1.6.1": patches/@pierre%2Fdiffs@1.6.1.patch
 
+# Unmet peers fail resolution, so a pin outside a dependency's peer range is
+# caught when the lockfile changes instead of scrolling past as a warning.
+strictPeerDependencies: true
+
 peerDependencyRules:
   ignoreMissing:
     - ioredis
+    # Coder: peers are not auto-installed, and @effect/platform-node 4.1's Redis peer is unused.
+    - redis
     - rolldown
     - yjs
   allowAny:
+    - typescript
     - vite
   allowedVersions:
     vite: "*"
@@ -163,3 +157,13 @@ supportedArchitectures:
   cpu: [current, x64]
   libc: [current, glibc]
   os: [current, linux]
+
+minimumReleaseAgeExclude:
+  - "@effect/tsgo-darwin-arm64@0.67.1"
+  - "@effect/tsgo-darwin-x64@0.67.1"
+  - "@effect/tsgo-linux-arm64@0.67.1"
+  - "@effect/tsgo-linux-arm@0.67.1"
+  - "@effect/tsgo-linux-x64@0.67.1"
+  - "@effect/tsgo-win32-arm64@0.67.1"
+  - "@effect/tsgo-win32-x64@0.67.1"
+  - "@effect/tsgo@0.67.1"

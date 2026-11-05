@@ -58,22 +58,19 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const bound = yield* Ref.make<T3ToolBinding | undefined>(undefined);
     return T3ToolDispatch.of({
-      bind: (binding) => Ref.set(bound, binding),
+      bind: Effect.fn("T3ToolDispatch.bind")((binding) => Ref.set(bound, binding)),
       binding: Ref.get(bound),
-      dispatch: (scope, request) =>
-        Ref.get(bound).pipe(
-          Effect.flatMap((binding) =>
-            binding === undefined
-              ? Effect.fail(
-                  t3ToolFailure("T3ToolsNotReady", "T3 tools are starting. Retry shortly."),
-                )
-              : binding.dispatch(scope, request),
-          ),
-        ),
-      published: (scope, request) =>
-        Ref.get(bound).pipe(
-          Effect.flatMap((binding) => binding?.published?.(scope, request) ?? Effect.void),
-        ),
+      dispatch: Effect.fn("T3ToolDispatch.dispatch")(function* (scope, request) {
+        const binding = yield* Ref.get(bound);
+        if (binding === undefined) {
+          return yield* t3ToolFailure("T3ToolsNotReady", "T3 tools are starting. Retry shortly.");
+        }
+        return yield* binding.dispatch(scope, request);
+      }),
+      published: Effect.fn("T3ToolDispatch.published")(function* (scope, request) {
+        const binding = yield* Ref.get(bound);
+        yield* binding?.published?.(scope, request) ?? Effect.void;
+      }),
     });
   }),
 );

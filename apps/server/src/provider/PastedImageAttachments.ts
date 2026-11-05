@@ -11,6 +11,7 @@ import {
   type ChatAttachment,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import { readAttachmentBytes } from "../readAttachmentBytes.ts";
@@ -24,12 +25,10 @@ export interface ResolvedPastedImageAttachment {
   readonly sizeBytes: number;
 }
 
-export class PastedImageAttachmentError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "PastedImageAttachmentError";
-  }
-}
+export class PastedImageAttachmentError extends Schema.TaggedError<PastedImageAttachmentError>()(
+  "PastedImageAttachmentError",
+  { message: Schema.String },
+) {}
 
 export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachment")(
   function* (input: { readonly attachmentsDir: string; readonly attachment: ChatAttachment }) {
@@ -38,18 +37,18 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
       input.attachment.type !== "image" ||
       !isProviderSendTurnSupportedImageMimeType(expectedMimeType)
     ) {
-      return yield* Effect.fail(
-        new PastedImageAttachmentError("Pasted image attachment type is unsupported."),
-      );
+      return yield* new PastedImageAttachmentError({
+        message: "Pasted image attachment type is unsupported.",
+      });
     }
     const path = resolveAttachmentPath({
       attachmentsDir: input.attachmentsDir,
       attachment: input.attachment,
     });
     if (!path || NodePath.dirname(path) !== NodePath.resolve(input.attachmentsDir)) {
-      return yield* Effect.fail(
-        new PastedImageAttachmentError("Pasted image attachment id is invalid."),
-      );
+      return yield* new PastedImageAttachmentError({
+        message: "Pasted image attachment id is invalid.",
+      });
     }
 
     const resolved = yield* Effect.tryPromise({
@@ -61,12 +60,16 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
         try {
           const stat = await handle.stat();
           if (!stat.isFile() || stat.size === 0 || stat.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-            throw new Error("Pasted image attachment has an invalid size or file type.");
+            throw new PastedImageAttachmentError({
+              message: "Pasted image attachment has an invalid size or file type.",
+            });
           }
           const bytes = await readAttachmentBytes(handle, stat.size);
           const mimeType = detectImageMimeType(bytes);
           if (mimeType !== expectedMimeType) {
-            throw new Error("Pasted image attachment content does not match its declared type.");
+            throw new PastedImageAttachmentError({
+              message: "Pasted image attachment content does not match its declared type.",
+            });
           }
           return {
             path,
@@ -79,7 +82,9 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
         }
       },
       catch: () =>
-        new PastedImageAttachmentError("Pasted image attachment could not be read safely."),
+        new PastedImageAttachmentError({
+          message: "Pasted image attachment could not be read safely.",
+        }),
     });
 
     return resolved;
@@ -107,7 +112,7 @@ export const resolvePastedImageAttachments = Effect.fn("resolvePastedImageAttach
       resolved.push(image);
       // Legacy attachments carry no size, so bound the bytes actually read.
       const limitError = getProviderAttachmentLimitError(resolved);
-      if (limitError) return yield* Effect.fail(new PastedImageAttachmentError(limitError));
+      if (limitError) return yield* new PastedImageAttachmentError({ message: limitError });
     }
     return resolved;
   },

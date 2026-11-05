@@ -43,6 +43,7 @@ import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Context from "effect/Context";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -124,6 +125,8 @@ const TERMINAL_ENV_BLOCKLIST = new Set([
   "ZELLIJ_SESSION_NAME",
   "ZELLIJ_PANE_ID",
 ]);
+// Coder: sizes attach replay events for the bounded resume window.
+const encodeAttachEventJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const MAX_TERMINAL_LABEL_LENGTH = 128;
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
@@ -1151,8 +1154,10 @@ function findStringTerminatorIndex(input: string, start: number): number | null 
     if (codePoint === 0x07 || codePoint === 0x9c || isControlSequenceCancel(codePoint)) {
       return index + 1;
     }
-    if (codePoint === 0x1b && input.charCodeAt(index + 1) === 0x5c) {
-      return index + 2;
+    // Like xterm.js, an ESC that does not start ST ends the string and begins the next sequence.
+    if (codePoint === 0x1b) {
+      if (index + 1 >= input.length) return null;
+      return input.charCodeAt(index + 1) === 0x5c ? index + 2 : index;
     }
   }
   return null;
@@ -1174,10 +1179,15 @@ function findEscapeSequenceEndIndex(input: string, start: number): number | null
   if (cursor >= input.length) {
     return null;
   }
+  // A second ESC restarts the sequence, so leave it for the next pass.
+  if (input.charCodeAt(cursor) === 0x1b) {
+    return cursor;
+  }
   return isEscapeFinalByte(input.charCodeAt(cursor)) ? cursor + 1 : start + 1;
 }
 
-const HISTORY_SEQUENCE_START = /[\u001b\u0090\u009b\u009d\u009e\u009f]/;
+// libghostty prints UTF-8 C1 code points (U+0080-U+009F) as text, so only ESC starts a sequence.
+const HISTORY_SEQUENCE_START = /\u001b/;
 const NEXT_HISTORY_SEQUENCE_START = new RegExp(HISTORY_SEQUENCE_START.source, "g");
 
 function sanitizeTerminalHistoryChunk(
@@ -1259,47 +1269,6 @@ function sanitizeTerminalHistoryChunk(
       }
       append(input.slice(index, escapeSequenceEndIndex));
       index = escapeSequenceEndIndex;
-      continue;
-    }
-
-    if (codePoint === 0x9b) {
-      let cursor = index + 1;
-      while (cursor < input.length) {
-        const cancelled = isControlSequenceCancel(input.charCodeAt(cursor));
-        if (cancelled || isCsiFinalByte(input.charCodeAt(cursor))) {
-          const sequence = input.slice(index, cursor + 1);
-          const body = input.slice(index + 1, cursor);
-          if (cancelled || !shouldStripCsiSequence(body, input[cursor] ?? "")) {
-            append(sequence);
-          }
-          index = cursor + 1;
-          break;
-        }
-        cursor += 1;
-      }
-      if (cursor >= input.length) {
-        return { visibleText, pendingControlSequence: input.slice(index) };
-      }
-      continue;
-    }
-
-    if (codePoint === 0x9d || codePoint === 0x90 || codePoint === 0x9e || codePoint === 0x9f) {
-      const terminatorIndex = findStringTerminatorIndex(
-        input,
-        Math.max(index + 1, pendingScanStart),
-      );
-      if (terminatorIndex === null) {
-        return { visibleText, pendingControlSequence: input.slice(index) };
-      }
-      const sequence = input.slice(index, terminatorIndex);
-      const content = stripStringTerminator(input.slice(index + 1, terminatorIndex));
-      const strip =
-        (codePoint === 0x9d && shouldStripOscSequence(content)) ||
-        (codePoint === 0x90 && shouldStripDcsSequence(content));
-      if (!strip) {
-        append(sequence);
-      }
-      index = terminatorIndex;
       continue;
     }
 
@@ -1687,7 +1656,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       const sequence = event.sequence;
       if (attachEvent !== null && sequence !== undefined) {
         const key = toSessionKey(event.threadId, event.terminalId);
-        const encodedBytes = Buffer.byteLength(JSON.stringify(attachEvent), "utf8");
+        const encodedBytes = Buffer.byteLength(encodeAttachEventJson(attachEvent), "utf8");
         let replay = attachReplay.get(key);
         if (
           replay === undefined ||
@@ -2916,7 +2885,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         exitSignal: null,
         updatedAt: yield* nowIso,
         eventSequence: 0,
-        attachEpoch: crypto.randomUUID(),
+        attachEpoch: SecureRandom.uuidV4Unsafe(),
         inputCount: 0,
         cols,
         rows,

@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
+import * as AssetSigner from "../../../assets/AssetSigner.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Upload from "../../../assets/AttachmentUpload.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
@@ -92,7 +93,8 @@ const uploadOwner = McpInvocationContext.McpInvocationContext.pipe(
 
 export const layer = McpToolAccess.toLayer(
   AttachmentToolkit,
-  Effect.sync(() => {
+  Effect.gen(function* () {
+    const assetSigner = yield* AssetSigner.AssetSigner;
     const uploadOwners = new Map<string, { readonly owner: string; readonly issuedAt: number }>();
     return {
       // A pending upload belongs to its caller until a send claims it, so
@@ -107,10 +109,13 @@ export const layer = McpToolAccess.toLayer(
               );
             }
             const result = yield* Upload.issueAttachmentUploadUrl(input.upload).pipe(
+              Effect.provideService(AssetSigner.AssetSigner, assetSigner),
               Effect.mapError(unavailable),
             );
             // Coder: stage the workspace file through the upload route's own validation and store.
-            yield* storeWorkspaceFile(result.relativeUrl, input.path);
+            yield* storeWorkspaceFile(result.relativeUrl, input.path).pipe(
+              Effect.provideService(AssetSigner.AssetSigner, assetSigner),
+            );
             const now = yield* Clock.currentTimeMillis;
             for (const [id, entry] of uploadOwners) {
               if (now - entry.issuedAt > UPLOAD_OWNER_TTL_MS) uploadOwners.delete(id);

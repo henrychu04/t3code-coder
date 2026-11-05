@@ -45,29 +45,28 @@ export function makeThreadSnapshotLoader(
   supervisor: EnvironmentSupervisor.EnvironmentSupervisor["Service"],
 ): ThreadSnapshotLoader["Service"] {
   return ThreadSnapshotLoader.of({
-    load: (_prepared, threadId) =>
-      Effect.gen(function* () {
-        const session = yield* SubscriptionRef.get(supervisor.session);
-        if (Option.isNone(session)) return { _tag: "unavailable" } as const;
-        return yield* session.value.client[WS_METHODS.orchestrationGetThreadBoundedSnapshot]({
-          threadId,
-          deferWork: true,
-        }).pipe(
-          Effect.map((bounded): ThreadSnapshotLoadResult => ({
-            _tag: "present",
-            snapshot: {
-              snapshotSequence: bounded.snapshotSequence,
-              projection: bounded.projection,
-              latestLocalTurnOrdinal: bounded.latestLocalTurnOrdinal,
-            },
-            history: {
-              historyCursor: bounded.historyCursor,
-              hasMoreHistory: bounded.hasMoreHistory,
-              latestLocalTurnOrdinal: bounded.latestLocalTurnOrdinal,
-            },
-          })),
-          Effect.catchCause(() => Effect.succeed({ _tag: "unavailable" } as const)),
-        );
-      }),
+    load: Effect.fn("ThreadSnapshotLoader.load")(function* (_prepared, threadId) {
+      const session = yield* SubscriptionRef.get(supervisor.session);
+      if (Option.isNone(session)) return { _tag: "unavailable" } as const;
+      return yield* session.value.client[WS_METHODS.orchestrationGetThreadBoundedSnapshot]({
+        threadId,
+        deferWork: true,
+      }).pipe(
+        Effect.map((bounded): ThreadSnapshotLoadResult => ({
+          _tag: "present",
+          snapshot: {
+            snapshotSequence: bounded.snapshotSequence,
+            projection: bounded.projection,
+            latestLocalTurnOrdinal: bounded.latestLocalTurnOrdinal,
+          },
+          history: {
+            historyCursor: bounded.historyCursor,
+            hasMoreHistory: bounded.hasMoreHistory,
+            latestLocalTurnOrdinal: bounded.latestLocalTurnOrdinal,
+          },
+        })),
+        Effect.catchCause(() => Effect.succeed({ _tag: "unavailable" } as const)),
+      );
+    }),
   });
 }

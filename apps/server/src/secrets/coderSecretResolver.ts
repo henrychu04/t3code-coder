@@ -18,13 +18,16 @@ export class SecretResolver extends Context.Service<
     /** Forgets the given references, or every reference, so the next read asks the provider again. */
     readonly invalidate: (references?: ReadonlyArray<SecretReference>) => Effect.Effect<void>;
   }
+  // @effect-diagnostics-next-line deterministicKeys:off - Coder: stands in for upstream's resolver under its key.
 >()("@t3tools/secret-provider-core/server/SecretResolver") {}
 
 export const layer = Layer.succeed(
   SecretResolver,
   SecretResolver.of({
-    read: (references) => Effect.succeed(references.map(() => undefined)),
-    invalidate: () => Effect.void,
+    read: Effect.fn("SecretResolver.read")((references) =>
+      Effect.succeed(references.map(() => undefined)),
+    ),
+    invalidate: Effect.fn("SecretResolver.invalidate")(() => Effect.void),
   }),
 );
 

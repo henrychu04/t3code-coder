@@ -5,8 +5,11 @@ need a separate branch and working directory.
 
 ## Start a thread
 
-A new thread keeps the current project and carries your model
-and mode selections, unless the destination project has its own model default.
+**New thread** opens the project picker when you have multiple
+projects in the default or project-grouped sidebar. The legacy sidebar always
+starts in the current project. **Shift-click** to start in
+the current project, or use a project's own new-thread action. A new thread carries
+your model and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
 an existing worktree, use **New thread in this worktree** from the branch toolbar.
 
@@ -202,9 +205,10 @@ one word of three or more letters, or two for Chinese, Japanese, and Korean.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files
 and copying a thread reference. A copied reference uses the thread's merge request
-link when available, otherwise the thread itself, which pastes into a composer as
-a thread chip. To copy the thread even when it has a merge request, choose **Copy → Thread**
-from its context menu. **Thread ID** copies the bare ID for scripts. See
+link when available, otherwise a link to the thread, which opens it in T3 Coder on
+this computer and pastes into a composer as a thread chip. To copy the thread even
+when it has a merge request, choose **Copy → Thread** from its context menu.
+**Thread ID** copies the bare ID for scripts. See
 [keybindings](./keybindings.md) for custom configuration.
 
 ## Inspect agent work

@@ -15,10 +15,10 @@
     "coder:pr-smoke": "pnpm --filter @t3tools/web build && node scripts/coder-pr-smoke.mjs",
     "start": "pnpm build && node apps/coder-gateway/src/bin.ts --open-browser",
     "generate:sbom": "pnpm sbom --sbom-format cyclonedx --sbom-spec-version 1.6 --sbom-type application --lockfile-only --prod --out docs/sbom.cdx.json",
-    "typecheck:gateway": "tsc --noEmit -p apps/coder-gateway/tsconfig.json",
-    "typecheck:helper": "tsc --noEmit -p apps/coder-helper/tsconfig.json",
-    "typecheck:server": "tsc --noEmit -p apps/server/tsconfig.json",
-    "typecheck:web": "tsc --noEmit -p apps/web/tsconfig.json",
+    "typecheck:gateway": "effect-tsgo tsrs --noEmit -p apps/coder-gateway/tsconfig.json",
+    "typecheck:helper": "effect-tsgo tsrs --noEmit -p apps/coder-helper/tsconfig.json",
+    "typecheck:server": "effect-tsgo tsrs --noEmit -p apps/server/tsconfig.json",
+    "typecheck:web": "effect-tsgo tsrs --noEmit -p apps/web/tsconfig.json",
     "test:contracts": "pnpm --filter @t3tools/contracts test",
     "test:server": "vp test run --config vite.coder.config.ts",
     "test:coder": "node --test apps/coder-gateway/src/*.test.ts apps/coder-helper/src/*.test.ts packages/coder-cli/src/*.test.ts && pnpm --filter effect-codex-app-server test && pnpm test:contracts && pnpm test:server && pnpm test:providers && pnpm test:source-control && pnpm test:client-runtime && pnpm test:shared:coder && pnpm test:web:coder && pnpm test:knip",
@@ -34,9 +34,9 @@
     "sync:resolve-deleted": "node scripts/sync-resolve-deleted.mjs"
   },
   "devDependencies": {
+    "@effect/tsgo": "0.67.1",
     "@types/node": "catalog:",
     "knip": "6.34.0",
-    "typescript": "catalog:",
     "typescript-legacy": "npm:typescript@~6.0.3",
     "vite-plus": "catalog:"
   },

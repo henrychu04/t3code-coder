@@ -1,5 +1,6 @@
 import type { CoderProfileConfig } from "@t3tools/coder-cli/configStore";
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class CoderConfigConflictError extends Error {}
 
 /**

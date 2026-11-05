@@ -92,6 +92,7 @@ interface EnvironmentQueryAtomOptions<Input, A, E, R> extends Omit<
   readonly execute: (
     input: Input,
     emit: (value: A) => Effect.Effect<void>,
+    previous: Option.Option<A>,
   ) => Effect.Effect<A, E, R>;
   // Coder: no `persistence` option; upstream's offline query store serves only mobile.
   readonly staleTimeMs?: number;
@@ -714,7 +715,14 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
               ? runInEnvironment(
                   target.environmentId,
                   options
-                    .execute(target.input, emit)
+                    .execute(
+                      target.input,
+                      emit,
+                      Option.flatMap(
+                        get.self<AsyncResult.AsyncResult<A, unknown>>(),
+                        AsyncResult.value,
+                      ),
+                    )
                     .pipe(pendingOnceSessionReplaced(session.value)),
                 ).pipe(
                   Effect.map(share),
@@ -839,6 +847,7 @@ export function createEnvironmentRpcQueryAtomFamily<
     readonly execute?: (
       input: EnvironmentRpcInput<TTag>,
       emit: (value: EnvironmentRpcSuccess<TTag>) => Effect.Effect<void>,
+      previous: Option.Option<EnvironmentRpcSuccess<TTag>>,
     ) => Effect.Effect<
       EnvironmentRpcSuccess<TTag>,
       EnvironmentRpcFailure<TTag> | EnvironmentRpcUnavailableError,
@@ -868,7 +877,8 @@ export function createEnvironmentRpcQueryAtomFamily<
     execute: (
       input: EnvironmentRpcInput<TTag>,
       emit: (value: EnvironmentRpcSuccess<TTag>) => Effect.Effect<void>,
-    ) => options.execute?.(input, emit) ?? request(options.tag, input),
+      previous: Option.Option<EnvironmentRpcSuccess<TTag>>,
+    ) => options.execute?.(input, emit, previous) ?? request(options.tag, input),
   });
 }
 

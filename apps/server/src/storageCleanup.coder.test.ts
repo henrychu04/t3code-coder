@@ -1,6 +1,7 @@
 // Coder: artifact retention and worktree safety for the workspace helper's storage cleanup.
-import * as NodeFS from "node:fs/promises";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - fixture paths are joined with Node's path.
 import * as NodePath from "node:path";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
@@ -90,7 +91,7 @@ const base = Git.layer.pipe(
     ),
   ),
   Layer.provideMerge(VcsProcess.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const runCleanup = (snapshot: Snapshot, settings?: Parameters<typeof Settings.layerTest>[0]) =>
@@ -127,7 +128,7 @@ it.effect(
       const config = yield* Config.ServerConfig;
       const fs = yield* FileSystem.FileSystem;
       const now = yield* Clock.currentTimeMillis;
-      const old = new Date(now - 10 * 86_400_000);
+      const old = DateTime.toDateUtc(DateTime.makeUnsafe(now - 10 * 86_400_000));
       yield* fs.makeDirectory(config.screenshotArtifactsDir, { recursive: true });
       yield* fs.makeDirectory(config.attachmentsDir, { recursive: true });
       yield* fs.makeDirectory(config.logsDir, { recursive: true });
@@ -141,8 +142,8 @@ it.effect(
       };
       for (const [name, path] of Object.entries(paths)) {
         yield* fs.writeFileString(path, name);
-        const time = name === "recent" ? new Date(now) : old;
-        yield* Effect.promise(() => NodeFS.utimes(path, time, time));
+        const time = name === "recent" ? DateTime.toDateUtc(DateTime.makeUnsafe(now)) : old;
+        yield* fs.utimes(path, time, time);
       }
       const link = NodePath.join(config.screenshotArtifactsDir, "linked.png");
       yield* fs.symlink(paths.source, link);

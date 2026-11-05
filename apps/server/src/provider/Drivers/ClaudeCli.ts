@@ -22,6 +22,16 @@ export type SlashCommand = Sdk.SlashCommand;
 export type ModelInfo = Sdk.ModelInfo;
 export type SDKControlInitializeResponse = Sdk.SDKControlInitializeResponse;
 export type SDKControlGetContextUsageResponse = Sdk.SDKControlGetContextUsageResponse;
+export type McpServerStatus = Sdk.McpServerStatus;
+export type SDKControlMcpReadResourceResponse = Sdk.SDKControlMcpReadResourceResponse;
+/**
+ * Control requests the adapter sends without a `Query` method (#29803's MCP Apps): SDK 0.3.316
+ * types `mcp_call` and `list_permission_rules` but sends them only through its private `request`.
+ */
+const RAW_CONTROL_REQUEST_SUBTYPES: ReadonlySet<string> = new Set([
+  "mcp_call",
+  "list_permission_rules",
+]);
 export type McpSetServersResult = Sdk.McpSetServersResult;
 export type UserDialogRequest = Sdk.UserDialogRequest;
 export type UserDialogResult = Sdk.UserDialogResult;
@@ -87,6 +97,8 @@ export type Options = {
   /** CLI flags from the workspace launch-args setting; `null` is a flag without a value. */
   readonly extraArgs?: Readonly<Record<string, string | null>>;
   readonly supportedDialogKinds?: ReadonlyArray<string>;
+  /** Sent in `initialize`, as the SDK does; a titled session skips Claude's own naming request. */
+  readonly title?: string;
   readonly systemPrompt?: {
     readonly type: "preset";
     readonly preset: "claude_code";
@@ -335,6 +347,12 @@ export interface Query extends AsyncIterable<SDKMessage> {
   setMcpServers(
     servers: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
   ): Promise<McpSetServersResult>;
+  /** The session's MCP servers and their tools, as the SDK's `mcpServerStatus` does. */
+  mcpServerStatus(): Promise<ReadonlyArray<McpServerStatus>>;
+  /** Reads one resource from a connected MCP server, as the SDK's `readMcpResource` does. */
+  readMcpResource(serverName: string, uri: string): Promise<SDKControlMcpReadResourceResponse>;
+  /** Sends one of `RAW_CONTROL_REQUEST_SUBTYPES` and resolves to its response payload. */
+  rawControlRequest(request: Readonly<Record<string, unknown>>): Promise<unknown>;
   initializationResult(): Promise<SDKControlInitializeResponse>;
   close(): void;
 }
@@ -515,6 +533,7 @@ class ClaudeCliQuery implements Query {
       ...(options.supportedDialogKinds
         ? { supportedDialogKinds: options.supportedDialogKinds }
         : {}),
+      ...(options.title !== undefined ? { title: options.title } : {}),
     }).then((response) => response as SDKControlInitializeResponse);
     this.initialization.catch(() => undefined);
     this.pumpPrompt(prompt);
@@ -586,6 +605,27 @@ class ClaudeCliQuery implements Query {
     return this.request({ subtype: "mcp_set_servers", servers }, null).then(
       (response) => response as McpSetServersResult,
     );
+  }
+
+  mcpServerStatus(): Promise<ReadonlyArray<McpServerStatus>> {
+    return this.request({ subtype: "mcp_status" }).then(
+      (response) => (response.mcpServers ?? []) as ReadonlyArray<McpServerStatus>,
+    );
+  }
+
+  readMcpResource(serverName: string, uri: string): Promise<SDKControlMcpReadResourceResponse> {
+    return this.request({ subtype: "mcp_read_resource", serverName, uri }).then(
+      (response) => response as unknown as SDKControlMcpReadResourceResponse,
+    );
+  }
+
+  rawControlRequest(request: Readonly<Record<string, unknown>>): Promise<unknown> {
+    if (typeof request.subtype !== "string" || !RAW_CONTROL_REQUEST_SUBTYPES.has(request.subtype)) {
+      return Promise.reject(
+        new Error(`Unsupported Claude control request: ${String(request.subtype)}`),
+      );
+    }
+    return this.request({ ...request });
   }
 
   getUsage(

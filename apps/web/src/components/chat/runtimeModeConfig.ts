@@ -48,3 +48,8 @@ export function resolveCompatibleRuntimeMode(
     mode: modes.includes(runtimeMode) ? runtimeMode : (stepDown ?? modes[0] ?? runtimeMode),
   };
 }
+
+// Coder: no managed policy (#27197), so no option carries an administrator's disabled reason.
+export function resolveRuntimeModeOptions(modes: ReadonlyArray<RuntimeMode>) {
+  return modes.map((mode) => ({ mode, ...runtimeModeConfig[mode] }));
+}

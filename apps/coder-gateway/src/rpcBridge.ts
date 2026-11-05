@@ -36,6 +36,7 @@ export interface WorkspaceRpcBridgeOptions {
   readonly cleanupTimeout?: Duration.Input;
 }
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class RpcBridgeConflictError extends Error {
   readonly _tag = "RpcBridgeConflictError";
 
@@ -45,6 +46,7 @@ export class RpcBridgeConflictError extends Error {
   }
 }
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class RpcBridgeSessionError extends Error {
   readonly _tag = "RpcBridgeSessionError";
   readonly kind: "protocol" | "helper";
@@ -179,7 +181,7 @@ export function makeWorkspaceRpcBridge(
     const runFork = yield* FiberSet.runtime(fibers)();
     const cleanupTimeout = options?.cleanupTimeout ?? DEFAULT_CLEANUP_TIMEOUT;
 
-    const closeHelper = helper.close.pipe(Effect.catchCause(() => Effect.void));
+    const closeHelper = helper.close.pipe(Effect.ignoreCause);
 
     const scheduleCleanupCheck = (sessionId: number): void => {
       runFork(

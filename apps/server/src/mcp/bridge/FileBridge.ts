@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Coder: a private local-file transport, no listener.
+// @effect-diagnostics globalDate:off globalTimers:off - Coder: the bridge polls with plain Node timers outside Effect.
 /**
  * Coder: the transport that carries T3 tool calls to agents without MCP or a socket.
  *
@@ -19,7 +20,7 @@ import { lstat, mkdir, open, readdir, rename, rm, writeFile } from "node:fs/prom
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 
 import { clientSource } from "./clientSource.ts";
 
@@ -48,9 +49,12 @@ export interface FileBridgeCatalogEntry {
 }
 
 /** A tool's own failure, reported to the agent as structured output. */
-export class FileBridgeToolFailure extends Data.TaggedError("FileBridgeToolFailure")<{
-  readonly value: unknown;
-}> {}
+export class FileBridgeToolFailure extends Schema.TaggedError<FileBridgeToolFailure>()(
+  "FileBridgeToolFailure",
+  { value: Schema.Unknown },
+) {}
+
+const isFileBridgeToolFailure = Schema.is(FileBridgeToolFailure);
 
 export function parseFileBridgeRequest(value: unknown): FileBridgeRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -172,17 +176,16 @@ export async function createFileBridge(
       ]);
       response = { id: request.id, ok: true, value };
     } catch (error) {
-      response =
-        error instanceof FileBridgeToolFailure
-          ? { id: request.id, ok: false, value: error.value }
-          : {
-              id: request.id,
-              ok: false,
-              error:
-                error instanceof Error && error.message.startsWith("T3 tool")
-                  ? error.message
-                  : "T3 tool call failed or expired.",
-            };
+      response = isFileBridgeToolFailure(error)
+        ? { id: request.id, ok: false, value: error.value }
+        : {
+            id: request.id,
+            ok: false,
+            error:
+              error instanceof Error && error.message.startsWith("T3 tool")
+                ? error.message
+                : "T3 tool call failed or expired.",
+          };
     } finally {
       clearTimeout(timeout);
       controllers.delete(controller);

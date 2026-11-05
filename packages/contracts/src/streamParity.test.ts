@@ -11,20 +11,20 @@ import { ServerConfigStreamEvent } from "./server.ts";
 describe("stream wire contracts", () => {
   it("keeps completion markers and bounded snapshots opt-in", () => {
     expect(
-      Schema.decodeUnknownSync(OrchestrationV2SubscribeShellInput)({
+      Schema.decodeSync(OrchestrationV2SubscribeShellInput)({
         requestCompletionMarker: true,
       }),
     ).toEqual({ requestCompletionMarker: true });
     expect(
-      Schema.decodeUnknownSync(OrchestrationV2SubscribeThreadInput)({
+      Schema.decodeSync(OrchestrationV2SubscribeThreadInput)({
         threadId: "thread",
         requestCompletionMarker: true,
         acceptBoundedSnapshot: true,
       }),
     ).toEqual({ threadId: "thread", requestCompletionMarker: true, acceptBoundedSnapshot: true });
-    expect(
-      Schema.decodeUnknownSync(OrchestrationV2ShellStreamItem)({ kind: "synchronized" }),
-    ).toEqual({ kind: "synchronized" });
+    expect(Schema.decodeSync(OrchestrationV2ShellStreamItem)({ kind: "synchronized" })).toEqual({
+      kind: "synchronized",
+    });
     expect(() =>
       Schema.decodeUnknownSync(OrchestrationV2ShellStreamItem)({ kind: "cursor", sequence: 1 }),
     ).toThrow();

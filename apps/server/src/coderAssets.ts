@@ -16,7 +16,8 @@ import {
   type CoderWriteRequestBodyInput,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import {
@@ -28,8 +29,10 @@ import {
 import * as Layer from "effect/Layer";
 import type * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - Coder: tells a route's Node stream body from a web one.
 import { Readable } from "node:stream";
 
+import type * as AssetSigner from "./assets/AssetSigner.ts";
 import type * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import type * as ServerConfig from "./config.ts";
 import { layerAssetRoute, layerAttachmentUploadRoute } from "./http.ts";
@@ -56,6 +59,7 @@ function makeRequestBodies() {
     for (const [id, at] of finished) if (now - at > REQUEST_BODY_TTL_MS) finished.delete(id);
   };
   const get = (id: string): RequestBody | null => {
+    // @effect-diagnostics-next-line globalDate:off - Coder: the body registry is synchronous bookkeeping.
     sweep(Date.now());
     if (finished.has(id)) return null;
     const existing = open.get(id);
@@ -64,6 +68,7 @@ function makeRequestBodies() {
     const body = { readable, writer: writable.getWriter() };
     open.set(id, body);
     // A chunk whose request never arrives is dropped instead of waiting forever.
+    // @effect-diagnostics-next-line globalTimers:off - Coder: the body registry is synchronous bookkeeping.
     setTimeout(() => {
       if (open.get(id) === body && !body.readable.locked) finish(id);
     }, REQUEST_BODY_TTL_MS).unref();
@@ -72,6 +77,7 @@ function makeRequestBodies() {
   const finish = (id: string) => {
     const body = open.get(id);
     open.delete(id);
+    // @effect-diagnostics-next-line globalDate:off - Coder: the body registry is synchronous bookkeeping.
     finished.set(id, Date.now());
     if (body) void body.writer.abort(new Error("The request finished.")).catch(() => undefined);
   };
@@ -119,12 +125,14 @@ export const makeServeAsset = Effect.gen(function* () {
   );
   const bodies = makeRequestBodies();
   const services = yield* Effect.context<
-    | Crypto.Crypto
+    | Digest.Digest
+    | SecureRandom.SecureRandom
     | FileSystem.FileSystem
     | Path.Path
     | Orchestrator.OrchestratorV2
     | ServerConfig.ServerConfig
     | ServerSecretStore.ServerSecretStore
+    | AssetSigner.AssetSigner
     | ProjectFaviconResolver.ProjectFaviconResolver
     | WorkspacePaths.WorkspacePaths
     | DocumentText.DocumentText

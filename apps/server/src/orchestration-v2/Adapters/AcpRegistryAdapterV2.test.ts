@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Option from "effect/Option";
 import type { AcpRegistryAvailableCommands } from "@t3tools/provider-acp-registry/testing";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -57,7 +58,9 @@ const decodeAcpRegistryAdapterSettings = Schema.decodeUnknownEffect(
   AcpRegistryAdapterV2Driver.configSchema,
 );
 
-const layerHost = TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer));
+const layerHost = TestProviderHost.layer().pipe(
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
@@ -78,6 +81,7 @@ const layerInjectedRuntimeCatalog = Layer.mock(AcpRegistrySupport.AcpRegistryCat
 
 const layerTest = Layer.mergeAll(
   NodeServices.layer,
+  NodeCrypto.layer,
   IdAllocator.layer,
   McpProviderSessions.layer,
   layerHost,
@@ -758,19 +762,19 @@ describe("AcpRegistryAdapterV2", () => {
                       startupActive = false;
                     }),
                 ),
-              runBackgroundProbe: (_agentId, effect) => effect.pipe(Effect.map(Option.some)),
+              runBackgroundProbe: (_agentId, effect) => effect.pipe(Effect.asSome),
               clearAvailableCommands: () => Effect.void,
               publishAvailableCommands: (publishedInstanceId, commands) =>
                 Deferred.succeed(commandsPublished, {
                   instanceId: publishedInstanceId,
                   commands,
                 }).pipe(Effect.asVoid),
-              getAvailableCommands: () => Effect.succeed(Option.none()),
+              getAvailableCommands: () => Effect.succeedNone,
               watchAvailableCommands: () => Effect.never,
               clearLiveConfiguration: () => Effect.void,
               publishLiveConfiguration: (_publishedInstanceId, configuration) =>
                 Deferred.succeed(configurationPublished, configuration).pipe(Effect.asVoid),
-              getLiveConfiguration: () => Effect.succeed(Option.none()),
+              getLiveConfiguration: () => Effect.succeedNone,
               watchLiveConfiguration: () => Effect.never,
             }),
             Layer.mock(AcpRegistrySupport.AcpRegistryCatalog)({
@@ -929,8 +933,10 @@ describe("AcpRegistryAdapterV2", () => {
                   env: { T3_ACP_SESSION_LIFECYCLE: "1" },
                 },
                 authMethodId: "test",
+                // The adapter logs nothing by default (#29100), so this runtime logs its frames.
                 protocolLogging: {
                   ...runtimeInput.protocolLogging,
+                  logOutgoing: true,
                   logger: (event) => Queue.offer(protocolEvents, event).pipe(Effect.asVoid),
                 },
               }).pipe(

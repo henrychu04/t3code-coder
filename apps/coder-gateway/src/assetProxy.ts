@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Coder: streams workspace assets through the gateway's Node loopback HTTP server.
 import type * as NodeHttp from "node:http";
 
 import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";

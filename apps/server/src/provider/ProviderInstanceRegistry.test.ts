@@ -1,6 +1,7 @@
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   type ClaudeSettings,
@@ -142,7 +143,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
   const layerBaseDeps = ServerConfig.layerTest(process.cwd(), {
     prefix: "provider-instance-registry-test",
   }).pipe(
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(Layer.mock(ServerSecretStore.ServerSecretStore)({})),
     Layer.provideMerge(Layer.mock(SecretResolver.SecretResolver)({})),
     Layer.provideMerge(layerBackgroundPolicyAlwaysRun),

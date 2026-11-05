@@ -24,6 +24,7 @@ const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 const TRANSFER_READY_SENTINEL = "T3_CODER_TRANSFER_READY";
 const TAR_BLOCK_BYTES = 512;
 
+// @effect-diagnostics-next-line extendsNativeError:off -- Coder: native error the gateway matches with instanceof and renders by message at the HTTP boundary.
 export class CoderProcessError extends Error {
   readonly _tag = "CoderProcessError";
 
@@ -101,7 +102,7 @@ export function runProcess(
         }),
         (child) =>
           terminateChildProcess({ child, exit, graceMs: terminationGraceMs }).pipe(
-            Effect.catchCause(() => Effect.void),
+            Effect.ignoreCause,
           ),
       );
 
