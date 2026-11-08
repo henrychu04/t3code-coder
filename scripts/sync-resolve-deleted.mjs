@@ -497,7 +497,6 @@ const DELETED_PATHS = {
     "apps/web/src/components/pullRequest/PullRequestReviewForm.browser.test.tsx",
     "packages/contracts/src/speech.ts",
     /^packages\/shared\/src\/speech\./,
-    "packages/shared/src/keybindingMatching.ts",
     "docs/user/voice-input.md",
     "docs/internals/voice-input.md",
     "evals/voice-cleanup/",
