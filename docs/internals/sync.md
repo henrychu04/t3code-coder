@@ -89,6 +89,19 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   comment blocks whole: removing upstream's lines one at a time can drop a `/**` or `*/` the
   fork's text still needs (typecheck catches the orphaned lines). Afterwards, list comment lines
   upstream deleted that the result still has, since an auto-merged hunk can keep them too.
+- A cut feature spread over mid-range commits that later commits build on (ade473018d: voice input,
+  whose #30623 added dictation to a dozen carried text fields that #30747 and #30857 then edited)
+  cannot be a stage of its own. After the merge, revert each cut commit file by file, newest
+  first, with a 3-way merge that keeps later edits:
+  `git merge-file <file> <(git show C:<file>) <(git show C^:<file>)` (write both sides to temp
+  files first). Conflicts mark where a later commit touched the same lines; resolve them to the
+  later commit's form without the cut feature. Then `rg` the tree for the feature's names. A
+  `patch -R` loop over the same commits misses these overlaps silently when run with `-N`.
+- Never write a resolution script that opens a file for writing before building its content:
+  a failure after `open(f, "w")` leaves the file empty, and `git add -A` stages it (ade473018d
+  emptied `composerTrigger.test.ts` this way; `sync-check`'s `both-sides` caught it). Check
+  `git diff --cached --name-only --diff-filter=M HEAD` for empty files, and `git status` for
+  stray files at the repository root, before committing the merge.
 - To cut one upstream commit whole (47f2c8d29e: managed policy, #27197), make it the last commit
   of its own stage. Merge its parent on a temporary branch and commit; then, on the sync branch,
   `git merge --no-ff --no-commit <commit>` and `git read-tree --reset -u <temporary branch>`, so the
