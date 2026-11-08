@@ -964,6 +964,9 @@ checks that every name here still exists and that every modified upstream file i
   size.
 - Cached data and drafts are cleared only when a workspace leaves the Coder config (stopped and
   disconnected workspaces also leave the platform registrations); the mapping is memory-only.
+- client-runtime's RPC session sends no `providerCatalogsOnDemand` subscribe option (#28487); only
+  upstream's mobile app sets it, so the server keeps sending every catalog. The server side
+  (`ws.ts`'s `catalogsPerCwd`) is upstream's.
 - `state/server.ts` (client-runtime) and the web provider list stay limited to the helper's methods
   and the four drivers (`isCoderProviderDriver`); `providerClients.ts` registers only those, and the
   Add provider dialog shows all four with no "Show more" fold or ACP Registry search (#25753).
@@ -1247,16 +1250,21 @@ them, the file is named here.
   would add a second laptop-to-workspace upload. Not carried: server `speech/`, web `speech/`, the
   voice settings page and composer controls, `TranscriptionPostProcessing.ts`, contracts
   `speech.ts` with its settings fields, the `voiceTranscription` and `cloudVoiceTranscription`
-  capabilities (`environment.ts`), and the `composer.dictation` command (`keybindings.ts`), shared
-  `speech.ts`, `keybindingMatching.ts`, and `HostProcess.ts`'s `LinuxLibc`, provider-core
-  `textGeneration.ts` and `textGenerationOperations.ts`'s transcript cleanup, and the dictation
-  hooks #30623 added to carried text fields: `AssistantCitationChip.tsx`,
-  `AssistantCitationCommentEditor.tsx`, `ComposerPrimaryActions.tsx`, `AnnotatableCodeView.tsx`,
-  `DiffCommentAnnotation.tsx`, `PullRequestCommentForm.tsx`, `PullRequestComposer.tsx`,
-  `PullRequestReviewAnnotation.tsx`, `ui/button.tsx`, `ui/textarea.tsx`, and `useLocalStorage.ts`.
-  Those files are upstream's with the voice commits reverted; the later PR completion hunks
-  (#30747, #30857) stay. `PullRequestReviewForm.tsx` keeps #30623's Cmd/Ctrl+Enter submit and
-  `commentSubmitShortcut.ts` is upstream's; only the review form's speech hooks are cut.
+  capabilities (`environment.ts`), the `composer.dictation` command (contracts `keybindings.ts`)
+  and its default binding (shared `keybindings.ts`), shared `speech.ts` and `HostProcess.ts`'s
+  `LinuxLibc`, provider-core `textGeneration.ts` and `textGenerationOperations.ts`'s transcript
+  cleanup, `ui/button.tsx`'s pill sizes (used only by the speech button), and the dictation hunks
+  in carried files: `AssistantCitationChip.tsx`, `AssistantCitationCommentEditor.tsx`,
+  `ChatComposer.tsx`, `ComposerFooterControls.tsx`, `ComposerPrimaryActions.tsx` (the
+  `voiceInputActive` gate only), `AnnotatableCodeView.tsx`, `DiffCommentAnnotation.tsx`,
+  `DiffPanel.tsx`, `FilePreviewPanel.tsx`, `PullRequestCodeTab.tsx`, `PullRequestCommentForm.tsx`,
+  `PullRequestComposer.tsx`, `PullRequestReviewAnnotation.tsx`, `PullRequestReviewForm.tsx` (its
+  Cmd/Ctrl+Enter submit stays), `KeybindingsSettings.logic.ts`, `settingsLayout.tsx`
+  (`searchTargetFallbacks`), `settingsSearch.ts`, `SettingsSidebarNav.tsx`, and `routeTree.gen.ts`.
+  Those files are upstream's with the voice hunks reverted; the later PR completion hunks (#30747,
+  #30857) stay. #30623's non-voice changes are carried: `commentSubmitShortcut.ts`,
+  `ui/textarea.tsx`, `useLocalStorage.ts`, and shared `keybindingMatching.ts` (#30624; no package
+  export, which only the desktop app imports).
 - **Managed policy** (#27197). Organization-wide policy files, the Windows registry and macOS
   profile readers (`ffi-rs`), `t3 policy`, policy-locked settings and providers, runtime-mode
   ceilings, and their notices are cut: no contracts `managedPolicy.ts`, shared
