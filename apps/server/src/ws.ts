@@ -116,6 +116,7 @@ import {
   makeLiveBodyDeduper,
   projectDomainEventForWire,
   projectThreadProjectionForWire,
+  threadStreamEventItem,
 } from "./orchestration-v2/WireProjection.ts";
 import { dedupeSnapshotBodies } from "@t3tools/shared/orchestrationV2DedupedBodies";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -172,8 +173,44 @@ import { exceedsHelperStdioFrame } from "./coderWs.ts";
 // Coder: the synthesized ready event carries the current time.
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
-function withoutWorkspaceSnapshots(providers: ReadonlyArray<ServerProvider>): ServerProvider[] {
-  return providers.map(({ workspaceSnapshots: _workspaceSnapshots, ...provider }) => provider);
+// A failed scan leaves no cwd snapshot, so a client without the machine catalog gets it
+// as a pending snapshot, which it shows while it retries the scan.
+function workspaceSnapshotOrCatalog(
+  provider: ServerProvider,
+  cwd: string,
+  catalogOnDemand: boolean,
+) {
+  const snapshots = (provider.workspaceSnapshots ?? []).filter((snapshot) => snapshot.cwd === cwd);
+  if (snapshots.length > 0 || !catalogOnDemand) return snapshots;
+  return [
+    {
+      cwd,
+      checkedAt: provider.checkedAt,
+      slashCommands: provider.slashCommands,
+      slashCommandsPending: true,
+      skills: provider.skills,
+    },
+  ];
+}
+
+// On-demand catalog clients read full entries from the cwd snapshot they fetch. Names still
+// change the config when the machine catalog does, so the client refetches, and skill names
+// and labels keep skill links working where no snapshot is fetched.
+function withoutWorkspaceSnapshots(
+  providers: ReadonlyArray<ServerProvider>,
+  catalogsPerCwd: ReadonlySet<string> = new Set(),
+): ServerProvider[] {
+  return providers.map(({ workspaceSnapshots: _workspaceSnapshots, ...provider }) =>
+    catalogsPerCwd.has(provider.instanceId)
+      ? {
+          ...provider,
+          slashCommands: provider.slashCommands.map(({ name }) => ({ name })),
+          skills: provider.skills.map(
+            ({ description: _d, shortDescription: _s, ...skill }) => skill,
+          ),
+        }
+      : provider,
+  );
 }
 
 function unexpectedCompatibilityError(error: never): never {
@@ -430,11 +467,7 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
           afterSequence,
         })
         .pipe(
-          Stream.map((stored) => ({
-            kind: "event" as const,
-            sequence: stored.sequence,
-            event: stored.event,
-          })),
+          Stream.map(threadStreamEventItem),
           coalesceThreadLiveStream,
           Stream.mapError(
             (cause) =>
@@ -1206,6 +1239,7 @@ const layerWsRpc = () =>
       // limits, or event-loop stall notices.
       const loadServerConfig = Effect.fn("ws.loadServerConfig")(function* (options: {
         readonly workspaceSnapshotsOnDemand: boolean;
+        readonly catalogsPerCwd?: ReadonlySet<string>;
       }) {
         // Coder: the trimmed config RPC cannot expose keybinding-load errors; preserve defaults on failure.
         const keybindingsConfig = yield* keybindings.loadConfigState.pipe(
@@ -1213,7 +1247,7 @@ const layerWsRpc = () =>
         );
         const currentProviders = yield* providerRegistry.getProviders;
         const providers = options.workspaceSnapshotsOnDemand
-          ? withoutWorkspaceSnapshots(currentProviders)
+          ? withoutWorkspaceSnapshots(currentProviders, options.catalogsPerCwd)
           : currentProviders;
         const settings = ServerSettings.redactServerSettingsForClient(
           yield* serverSettings.getSettings,
@@ -1616,6 +1650,9 @@ const layerWsRpc = () =>
             if (instanceId === undefined || cwd === undefined) {
               return { providers: withoutWorkspaceSnapshots(providers) };
             }
+            const catalogOnDemand =
+              input.providerCatalogsOnDemand === true &&
+              (yield* providerInstances.getInstance(instanceId))?.snapshotForCwd !== undefined;
             return {
               providers: providers
                 .filter((provider) => provider.instanceId === instanceId)
@@ -1625,9 +1662,7 @@ const layerWsRpc = () =>
                   models: [],
                   slashCommands: [],
                   skills: [],
-                  workspaceSnapshots: (provider.workspaceSnapshots ?? []).filter(
-                    (snapshot) => snapshot.cwd === cwd,
-                  ),
+                  workspaceSnapshots: workspaceSnapshotOrCatalog(provider, cwd, catalogOnDemand),
                 })),
             };
           }),
@@ -1827,8 +1862,12 @@ const layerWsRpc = () =>
         [WS_METHODS.subscribeProjectClones]: () => projectCloneTracker.stream,
         [WS_METHODS.sourceControlPublishRepository]: (input) =>
           sourceControlRepositories.publishRepository(input).pipe(
-            Effect.tap(() => repositoryIdentityResolver.resolve(input.cwd, { refresh: true })),
-            Effect.tap(() => refreshGitStatus(input.cwd)),
+            // A failed push still leaves the new remote added.
+            Effect.ensuring(
+              repositoryIdentityResolver
+                .resolve(input.cwd, { refresh: true })
+                .pipe(Effect.andThen(refreshGitStatus(input.cwd))),
+            ),
           ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           workspaceEntries.search(input).pipe(
@@ -2133,10 +2172,28 @@ const layerWsRpc = () =>
             Effect.gen(function* () {
               // Coder: API-only providers have no subscription quota sources or usage-limit commands.
               const workspaceSnapshotsOnDemand = input.workspaceSnapshotsOnDemand === true;
-              // Buffer changes through discovery and the initial snapshot's RPC ACK wait.
+              // Only providers that can scan a cwd answer the client's on-demand catalog fetch.
+              // Read per update, since a replaced instance can change that.
+              const currentCatalogsPerCwd =
+                workspaceSnapshotsOnDemand && input.providerCatalogsOnDemand === true
+                  ? providerInstances.listInstances.pipe(
+                      Effect.map(
+                        (instances) =>
+                          new Set(
+                            instances
+                              .filter((instance) => instance.snapshotForCwd !== undefined)
+                              .map((instance) => instance.instanceId),
+                          ),
+                      ),
+                    )
+                  : Effect.succeed(new Set<string>());
+              // Buffer changes through discovery and the initial snapshot's send.
               const keybindingsChanges = yield* keybindings.subscribeChanges;
               const settingsChanges = yield* serverSettings.subscribeChanges;
-              const config = yield* loadServerConfig({ workspaceSnapshotsOnDemand });
+              const config = yield* loadServerConfig({
+                workspaceSnapshotsOnDemand,
+                catalogsPerCwd: yield* currentCatalogsPerCwd,
+              });
               const keybindingsUpdates = keybindingsChanges.pipe(
                 Stream.map((event) => ({
                   version: 1 as const,
@@ -2153,8 +2210,14 @@ const layerWsRpc = () =>
               ).pipe(
                 // Coder: no usage-limit sources to pair with. Stripped before the de-dupe below,
                 // so snapshot-only changes send nothing.
-                Stream.map((providers) =>
-                  workspaceSnapshotsOnDemand ? withoutWorkspaceSnapshots(providers) : providers,
+                Stream.mapEffect((providers) =>
+                  workspaceSnapshotsOnDemand
+                    ? currentCatalogsPerCwd.pipe(
+                        Effect.map((catalogsPerCwd) =>
+                          withoutWorkspaceSnapshots(providers, catalogsPerCwd),
+                        ),
+                      )
+                    : Effect.succeed(providers),
                 ),
                 // Compare initial paired values with the snapshot; blindly dropping them loses changes between snapshot and subscription.
                 (updates) => Stream.concat(rpcInitialItems([config.providers]), updates),

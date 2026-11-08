@@ -48,7 +48,9 @@ export const definition = defineSourceControl({
   parseChangeRequestUrl: (url) => parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
   commitUrl: (input) => buildCommitUrl(input, "-/commit"),
   parseCommitUrl: (url) => parseCommitPath(url, COMMIT_PATH),
-  changeRequestUrlFromReferenceAutolink: () => null,
+  // `!12` already links the merge request itself; `#12` is always an issue.
+  changeRequestUrlFromReferenceAutolink: (url) =>
+    CHANGE_REQUEST_PATH.test(url.pathname) ? url.toString() : null,
   changeRequestActions: new Set([
     "merge",
     "ready",
@@ -58,16 +60,15 @@ export const definition = defineSourceControl({
     "update-branch",
     "enable-auto-merge",
     "disable-auto-merge",
+    "delete-branch",
   ] as const),
   checkoutCommand: ({ number }) => `glab mr checkout ${number}`,
-  changeRequestCloseCommand: /\bglab\s+mr\s+(?:merge|close)\b/u,
+  // `accept` is glab's alias for `merge`.
+  changeRequestCloseCommand: /\bglab\s+mr\s+(?:merge|accept|close)\b/u,
   changeRequestCreateCommand: /\bglab\s+mr\s+create\b/u,
-  // Coder: GitLab profiles live at the host root, so comment authors link there.
+  // Bot users, unlike GitHub's, have real profile pages.
   authorProfileUrl: (login, repositoryUrl) =>
-    login.endsWith("[bot]")
-      ? null
-      : new URL(`/${encodeURIComponent(login)}`, repositoryUrl).toString(),
-  // Coder: `!123`, `#123`, and commit SHAs link below the project with GitLab's `/-/` routes.
+    new URL(`/${encodeURIComponent(login)}`, repositoryUrl).toString(),
   referenceAutolinks: gitLabReferenceAutolinks,
   reviewSummaryRequired: () => false,
   checkoutCommandArgument: (input) => CHECKOUT_COMMAND.exec(input)?.[1]?.trim() ?? null,

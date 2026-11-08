@@ -612,8 +612,11 @@ checks that every name here still exists and that every modified upstream file i
   those two. Session delete is cut because Kilo Code advertises no `session/delete`; logout and
   agent provider configuration are account and provider management. The section keeps upstream's
   `readOnly` prop (upstream's browser test passes it) and `probe.ts` keeps upstream's
-  `managementFailure` reasons for the cut actions; neither is read here.
-- provider-acp's `adapter.ts` gives ACP sessions no MCP server and sends `t3ToolBridgeInstructions`
+  `managementFailure` reasons for the cut actions; neither is read here. #32409's project-change
+  recovery is carried for the session list and import only (reset on a new project, late replies
+  ignored).
+- provider-acp's `adapter.ts` gives ACP sessions no MCP server (its `acpMcpContext` still sets
+  #30361's `T3CODE_THREAD_ID` in the agent's environment whenever a T3 session exists) and sends `t3ToolBridgeInstructions`
   with the first prompt through provider-core's `t3AcpPromptWithInstructions`; `mcpOverAcpBridge.ts`
   and `clientTerminals.ts` stay dormant (cutting them would add about 34 seams), as do the flavor
   hooks Kiro (#14693) added to `adapter.ts` and `AcpSessionRuntime.ts` (steering, fork from turn,
@@ -628,7 +631,8 @@ checks that every name here still exists and that every modified upstream file i
 - `project/AgentSessionScanner.ts` declares `resolvePiSessionsDir` (upstream exports it from Pi's
   uncarried usage reader); `coderServer.ts` provides the scanner; `ImportAgentSessionsDialog.tsx`
   runs the welcome wizard's import step from **Settings → Providers → History**.
-- `ProviderAuthService` reports every sign-in, logout, and credential transfer unavailable;
+- `ProviderAuthService` reports every sign-in, logout, sign-in method removal (#29280), and
+  credential transfer unavailable;
   `CodexManagedRuntime` keeps only upstream's resolution contract; `ProviderHostLive` gives drivers
   no credential store.
 - `CodexDriver` offers no managed install (`setupMode: "managed"`, so no `compatibility` hook), has
@@ -669,7 +673,9 @@ checks that every name here still exists and that every modified upstream file i
 
 - The bridge carries `html_render` only. `htmlRender/HtmlRender.ts` keeps image inlining and
   storage without `preview` or height measurement (work workspaces cannot obtain the headless
-  browser); the tool description omits `html_preview` and the mobile scroll-cap sentence.
+  browser); the tool description omits `html_preview` and the mobile scroll-cap sentence. Pages can
+  come from an absolute `.html` path (#32833), which `html/handlers.ts` accepts only from
+  full-access threads, as upstream does.
 - `htmlRenderFromBridgeCommand` (shared `toolOutput.ts`) recognizes a completed
   `t3.mjs html_render` bridge command; `WireProjection` keeps only that compact reference.
 - Pages are kept like other attachments; deleting a thread does not delete them.
@@ -721,18 +727,19 @@ checks that every name here still exists and that every modified upstream file i
   `canonicalizeGitCafePullRequestUrl` is an identity.
 - source-control-core drops the driver's `signIn` and `isRepositoryStarred`, the definition's
   `appSignIn` and `signIns`, and `SourceControlHost.settings.update` and `getWithSecrets` (also from
-  the test host); core's `SourceControlMediaRequest` adds `cwd`, which
-  `sourceControlMediaResponse.ts` passes from the claim.
+  the test host); core's `SourceControlMediaRequest` adds `cwd` beside upstream's `repository`
+  (#21631), which `sourceControlMediaResponse.ts` passes from the claim; `coderAssets.ts` provides
+  `RepositoryIdentityResolver` for upstream's fallback from `cwd` to `repository`.
 - `sourceControlHostSecrets.ts` has no secret-reference resolution or invalidation, so
   `server.refreshProviders`' `reloadSecrets` invalidates nothing.
-- GitLab's definition (`source-control-gitlab/src/shared/definition.ts`): `authorProfileUrl` links
-  authors under the host root; `referenceAutolinks` (`shared/referenceAutolinks.ts`) links `!N`,
-  `#N`, and full SHAs with GitLab's `/-/` routes; `mediaUrl` (`shared/gitLabMedia.ts`) claims
+- GitLab's definition (`source-control-gitlab/src/shared/definition.ts`) keeps upstream's author
+  links and reference autolinks (#30418, #30524, which replaced the fork's own); `mediaUrl`
+  (`shared/gitLabMedia.ts`) claims
   Markdown uploads and maps them to the projects uploads API, which the driver's `fetchMedia`
   (`server/GitLabMediaFetch.ts`) reads with `glab api` in the minted `cwd` (no `--hostname`),
   buffering at most `GITLAB_MEDIA_MAX_BYTES`. The package also exports `server/GitLabCli`, which
   `ws.projects.test.ts` stubs.
-- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 337c5858c3): merge
+- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` ade473018d): merge
   requests between projects post to the source project with a numeric `target_project_id`; merge
   request URLs reach `glab` as `--repo <url> … -- <iid>`. `glab auth status` lines with a token
   label or `glpat-` token are never surfaced; clones accept only GitLab URLs without credentials,
@@ -751,9 +758,12 @@ checks that every name here still exists and that every modified upstream file i
 - Web merge requests: diffs come over `pullRequests.diff` without GitHub routing; a project's
   default merge method is a workspace setting whose `null` means "last selected"; client-runtime
   `pullRequestMarkdown.ts`'s `resolveGitLabUploadUrl` resolves `/uploads/` below the repository, and
-  `pullRequestMarkdown.logic.ts`'s `pullRequestAutolinkPlugins` adds `remarkGitLabUploads` to each
-  repository's cached plugin list, and `PullRequestMarkdown.tsx` splits the body against the
-  context's `repositoryUrl`; video
+  `pullRequestMarkdown.logic.ts`'s `pullRequestMarkdownPlugins` puts `remarkGitLabUploads` ahead
+  of upstream's root-relative media resolution (#31741, which would resolve `/uploads/` against
+  the host root), and `PullRequestMarkdown.tsx` and `splitPullRequestBody` (including table cells,
+  #25988) split the body against the context's `repositoryUrl`; `PullRequestRef` and the action
+  reply patching (#25761) carry no `expectedAccountId`, and `PullRequestService`'s listed-preview
+  seeding (#27798) has no pinned-account case; video
   uploads play inline.
 - `lib/openPullRequestLink.ts` always offers the "Open link" toast for a commit outside the
   thread's workspace; `changeRequestLinks.ts`'s `isGitLabProject` (also used by
@@ -857,7 +867,8 @@ checks that every name here still exists and that every modified upstream file i
 - `ProviderUpdatesAction.tsx`'s Update all has no `quiet` option or returned runs, and
   `ProviderUpdateRun` no environment id (no "Update everything"). `index.css` drops the `wco`
   variant, drag regions, and desktop resize inset; without `lib/windowControlsOverlay.ts`,
-  `ui/tooltip.tsx` reads a zero titlebar height, `chat/ZoomableImage.tsx` sizes to the window, and
+  `ui/tooltip.tsx`, `AppRouteModal.tsx`, and `ui/command.tsx` (#28223) read a zero titlebar height,
+  `chat/ZoomableImage.tsx` sizes to the window, and
   the sidebar sheet gets no inset. `env.ts` reports `isElectron = false`.
 - Branding: `ui/standalone-page.tsx`'s wordmark reads "T3 Coder", `SidebarChrome.tsx`'s logo link
   is "T3 Coder home", `QueuedRunsControl.tsx` says "Sent by T3 Coder", and `PullRequestsColumn.tsx`
@@ -1108,7 +1119,14 @@ checks that every name here still exists and that every modified upstream file i
   fallback-model search target, `ExpandedImageDialog` drops the SnapShot accessibility case, and
   `ProviderSettingsForm`, `ProviderModelPicker.composition`, and `ReopenClosedViewShortcut` drop
   secret-source, provider, and preview cases, `ChatHeader` mocks `CoderWorkspaceLatency`, and
-  `PullRequestStackMenu` drops the GitHub CLI refusal case. `modelSelection.test.ts` runs
+  `PullRequestStackMenu` drops the GitHub CLI refusal case. `PullRequestMarkdown.browser`'s
+  repository media case uses GitLab uploads, `reopenClosedView.test.ts` passes no `openPreview`,
+  client-runtime `pullRequests.test.ts` builds its runtime without a query store, and
+  `AcpRegistryAdapterV2.test.ts`'s thread-env case (#30361) checks only `T3CODE_THREAD_ID`.
+  Upstream's server tests for cut surfaces are dropped: `ws.test.ts`'s failed-publish refresh
+  (#29688, it builds the session `layerWsRpc`), `PullRequestService.test.ts`'s pinned-account
+  preview, `AssetAccess.test.ts`'s GitHub repository-preservation case, and
+  `ScheduledTaskService.test.ts`'s policy ceiling. `modelSelection.test.ts` runs
   upstream's OpenCode instance cases on Claude instances and drops the Antigravity alias case
   (#27859). The fork-only `hooks/useThreadActionMenu.test.tsx`
   keeps upstream's deleted hook test.
@@ -1133,7 +1151,9 @@ them, the file is named here.
   upstream's hosted links still parse. Cloud link state (`cloud/cloudLinkState.ts`) is cut from
   `ScheduledTasksSettings.tsx` and `useAvailableSettingsSearchItems.ts`. `Icons.tsx` drops `OnePasswordIcon` and `KiroIcon`.
   `media/mediaContent.ts`'s `fetchMediaBlob` has no desktop native read after a failed fetch
-  (#29079).
+  (#29079). Without a desktop host environment (#26324), web `state/server.ts`'s theme atoms
+  follow the active workspace (`primaryEnvironmentIdAtom`) and `appInit.tsx` starts no host
+  lookup.
 - **Auth, pairing, and relay.** No HTTP/WebSocket listener, session scopes, pairing, DPoP, relay,
   or connection catalog; `settings/AddEnvironmentDialog.tsx` is cut. The server's `auth/` keeps
   `ServerSecretStore`, its utils (only the base64url helpers), `serverInternalPaths.ts` (#28041),
@@ -1154,6 +1174,8 @@ them, the file is named here.
   `lastEventLoopStall`), usage page or dashboard (`shared/usageLimits.ts`, provider-core and
   provider-pi `usage.ts`; `ProviderDriver.usage` is `never`), the thread details usage-limit rows
   (`ThreadDetailsUsage`'s limit windows), `useUsageLimitsPanel`, or upstream's out-of-usage fallback (#26164;
+  `textGeneration/TextGeneration.ts` keeps #29607's fallback from a provider that cannot run but
+  not the exhausted-window trigger, and `CodexTextGeneration.test.ts` has no "exhausted" case;
   `fallbackModelSelection` stays in the schema only; `ProjectDefaultsSettings.tsx` has no fallback
   row or effort picker and `settingsSearch.ts` no "Fallback model" item). Without the usage page, `timestampFormat.ts`
   has no `resolveHour12`.
@@ -1213,7 +1235,28 @@ them, the file is named here.
   `ProviderInstanceRegistry.ts`, `ProviderInstanceRegistryHydration.ts`, and `serverSettings.ts`: it
   reads no reference (an instance whose variable points at one is unavailable with upstream's "Could
   not read …" reason) and lists no kind (`secretProviders` writes are rejected); `ws.ts` does not
-  advertise `secretReferences`.
+  advertise `secretReferences` or `secretRequestReferences`. Answering a secret request with a
+  provider reference (#31670: server `SecretRequests.ts`, web `chat/SecretRequestCard.tsx`,
+  client-runtime `secretRequest.ts`), clearing fields when a provider is removed (#31651:
+  `settingsSecrets.ts`, `serverSettings.ts`), and the hydration watcher's secret reload when a
+  provider changes (#31226's `ProviderInstanceRegistryHydration.ts` part) are not carried; the
+  contract fields stay. #31226's parking of unreadable instances in `ProviderInstanceRegistry.ts`
+  is carried.
+- **Voice input** (#30623, #30624, #30625, #31059, #31769, #31778, #31799, #32035, #32045,
+  #32142, #32197). Work workspaces cannot download the speech models, and the audio transport
+  would add a second laptop-to-workspace upload. Not carried: server `speech/`, web `speech/`, the
+  voice settings page and composer controls, `TranscriptionPostProcessing.ts`, contracts
+  `speech.ts` with its settings fields, the `voiceTranscription` and `cloudVoiceTranscription`
+  capabilities (`environment.ts`), and the `composer.dictation` command (`keybindings.ts`), shared
+  `speech.ts`, `keybindingMatching.ts`, and `HostProcess.ts`'s `LinuxLibc`, provider-core
+  `textGeneration.ts` and `textGenerationOperations.ts`'s transcript cleanup, and the dictation
+  hooks #30623 added to carried text fields: `AssistantCitationChip.tsx`,
+  `AssistantCitationCommentEditor.tsx`, `ComposerPrimaryActions.tsx`, `AnnotatableCodeView.tsx`,
+  `DiffCommentAnnotation.tsx`, `PullRequestCommentForm.tsx`, `PullRequestComposer.tsx`,
+  `PullRequestReviewAnnotation.tsx`, `ui/button.tsx`, `ui/textarea.tsx`, and `useLocalStorage.ts`.
+  Those files are upstream's with the voice commits reverted; the later PR completion hunks
+  (#30747, #30857) stay. `PullRequestReviewForm.tsx` keeps #30623's Cmd/Ctrl+Enter submit and
+  `commentSubmitShortcut.ts` is upstream's; only the review form's speech hooks are cut.
 - **Managed policy** (#27197). Organization-wide policy files, the Windows registry and macOS
   profile readers (`ffi-rs`), `t3 policy`, policy-locked settings and providers, runtime-mode
   ceilings, and their notices are cut: no contracts `managedPolicy.ts`, shared

@@ -14,7 +14,7 @@
 import { execFile, execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-const SYNC_BASE = "337c5858c3";
+const SYNC_BASE = "ade473018d";
 const base = process.argv[2] ?? SYNC_BASE;
 const DOC = "docs/internals/coder-only.md";
 const SECTIONS = ["Upstream seams", "Cut surfaces"];

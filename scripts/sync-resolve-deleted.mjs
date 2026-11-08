@@ -244,6 +244,7 @@ const DELETED_PATHS = {
     "apps/server/scripts/cli.ts",
     "apps/server/src/serviceLauncher.ts",
     "apps/server/src/binCli.ts",
+    "apps/server/src/binMain.ts",
     "apps/server/src/cli/",
     "apps/server/src/cliCompileCache.ts",
     "apps/server/src/cliCompileCache.test.ts",
@@ -284,6 +285,9 @@ const DELETED_PATHS = {
   // ACP sign-in, the theme import test the remote catalog and desktop picker, the MCP core test
   // peer links and client scopes, and the app render scenarios upstream's fake environment.
   "tests for cut surfaces": [
+    // The web IndexedDB query cache (offline query persistence) and the desktop theme host (#26324).
+    "apps/web/src/connection/storage.browser.test.ts",
+    "apps/web/src/state/primaryEnvironment.test.ts",
     "apps/web/src/lib/resourceTelemetryState.browser.test.tsx",
     "apps/server/src/mcp/McpToolAccess.test.ts",
     "apps/server/src/mcp/McpToolAccess.race.test.ts",
@@ -474,6 +478,29 @@ const DELETED_PATHS = {
     "packages/secret-provider-core/",
     "packages/secret-provider-definitions/",
     "packages/secret-provider-onepassword/",
+    "docs/user/secrets.md",
+  ],
+  // Voice input (#30623, #30625, #31769 and follow-ups): work workspaces cannot download speech
+  // models, and the audio transport would need a second laptop-to-workspace upload path.
+  "voice input": [
+    "apps/server/src/speech/",
+    "apps/server/scripts/speech-catalog.ts",
+    "apps/server/scripts/speech-catalog.test.ts",
+    "apps/server/scripts/sync-speech-catalog.ts",
+    "apps/server/src/textGeneration/TranscriptionPostProcessing.ts",
+    "apps/server/src/textGeneration/TranscriptionPostProcessing.test.ts",
+    "apps/web/src/speech/",
+    "apps/web/src/routes/_chat.settings.voice.tsx",
+    /^apps\/web\/src\/components\/chat\/(ComposerSpeechButton|VoiceInput(ErrorPill|Pill|Setup))\.tsx$/,
+    /^apps\/web\/src\/components\/settings\/(CloudVoiceConfiguration|MicrophoneTest|SpeechLanguageSelect|SpeechModelComparison|VoiceSettingsPanel|speechModelBrowser)\./,
+    "apps/web/src/components/composerContextActions.ts",
+    "apps/web/src/components/pullRequest/PullRequestReviewForm.browser.test.tsx",
+    "packages/contracts/src/speech.ts",
+    /^packages\/shared\/src\/speech\./,
+    "packages/shared/src/keybindingMatching.ts",
+    "docs/user/voice-input.md",
+    "docs/internals/voice-input.md",
+    "evals/voice-cleanup/",
   ],
   // Other cut web surfaces: the GitHub star prompt (#27832; GitLab is the only host) and guests'
   // screenshot URLs (#26323; workspace images load through the workspace asset route).

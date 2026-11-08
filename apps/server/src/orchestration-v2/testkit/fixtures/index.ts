@@ -55,6 +55,8 @@ import {
   assertPlanQuestionsOutput,
 } from "./plan_questions/codex_output.ts";
 import { planQuestionsInput } from "./plan_questions/input.ts";
+import { acpTitledMultiSelectInput } from "./acp_titled_multiselect/input.ts";
+import { assertAcpTitledMultiSelectOutput } from "./acp_titled_multiselect/output.ts";
 import { assertProposedPlanOutput } from "./proposed_plan/codex_output.ts";
 import { proposedPlanInput } from "./proposed_plan/input.ts";
 import { assertQueuedCancelledWhileActiveOutput } from "./queued_cancelled_while_active/codex_output.ts";
@@ -433,6 +435,22 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
         ),
         modelSelection: ACP_REGISTRY_MODEL_SELECTION,
         assertOutput: assertMalformedSessionUpdateOutput,
+      },
+    ],
+  },
+  {
+    name: "acp_titled_multiselect",
+    buildInput: acpTitledMultiSelectInput,
+    providers: [
+      {
+        driver: ProviderDriverKind.make("acpRegistry"),
+        transcriptFile: new URL(
+          "./acp_titled_multiselect/registry_transcript.ndjson",
+          import.meta.url,
+        ),
+        modelSelection: ACP_REGISTRY_MODEL_SELECTION,
+        runtimePolicyOverride: READ_ONLY_NEVER_POLICY,
+        assertOutput: assertAcpTitledMultiSelectOutput,
       },
     ],
   },

@@ -8,6 +8,7 @@ import {
   ThreadId,
   type ServerProvider,
 } from "@t3tools/contracts";
+import type { ComponentProps } from "react";
 import { expect, it, vi } from "vite-plus/test";
 
 import { act, render } from "../../../test/render";
@@ -63,16 +64,25 @@ const provider = {
   skills: [],
 } satisfies ServerProvider;
 
+const project = { id: projectId, title: "Antigravity", workspaceRoot: session.cwd };
+const replacement = {
+  id: ProjectId.make("replacement"),
+  title: "Replacement",
+  workspaceRoot: "/replacement",
+};
+type Projects = ComponentProps<typeof AcpSessionManagementSection>["projects"];
+
 async function renderSection(readOnly = false) {
-  const screen = await render(
+  const section = (projects: Projects = [project]) => (
     <AcpSessionManagementSection
       environmentId={environmentId}
       instanceId={instanceId}
       provider={provider}
-      projects={[{ id: projectId, title: "Antigravity", workspaceRoot: session.cwd }]}
+      projects={projects}
       readOnly={readOnly}
-    />,
+    />
   );
+  const screen = await render(section());
   const button = (label: string) => {
     const found = [...screen.container.querySelectorAll("button")].find(
       (element) => element.textContent === label,
@@ -83,6 +93,7 @@ async function renderSection(readOnly = false) {
   return Object.assign(screen, {
     button,
     click: (label: string) => act(async () => button(label).click()),
+    setProjects: (projects: Projects) => screen.rerender(section(projects)),
   });
 }
 
@@ -112,4 +123,23 @@ it("does not import with provider management alone", async () => {
   expect(screen.button("Import").disabled).toBe(true);
   await screen.click("Import");
   expect(commands.import).not.toHaveBeenCalled();
+});
+
+it("ignores a late listing after project replacement", async () => {
+  setup();
+  let finish!: (value: unknown) => void;
+  commands.list.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await using screen = await renderSection();
+  await screen.click("List sessions");
+  await screen.setProjects([replacement]);
+  await act(async () =>
+    finish({ _tag: "Success", value: { sessions: [session], nextCursor: "old-page" } }),
+  );
+  await expect.element(screen.getByText(session.title)).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "List sessions" })).toBeEnabled();
 });

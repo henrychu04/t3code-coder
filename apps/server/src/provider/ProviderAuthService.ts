@@ -50,6 +50,9 @@ export class ProviderAuthService extends Context.Service<
       input: ProviderAuthTarget & { readonly flowId: string },
       ownerSessionId: string,
     ) => Effect.Effect<ProviderAuthState, ProviderSetupError>;
+    readonly removeMethod: (
+      input: ProviderAuthTarget & { readonly methodId: string },
+    ) => Effect.Effect<ProviderAuthState, ProviderSetupError>;
     readonly logout: (
       input: ProviderAuthTarget,
     ) => Effect.Effect<ProviderAuthState, ProviderSetupError>;
@@ -90,6 +93,9 @@ export const layer = Layer.succeed(
     }),
     cancel: Effect.fn("ProviderAuthService.cancel")(function* (input) {
       return yield* unavailable(input.instanceId, "cancel");
+    }),
+    removeMethod: Effect.fn("ProviderAuthService.removeMethod")(function* (input) {
+      return yield* unavailable(input.instanceId, "removeMethod");
     }),
     logout: Effect.fn("ProviderAuthService.logout")(function* (input) {
       return yield* unavailable(input.instanceId, "logout");

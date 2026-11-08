@@ -156,10 +156,20 @@ export const primaryServerKeybindingsAtom = createShortcutKeybindingsAtom({
 
 const EMPTY_ENVIRONMENT_THEMES: ReadonlyArray<EnvironmentTheme> = [];
 
-export const primaryServerEnvironmentThemesAtom = Atom.make(
+const themeServerConfigAtom = Atom.make((get): ServerConfig | null => {
+  // Coder: no desktop host environment (#26324), so themes follow the active workspace.
+  const environmentId = get(primaryEnvironmentIdAtom);
+  return environmentId === null ? null : get(serverEnvironment.configValueAtom(environmentId));
+}).pipe(Atom.withLabel("web-theme-server-config"));
+
+export const themeServerEnvironmentThemesAtom = Atom.make(
   (get): ReadonlyArray<EnvironmentTheme> =>
-    get(primaryServerConfigAtom)?.environmentThemes ?? EMPTY_ENVIRONMENT_THEMES,
-).pipe(Atom.withLabel("web-primary-server-environment-themes"));
+    get(themeServerConfigAtom)?.environmentThemes ?? EMPTY_ENVIRONMENT_THEMES,
+).pipe(Atom.withLabel("web-theme-server-environment-themes"));
+
+export const themeServerSettingsAtom = Atom.make(
+  (get): ServerSettings => get(themeServerConfigAtom)?.settings ?? DEFAULT_SERVER_SETTINGS,
+).pipe(Atom.withLabel("web-theme-server-settings"));
 
 // Coder: every workspace is remote and equal, so lifecycle events are read per workspace.
 export interface EnvironmentServerState {

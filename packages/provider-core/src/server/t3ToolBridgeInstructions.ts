@@ -8,14 +8,18 @@
 import { T3_CODE_ORCHESTRATION_SECTIONS } from "./orchestrationInstructions.ts";
 
 // `html_preview` and the `preview_*` browser are not carried; pages publish with `html_render` alone.
-const UPSTREAM_HTML_PREVIEW_STEP = "pass its HTML to `html_preview`, then `html_render`";
+const UPSTREAM_HTML_PREVIEW_STEP =
+  "pass the path to an HTML file, or inline HTML to `html_preview`, then `html_render`";
 const UPSTREAM_PREVIEW_TOOLS = /^- Never use `preview_\*`[^\n]*\n?/mu;
 
 /** Upstream's orchestration sections without the steps that use the uncarried browser tools. */
 const T3_BRIDGE_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = T3_CODE_ORCHESTRATION_SECTIONS.map(
   (section) =>
     section
-      .replace(UPSTREAM_HTML_PREVIEW_STEP, "pass its HTML to `html_render`")
+      .replace(
+        UPSTREAM_HTML_PREVIEW_STEP,
+        "pass the path to an HTML file, or inline HTML, to `html_render`",
+      )
       .replace(UPSTREAM_PREVIEW_TOOLS, "")
       .trimEnd(),
 );

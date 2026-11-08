@@ -68,6 +68,7 @@ it("opens a recognized MR in the page panel and updates its URL selection", asyn
           remarkPlugins: [],
           lineBreaks: false,
           repositoryUrl: "https://gitlab.example/group/project",
+          repository: null,
           threadRef: null,
         }}
       >
@@ -115,6 +116,7 @@ it("plays videos from their host and links other attachments, as on main", async
           remarkPlugins: [],
           lineBreaks: false,
           repositoryUrl: "https://gitlab.example/group/project",
+          repository: null,
           threadRef: null,
         }}
       >

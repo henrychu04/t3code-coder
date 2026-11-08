@@ -97,6 +97,8 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   projectOrganization: true,
   threadProjectFromScratch: true,
   oneTimeSchedules: true,
+  freshContext: true,
+  scheduledTaskThreadModes: true,
   // Links are the gateway's workspace link rules; calls between workspaces go through its hub.
   peerLinks: true,
   linkFence: true,

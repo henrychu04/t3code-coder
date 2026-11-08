@@ -26,7 +26,6 @@ export function useAvailableSettingsSearchItems() {
     hasCloudPublicConfig: false,
     hasEnvironment,
     hasProviderSettingsEnvironment,
-    hasMacProviderSettingsEnvironment: false,
     canManageLocalBackend: false,
     isWslSettingsRowVisible: false,
     hasThreadAutoSettlement,

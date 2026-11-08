@@ -290,6 +290,7 @@ describe("CodexAdapterV2 process spawning", () => {
           "tools.update_plan.enabled": true,
           // Codex waits up to 10 s, not 1 s, for MCP servers before the first request (#13437).
           mcp_optional_startup_grace_ms: 10_000,
+          "features.concurrent_reasoning_summaries": true,
           "shell_environment_policy.set.T3CODE_THREAD_ID": "thread-codex-mcp",
         },
       },
@@ -1667,6 +1668,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           config: {
             "tools.update_plan.enabled": true,
             mcp_optional_startup_grace_ms: 10_000,
+            "features.concurrent_reasoning_summaries": true,
             "shell_environment_policy.set.T3CODE_THREAD_ID": `thread-${scenario}`,
           },
         },

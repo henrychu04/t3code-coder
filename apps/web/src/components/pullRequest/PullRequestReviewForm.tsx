@@ -7,9 +7,9 @@ import { useState, type ReactNode, type RefObject } from "react";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
+import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger } from "../ui/select";
-import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { readableFailure } from "./pullRequestDetail.logic";
 import {
@@ -17,6 +17,10 @@ import {
   usePendingReviewComments,
   usePullRequestReviewStore,
 } from "./pullRequestReviewStore";
+import {
+  PullRequestMarkdownTextarea,
+  type PullRequestCompletionScope,
+} from "./PullRequestMarkdownTextarea";
 
 const VERDICTS: ReadonlyArray<{
   readonly value: PullRequestReviewVerdict;
@@ -47,6 +51,7 @@ const VERDICTS: ReadonlyArray<{
 export function PullRequestReviewForm({
   environmentId,
   reference,
+  completionScope,
   term,
   verdicts,
   requestChangesSummaryRequired,
@@ -57,6 +62,7 @@ export function PullRequestReviewForm({
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
+  completionScope: PullRequestCompletionScope | null;
   /** The host's word for a change request, as in "pull request". */
   term: string;
   verdicts: ReadonlyArray<PullRequestReviewVerdict>;
@@ -81,10 +87,10 @@ export function PullRequestReviewForm({
   const selectedVerdict =
     offered.find((verdict) => verdict.value === requestedVerdict) ?? offered[0];
 
-  const submit = async (verdict: (typeof VERDICTS)[number]) => {
-    if (pending) return;
-    const submittedBody = body;
-    const submittedComments = comments;
+  const submit = async (verdict: (typeof VERDICTS)[number], text: string) => {
+    const submittedComments = usePullRequestReviewStore.getState().drafts[reviewKey] ?? [];
+    if (pending || !canSubmit(verdict.value, text, submittedComments.length)) return;
+    const submittedBody = text;
     onPendingChange(true);
     const result = await submitReview({
       environmentId,
@@ -118,12 +124,12 @@ export function PullRequestReviewForm({
   };
 
   // Forgejo requires a summary when requesting changes, even with inline comments.
-  const canSubmit = (verdict: PullRequestReviewVerdict, summary: string) =>
+  const canSubmit = (verdict: PullRequestReviewVerdict, summary: string, commentCount: number) =>
     verdict === "request-changes" && requestChangesSummaryRequired
       ? summary.trim().length > 0
-      : verdict === "approve" || summary.trim().length > 0 || comments.length > 0;
+      : verdict === "approve" || summary.trim().length > 0 || commentCount > 0;
   const placeholder =
-    selectedVerdict === undefined || canSubmit(selectedVerdict.value, "")
+    selectedVerdict === undefined || canSubmit(selectedVerdict.value, "", comments.length)
       ? "Summarize your review (optional)"
       : selectedVerdict.value === "request-changes" && requestChangesSummaryRequired
         ? "Summarize your review (required to request changes)"
@@ -131,13 +137,25 @@ export function PullRequestReviewForm({
 
   return (
     <>
-      <Textarea
+      <PullRequestMarkdownTextarea
         ref={textareaRef}
+        completionScope={completionScope}
         rows={3}
         value={body}
         placeholder={placeholder}
         aria-label="Review summary"
-        onChange={(event) => setSummary(reviewKey, event.target.value)}
+        onValueChange={(next) => setSummary(reviewKey, next)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat) return;
+          if (
+            selectedVerdict !== undefined &&
+            isCommentSubmitShortcut(event, body, pending, true)
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            void submit(selectedVerdict, body);
+          }
+        }}
       />
       <div className="mt-2 flex justify-end gap-2">
         {offered.length > 1 ? (
@@ -169,10 +187,12 @@ export function PullRequestReviewForm({
         <Button
           size="xs"
           disabled={
-            pending || selectedVerdict === undefined || !canSubmit(selectedVerdict.value, body)
+            pending ||
+            selectedVerdict === undefined ||
+            !canSubmit(selectedVerdict.value, body, comments.length)
           }
           onClick={() => {
-            if (selectedVerdict !== undefined) void submit(selectedVerdict);
+            if (selectedVerdict !== undefined) void submit(selectedVerdict, body);
           }}
         >
           {pending ? "Submitting..." : "Submit review"}

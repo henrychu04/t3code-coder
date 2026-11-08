@@ -16,7 +16,11 @@ import * as ThreadManagementService from "../../../orchestration-v2/ThreadManage
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const Html = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512_000)).annotate({
-  description: "A complete, self-contained HTML document.",
+  description: "Inline HTML.",
+});
+
+const HtmlPath = Schema.String.annotate({
+  description: "Absolute .html file path.",
 });
 
 // Coder: `html_render` only. `html_preview` screenshots pages in a downloaded headless browser,
@@ -27,7 +31,8 @@ const Html = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512_0
 const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
   description: `Show a finished HTML page (chart, diagram, mockup) inline in this thread, above your final reply. Do not announce or restate the page. Frame fits height to ${HTML_RENDER_MAX_FIT_HEIGHT}px. ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
   parameters: Schema.Struct({
-    html: Html,
+    path: Schema.optional(HtmlPath),
+    html: Schema.optional(Html),
     title: Schema.String.check(
       Schema.isMinLength(1),
       Schema.isMaxLength(HTML_RENDER_MAX_TITLE_LENGTH),

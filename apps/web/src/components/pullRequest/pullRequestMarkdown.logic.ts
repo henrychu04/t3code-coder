@@ -1,5 +1,6 @@
 import {
   changeRequestReferenceAutolinker,
+  resolveChangeRequestMediaUrl,
   resolveGitLabUploadUrl,
 } from "@t3tools/client-runtime/pull-request-markdown";
 import {
@@ -61,43 +62,54 @@ export function remarkPullRequestAutolinks(options: {
   return (tree: MarkdownNode) => visit(tree);
 }
 
-type MarkdownUrlNode = { type: string; url?: string; children?: MarkdownUrlNode[] };
+function remarkChangeRequestMediaUrls(options: { readonly changeRequestUrl: string }) {
+  const visit = (node: MarkdownNode): void => {
+    if ((node.type === "image" || node.type === "definition") && node.url !== undefined) {
+      node.url = resolveChangeRequestMediaUrl(node.url, options.changeRequestUrl);
+    }
+    node.children?.forEach(visit);
+  };
+  return (tree: MarkdownNode) => visit(tree);
+}
 
 const UPLOAD_URL_NODE_TYPES = new Set(["image", "link", "definition"]);
 
 /** Coder: GitLab writes pasted files into Markdown as `/uploads/…` images and links. */
 function remarkGitLabUploads(options: { readonly repositoryUrl: string }) {
-  const visit = (node: MarkdownUrlNode): void => {
+  const visit = (node: MarkdownNode): void => {
     if (UPLOAD_URL_NODE_TYPES.has(node.type) && node.url !== undefined) {
       node.url = resolveGitLabUploadUrl(node.url, options.repositoryUrl) ?? node.url;
     }
     node.children?.forEach(visit);
   };
-  return (tree: MarkdownUrlNode) => visit(tree);
+  return (tree: MarkdownNode) => visit(tree);
 }
 
-const NO_AUTOLINK_PLUGINS: PluggableList = [];
-const autolinkPlugins = new Map<string, PluggableList>();
+const NO_PLUGINS: PluggableList = [];
+const markdownPlugins = new Map<string, PluggableList>();
 
 /**
  * One plugin list per repository, so every comment of a pull request shares one markdown
  * renderer and its parse cache instead of parsing again on each render.
  */
-export function pullRequestAutolinkPlugins(
+export function pullRequestMarkdownPlugins(
   changeRequest: { readonly provider: string; readonly url: string } | null,
 ): PluggableList {
-  if (changeRequest === null) return NO_AUTOLINK_PLUGINS;
+  if (changeRequest === null) return NO_PLUGINS;
   const repositoryUrl = sourceControlClients.parseChangeRequestUrl(changeRequest.url)?.link
     .repositoryUrl;
-  if (repositoryUrl === undefined) return NO_AUTOLINK_PLUGINS;
+  if (repositoryUrl === undefined) return NO_PLUGINS;
   const key = `${changeRequest.provider}\u0000${repositoryUrl}`;
-  let plugins = autolinkPlugins.get(key);
+  let plugins = markdownPlugins.get(key);
   if (plugins === undefined) {
     const autolinks = changeRequestReferenceAutolinker(changeRequest);
-    plugins = autolinks ? [[remarkPullRequestAutolinks, { autolinks }]] : [];
-    // Coder: GitLab's root-relative `/uploads/…` links resolve against the repository.
-    plugins.push([remarkGitLabUploads, { repositoryUrl }]);
-    autolinkPlugins.set(key, plugins);
+    plugins = [
+      // Coder: GitLab's root-relative `/uploads/…` links resolve against the repository first.
+      [remarkGitLabUploads, { repositoryUrl }],
+      [remarkChangeRequestMediaUrls, { changeRequestUrl: repositoryUrl }],
+    ];
+    if (autolinks) plugins.push([remarkPullRequestAutolinks, { autolinks }]);
+    markdownPlugins.set(key, plugins);
   }
   return plugins;
 }
