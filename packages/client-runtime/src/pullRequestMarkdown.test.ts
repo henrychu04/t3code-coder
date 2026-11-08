@@ -126,6 +126,7 @@ describe("pull request body segmentation", () => {
         id: "attachment:1",
         kind: "attachment",
         url: "https://example.com/demo.mp4",
+        hostLabel: "example.com",
         media: "video",
       },
     ]);
@@ -197,8 +198,11 @@ describe("media on custom hosts", () => {
 });
 
 describe("media tables", () => {
-  const before = "https://github.com/user-attachments/assets/c69c7c1c-ef2f-47dd-97e8-fe42e40712eb";
-  const after = "https://github.com/user-attachments/assets/1867b6ec-4f88-4248-b2df-6b0f9808105b";
+  // Coder: GitHub's extensionless media URLs are not carried, so the videos are GitLab uploads.
+  const before =
+    "https://gitlab.com/group/project/uploads/c69c7c1cef2f47dd97e8fe42e40712eb/before.mp4";
+  const after =
+    "https://gitlab.com/group/project/uploads/1867b6ec4f884248b2df6b0f9808105b/after.mp4";
   const video = "https://example.com/a.mp4";
 
   it("keeps GitHub's before/after video table together, splitting each cell on its own", () => {
@@ -273,7 +277,13 @@ describe("media tables", () => {
     const body = `${open}\n\n${video}\n\n${close}`;
     expect(splitPullRequestBody(body)).toEqual([
       { id: "markdown:0", kind: "markdown", text: open, sourceOffset: 0 },
-      { id: "attachment:1", kind: "attachment", url: video, media: "video" },
+      {
+        id: "attachment:1",
+        kind: "attachment",
+        url: video,
+        hostLabel: "example.com",
+        media: "video",
+      },
       ...(close
         ? [
             {

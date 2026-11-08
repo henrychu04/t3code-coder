@@ -12,7 +12,9 @@ describe("T3 tool bridge instructions", () => {
     expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).toContain("Use `delegate_task`");
     // Coder: html_preview and the preview browser are not carried.
     expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).not.toMatch(/html_preview|preview_/u);
-    expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).toContain("pass its HTML to `html_render`");
+    expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).toContain(
+      "pass the path to an HTML file, or inline HTML, to `html_render`",
+    );
   });
 
   it("names the thread's exact command", () => {

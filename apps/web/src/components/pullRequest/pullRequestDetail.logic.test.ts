@@ -1016,7 +1016,8 @@ describe("adding a remark to the chat", () => {
       comment: remark("c1", "Why not reuse the existing parser?"),
     });
 
-    expect(context && reviewCommentContextLabel(context)).toBe("#42 @octocat comment");
+    // Coder: merge request references read `!N`.
+    expect(context && reviewCommentContextLabel(context)).toBe("!42 @octocat comment");
     expect(context?.text).toBe("octocat: Why not reuse the existing parser?");
   });
 

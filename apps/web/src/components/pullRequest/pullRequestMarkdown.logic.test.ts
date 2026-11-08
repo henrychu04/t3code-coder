@@ -13,7 +13,8 @@ type Node = {
   children?: Node[];
 };
 
-// Coder: GitLab is the only host, so the autolinks follow GitLab's grammar.
+// Coder: GitLab is the only host, so the autolinks follow GitLab's grammar (upstream's
+// `referenceAutolinks.test.ts` covers qualified references such as `team!42`).
 function links(markdown: string) {
   const autolinks = changeRequestReferenceAutolinker({
     provider: "gitlab",
@@ -45,9 +46,5 @@ describe("remarkPullRequestAutolinks", () => {
       ["0123456", `https://gitlab.example/group/project/-/commit/${commit}`, "commit"],
       ["!13", "https://example.com", undefined],
     ]);
-  });
-
-  it("leaves word-like reference fragments alone", () => {
-    expect(links("team!42 abc#17")).toEqual([]);
   });
 });

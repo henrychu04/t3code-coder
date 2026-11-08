@@ -271,7 +271,8 @@ describe("reviewCommentContextLabel", () => {
   });
 
   it("names the pull request a selection came from", () => {
-    expect(reviewCommentContextLabel(selection("pull-request:42"))).toBe("#42 page.tsx L12 to L18");
+    // Coder: merge request references read `!N`.
+    expect(reviewCommentContextLabel(selection("pull-request:42"))).toBe("!42 page.tsx L12 to L18");
     expect(reviewCommentContextLabel(selection("turn-diff"))).toBe("page.tsx L12 to L18");
   });
 });
