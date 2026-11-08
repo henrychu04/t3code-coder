@@ -4392,8 +4392,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       );
       const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
       yield* reactor.sweep;
-      assert.include(yield* texts(21), "#21");
-      assert.include(yield* texts(22), "#22");
+      // Coder: merge request summaries say `!N`.
+      assert.include(yield* texts(21), "!21");
+      assert.include(yield* texts(22), "!22");
     }),
   );
 
