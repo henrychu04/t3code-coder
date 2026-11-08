@@ -3,7 +3,9 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { ClosedView, ClosedViewEntry } from "./closedViewStore";
 import type { PullRequestListPreferences } from "./components/pullRequest/pullRequestListPreferences";
 import {
+  rightPanelHostRef,
   type RightPanelSurface,
+  selectThreadRightPanelState,
   type ThreadRightPanelState,
   useRightPanelStore,
 } from "./rightPanelStore";
@@ -110,8 +112,24 @@ export async function reopenClosedView(
       return false;
     case "file":
       if (surface.attachment) panels.openAttachment(ref, surface.attachment);
-      else panels.openFile(ref, surface.relativePath, surface.revealLine ?? undefined);
+      else {
+        panels.openFile(ref, surface.relativePath, surface.revealLine ?? undefined);
+        if (typeof surface.folderTrail === "string") {
+          panels.navigateFolder(ref, surface.id, surface.relativePath, surface.folderTrail);
+        }
+      }
       break;
+    case "files": {
+      const rootAlreadyExists = selectThreadRightPanelState(
+        panels.byThreadKey,
+        rightPanelHostRef(ref),
+      ).surfaces.some((current) => current.kind === "files");
+      panels.open(ref, "files");
+      if (!rootAlreadyExists && typeof surface.folderTrail === "string") {
+        panels.navigateFolder(ref, surface.id, "", surface.folderTrail);
+      }
+      break;
+    }
     case "pull-request":
       panels.openPullRequest(ref, surface);
       break;

@@ -238,6 +238,12 @@ Compacting from the context meter preserves the current draft and its images. Yo
 `/compact` in an existing conversation when the provider supports it, even with the context meter
 turned off.
 
+Send `/clear` on its own, or pick it from the slash menu, to start a fresh session
+in the same thread. Your next message goes to a new provider session that doesn't see the
+earlier messages, and the thread marks where it began with **New session**.
+Earlier messages and diffs stay in the thread. Dismiss the notice above the
+composer to keep the current session instead.
+
 **Compact idle threads** in **Settings > General** controls idle Claude threads over 200,000
 tokens. Each Claude provider's settings can override it:
 

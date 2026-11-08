@@ -26,6 +26,11 @@ describe("sourceControlClients.parseChangeRequestUrl", () => {
       number: 9,
     });
     expect(kindOf("https://code.acme.test/team/project/-/merge_requests/9")).toBe("gitlab");
+    expect(
+      sourceControlClients.changeRequestUrlFromReferenceAutolink(
+        "https://gitlab.com/team/apps/web/-/merge_requests/42",
+      ),
+    ).toBe("https://gitlab.com/team/apps/web/-/merge_requests/42");
   });
 
   it("survives trailing segments, a trailing slash and a query string", () => {

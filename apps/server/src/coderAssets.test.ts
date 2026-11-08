@@ -17,6 +17,7 @@ import { makeServeAsset } from "./coderAssets.ts";
 import * as ServerConfig from "./config.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
+import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
 import * as BuiltInDrivers from "./sourceControl/builtInDrivers.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
@@ -29,6 +30,7 @@ const layerTest = Layer.mergeAll(
   Layer.mock(Orchestrator.OrchestratorV2)({ getTurnItem: () => Effect.succeed(null) }),
   Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.undefined }),
   Layer.succeed(BuiltInDrivers.SourceControlDrivers, []),
+  Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
   layerConfig,
   WorkspacePaths.layer,
   AssetSigner.layer.pipe(

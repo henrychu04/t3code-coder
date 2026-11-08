@@ -10,6 +10,7 @@ import { __setClientSettingsForTests } from "./hooks/useSettings";
 
 import { planNextReopen, type ReopenOwnerState, reopenClosedView } from "./reopenClosedView";
 import {
+  hostRightPanel,
   selectThreadRightPanelState,
   type ThreadRightPanelState,
   useRightPanelStore,
@@ -37,37 +38,128 @@ beforeEach(() => {
 });
 
 describe("reopenClosedView", () => {
-  it("restores a file tab at its line without creating a browser session", async () => {
-    const reopened = await reopenClosedView(
-      {
-        kind: "panel-tab",
+  it.each([
+    { relativePath: "src/app.ts", line: 18, folderTrail: undefined },
+    { relativePath: "apps", line: null, folderTrail: "apps/web/src" },
+    { relativePath: "", line: null, folderTrail: "apps/web/src" },
+  ])(
+    "restores the captured file or folder tab at '$relativePath'",
+    async ({ relativePath, line, folderTrail }) => {
+      const panels = useRightPanelStore.getState();
+      if (folderTrail === undefined) panels.openFile(threadRef, relativePath, line ?? undefined);
+      else {
+        panels.openFile(threadRef, folderTrail);
+        panels.navigateFolder(threadRef, `file:${folderTrail}`, relativePath, folderTrail);
+      }
+      const expected =
+        relativePath === ""
+          ? { kind: "files", id: "files", folderTrail }
+          : {
+              kind: "file",
+              id: `file:${relativePath}`,
+              relativePath,
+              revealLine: line,
+              revealRequestId: 1,
+              ...(folderTrail === undefined ? {} : { folderTrail }),
+            };
+      const before = selectThreadRightPanelState(
+        useRightPanelStore.getState().byThreadKey,
         threadRef,
-        surface: {
-          kind: "file",
-          id: "file:src/app.ts",
-          relativePath: "src/app.ts",
-          revealLine: 18,
-          revealRequestId: 1,
-        },
-      },
-      { workspaceAvailable: true },
-    );
-    expect(reopened).toBe(true);
-    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef);
-    expect(state.isOpen).toBe(true);
-    expect(state.surfaces).toMatchObject([{ id: "file:src/app.ts", revealLine: 18 }]);
-  });
+      );
+      expect(before.surfaces).toEqual([expected]);
+      panels.closeSurface(threadRef, expected.id);
+      expect(
+        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef).surfaces,
+      ).toEqual([]);
+      const entries = useClosedViewStore.getState().entries;
+      expect(entries).toEqual([
+        { id: expect.any(String), kind: "panel-tab", threadRef, surface: expected },
+      ]);
+      // Coder: no browser preview to open.
+      const reopened = await reopenClosedView(entries[0]!, { workspaceAvailable: true });
+      expect(reopened).toBe(true);
+      const state = selectThreadRightPanelState(
+        useRightPanelStore.getState().byThreadKey,
+        threadRef,
+      );
+      expect(state.isOpen).toBe(true);
+      expect(state.activeSurfaceId).toBe(expected.id);
+      expect(state.surfaces).toEqual([expected]);
+    },
+  );
+
+  it.each([
+    { hosted: false, folderTrail: "packages/contracts/src" },
+    { hosted: false, folderTrail: undefined },
+    { hosted: true, folderTrail: "packages/contracts/src" },
+    { hosted: true, folderTrail: undefined },
+  ])(
+    "preserves a hidden root tab with trail $folderTrail (hosted: $hosted)",
+    async ({ hosted, folderTrail }) => {
+      const panels = useRightPanelStore.getState();
+      panels.openFile(threadRef, "apps/web/src");
+      panels.navigateFolder(threadRef, "file:apps/web/src", "", "apps/web/src");
+      panels.closeSurface(threadRef, "files");
+      const entry = useClosedViewStore.getState().entries[0]!;
+      const hostRef = hosted
+        ? { ...threadRef, threadId: "host" as ScopedThreadRef["threadId"] }
+        : threadRef;
+      const unhost = hosted ? hostRightPanel(threadRef, hostRef) : undefined;
+      try {
+        if (folderTrail === undefined) panels.open(threadRef, "files");
+        else {
+          panels.openFile(threadRef, folderTrail);
+          panels.navigateFolder(threadRef, `file:${folderTrail}`, "", folderTrail);
+        }
+        panels.close(threadRef);
+        const before = selectThreadRightPanelState(
+          useRightPanelStore.getState().byThreadKey,
+          hostRef,
+        );
+        expect(before.isOpen).toBe(false);
+        const plan = planNextReopen([entry], () => ({
+          environmentKnown: true,
+          catalogReady: true,
+          ownerExists: true,
+          sideChatExists: true,
+          shellLive: true,
+          panel: before,
+        }));
+        expect(plan.restore).toBe(entry);
+        expect(await reopenClosedView(plan.restore!, { workspaceAvailable: true })).toBe(true);
+        const after = selectThreadRightPanelState(
+          useRightPanelStore.getState().byThreadKey,
+          hostRef,
+        );
+        expect(after.isOpen).toBe(true);
+        expect(after.activeSurfaceId).toBe("files");
+        expect(after.surfaces).toEqual([
+          { kind: "files", id: "files", ...(folderTrail === undefined ? {} : { folderTrail }) },
+        ]);
+      } finally {
+        unhost?.();
+      }
+    },
+  );
 
   it("does not reopen workspace tabs without an available project", async () => {
     const options = { workspaceAvailable: false };
     for (const surface of [
-      { kind: "files", id: "files" },
+      { kind: "files", id: "files", folderTrail: "apps/web/src" },
       {
         kind: "file",
         id: "file:src/app.ts",
         relativePath: "src/app.ts",
         revealLine: null,
         revealRequestId: 0,
+      },
+      {
+        kind: "file",
+        id: "file:apps",
+        relativePath: "apps",
+        revealLine: null,
+        revealRequestId: 1,
+        folderTrail: "apps/web/src",
       },
     ] as const) {
       expect(await reopenClosedView({ kind: "panel-tab", threadRef, surface }, options)).toBe(

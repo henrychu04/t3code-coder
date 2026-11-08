@@ -18,6 +18,8 @@ Unlike upstream T3 Code, T3 Coder does not download a headless browser for agent
 pages with screenshots, so agents publish without that preview step. The frame uses the height the
 agent chose and shrinks to fit a shorter page; a longer page scrolls inside it.
 
+Previews can load public resources such as CDN scripts, but nothing on your local network. The machine running the environment looks up each name, and previews block names that resolve to private or reserved addresses. Clash or Mihomo in fake-IP DNS mode can return these addresses, so external resources can fail there. The preview's console messages can identify affected hostnames. Inline the resource, add its host to `fake-ip-filter`, or switch that machine's proxy DNS to `redir-host`.
+
 ## MCP apps
 
 Some MCP servers return an interactive app with their tool results, following the

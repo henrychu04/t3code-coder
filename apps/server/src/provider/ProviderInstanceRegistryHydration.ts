@@ -72,7 +72,9 @@ export const deriveProviderInstanceConfigMap = (
   return merged as ProviderInstanceConfigMap;
 };
 
-// Coder: upstream's dev replay provider (#26207, `seedDevReplayInstance`) is not carried.
+// Coder: upstream's dev replay provider (#26207, `seedDevReplayInstance`) is not carried, and
+// the watcher retries no unreadable secrets when a secret provider changes (#31226), because
+// secret providers are not carried.
 const layerSettingsWatcher = (settingsChanges: Stream.Stream<ServerSettings>) =>
   Layer.effectDiscard(
     Effect.gen(function* () {

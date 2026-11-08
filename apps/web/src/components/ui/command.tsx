@@ -17,6 +17,10 @@ import {
 import { DIALOG_BACKDROP_CLASS, DIALOG_POPUP_CLASS } from "~/components/ui/dialog-styles";
 import { Button } from "~/components/ui/button";
 
+// Coder: there is no desktop window-controls overlay (upstream's `lib/windowControlsOverlay.ts`),
+// so no native titlebar strip covers the page.
+const useNativeTitlebarHeight = () => 0;
+
 const CommandDialog = CommandDialogPrimitive.Root;
 
 const CommandDialogPortal = CommandDialogPrimitive.Portal;
@@ -36,13 +40,19 @@ function CommandDialogBackdrop({ className, ...props }: CommandDialogPrimitive.B
 }
 
 function CommandDialogViewport({ className, ...props }: CommandDialogPrimitive.Viewport.Props) {
+  // Short desktop windows would put the search field under the native window controls.
+  const nativeTitlebarHeight = useNativeTitlebarHeight();
+  const titlebarStyle = {
+    "--command-titlebar-height": `${nativeTitlebarHeight}px`,
+  } as React.CSSProperties;
   return (
     <CommandDialogPrimitive.Viewport
       className={cn(
-        "pointer-events-none fixed inset-0 z-50 flex flex-col items-center px-4 py-[max(--spacing(4),4vh)] sm:py-[10vh]",
+        "pointer-events-none fixed inset-0 z-50 flex flex-col items-center px-4 pt-[max(--spacing(4),4vh,calc(var(--command-titlebar-height)+--spacing(2)))] pb-[max(--spacing(4),4vh)] sm:pt-[max(10vh,calc(var(--command-titlebar-height)+--spacing(2)))] sm:pb-[10vh]",
         className,
       )}
       data-slot="command-dialog-viewport"
+      style={titlebarStyle}
       {...props}
     />
   );
