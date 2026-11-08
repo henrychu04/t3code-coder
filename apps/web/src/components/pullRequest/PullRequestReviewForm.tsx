@@ -7,6 +7,7 @@ import { useState, type ReactNode, type RefObject } from "react";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
+import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger } from "../ui/select";
 import { toastManager } from "../ui/toast";
@@ -86,10 +87,10 @@ export function PullRequestReviewForm({
   const selectedVerdict =
     offered.find((verdict) => verdict.value === requestedVerdict) ?? offered[0];
 
-  const submit = async (verdict: (typeof VERDICTS)[number]) => {
-    if (pending) return;
-    const submittedBody = body;
-    const submittedComments = comments;
+  const submit = async (verdict: (typeof VERDICTS)[number], text: string) => {
+    const submittedComments = usePullRequestReviewStore.getState().drafts[reviewKey] ?? [];
+    if (pending || !canSubmit(verdict.value, text, submittedComments.length)) return;
+    const submittedBody = text;
     onPendingChange(true);
     const result = await submitReview({
       environmentId,
@@ -123,12 +124,12 @@ export function PullRequestReviewForm({
   };
 
   // Forgejo requires a summary when requesting changes, even with inline comments.
-  const canSubmit = (verdict: PullRequestReviewVerdict, summary: string) =>
+  const canSubmit = (verdict: PullRequestReviewVerdict, summary: string, commentCount: number) =>
     verdict === "request-changes" && requestChangesSummaryRequired
       ? summary.trim().length > 0
-      : verdict === "approve" || summary.trim().length > 0 || comments.length > 0;
+      : verdict === "approve" || summary.trim().length > 0 || commentCount > 0;
   const placeholder =
-    selectedVerdict === undefined || canSubmit(selectedVerdict.value, "")
+    selectedVerdict === undefined || canSubmit(selectedVerdict.value, "", comments.length)
       ? "Summarize your review (optional)"
       : selectedVerdict.value === "request-changes" && requestChangesSummaryRequired
         ? "Summarize your review (required to request changes)"
@@ -144,6 +145,17 @@ export function PullRequestReviewForm({
         placeholder={placeholder}
         aria-label="Review summary"
         onValueChange={(next) => setSummary(reviewKey, next)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat) return;
+          if (
+            selectedVerdict !== undefined &&
+            isCommentSubmitShortcut(event, body, pending, true)
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            void submit(selectedVerdict, body);
+          }
+        }}
       />
       <div className="mt-2 flex justify-end gap-2">
         {offered.length > 1 ? (
@@ -175,10 +187,12 @@ export function PullRequestReviewForm({
         <Button
           size="xs"
           disabled={
-            pending || selectedVerdict === undefined || !canSubmit(selectedVerdict.value, body)
+            pending ||
+            selectedVerdict === undefined ||
+            !canSubmit(selectedVerdict.value, body, comments.length)
           }
           onClick={() => {
-            if (selectedVerdict !== undefined) void submit(selectedVerdict);
+            if (selectedVerdict !== undefined) void submit(selectedVerdict, body);
           }}
         >
           {pending ? "Submitting..." : "Submit review"}

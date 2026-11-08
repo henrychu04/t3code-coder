@@ -1252,10 +1252,11 @@ them, the file is named here.
   `textGeneration.ts` and `textGenerationOperations.ts`'s transcript cleanup, and the dictation
   hooks #30623 added to carried text fields: `AssistantCitationChip.tsx`,
   `AssistantCitationCommentEditor.tsx`, `ComposerPrimaryActions.tsx`, `AnnotatableCodeView.tsx`,
-  `DiffCommentAnnotation.tsx`, `commentSubmitShortcut.ts`, `PullRequestCommentForm.tsx`,
-  `PullRequestComposer.tsx`, `PullRequestReviewAnnotation.tsx`, `PullRequestReviewForm.tsx`,
-  `ui/button.tsx`, `ui/textarea.tsx`, and `useLocalStorage.ts`. Those files are upstream's with
-  the voice commits reverted; the later PR completion hunks (#30747, #30857) stay.
+  `DiffCommentAnnotation.tsx`, `PullRequestCommentForm.tsx`, `PullRequestComposer.tsx`,
+  `PullRequestReviewAnnotation.tsx`, `ui/button.tsx`, `ui/textarea.tsx`, and `useLocalStorage.ts`.
+  Those files are upstream's with the voice commits reverted; the later PR completion hunks
+  (#30747, #30857) stay. `PullRequestReviewForm.tsx` keeps #30623's Cmd/Ctrl+Enter submit and
+  `commentSubmitShortcut.ts` is upstream's; only the review form's speech hooks are cut.
 - **Managed policy** (#27197). Organization-wide policy files, the Windows registry and macOS
   profile readers (`ffi-rs`), `t3 policy`, policy-locked settings and providers, runtime-mode
   ceilings, and their notices are cut: no contracts `managedPolicy.ts`, shared
