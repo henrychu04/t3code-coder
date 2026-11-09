@@ -1316,9 +1316,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           return yield* fresh.getSettings;
         }).pipe(
           Effect.provide(
-            Layer.fresh(ServerSettingsModule.layer).pipe(
-              Layer.provide(Layer.merge(ServerSecretStore.layer, ManagedPolicy.layerTest())),
-            ),
+            // Coder: managed policy is cut, so settings need only the secret store.
+            Layer.fresh(ServerSettingsModule.layer).pipe(Layer.provide(ServerSecretStore.layer)),
           ),
         );
         assert.equal(

@@ -99,6 +99,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   oneTimeSchedules: true,
   freshContext: true,
   scheduledTaskThreadModes: true,
+  vcsBranchStatus: true,
   // Links are the gateway's workspace link rules; calls between workspaces go through its hub.
   peerLinks: true,
   linkFence: true,
@@ -125,6 +126,8 @@ export const CODER_OMITTED_CAPABILITIES = {
   mcpModeLimitHeader:
     "No /mcp HTTP server; the gateway hub carries a linked call's mode limits with the call.",
   triage: "No in-app triage: it clones upstream T3 Code to help file upstream issues.",
+  fastWorktreeCheckout:
+    "Upstream advertises it only on macOS servers (clonefile); workspaces run Linux.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 
 const makeIdentity = Effect.gen(function* () {
