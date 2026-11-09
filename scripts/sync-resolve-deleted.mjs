@@ -510,6 +510,26 @@ const DELETED_PATHS = {
     // Add to another machine (#22180), which copies ignored files between workspaces.
     "apps/web/src/components/AddProjectToMachineDialog.tsx",
   ],
+  // Features cut in the 4f0b74e190 sync: text generators (#33147), use T3 Code in another app
+  // (#33196), Cursor Origin (#33093), t3 command install (#33150), the Welcome page (#33209), and
+  // macOS fast worktree checkout (#32927).
+  "4f0b74e190 cuts": [
+    "apps/server/src/textGeneration/TextGenerators.ts",
+    "apps/server/src/textGeneration/textGeneratorDrivers.ts",
+    "apps/web/src/components/settings/TextGeneratorsSettings.tsx",
+    "apps/web/src/textGenerators.ts",
+    "docs/user/text-generation.md",
+    "apps/web/src/components/mcp/",
+    "apps/web/src/components/settings/useAccessEnvironment.ts",
+    "packages/source-control-cursor-origin/",
+    "apps/web/src/components/InstallT3Commands.tsx",
+    "apps/web/src/onboarding/welcomePage.logic.ts",
+    "apps/web/src/onboarding/welcomeState.ts",
+    "docs/user/welcome-page.md",
+    "apps/server/src/vcs/CheckoutCloner.ts",
+    "apps/server/src/vcs/gitIndexStat.ts",
+    "apps/server/src/vcs/worktreeCheckoutCache.ts",
+  ],
   // Upstream repository tooling: vendored sources, CI, hooks, editor and agent configuration,
   // and operations docs. The fork's .github/ keeps only SECURITY.md.
   "upstream repository tooling": [

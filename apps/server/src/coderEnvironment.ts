@@ -126,8 +126,6 @@ export const CODER_OMITTED_CAPABILITIES = {
   mcpModeLimitHeader:
     "No /mcp HTTP server; the gateway hub carries a linked call's mode limits with the call.",
   triage: "No in-app triage: it clones upstream T3 Code to help file upstream issues.",
-  fastWorktreeCheckout:
-    "Upstream advertises it only on macOS servers (clonefile); workspaces run Linux.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 
 const makeIdentity = Effect.gen(function* () {

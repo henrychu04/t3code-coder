@@ -18,13 +18,6 @@ export function useAvailableSettingsSearchItems() {
       (environment) =>
         environment.connection.phase === "connected" && environment.serverConfig !== null,
     ) === true;
-  // Any machine that offers it; the row then shows for a settings scope where all selected ones do.
-  const hasFastWorktreeCheckoutEnvironment =
-    environments.some(
-      (environment) =>
-        environment.connection.phase === "connected" &&
-        environment.serverConfig?.environment.capabilities.fastWorktreeCheckout === true,
-    ) === true;
   const hasThreadAutoSettlement =
     getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0;
 
@@ -38,6 +31,5 @@ export function useAvailableSettingsSearchItems() {
     hasThreadAutoSettlement,
     // Coder: there is no T3 Connect managed tunnel.
     managedTunnelActive: false,
-    hasFastWorktreeCheckoutEnvironment,
   });
 }

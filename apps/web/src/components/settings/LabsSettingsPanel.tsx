@@ -5,7 +5,6 @@ import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-import { useSettingsScope } from "./SettingsScopeContext";
 
 /** Features still settling in. */
 export function LabsSettingsPanel() {
@@ -17,7 +16,6 @@ export function LabsSettingsPanel() {
         <LinkedEnvironmentsRow />
         <PromptSuggestionsRow />
         {/* Coder: no Simlock hosts row; device hosts are not carried. */}
-        <FastWorktreeCheckoutRow />
       </SettingsSection>
     </SettingsPageContainer>
   );
@@ -117,39 +115,6 @@ function PromptSuggestionsRow() {
             updateSettings({ promptSuggestionsEnabled: Boolean(checked) })
           }
           aria-label="Suggest next prompt"
-        />
-      }
-    />
-  );
-}
-
-/** Shows only when every machine in scope is a Mac, since only macOS servers honor it. */
-function FastWorktreeCheckoutRow() {
-  const { scope, connectedEnvironments } = useSettingsScope();
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  if (
-    scope.kind === "project" ||
-    scope.kind === "checkout" ||
-    connectedEnvironments.length === 0 ||
-    connectedEnvironments.some(
-      (environment) =>
-        environment.serverConfig?.environment.capabilities.fastWorktreeCheckout !== true,
-    )
-  )
-    return null;
-  return (
-    <SettingsRow
-      serverScoped
-      {...searchableSetting("worktree-fast-checkout")}
-      settingKeys={["fastWorktreeCheckout"]}
-      description="On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
-      control={
-        <ScopedSwitch
-          settingKeys={["fastWorktreeCheckout"]}
-          checked={settings.fastWorktreeCheckout}
-          onCheckedChange={(checked) => updateSettings({ fastWorktreeCheckout: Boolean(checked) })}
-          aria-label="Fast worktree checkout"
         />
       }
     />

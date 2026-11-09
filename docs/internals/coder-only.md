@@ -985,8 +985,7 @@ checks that every name here still exists and that every modified upstream file i
   `SettingsSection` takes a `description` for them. `SettingsSidebarNav.tsx` and
   `useAvailableSettingsSearchItems.ts` take no settings scope search and have no T3 Connect sign-in,
   local backend, cloud, or WSL entries; `movedSettingsPath` never points at a cut page; Labs' Beta
-  section has no guest links or Simlock row, and its Fast worktree checkout row never shows, since
-  the helper omits `fastWorktreeCheckout` (upstream sends it only from macOS); About has no
+  section has no guest links, Simlock, or Fast worktree checkout row; About has no
   mobile app row, Welcome page row (#33209), privacy link, or update track switch.
 - Search carries `sourceControlHostSearchItems` but not `SOURCE_CONTROL_HOST_LABELS`; the MR link
   target row lives on Diffs with GitLab search terms. Agent-credit removal applies only to GitHub
@@ -1064,8 +1063,6 @@ checks that every name here still exists and that every modified upstream file i
   `scripts/lib/third-party-licenses.ts` reads no device tool version pins.
 - `patches/@ff-labs__fff-node@0.11.0.patch` adds the native grep struct's `fuzzy_score` read at its
   real u16 width.
-- `apps/server` keeps upstream's `ffi-rs` dependency for #32927's `vcs/CheckoutCloner.ts`, which
-  loads it only on macOS; the Linux helper never requires it.
 - `knip.jsonc` lists upstream files whose exports only cut surfaces use.
 - `packages/effect-codex-app-server`: a spawned Codex child may print a bounded non-JSON preamble
   (`CHILD_PROCESS_STARTUP_PREAMBLE_MAX_BYTES`) before its first message; the `probe` script is not
@@ -1337,6 +1334,14 @@ them, the file is named here.
   (`primaryEnvironmentOnly`, `hasPrimaryEnvironment`). `AppSidebarLayout.tsx` keeps upstream's
   `showSidebar` prop, which `__root.tsx`'s minimal shell never sets, and
   `AddProviderInstanceDialog.tsx` takes no `showMoreProviders` (there is no "Show more" fold).
+- **Fast worktree checkout** (#32927). It clones new worktrees from a cached checkout with macOS
+  `clonefile`, so it never runs in a Linux workspace. Not carried: server `vcs/CheckoutCloner.ts`,
+  `worktreeCheckoutCache.ts`, and `gitIndexStat.ts`, the server's direct `ffi-rs` dependency, the
+  `fastWorktreeCheckout` setting and capability, `worktreeCheckoutCacheDir`, and the Labs row and
+  its search item. These carried files keep their form from before it: contracts `settings.ts` and
+  `environment.ts`; server `config.ts`, `GitManager.ts`, `GitVcsDriver.ts`, `GitVcsDriverCore.ts`,
+  and `ProviderReplayHarness.ts`; web `LabsSettingsPanel.tsx`, `settingsSearch.ts`, and
+  `useAvailableSettingsSearchItems.ts`.
 - **Upstream repository tooling and CI-only checks.** `apps/web/scripts/verify-built-boot.ts`,
   `AgentContextBudget.test.ts` and `agentContextBudget.json`, `.pnpmfile.cjs`, and upstream's
   14k-line `AcpAdapterV2.test.ts`. The v1 importer carries only messages, so pre-v2 screenshot
