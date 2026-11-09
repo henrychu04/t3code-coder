@@ -469,9 +469,26 @@ checks that every name here still exists and that every modified upstream file i
   settings redaction gets a constant `settingsClient` (`secretReferences: true`), because the helper
   has no WebSocket query to read upstream's `clientCapabilities` from (#27760), and its one client
   is the fork's web build.
-- `persistence/DatabaseStorage.ts` is built beside `StorageCleanup` once startup completes; its
-  `t3 doctor` file-size status is cut (no CLI in the helper). It keeps the form from before #32941's
-  Settings reclaim (no `requestReclaim` or `ServerRestart`), which a later change ports on its own.
+- `persistence/DatabaseStorage.ts` is built beside `StorageCleanup` once startup completes. The
+  helper has no `t3` CLI, so `compactCommand` is empty instead of a `t3 doctor` command; Settings
+  always offers **Reclaim** instead (the helper provides `ServerRestart` and every scope is granted).
+- Settings' **Reclaim freed database space** (#32941): upstream provides `ServerRestart` only
+  under its desktop app or background service. `coderServer.ts` provides it to every helper as the
+  helper's normal SIGTERM shutdown (what `coder.helper.shutdown` does), and
+  `apps/coder-helper/src/helper.ts`'s `coderHelperMain` runs upstream's
+  `DatabaseMaintenance.runRequestedReclaim` after the runtime's finalizers close the database and
+  before the process exits, as upstream's `runServerCommand` does with `Effect.ensuring`. The helper
+  exits as on any shutdown (130 after SIGTERM, an expected exit); the browser's reconnect then
+  makes the gateway start a fresh helper over the same `coder ssh` launch as **Connect** (see the
+  helper lifecycle above), which reads `reclaim-failed` for Settings if the repair failed. No new
+  exit code, gateway path, or listener. The repair logs to stderr like the rest of the helper,
+  because stdout still carries RPC frames to the gateway, which drops a helper that writes a
+  non-JSON line. Disconnecting the workspace while the repair runs stops `coder ssh` after the
+  termination grace period, which can stop the repair; SQLite rolls it back. While the repair runs
+  the `coder ssh` child is still alive, so the gateway keeps the old connection: the browser's
+  session times out on pings (15 s) and retries against it with growing backoff, and reconnects to
+  the fresh helper on the first retry after the child exits (or at once when the window regains
+  focus). A one-time repair does not justify a draining state in the gateway's connection lifecycle.
 - `coderServer.ts` runs upstream's idle Claude compaction worker (`layerIdleCompactionWorker`) in
   `CoderRuntimeCoreLive` and gives `ProviderRegistry` the provider support layer
   (`CoderProviderRegistryLive`).
@@ -688,7 +705,7 @@ checks that every name here still exists and that every modified upstream file i
   automation, relay, resource telemetry, usage, editor launch, GitHub routing, feedback upload, OTLP
   check) and adds the helper-only methods and `CoderWsRpcGroup`, the only group the helper serves.
   Upstream's `WsRpcGroup` stays dormant (`knip.jsonc` ignores `rpc.ts`'s unused exports).
-  `CoderWsRpcGroup` omits `server.getDatabaseStorage`, `server.getNpmRelease`,
+  `CoderWsRpcGroup` omits `server.getNpmRelease`,
   `server.prepareTriage`, the browser preview's RPCs (it keeps `preview.stopLocalServer` and
   `subscribeDiscoveredLocalServers`), guest share creation, the peer-link RPCs,
   `orchestration.getNativeChildWork` (Antigravity's native child work, #28629), and
@@ -1186,14 +1203,10 @@ them, the file is named here.
   row or effort picker and `settingsSearch.ts` no "Fallback model" item). Without the usage page, `timestampFormat.ts`
   has no `resolveHour12`.
 - **Server self-update and CLI.** No npm release check (`cloud/npmRelease.ts`), "Update
-  everything", update tracks, `t3 doctor` storage status (`DatabaseStorageNotice`, client-runtime's
-  `databaseStorage` atom), `persistence/DatabaseMaintenance.ts` (so `rebuildMessageSearch` has no
-  caller), `t3 triage`, or desktop update button in `lib/bootError.ts`. Settings' **Reclaim freed
-  database space** (#32941) is not carried yet: no `server.reclaimDatabaseSpace` (contracts `rpc.ts`
-  and `clientRpcPermissions.ts`, client-runtime `state/server.ts`), `DatabaseReclaimError`, or
-  `canReclaim` and `reclaimFailure` in contracts `settings.ts`, and `server.ts` has no
-  `ServerRestart` layer. Neither is the `t3` command installer (#33150, #33153): shared `shell.ts`
-  has no `readUserLoginShell`, `pathSetup`, or `pathSetupCommand`.
+  everything", update tracks, `t3 doctor` (`persistence/DatabaseMaintenance.ts` is carried for
+  Settings' Reclaim, so its `inspect` and `removeLegacyDatabase` have no caller), `t3 triage`, or
+  desktop update button in `lib/bootError.ts`. Neither is the `t3` command installer (#33150,
+  #33153): shared `shell.ts` has no `readUserLoginShell`, `pathSetup`, or `pathSetupCommand`.
 - **Local editors and open targets.** No `OpenInPicker`, open-in-editor, reveal, file manager, or
   remote open mode (`MarkdownFileLink.logic.ts` has no `canUseMarkdownFileShellActions`). Chat
   links to `cursor://file/…` and `vscode://file/…` (#23486) stay inert, since they would open a

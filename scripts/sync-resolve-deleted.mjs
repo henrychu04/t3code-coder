@@ -394,8 +394,6 @@ const DELETED_PATHS = {
   "updates and releases": [
     "apps/web/src/components/sidebar/updateEverythingRun.tsx",
     "apps/server/src/persistence/databaseMigrationHead.ts",
-    // `t3 doctor` database maintenance (no CLI in the helper).
-    "apps/server/src/persistence/DatabaseMaintenance.ts",
     "apps/server/src/serverOwnership.ts",
     "apps/web/src/components/ServerUpdateAction.tsx",
     "apps/web/src/components/sidebar/SidebarUpdatePill.tsx",

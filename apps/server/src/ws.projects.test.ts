@@ -68,6 +68,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
+import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -230,6 +231,7 @@ const harness = (
       stub(SecretRequests.SecretRequests),
       stub(McpAppRequests.McpAppRequests),
       stub(StorageCleanup.StorageCleanup),
+      stub(DatabaseStorage.DatabaseStorage),
       stub(CommandOutputHub.CommandOutputHub),
       stub(ServerSecretStore.ServerSecretStore),
       stub(AssetSigner.AssetSigner),

@@ -13,10 +13,9 @@ if (process.argv[2] === "__document-text") {
     process.exitCode = 2;
   }
 } else {
-  const [{ coderHelperStdioLayer }, Layer, NodeRuntime] = await Promise.all([
+  const [{ coderHelperMain }, NodeRuntime] = await Promise.all([
     import("./helper.ts"),
-    import("effect/Layer"),
     import("@effect/platform-node/NodeRuntime"),
   ]);
-  Layer.launch(coderHelperStdioLayer).pipe(NodeRuntime.runMain);
+  coderHelperMain.pipe(NodeRuntime.runMain);
 }

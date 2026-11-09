@@ -249,6 +249,24 @@ untracked and ignored files to be deleted. Branches and conversation history sta
 thread recreates its worktree. Choose a project to inherit the workspace policy, turn cleanup off,
 or define custom rules.
 
+## Reclaim database space
+
+The workspace helper removes internal history older than a day on its own while it runs; your
+conversations are kept. Databases created before this shrank automatically still hold the freed
+space on disk until a one-time offline repair returns it and turns on automatic shrinking.
+**Settings → Maintenance** suggests the repair when at least 1 GiB can be reclaimed.
+
+Select **Reclaim**. T3 Code checks for free disk space in the workspace, then stops the helper,
+repairs the database, and connects the workspace again. It is offline while the repair runs, and
+running agents stop. While it runs the workspace shows as not responding; it reconnects on its
+own after the repair, or as soon as you switch back to the window. If the repair fails, Settings
+shows why.
+
+The repair can take several minutes on a large database. It rebuilds the database through a
+temporary copy, so it needs free space of about twice the data still in use (the database size minus
+the reclaimable space): once in the workspace's temporary directory (`TMPDIR`, or `/var/tmp` when it
+is not set) and once next to the database for its write-ahead log.
+
 Choose **Delete now** to run the enabled rules immediately. The latest results show which
 worktrees were removed or kept and why, plus any failures. Results also list folders in the
 worktree folder that no thread uses, with their sizes; cleanup never removes them, so remove them
