@@ -342,6 +342,15 @@ const CoderRuntimeStartupLive = Layer.effect(
   }),
 );
 
+// Coder: upstream provides this only when its desktop app or background service starts the server
+// again. The helper stops with its normal SIGTERM shutdown (as `coder.helper.shutdown` does) and
+// runs the repair before it exits (`apps/coder-helper/src/helper.ts`); the browser's reconnect
+// then makes the gateway start a fresh helper, as after any helper exit.
+const layerServerRestart = Layer.succeed(
+  DatabaseStorage.ServerRestart,
+  Effect.sync(() => void process.kill(process.pid, "SIGTERM")),
+);
+
 export const makeCoderRuntimeLayer = () => {
   const runtimeStartup = CoderRuntimeStartupLive.pipe(
     Layer.provideMerge(CoderRuntimeDependenciesLive),
@@ -351,7 +360,10 @@ export const makeCoderRuntimeLayer = () => {
   const startedRuntime = Layer.mergeAll(
     StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
     // Background history compaction and space reclaim, as upstream (see DatabaseStorage.ts).
-    DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer)),
+    DatabaseStorage.layer.pipe(
+      Layer.provide(ProjectionMaintenance.layer),
+      Layer.provide(layerServerRestart),
+    ),
   ).pipe(Layer.provideMerge(runtimeStartup));
   const services = Layer.mergeAll(
     startedRuntime,

@@ -6,6 +6,7 @@ import {
   type ServerConfigStreamEvent,
   type ServerLifecycleWelcomePayload,
   type ServerProviderWorkspaceSnapshot,
+  shouldRecommendDatabaseCompaction,
   WS_METHODS,
 } from "@t3tools/contracts";
 import * as Equal from "effect/Equal";
@@ -404,6 +405,34 @@ export function createServerEnvironmentAtoms<R, E>(
     ),
   );
 
+  const databaseStorage = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "environment-data:server:database-storage",
+    tag: WS_METHODS.serverGetDatabaseStorage,
+    idleTtlMs: 0,
+  });
+  // Keyed by a JSON array of environment ids so one notice can list every machine.
+  const databaseCompactionRecommendations = Atom.family((environmentIdsKey: string) => {
+    const sources = (JSON.parse(environmentIdsKey) as EnvironmentId[]).map((environmentId) => ({
+      environmentId,
+      atom: databaseStorage({ environmentId, input: {} }),
+    }));
+    return Atom.make((get) =>
+      sources
+        .flatMap(({ environmentId, atom }) => {
+          const result = get(atom);
+          return result._tag === "Success" &&
+            result.value !== null &&
+            shouldRecommendDatabaseCompaction(result.value)
+            ? [{ environmentId, status: result.value }]
+            : [];
+        })
+        .sort((left, right) => right.status.reclaimableBytes - left.status.reclaimableBytes),
+    ).pipe(
+      Atom.withLabel(
+        `environment-data:server:database-compaction-recommendations:${environmentIdsKey}`,
+      ),
+    );
+  });
   const updateSettings = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:server:update-settings",
     tag: WS_METHODS.serverUpdateSettings,
@@ -416,6 +445,13 @@ export function createServerEnvironmentAtoms<R, E>(
     runStorageCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:run-storage-cleanup",
       tag: WS_METHODS.serverRunStorageCleanup,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    databaseStorage,
+    databaseCompactionRecommendations,
+    reclaimDatabaseSpace: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:reclaim-database-space",
+      tag: WS_METHODS.serverReclaimDatabaseSpace,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
     storageCleanupReport: createEnvironmentRpcSubscriptionAtomFamily(runtime, {

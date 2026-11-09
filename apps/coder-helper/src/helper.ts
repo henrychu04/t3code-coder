@@ -18,6 +18,7 @@ import {
   CoderHelperRpcGroup,
 } from "@t3tools/coder-cli/rpc";
 import * as ServerConfig from "t3/src/config.ts";
+import * as DatabaseMaintenance from "t3/src/persistence/DatabaseMaintenance.ts";
 import * as DefectReporter from "t3/src/observability/DefectReporter.ts";
 import { withOutputWindow } from "t3/src/terminal/OutputProtocol.ts";
 import { makeCoderRuntimeLayer } from "t3/src/coderServer.ts";
@@ -75,9 +76,26 @@ export const coderHelperStdioLayer = RpcServer.layer(
   ),
   Layer.provide(RpcSerialization.layerNdjson),
   Layer.provide(NodeStdio.layer),
-  Layer.provide(coderServerConfigLayer),
-  Layer.provide(NodeServices.layer),
-  // Keep Effect logs, including DefectReporter's, off stdout, which carries the NDJSON RPC
-  // transport. The helper launch discards stderr, so these logs are not kept anywhere.
-  Layer.provide(Layer.succeed(Logger.LogToStderr)(true)),
+);
+
+/**
+ * The helper process. Coder: as upstream's `runServerCommand`, a reclaim requested from Settings
+ * runs once the runtime has stopped and closed the database, before the process exits. The
+ * browser's next connection then starts a fresh helper (see ServerRestart in `coderServer.ts`).
+ */
+export const coderHelperMain = Effect.gen(function* () {
+  const config = yield* ServerConfig.ServerConfig;
+  return yield* Layer.launch(coderHelperStdioLayer).pipe(
+    // Settings' Reclaim stops the helper; repair once the database is closed, before the restart.
+    Effect.ensuring(
+      DatabaseMaintenance.runRequestedReclaim(config.dbPath).pipe(
+        Effect.provide(DatabaseMaintenance.layer),
+      ),
+    ),
+  );
+}).pipe(
+  Effect.provide(coderServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer))),
+  // Keep Effect logs, including DefectReporter's and the repair's, off stdout, which carries the
+  // NDJSON RPC transport. The helper launch discards stderr, so these logs are not kept anywhere.
+  Effect.provideService(Logger.LogToStderr, true),
 );

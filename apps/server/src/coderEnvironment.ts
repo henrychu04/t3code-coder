@@ -68,6 +68,8 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadAutoSettlement: true,
   storageCleanup: true,
   storageCleanupRun: true,
+  // Settings' Reclaim restarts the helper; the browser's reconnect starts it again (coderServer.ts).
+  databaseStorage: true,
   settledWorktreeCleanup: true,
   threadAutoSettlementScope: true,
   commandOutputStreaming: true,
@@ -120,7 +122,6 @@ export const CODER_OMITTED_CAPABILITIES = {
   desktopAppUpdate: "No desktop app.",
   desktopAppChannelSwitch: "No desktop app.",
   serverBrowser: "No browser preview.",
-  databaseStorage: "No `t3 doctor` in the workspace helper; it compacts and reclaims space itself.",
   ignoredFileListing:
     "No Add to another machine: ignored files such as .env would pass through the laptop browser.",
   mcpModeLimitHeader:
