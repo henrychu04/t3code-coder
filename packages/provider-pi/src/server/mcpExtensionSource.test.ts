@@ -324,6 +324,7 @@ describe("Pi T3 tools over the file bridge", () => {
       pi: {
         on: (event: string, handler: unknown) => handlers.set(event, handler),
         registerTool: (tool: RegisteredTool) => tools.push(tool),
+        registerCommand: () => {},
         getActiveTools: () => [],
         setActiveTools: () => undefined,
         getAllTools: () =>
