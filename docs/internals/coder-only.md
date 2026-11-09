@@ -470,7 +470,8 @@ checks that every name here still exists and that every modified upstream file i
   has no WebSocket query to read upstream's `clientCapabilities` from (#27760), and its one client
   is the fork's web build.
 - `persistence/DatabaseStorage.ts` is built beside `StorageCleanup` once startup completes; its
-  `t3 doctor` file-size status is cut (no CLI in the helper).
+  `t3 doctor` file-size status is cut (no CLI in the helper). It keeps the form from before #32941's
+  Settings reclaim (no `requestReclaim` or `ServerRestart`), which a later change ports on its own.
 - `coderServer.ts` runs upstream's idle Claude compaction worker (`layerIdleCompactionWorker`) in
   `CoderRuntimeCoreLive` and gives `ProviderRegistry` the provider support layer
   (`CoderProviderRegistryLive`).
@@ -522,7 +523,8 @@ checks that every name here still exists and that every modified upstream file i
   `setPermissionMode`, `setMaxThinkingTokens`, `applyFlagSettings`, `getContextUsage`,
   `getSettings`, `getUsage` (with `skipBehaviors`), `setMcpServers` (no deadline), `backgroundTasks`
   (resolves to `backgrounded`, true when absent), `mcpServerStatus`, `readMcpResource`,
-  `initializationResult`, and `close`; `initialize` carries the session `title` (#28910). MCP Apps
+  `initializationResult`, and `close`; `initialize` carries the session `title` (#28910) and
+  `promptSuggestions` (#28047), as the SDK sends them. MCP Apps
   (#29803) reach the SDK's private `request` for `mcp_call` and `list_permission_rules`, which
   `ClaudeCli.ts` sends as raw control requests (`RAW_CONTROL_REQUEST_SUBTYPES`, nothing else).
   `can_use_tool` passes `matchedAskRule` and `suppressAlwaysAllowRule` to `canUseTool`.
@@ -739,7 +741,7 @@ checks that every name here still exists and that every modified upstream file i
   (`server/GitLabMediaFetch.ts`) reads with `glab api` in the minted `cwd` (no `--hostname`),
   buffering at most `GITLAB_MEDIA_MAX_BYTES`. The package also exports `server/GitLabCli`, which
   `ws.projects.test.ts` stubs.
-- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` ade473018d): merge
+- `GitLabCli.ts` fixes bugs still in upstream (checked against upstream `main` 4f0b74e190): merge
   requests between projects post to the source project with a numeric `target_project_id`; merge
   request URLs reach `glab` as `--repo <url> … -- <iid>`. `glab auth status` lines with a token
   label or `glpat-` token are never surfaced; clones accept only GitLab URLs without credentials,
@@ -983,8 +985,8 @@ checks that every name here still exists and that every modified upstream file i
   `SettingsSection` takes a `description` for them. `SettingsSidebarNav.tsx` and
   `useAvailableSettingsSearchItems.ts` take no settings scope search and have no T3 Connect sign-in,
   local backend, cloud, or WSL entries; `movedSettingsPath` never points at a cut page; Labs' Beta
-  section has only the Linked environments switch (no guest links or Simlock row); About has no
-  mobile app row, privacy link, or update track switch.
+  section has no guest links, Simlock, or Fast worktree checkout row; About has no
+  mobile app row, Welcome page row (#33209), privacy link, or update track switch.
 - Search carries `sourceControlHostSearchItems` but not `SOURCE_CONTROL_HOST_LABELS`; the MR link
   target row lives on Diffs with GitLab search terms. Agent-credit removal applies only to GitHub
   merges, so `ProjectDefaultsSettings.tsx` has no `removeAgentCreditsOnMerge` row and search has
@@ -1060,8 +1062,7 @@ checks that every name here still exists and that every modified upstream file i
   routes; `third-party-licenses.config.json` lists no desktop bundle or desktop-only assets;
   `scripts/lib/third-party-licenses.ts` reads no device tool version pins.
 - `patches/@ff-labs__fff-node@0.11.0.patch` adds the native grep struct's `fuzzy_score` read at its
-  real u16 width; `patches/@legendapp__list@3.3.5.patch` keeps only the `react.js` and `react.mjs`
-  sections.
+  real u16 width.
 - `knip.jsonc` lists upstream files whose exports only cut surfaces use.
 - `packages/effect-codex-app-server`: a spawned Codex child may print a bounded non-JSON preamble
   (`CHILD_PROCESS_STARTUP_PREAMBLE_MAX_BYTES`) before its first message; the `probe` script is not
@@ -1085,7 +1086,8 @@ checks that every name here still exists and that every modified upstream file i
   `ClaudeAdapterV2.test.ts` drives the MCP control-channel tests through a fake `claude`;
   `ClaudeAgentSdkQueryRunner.test.ts` stubs the CLI transport's `query`;
   `ProviderSessionManager.test.ts`'s parallel shutdown test waits in real time;
-  `storageCleanup.test.ts` uses real temp paths; `serverSettings.test.ts`,
+  `storageCleanup.test.ts` uses real temp paths; `serverSettings.test.ts`'s duplicate-row case
+  (#31337) builds settings without the cut managed policy layer; `serverSettings.test.ts`,
   `DatabaseStorage.test.ts`, `PullRequestService.test.ts`, `SourceControlRepositoryService.test.ts`,
   `presentation.test.ts`, `pullRequests.test.ts`, `threadShell.test.ts`, and `ws.test.ts` omit cases
   for cut surfaces; `threads-sync.test.ts` and `threads-atoms.test.ts` fake history pages over the
@@ -1122,8 +1124,9 @@ checks that every name here still exists and that every modified upstream file i
   fallback-model search target, `ExpandedImageDialog` drops the SnapShot accessibility case, and
   `ProviderSettingsForm`, `ProviderModelPicker.composition`, and `ReopenClosedViewShortcut` drop
   secret-source, provider, and preview cases, `ChatHeader` mocks `CoderWorkspaceLatency`, and
-  `PullRequestStackMenu` drops the GitHub CLI refusal case. `PullRequestMarkdown.browser`'s
-  repository media case uses GitLab uploads, `reopenClosedView.test.ts` passes no `openPreview`,
+  `PullRequestStackMenu` drops the GitHub CLI refusal case. `ChatView.modelPick.browser.test.tsx`
+  (#31739) is not carried, since it needs upstream's cut fake environment harness.
+  `PullRequestMarkdown.browser`'s repository media case uses GitLab uploads, `reopenClosedView.test.ts` passes no `openPreview`,
   client-runtime `pullRequests.test.ts` builds its runtime without a query store, and
   `AcpRegistryAdapterV2.test.ts`'s thread-env case (#30361) checks only `T3CODE_THREAD_ID`.
   Upstream's server tests for cut surfaces are dropped: `ws.test.ts`'s failed-publish refresh
@@ -1185,9 +1188,17 @@ them, the file is named here.
 - **Server self-update and CLI.** No npm release check (`cloud/npmRelease.ts`), "Update
   everything", update tracks, `t3 doctor` storage status (`DatabaseStorageNotice`, client-runtime's
   `databaseStorage` atom), `persistence/DatabaseMaintenance.ts` (so `rebuildMessageSearch` has no
-  caller), `t3 triage`, or desktop update button in `lib/bootError.ts`.
+  caller), `t3 triage`, or desktop update button in `lib/bootError.ts`. Settings' **Reclaim freed
+  database space** (#32941) is not carried yet: no `server.reclaimDatabaseSpace` (contracts `rpc.ts`
+  and `clientRpcPermissions.ts`, client-runtime `state/server.ts`), `DatabaseReclaimError`, or
+  `canReclaim` and `reclaimFailure` in contracts `settings.ts`, and `server.ts` has no
+  `ServerRestart` layer. Neither is the `t3` command installer (#33150, #33153): shared `shell.ts`
+  has no `readUserLoginShell`, `pathSetup`, or `pathSetupCommand`.
 - **Local editors and open targets.** No `OpenInPicker`, open-in-editor, reveal, file manager, or
-  remote open mode (`MarkdownFileLink.logic.ts` has no `canUseMarkdownFileShellActions`).
+  remote open mode (`MarkdownFileLink.logic.ts` has no `canUseMarkdownFileShellActions`). Chat
+  links to `cursor://file/…` and `vscode://file/…` (#23486) stay inert, since they would open a
+  laptop editor on a workspace path: shared `markdownPipeline.ts`, web `markdown-links.ts`, and
+  `ChatMarkdown.tsx` keep their form from before it (contracts `editor.ts` is not carried).
 - **Other providers and provider setup.** Cursor, OpenCode, Muse, Grok, Antigravity, fx, the
   dev-only replay provider (#26207: `DevReplayHost.tsx`, `apps/server/scripts/dev-replay*`,
   `window.t3dev`), their replay fixtures (`testkit/fixtures/index.ts` and `shared.ts` drop their
@@ -1201,8 +1212,8 @@ them, the file is named here.
   feedback upload (client-runtime `threadCommands.ts` has no `uploadFeedback`), the ChatGPT
   plan-sharing notice (#25341: `UsageLimitRecoveryBanner.tsx`, `ThreadErrorBanner.tsx`'s workspace
   limit), and SnapShot sources are cut.
-- **Hosted source control other than GitLab.** GitHub, Azure DevOps, Bitbucket, Forgejo, and
-  GitCafe packages, host settings, tokens, accounts, routing, forge app sign-in (#26245,
+- **Hosted source control other than GitLab.** GitHub, Azure DevOps, Bitbucket, Forgejo,
+  GitCafe, and Cursor Origin (#33093) packages, host settings, tokens, accounts, routing, forge app sign-in (#26245,
   `SourceControlSignIn`), app-access notices (`sourceControlAppAccessToast.ts`), and the GitHub star
   prompt (#27832, `GitHubStarPrompt`, `checkStarred`, `useComposerSend`'s `recordPromptSent`; the
   idle prompt and confetti #29922 and #29987, so `sourceControl.star` is not served and
@@ -1246,7 +1257,7 @@ them, the file is named here.
   contract fields stay. #31226's parking of unreadable instances in `ProviderInstanceRegistry.ts`
   is carried.
 - **Voice input** (#30623, #30624, #30625, #31059, #31769, #31778, #31799, #32035, #32045,
-  #32142, #32197). Work workspaces cannot download the speech models, and the audio transport
+  #32142, #32197, #33133). Work workspaces cannot download the speech models, and the audio transport
   would add a second laptop-to-workspace upload. Not carried: server `speech/`, web `speech/`, the
   voice settings page and composer controls, `TranscriptionPostProcessing.ts`, contracts
   `speech.ts` with its settings fields, the `voiceTranscription` and `cloudVoiceTranscription`
@@ -1255,8 +1266,9 @@ them, the file is named here.
   `LinuxLibc`, provider-core `textGeneration.ts` and `textGenerationOperations.ts`'s transcript
   cleanup, `ui/button.tsx`'s pill sizes (used only by the speech button), and the dictation hunks
   in carried files: `AssistantCitationChip.tsx`, `AssistantCitationCommentEditor.tsx`,
-  `ChatComposer.tsx`, `ComposerFooterControls.tsx`, `ComposerPrimaryActions.tsx` (the
-  `voiceInputActive` gate only), `AnnotatableCodeView.tsx`, `DiffCommentAnnotation.tsx`,
+  `ChatComposer.tsx` (including the prompt suggestion's dictation check, #28047),
+  `ComposerFooterControls.tsx`, `ComposerPrimaryActions.tsx` (the `voiceInputActive` gate and
+  #33133's mic slot beside the send button), `AnnotatableCodeView.tsx`, `DiffCommentAnnotation.tsx`,
   `DiffPanel.tsx`, `FilePreviewPanel.tsx`, `PullRequestCodeTab.tsx`, `PullRequestCommentForm.tsx`,
   `PullRequestComposer.tsx`, `PullRequestReviewAnnotation.tsx`, `PullRequestReviewForm.tsx` (its
   Cmd/Ctrl+Enter submit stays), `KeybindingsSettings.logic.ts`, `settingsLayout.tsx`
@@ -1298,6 +1310,38 @@ them, the file is named here.
   banner.
 - **Offline query persistence and upstream's mobile-only helpers.** See [Web state and
   persistence](#web-state-and-persistence).
+- **Text generators** (#33147). Model APIs that write titles, commit messages, and transcript
+  cleanup take an API key entered in Settings, which the provider scope rules out (no local
+  credential entry). Not carried: server `textGeneration/TextGenerators.ts` and
+  `textGeneratorDrivers.ts`, web `TextGeneratorsSettings.tsx` and `textGenerators.ts`, and
+  `server.listTextGeneratorModels`. These carried files keep their form from before it: contracts
+  `settings.ts` (`textGenerators`, `TextGeneratorConfig`, `textGeneratorForSelection`,
+  `resolveTextGenerationSelectionEnabled`), `rpc.ts`, and `clientRpcPermissions.ts`; shared
+  `serverSettings.ts` and `projectSettings.ts`; server `TextGeneration.ts`, `settingsSecrets.ts`,
+  `sourceControlHostSecrets.ts`, and `ws.ts`; client-runtime `state/server.ts`; and web
+  `ProviderInstanceIcon.tsx`, `Icons.tsx`, `ProviderSettingsPanel.tsx`, `SettingsPanels.tsx`,
+  `SourceControlWritingSettings.tsx`, `settingsSearch.ts`, `useAvailableSettingsSearchItems.ts`,
+  `useScopedModelAvailability.ts`, and `useSettings.ts`.
+- **Use T3 Code in another app** (#33196). Outside agents reach T3 over its MCP HTTP server with
+  OAuth, pairing codes, and T3 Connect (`AGENTS.md` boundaries 3 and 6): no
+  `mcp/UseInAnotherAppDialog.tsx`, `mcpApps.ts`, or `mcpGate.ts`, no palette action in
+  `CommandPalette.tsx`, no MCP approval codes in contracts `auth.ts`, and no `mcpApprovalCodes`
+  capability in `environment.ts`. Its narrow-screen layout for `FoldedSettingsSection.tsx` is
+  carried.
+- **Welcome page** (#33209). The first-run wizard was already cut, so the page that replaces it is
+  too: no `onboarding/WelcomePage.tsx`, `welcomePage.logic.ts`, `welcomeState.ts`, `/welcome`
+  route, or `docs/user/welcome-page.md`, and settings search has no `welcome-page` item
+  (`primaryEnvironmentOnly`, `hasPrimaryEnvironment`). `AppSidebarLayout.tsx` keeps upstream's
+  `showSidebar` prop, which `__root.tsx`'s minimal shell never sets, and
+  `AddProviderInstanceDialog.tsx` takes no `showMoreProviders` (there is no "Show more" fold).
+- **Fast worktree checkout** (#32927). It clones new worktrees from a cached checkout with macOS
+  `clonefile`, so it never runs in a Linux workspace. Not carried: server `vcs/CheckoutCloner.ts`,
+  `worktreeCheckoutCache.ts`, and `gitIndexStat.ts`, the server's direct `ffi-rs` dependency, the
+  `fastWorktreeCheckout` setting and capability, `worktreeCheckoutCacheDir`, and the Labs row and
+  its search item. These carried files keep their form from before it: contracts `settings.ts` and
+  `environment.ts`; server `config.ts`, `GitManager.ts`, `GitVcsDriver.ts`, `GitVcsDriverCore.ts`,
+  and `ProviderReplayHarness.ts`; web `LabsSettingsPanel.tsx`, `settingsSearch.ts`, and
+  `useAvailableSettingsSearchItems.ts`.
 - **Upstream repository tooling and CI-only checks.** `apps/web/scripts/verify-built-boot.ts`,
   `AgentContextBudget.test.ts` and `agentContextBudget.json`, `.pnpmfile.cjs`, and upstream's
   14k-line `AcpAdapterV2.test.ts`. The v1 importer carries only messages, so pre-v2 screenshot

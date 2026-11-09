@@ -99,6 +99,7 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   oneTimeSchedules: true,
   freshContext: true,
   scheduledTaskThreadModes: true,
+  vcsBranchStatus: true,
   // Links are the gateway's workspace link rules; calls between workspaces go through its hub.
   peerLinks: true,
   linkFence: true,

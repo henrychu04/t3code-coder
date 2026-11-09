@@ -23,6 +23,14 @@
       "types": "./src/work-log/presentation.ts",
       "default": "./src/work-log/presentation.ts"
     },
+    "./composer-model-mentions": {
+      "types": "./src/composerModelMentions.ts",
+      "default": "./src/composerModelMentions.ts"
+    },
+    "./model-search": {
+      "types": "./src/modelSearch.ts",
+      "default": "./src/modelSearch.ts"
+    },
     "./work-log/tool-presentation": {
       "types": "./src/work-log/toolPresentation.ts",
       "default": "./src/work-log/toolPresentation.ts"

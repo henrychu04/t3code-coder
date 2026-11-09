@@ -1,4 +1,4 @@
-import { EnvironmentId, GitManagerError, WS_METHODS } from "@t3tools/contracts";
+import { EnvironmentId, GitManagerError, type ServerConfig, WS_METHODS } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -21,6 +21,7 @@ import type { WsRpcProtocolClient } from "./protocol.ts";
 import type * as RpcSession from "./session.ts";
 import {
   requestGuarded,
+  refreshVcsBranch,
   RpcPermissionGuard,
   runStreamGuarded,
   subscribe,
@@ -210,3 +211,71 @@ describe("environment RPC", () => {
       }),
   );
 });
+
+it.effect.each([true, false])(
+  "refreshes branches using the connected server capability (%s)",
+  (supported) =>
+    Effect.gen(function* () {
+      const { activeSession, supervisor } = yield* makeHarness();
+      const inputs: unknown[] = [];
+      const client = {
+        [supported ? WS_METHODS.vcsRefreshBranch : WS_METHODS.vcsRefreshStatus]: (
+          input: unknown,
+        ) => {
+          inputs.push(input);
+          return Effect.void;
+        },
+      } as unknown as WsRpcProtocolClient;
+      yield* SubscriptionRef.set(
+        activeSession,
+        Option.some({
+          ...session(client),
+          initialConfig: Effect.succeed({
+            environment: { capabilities: supported ? { vcsBranchStatus: true } : {} },
+          } as ServerConfig),
+        }),
+      );
+      expect(
+        yield* refreshVcsBranch({ cwd: "/repo" }).pipe(
+          Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        ),
+      ).toBeUndefined();
+      expect(inputs).toEqual(supported ? [{ cwd: "/repo" }] : []);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("binds branch capability selection and execution to one session", () =>
+  Effect.gen(function* () {
+    const { activeSession, supervisor } = yield* makeHarness();
+    const configRequested = yield* Deferred.make<void>();
+    const config = yield* Deferred.make<ServerConfig>();
+    const executed = yield* Deferred.make<void>();
+    const original = {
+      [WS_METHODS.vcsRefreshBranch]: () =>
+        Deferred.succeed(executed, undefined).pipe(Effect.asVoid),
+    } as unknown as WsRpcProtocolClient;
+    const replacement = {
+      [WS_METHODS.vcsRefreshStatus]: () => Effect.succeed({ refName: "replacement" }),
+    } as unknown as WsRpcProtocolClient;
+    yield* SubscriptionRef.set(
+      activeSession,
+      Option.some({
+        ...session(original),
+        initialConfig: Deferred.succeed(configRequested, undefined).pipe(
+          Effect.andThen(Deferred.await(config)),
+        ),
+      }),
+    );
+    const refresh = yield* refreshVcsBranch({ cwd: "/repo" }).pipe(
+      Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+      Effect.forkChild,
+    );
+    yield* Deferred.await(configRequested);
+    yield* SubscriptionRef.set(activeSession, Option.some(session(replacement)));
+    yield* Deferred.succeed(config, {
+      environment: { capabilities: { vcsBranchStatus: true } },
+    } as ServerConfig);
+    expect(yield* Fiber.join(refresh)).toBeUndefined();
+    yield* Deferred.await(executed);
+  }).pipe(Effect.scoped),
+);

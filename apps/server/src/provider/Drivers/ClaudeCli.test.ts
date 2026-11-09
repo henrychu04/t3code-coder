@@ -561,7 +561,8 @@ it("serves MCP Apps' control requests with the Agent SDK 0.3.316 wire shapes", a
   const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-mcp-apps-"));
   const executable = NodePath.join(directory, "fake-claude");
   // Answers only the SDK's shapes: mcp_status, mcp_read_resource { serverName, uri }, the raw
-  // mcp_call and list_permission_rules requests, and an initialize that carries the title.
+  // mcp_call and list_permission_rules requests, and an initialize that carries the title and
+  // prompt suggestions.
   await NodeFS.writeFile(
     executable,
     `#!/usr/bin/env node
@@ -572,7 +573,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   const request = value.request;
   const keys = Object.keys(request).sort().join(",");
   const response =
-    request.subtype === "initialize" && request.title === "Named thread"
+    request.subtype === "initialize" &&
+    request.title === "Named thread" &&
+    request.promptSuggestions === true
       ? {}
       : request.subtype === "mcp_status" && keys === "subtype"
         ? { mcpServers: [{ name: "docs", status: "connected", tools: [{ name: "show" }] }] }
@@ -603,7 +606,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
       await promptFinished;
     })(),
-    options: { pathToClaudeCodeExecutable: executable, env: process.env, title: "Named thread" },
+    options: {
+      pathToClaudeCodeExecutable: executable,
+      env: process.env,
+      title: "Named thread",
+      promptSuggestions: true,
+    },
   });
   try {
     await runtime.initializationResult();
