@@ -2,20 +2,28 @@ import {
   ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
   type EnvironmentId,
+  type ThreadId,
+  type OrchestrationV2ThreadLinkMetadata,
   type OrchestrationGetTurnDiffResult,
 } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { Atom } from "effect/reactivity";
 
 import { applyCommandOutputFrame, EMPTY_COMMAND_OUTPUT } from "./commandOutput.ts";
 
 import {
+  createEnvironmentQueryAtomFamily,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
   type QueryAnswerHandler,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import * as EnvironmentSupervisor from "../connection/supervisor.ts";
+import { EnvironmentRpcUnavailableError, request } from "../rpc/client.ts";
 import type { EnvironmentShellState } from "./shell.ts";
 
 export function createOrchestrationEnvironmentAtoms<R, E>(
@@ -37,6 +45,20 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       ? {}
       : { onAnswer: options.onCheckpointDiffAnswer };
   const shellState = options.shellState;
+  const refreshThreadLookup = ({
+    environmentId,
+    input,
+  }: {
+    readonly environmentId: EnvironmentId;
+    readonly input: { readonly threadIds: ReadonlyArray<ThreadId> };
+  }) => {
+    if (shellState === undefined) return undefined;
+    const state = shellState(environmentId);
+    return Atom.make((get) => {
+      const { removedAt } = get(state);
+      return Math.max(-1, ...input.threadIds.map((threadId) => removedAt.get(threadId) ?? -1));
+    });
+  };
   return {
     threadTitles: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:thread-titles",
@@ -45,14 +67,36 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       idleTtlMs: 0,
       // Deleting a thread the shell already left out keeps these ids, so the query would not rerun.
       // A removal can also be an archive, so it only prompts a re-check.
-      refreshTrigger: ({ environmentId, input }) => {
-        if (shellState === undefined) return undefined;
-        const state = shellState(environmentId);
-        return Atom.make((get) => {
-          const { removedAt } = get(state);
-          return Math.max(-1, ...input.threadIds.map((threadId) => removedAt.get(threadId) ?? -1));
-        });
-      },
+      refreshTrigger: refreshThreadLookup,
+    }),
+    threadLinkMetadata: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:thread-link-metadata",
+      staleTimeMs: 0,
+      idleTtlMs: 0,
+      refreshTrigger: refreshThreadLookup,
+      execute: Effect.fn("orchestration.threadLinkMetadata")(function* (input: {
+        readonly threadIds: ReadonlyArray<ThreadId>;
+      }) {
+        const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+        const session = yield* SubscriptionRef.get(supervisor.session);
+        if (Option.isNone(session)) {
+          return yield* new EnvironmentRpcUnavailableError({
+            environmentId: supervisor.target.environmentId,
+            message: "The environment has no session.",
+          });
+        }
+        const config = yield* session.value.initialConfig;
+        if (config.threadLinkMetadata === true) {
+          return yield* request(ORCHESTRATION_V2_WS_METHODS.getThreadLinkMetadata, input);
+        }
+        const titles = yield* request(ORCHESTRATION_V2_WS_METHODS.getThreadTitles, input);
+        return Object.fromEntries(
+          Object.entries(titles).map(([id, title]) => [
+            id,
+            { title, projectId: null } satisfies OrchestrationV2ThreadLinkMetadata,
+          ]),
+        );
+      }),
     }),
     // Coder: upstream's authenticated HTTP transcript fetch, read over helper stdio instead.
     threadTranscript: createEnvironmentRpcCommand(runtime, {
@@ -85,6 +129,12 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
             Stream.scan(() => EMPTY_COMMAND_OUTPUT, applyCommandOutputFrame),
             Stream.filter((view) => view !== EMPTY_COMMAND_OUTPUT),
           ),
+      }),
+      // The open thread's predicted next prompt, while its composer is mounted.
+      promptSuggestion: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+        label: "environment-data:orchestration-v2:prompt-suggestion",
+        tag: ORCHESTRATION_V2_WS_METHODS.subscribePromptSuggestion,
+        idleTtlMs: 0,
       }),
     },
     turnDiff: createEnvironmentRpcQueryAtomFamily(runtime, {

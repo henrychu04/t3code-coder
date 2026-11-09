@@ -299,6 +299,7 @@ const DELETED_PATHS = {
     // Upstream tests built on cut surfaces: the fake environment harness, upstream's HTTP peer
     // MCP client, and host credential secret references.
     "apps/web/src/components/ChatView.browser.test.tsx",
+    "apps/web/src/components/ChatView.modelPick.browser.test.tsx",
     "apps/server/src/peer/PeerMcpClient.test.ts",
     "apps/server/src/sourceControl/sourceControlHostSecrets.test.ts",
     // Upstream's ACP Registry icon cache (`settings/AcpRegistryIcon.tsx`), which Kilo Code's

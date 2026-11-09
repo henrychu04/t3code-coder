@@ -167,6 +167,15 @@ last visual line with `ArrowDown`, including wrapped lines. Elsewhere the keys m
 Editing a recalled prompt turns it into a normal draft. Recall is derived from loaded conversation
 messages; it does not keep a separate prompt-history store in the browser.
 
+## Suggested next prompt
+
+Turn on **Suggest next prompt** in Settings > Labs. After a Claude or Codex turn completes, the
+empty composer shows a predicted next message. Press `Tab` to fill it in, then edit or send it, or
+press `Escape` to dismiss it. Each suggestion is one extra request that reuses the turn's prompt
+cache, so it uses a little of your plan's usage. Claude skips suggestions on the first turn of a
+thread and near usage limits. Codex needs version 0.165 or later in the workspace. Codex follows a
+change to the setting at once; open Claude threads follow it after they restart.
+
 ## Edit an earlier prompt
 
 Choose **Edit from here** beneath a sent message to rewind to before that message. Choose
@@ -224,19 +233,17 @@ Creating a project does not set a project model default.
 Only explicitly chosen model options are sent. Leaving reasoning level or service tier unset uses
 the provider’s own configuration in the workspace.
 
-## Context meter
+## Context window
 
-Turn on **Settings → Labs → Legacy → Context window indicator (legacy)** to see context usage. The
-meter is off by default and appears in the composer footer once the provider reports usage; it
-shows how much of the selected provider's context window the conversation uses. As Codex or Claude threads grow old and large,
-T3 Coder offers to compact the conversation into a summary before you continue; you can also start
-compaction yourself from the meter. Compaction runs through the workspace provider session,
-summarizes history without changing the model's context window, and remains visible in the
-conversation even when it is the only activity in that turn.
+Turn on **Context window** in **Settings → Appearance → Thread details** to see context usage in
+the thread details card. It appears once the provider reports usage and shows how much of the
+selected provider's context window the conversation uses. As Codex or Claude threads grow old and
+large, T3 Coder offers to compact the conversation into a summary before you continue.
+Compaction runs through the workspace provider session, summarizes history without changing the
+model's context window, and remains visible in the conversation even when it is the only activity
+in that turn.
 
-Compacting from the context meter preserves the current draft and its images. You can also send
-`/compact` in an existing conversation when the provider supports it, even with the context meter
-turned off.
+Send `/compact` in an existing conversation to reduce context usage when the provider supports it.
 
 Send `/clear` on its own, or pick it from the slash menu, to start a fresh session
 in the same thread. Your next message goes to a new provider session that doesn't see the
@@ -300,6 +307,10 @@ Dropping a thread from another workspace attaches a saved transcript file. The s
 must be connected. The transcript includes the visible history and saved text context at the time
 of the drop; later messages and the contents of attached files are not copied. The agent can read
 the saved transcript after the source disconnects. Normal file attachment limits apply.
+
+Type `@` and part of a model or provider name, such as `@opus`, to name that model for the
+agent, for example when delegating. It does not change the thread's model. Join words with
+`:`, `/` or `-`, as in `@opus:codex`.
 
 ## Run shell code blocks
 

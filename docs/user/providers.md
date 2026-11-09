@@ -67,7 +67,7 @@ Codex can also surface asynchronous questions while it continues working. Answer
 the resolution and starts a follow-up message in the same thread; unanswered questions remain
 available even after a long activity history. Dismiss an asynchronous question to close it without
 sending anything to Codex; blocking questions still require an answer or interruption. Context compaction is available for both Codex and
-Claude through the context meter and `/compact` command.
+Claude through the `/compact` command.
 
 ## Images
 
