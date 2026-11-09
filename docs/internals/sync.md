@@ -53,7 +53,9 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   service dependency; mock it as upstream's own tests of that service do. Their fixtures cast
   partial records (`as unknown as`), so a field upstream starts reading fails only at runtime
   (2a7bd1673c: thread shells' `lineage` and `settledAt`); copy the fields from upstream's own
-  fixture for that service.
+  fixture for that service. provider-pi's fork-only file-bridge test fakes Pi's extension API, so
+  a new call in upstream's extension (#33177's `registerCommand`) needs the stub upstream's own
+  fakes add.
 - When upstream rewrites a file wholesale (in 2a7bd1673c, `ChatView.tsx` and `ChatComposer.tsx`
   moved from `useCallback` to plain functions and `useStableCallback`), take upstream's file and
   replay the fork's delta hunk by hunk: `git diff "$MB" "$PREV" -- <file>`, split it into one
@@ -109,6 +111,13 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   conflict in the next stage, and `lost` lists its lines; name every carried file it touched in the
   seams doc. Where a later commit builds on one of its non-feature refactors (#24664's
   `CodexDriver.ts` passing `HostProcess.Environment`), take upstream's form.
+- To cut several whole commits spread through one range (4f0b74e190: #33147, #32941, #33196,
+  #33093, #33150, #33153), revert them newest first on a detached worktree at `$SHA`, where each
+  revert resolves in upstream's own context, and merge that tree into the sync branch. Record the
+  result (`git write-tree`), then `git merge --abort`, `git merge --no-ff --no-commit "$SHA"`, and
+  `git read-tree --reset -u <tree>`, so the merge names `$SHA` with none of the cut hunks. Read each
+  cut commit's carried-file hunks afterwards and keep the ones that are not the feature (#33196's
+  `FoldedSettingsSection.tsx` layout fix).
 - A keep candidate whose importers only need a few declarations (#29001's
   `telemetry/ProviderUsageAnalytics.ts`, whose analytics layer is cut) can stay as a reduced upstream
   file under the deleted directory: keep the declarations the carried files import, mark it
@@ -322,6 +331,10 @@ git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-onl
   Upstream may add an SDK hook in the runner's own `query({` call rather than in
   `makeClaudeQueryOptions` (`spawnClaudeCodeProcess` in dd5c7bd09e); `ClaudeCli.ts` must honour
   it, and upstream's `ClaudeAgentSdkQueryRunner.test.ts` fake-CLI tests then exercise it.
+  An option upstream passes on every query (#28047's `promptSuggestions`, even when false) fails
+  every Claude turn until the transport takes it. The SDK sends some options in its `initialize`
+  control request (`title`, `promptSuggestions`); find where in `sdk.mjs` and do the same in
+  `ClaudeCli.ts`.
   A rejected `Query` method is loud only if upstream lets the rejection surface: upstream wraps
   some calls (`setMcpServers` in `layerQueryRunner`) so a failure is logged and the turn continues
   without the feature. For every new call, read how upstream handles its failure; implement the
