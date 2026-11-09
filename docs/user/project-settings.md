@@ -258,7 +258,9 @@ space on disk until a one-time offline repair returns it and turns on automatic 
 
 Select **Reclaim**. T3 Code checks for free disk space in the workspace, then stops the helper,
 repairs the database, and connects the workspace again. It is offline while the repair runs, and
-running agents stop. If the repair fails, Settings shows why.
+running agents stop. While it runs the workspace shows as not responding; it reconnects on its
+own after the repair, or as soon as you switch back to the window. If the repair fails, Settings
+shows why.
 
 The repair can take several minutes on a large database. It rebuilds the database through a
 temporary copy, so it needs free space of about twice the data still in use (the database size minus

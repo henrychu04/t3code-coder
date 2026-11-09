@@ -484,7 +484,11 @@ checks that every name here still exists and that every modified upstream file i
   exit code, gateway path, or listener. The repair logs to stderr like the rest of the helper,
   because stdout still carries RPC frames to the gateway, which drops a helper that writes a
   non-JSON line. Disconnecting the workspace while the repair runs stops `coder ssh` after the
-  termination grace period, which can stop the repair; SQLite rolls it back.
+  termination grace period, which can stop the repair; SQLite rolls it back. While the repair runs
+  the `coder ssh` child is still alive, so the gateway keeps the old connection: the browser's
+  session times out on pings (15 s) and retries against it with growing backoff, and reconnects to
+  the fresh helper on the first retry after the child exits (or at once when the window regains
+  focus). A one-time repair does not justify a draining state in the gateway's connection lifecycle.
 - `coderServer.ts` runs upstream's idle Claude compaction worker (`layerIdleCompactionWorker`) in
   `CoderRuntimeCoreLive` and gives `ProviderRegistry` the provider support layer
   (`CoderProviderRegistryLive`).
