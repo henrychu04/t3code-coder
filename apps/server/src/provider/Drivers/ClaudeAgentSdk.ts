@@ -42,6 +42,7 @@ const SUPPORTED_QUERY_OPTIONS: ReadonlySet<string> = new Set([
   "pathToClaudeCodeExecutable",
   "permissionMode",
   "persistSession",
+  "promptSuggestions",
   "resume",
   "resumeSessionAt",
   "sessionId",
@@ -119,6 +120,9 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
     ...(options.onUserDialog ? { onUserDialog: options.onUserDialog } : {}),
     ...(options.permissionMode ? { permissionMode: options.permissionMode } : {}),
     ...(options.persistSession === false ? { persistSession: false } : {}),
+    ...(options.promptSuggestions !== undefined
+      ? { promptSuggestions: options.promptSuggestions }
+      : {}),
     ...(options.resume ? { resume: options.resume } : {}),
     ...(options.resumeSessionAt ? { resumeSessionAt: options.resumeSessionAt } : {}),
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),

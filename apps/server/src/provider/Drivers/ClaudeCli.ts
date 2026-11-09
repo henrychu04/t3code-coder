@@ -99,6 +99,8 @@ export type Options = {
   readonly supportedDialogKinds?: ReadonlyArray<string>;
   /** Sent in `initialize`, as the SDK does; a titled session skips Claude's own naming request. */
   readonly title?: string;
+  /** Sent in `initialize`, as the SDK does; the CLI then emits `prompt_suggestion` messages. */
+  readonly promptSuggestions?: boolean;
   readonly systemPrompt?: {
     readonly type: "preset";
     readonly preset: "claude_code";
@@ -534,6 +536,9 @@ class ClaudeCliQuery implements Query {
         ? { supportedDialogKinds: options.supportedDialogKinds }
         : {}),
       ...(options.title !== undefined ? { title: options.title } : {}),
+      ...(options.promptSuggestions !== undefined
+        ? { promptSuggestions: options.promptSuggestions }
+        : {}),
     }).then((response) => response as SDKControlInitializeResponse);
     this.initialization.catch(() => undefined);
     this.pumpPrompt(prompt);
