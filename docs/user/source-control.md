@@ -14,7 +14,8 @@ browser and local gateway never receive GitLab credentials.
 - **Sync and publishing** — fetch, pull, push, clone, add remotes, and publish repositories without
   moving Git execution out of the workspace.
 - **GitLab merge requests** — create, check out, review, comment on, update, merge, close, reopen,
-  and manage reviewers from the merge-request views.
+  revert a merged merge request, resolve overview threads from the Summary and Timeline tabs, and
+  manage reviewers from the merge-request views.
 - **Checkpoints** — every turn gets a checkpoint you can compare against and restore to.
 
 ## Worktrees
@@ -87,6 +88,15 @@ list data immediately while the full GitLab detail loads.
 Command-click (Control-click on Windows and Linux) a merge request number to open it on GitLab
 instead of inside T3 Coder.
 
+A link to part of a merge request opens that part: a comment or review is marked in the activity, a
+changed-line link opens the file at those lines, a pipelines link opens the checks, and a commit link
+opens that commit's changes. Hovering a comment or commit link previews it.
+
+Choose how commit messages and merge request titles and descriptions are written in
+**Settings → Source control → Commits & merge requests**. **Repository conventions** uses the
+project's instructions and recent commit subjects. **Custom instructions** applies your own
+instructions to commits and merge requests.
+
 ## Linked merge requests
 
 A thread can hold several GitLab merge requests. Use **Link merge request to thread** in the command
@@ -109,8 +119,9 @@ from MRs already linked to this thread, within the same GitLab host and reposito
 not discover unlinked MRs or offer stack merge/rebase actions. Ambiguous reused head branches are
 not treated as a known parent.
 
-The workspace refreshes link status even while the browser is disconnected. Open or unsynced links
-keep a thread active; automatic settlement can proceed once every linked review is terminal, subject
+The workspace refreshes link status even while the browser is disconnected. Settling a thread
+refreshes its open and closed reviews once; after that they stop refreshing until you unsettle it.
+Open or unsynced links keep a thread active; automatic settlement can proceed once every linked review is terminal, subject
 to the workspace's settlement settings. GitHub-native stack merge and rebase actions are not supported.
 
 Press Command-Enter (Control-Enter on Windows) to save an edited review description or comment.

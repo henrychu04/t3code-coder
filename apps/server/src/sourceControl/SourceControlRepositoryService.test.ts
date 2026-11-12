@@ -198,6 +198,9 @@ function makePublishService(reason?: GitCommandError["reason"]) {
   );
 }
 
+// Coder: upstream's "says a clone that ran out of time timed out" test (#27588) builds
+// upstream's GitHub clone harness, which this file replaces with GitLab cases.
+
 it.effect("explains a rejected SSH push after creating the repository", () =>
   Effect.gen(function* () {
     const service = yield* makePublishService("authentication_failed");

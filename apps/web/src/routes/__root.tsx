@@ -10,6 +10,7 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
+import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef } from "react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
@@ -21,7 +22,6 @@ import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { Button } from "../components/ui/button";
-import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { useClientSettings } from "../hooks/useSettings";
@@ -35,9 +35,6 @@ import { useAtomValue } from "@effect/atom-react";
 import { environmentServerStatesAtom } from "../state/server";
 import { initializeActiveEnvironmentId, readProject } from "../state/entities";
 
-import { Check } from "lucide";
-import { Copy } from "lucide";
-import { cn } from "../lib/utils";
 export const Route = createRootRoute({
   beforeLoad: () => ({}),
   component: RootRouteView,
@@ -123,7 +120,7 @@ function CopyErrorButton({ report }: { report: string }) {
 
   return (
     <Button size="sm" variant="outline" onClick={() => copyToClipboard(report)}>
-      <MorphIcon className={cn(isCopied && "text-success")} icon={isCopied ? Check : Copy} />
+      {isCopied ? <CheckIcon className="text-success" /> : <CopyIcon />}
       {isCopied ? "Copied" : "Copy error"}
     </Button>
   );

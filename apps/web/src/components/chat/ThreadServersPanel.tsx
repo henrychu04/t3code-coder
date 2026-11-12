@@ -9,8 +9,14 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDown, ChevronUp } from "lucide";
-import { GlobeIcon, LoaderCircleIcon, SquareIcon, UnplugIcon } from "lucide-react";
+import {
+  GlobeIcon,
+  LoaderCircleIcon,
+  SquareIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  UnplugIcon,
+} from "lucide-react";
 import { type MouseEvent, useState } from "react";
 
 // Coder: no browser panel or desktop shell; Forward saves a port-forward rule and opens its
@@ -22,7 +28,6 @@ import { useEnvironment } from "../../state/environments";
 import { previewEnvironment } from "../../state/preview";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { MorphIcon } from "../MorphIcon";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
@@ -278,11 +283,11 @@ function ThreadServersList(props: ThreadServersPanelProps) {
           tone="muted"
           className="w-full active:scale-100"
         >
-          <MorphIcon
-            aria-hidden
-            className="size-4 shrink-0"
-            icon={hiddenCount > 0 ? ChevronDown : ChevronUp}
-          />
+          {hiddenCount > 0 ? (
+            <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
+          ) : (
+            <ChevronUpIcon aria-hidden className="size-4 shrink-0" />
+          )}
           {hiddenCount > 0 ? `Show ${Math.min(hiddenCount, SERVER_PAGE_COUNT)} more` : "Show less"}
         </ThreadDetailsControl>
       ) : null}

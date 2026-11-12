@@ -57,6 +57,7 @@ import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.t
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
+import * as AcpRegistrySessions from "./provider/AcpRegistrySessions.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
@@ -239,6 +240,7 @@ const harness = (
       stub(DocumentText.DocumentText),
       stub(ProcessRunner.ProcessRunner),
       stub(AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator),
+      stub(AcpRegistrySessions.AcpRegistrySessions),
       Layer.succeed(BuiltInDrivers.SourceControlDrivers, []),
       ServerConfig.layer(config),
       WorkspacePaths.layer,

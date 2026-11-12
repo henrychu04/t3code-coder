@@ -136,6 +136,8 @@ export class ModelManifest extends Context.Service<
     readonly current: Effect.Effect<ModelManifestData>;
     readonly refresh: Effect.Effect<ModelManifestData>;
     readonly forceRefresh: Effect.Effect<ModelManifestData>;
+    /** For a user looking at the model list: tolerates far less staleness than `refresh`. */
+    readonly refreshOnDemand: Effect.Effect<ModelManifestData>;
     /** Process-shared fetches must survive the triggering instance's teardown. */
     readonly refreshInBackground: Effect.Effect<void>;
   }
@@ -145,6 +147,7 @@ const BundledOnlyModelManifest: ModelManifest["Service"] = {
   current: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   refresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   forceRefresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
+  refreshOnDemand: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   refreshInBackground: Effect.void,
 };
 

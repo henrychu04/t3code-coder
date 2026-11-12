@@ -183,3 +183,5 @@ it.effect("drops planner statistics a database already has", () => {
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
   );
 });
+
+// Coder: upstream's `layerCliConfig` tests (#26763) are not carried; there is no `t3` CLI.

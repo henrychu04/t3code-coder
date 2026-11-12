@@ -81,6 +81,7 @@ describe("resolveProviderCatalog", () => {
               current: Effect.succeed(manifest),
               refresh: Effect.die("Catalog reads must not refresh the manifest"),
               forceRefresh: Effect.die("Catalog reads must not refresh the manifest"),
+              refreshOnDemand: Effect.die("Catalog reads must not refresh the manifest"),
               refreshInBackground: Effect.die("Catalog reads must not refresh the manifest"),
             }),
           ),

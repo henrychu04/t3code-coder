@@ -2,10 +2,12 @@ import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import type * as Signature from "effect/crypto/Signature";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
@@ -287,6 +289,20 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
 
     // Coder: reset-credit redemption is subscription account management, which this fork
     // does not offer.
+    // Auth overlays use effectiveHomePath; the continuation key would conflate them with shared homes.
+    const accountKey = homeLayout.effectiveHomePath ?? homeLayout.sharedHomePath;
+
+    // `codex login` and `codex logout` rewrite auth.json outside T3.
+    if (effectiveConfig.enabled) {
+      yield* fileSystem.watch(accountKey).pipe(
+        Stream.filter((event) => pathService.basename(event.path) === "auth.json"),
+        Stream.debounce(Duration.millis(250)),
+        Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
+        Effect.catchReason("PlatformError", "NotFound", () => Effect.void),
+        Effect.ignoreCause({ log: true }),
+        Effect.forkScoped,
+      );
+    }
     return {
       instanceId,
       driverKind: DRIVER_KIND,

@@ -83,19 +83,20 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
         group: "environment",
         icon: <WifiOffIcon />,
         title: `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
-        actions: !environmentReconnecting ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() =>
-              void handleReconnectActiveEnvironmentStable(
-                activeEnvironmentUnavailableState.environmentId,
-              )
-            }
-          >
-            Reconnect
-          </Button>
-        ) : undefined,
+        actions:
+          unavailableConnection.phase !== "connecting" ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() =>
+                void handleReconnectActiveEnvironmentStable(
+                  activeEnvironmentUnavailableState.environmentId,
+                )
+              }
+            >
+              {environmentReconnecting ? "Retry now" : "Reconnect"}
+            </Button>
+          ) : undefined,
       });
     }
     return items;

@@ -177,9 +177,10 @@ resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a merge request watch starts on its own does not.
 
 To keep one thread out of the settled shelf no matter how long it sits idle, open its menu,
-choose **Auto-settle behavior**, and pick **Disabled**. The current option is checked. Pick
-**Enabled** to return to the usual rules. Manual settle, snooze, and archive still work while it
-is disabled.
+choose **Auto-settle behavior**, and pick **Never**. The current option is checked. Pick
+**Follow settings** to return to the rules in **Settings → Threads**. While those rules are off,
+a thread on **Follow settings** does not settle automatically either. Manual settle, snooze, and
+archive still work while it is set to **Never**.
 
 Change these rules in **Settings → Threads**. They continue to run in the workspace
 when your browser is closed. Choose a workspace at the top to change only its rules,

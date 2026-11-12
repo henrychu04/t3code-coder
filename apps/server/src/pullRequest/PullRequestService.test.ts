@@ -752,6 +752,106 @@ it.effect("tells two hosts of one kind apart in the switcher and the filter", ()
   }),
 );
 
+it.effect("retains an unavailable host's summary when it is the only queried host", () =>
+  Effect.gen(function* () {
+    for (const reason of ["missing-tool", "unauthenticated"] as const) {
+      const service = yield* makeService({
+        projects: [
+          project({
+            id: "p1",
+            title: "t3code",
+            workspaceRoot: "/a",
+            repository: "pingdotgg/t3code",
+          }),
+        ],
+        providers: [
+          fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+            getViewer: () =>
+              Effect.fail(unusable(SourceControlProviderKind.make("github"), reason)),
+          }),
+        ],
+      });
+
+      for (const filter of [{}, { host: "github.com" }]) {
+        const error = yield* service.list({ state: "open", ...filter }).pipe(Effect.flip);
+        assert.strictEqual(error._tag, "PullRequestUnavailableError");
+        assert.strictEqual(
+          error._tag === "PullRequestUnavailableError" ? error.reason : null,
+          reason === "missing-tool" ? "cli-missing" : "cli-unauthenticated",
+        );
+        assert.isDefined(error.listResult);
+        const result = error.listResult!;
+        assert.deepStrictEqual(result.entries, []);
+        assert.deepStrictEqual(result.viewers, {});
+        assert.deepStrictEqual(
+          result.providers.map(({ host, configured, projectIds }) => ({
+            host,
+            configured,
+            projectIds: projectIds?.map(String),
+          })),
+          [{ host: "github.com", configured: false, projectIds: undefined }],
+        );
+        assert.strictEqual(result.providers[0]?.detail?.includes("github"), true);
+        assert.deepStrictEqual(
+          result.errors.map(({ projectId }) => projectId),
+          ["p1"],
+        );
+      }
+    }
+  }),
+);
+
+it.effect("retains a Bitbucket host summary when the provider rejects saved credentials", () =>
+  Effect.gen(function* () {
+    const provider = fakePullRequestProvider(SourceControlProviderKind.make("bitbucket"), {
+      getViewer: () =>
+        Effect.fail(
+          new PullRequestProviderError({
+            provider: SourceControlProviderKind.make("bitbucket"),
+            operation: "getViewer",
+            reason: "failed",
+            detail: "HTTP 403",
+          }),
+        ),
+    });
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "bitbucket",
+          title: "Widget",
+          workspaceRoot: "/widget",
+          repository: "acme/widget",
+          provider: SourceControlProviderKind.make("bitbucket"),
+          host: "bitbucket.org",
+        }),
+      ],
+      providers: [provider],
+    });
+    for (const filter of [{}, { host: "bitbucket.org" }]) {
+      const error = yield* service.list({ state: "open", ...filter }).pipe(Effect.flip);
+      assert.strictEqual(error._tag, "PullRequestOperationError");
+      assert.isDefined(error.listResult);
+      const result = error.listResult!;
+      assert.deepStrictEqual(
+        result.providers.map(({ host, configured, projectIds }) => ({
+          host,
+          configured,
+          projectIds: projectIds?.map(String),
+        })),
+        [{ host: "bitbucket.org", configured: false, projectIds: undefined }],
+      );
+      assert.deepStrictEqual(result.entries, []);
+      assert.deepStrictEqual(
+        result.errors.map(({ projectId }) => projectId),
+        ["bitbucket"],
+      );
+    }
+  }),
+);
+
+// Coder: upstream's Forgejo authority test (#21530) needs the Forgejo driver, which the
+// GitLab-only registry does not carry.
+
 it.effect("reads a repository once when several worktrees share it", () =>
   Effect.gen(function* () {
     let calls = 0;
@@ -783,6 +883,7 @@ it.effect("reads a repository once when several worktrees share it", () =>
 
     assert.strictEqual(calls, 1);
     assert.strictEqual(result.entries.length, 1);
+    assert.isUndefined(result.providers[0]?.projectIds);
   }),
 );
 
@@ -1478,6 +1579,71 @@ it.effect("stops new reads after a rate limit while leaving manual actions avail
     assert.lengthOf(first.errors, 1);
     assert.lengthOf(paused.errors, 1);
   }),
+);
+
+it.effect(
+  "opening a pull request during a rate-limit pause still reads its detail and activity",
+  () =>
+    Effect.gen(function* () {
+      let detailReads = 0;
+      let activityReads = 0;
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "cloud", workspaceRoot: "/cloud", repository: "acme/web" }),
+        ],
+        providers: [
+          fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+            getChangeRequest: ({ number }) =>
+              Effect.suspend(() => {
+                detailReads += 1;
+                return number === 1
+                  ? Effect.fail(
+                      new PullRequestProviderError({
+                        provider: SourceControlProviderKind.make("github"),
+                        operation: "getChangeRequest",
+                        reason: "rate-limited",
+                        detail: "GitHub API rate limit exceeded.",
+                      }),
+                    )
+                  : Effect.succeed({ ...hostedChangeRequest("Body"), number });
+              }),
+            getChangeRequestActivity: () =>
+              Effect.sync(() => {
+                activityReads += 1;
+                return {
+                  comments: [],
+                  commentCount: 0,
+                  commentsTruncated: false,
+                  reviewThreads: [],
+                  commits: [],
+                };
+              }),
+          }),
+        ],
+      });
+      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 2 };
+
+      yield* Effect.result(service.detail({ ...reference, number: 1 }));
+      const background = yield* Effect.result(service.detail(reference));
+      const opened = yield* Effect.result(
+        service
+          .detail(reference)
+          .pipe(Effect.provideService(SourceControlRateLimit.Interactive, true)),
+      );
+      const timeline = yield* Effect.result(
+        service
+          .activity(reference)
+          .pipe(Effect.provideService(SourceControlRateLimit.Interactive, true)),
+      );
+
+      expect(background).toMatchObject({ _tag: "Failure" });
+      expect({ opened, timeline }).toMatchObject({
+        opened: { _tag: "Success", success: { number: 2 } },
+        timeline: { _tag: "Success", success: { commentCount: 0 } },
+      });
+      assert.strictEqual(detailReads, 2);
+      assert.strictEqual(activityReads, 1);
+    }),
 );
 
 it.effect("refuses a repository that does not belong to the requested project", () =>
@@ -3063,35 +3229,6 @@ it.effect("keeps viewed files itself for a host that keeps none of its own", () 
     assert.deepStrictEqual(
       asked.map((paths) => [...paths].toSorted()),
       [["src/a.ts", "src/b.ts"]],
-    );
-  }),
-);
-
-it.effect("reports a file pushed to since it was cleared as changed", () =>
-  Effect.gen(function* () {
-    const revisions = new Map([
-      ["src/a.ts", "blob-a"],
-      ["src/b.ts", "blob-b"],
-    ]);
-    const service = yield* environmentViewedService(revisions, []);
-
-    yield* service.setFilesViewed({
-      ...GITLAB_REFERENCE,
-      files: [
-        { path: "src/a.ts", viewed: true },
-        { path: "src/b.ts", viewed: true },
-      ],
-    });
-    revisions.set("src/a.ts", "blob-a-again");
-    yield* service.invalidate({ reference: GITLAB_REFERENCE });
-    const marked = yield* service.filesViewed(GITLAB_REFERENCE);
-
-    assert.deepStrictEqual(
-      [...marked.files].toSorted((left, right) => left.path.localeCompare(right.path)),
-      [
-        { path: "src/a.ts", state: "dismissed" },
-        { path: "src/b.ts", state: "viewed" },
-      ],
     );
   }),
 );

@@ -127,6 +127,7 @@ describe("GhosttyTerminalSurface visibility", () => {
       canvas,
       beginPath() {},
       clip() {},
+      getTransform: () => ({ a: 1, d: 1 }),
       rect() {},
       resetTransform() {},
       restore() {},
@@ -284,6 +285,9 @@ describe("GhosttyTerminalSurface visibility", () => {
     ]);
     expect(surface.hasSelection()).toBe(false);
   });
+
+  // Coder: no desktop bridge reports GTK's primary-paste setting (#26172), so middle-click
+  // always pastes.
 
   it("leaves modified history keys with alternate-screen applications", async () => {
     vi.stubGlobal("navigator", { platform: "Linux x86_64" });

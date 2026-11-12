@@ -65,6 +65,30 @@ describe("add project shared logic", () => {
     );
     expect(normalizePastedCloneUrl("group/subgroup/project")).toBe("group/subgroup/project");
     expect(normalizePastedCloneUrl("/srv/git/repo.git")).toBe("/srv/git/repo.git");
+    for (const gitlabProject of [
+      "https://gitlab.com/acme/tools/src/branch/worker.git",
+      "https://scm.example.test/acme/tools/src/branch/worker.git",
+      "https://scm.example.test/acme/tools/src/branch/worker",
+      // Coder: with GitLab the only registered host, `/-/` always ends a project path, so
+      // upstream's Forgejo-or-GitLab ambiguity case does not apply.
+      "https://forgejo.example.test/a/b/src/branch/mount/team/repo.git",
+    ]) {
+      expect(normalizePastedCloneUrl(gitlabProject)).toBe(gitlabProject);
+    }
+  });
+
+  it("clones the repository when given a page URL copied from the browser", () => {
+    // Coder: only GitLab's page routes are registered, so upstream's GitHub, GitCafe, and
+    // Bitbucket page cases are not carried.
+    for (const [pageUrl, pageRoute, repository] of [
+      ["https://gitlab.com/gitlab-org/gitlab-runner/-/tree/main", "/-/", "gitlab-runner"],
+      ["https://gitlab.example.test/g/p/-/blob/main/src/branch/x", "/-/", "p"],
+      ["https://code.company.test/g/p/-/tree/main", "/-/", "p"],
+    ] as const) {
+      const cloneUrl = normalizePastedCloneUrl(pageUrl);
+      expect(cloneUrl).not.toContain(pageRoute);
+      expect(getCloneDirectoryName(cloneUrl)).toBe(repository);
+    }
   });
 
   // Coder: GitLab, the only shipped host, clones over SSH; an unshipped host reads as generic.

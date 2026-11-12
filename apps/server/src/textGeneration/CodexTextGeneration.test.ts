@@ -1,10 +1,12 @@
 import {
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  ProjectId,
   ProviderDriverKind,
   type ModelSelection,
   type ServerProvider,
 } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -431,8 +433,8 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
           subject: "Add important change",
           body: "",
         }),
-        launchArgs: "--strict-config --listen off",
-        requireArg: "--strict-config",
+        launchArgs: "--strict-config --oss --local-provider ollama --listen off",
+        requireArg: "--strict-config --oss --local-provider ollama",
         forbidArg: "--listen",
       },
       (textGeneration) =>
@@ -543,6 +545,7 @@ const PREFLIGHT_PRIMARY_STATES = [
   "pending",
   // Coder: no "exhausted" case; the out-of-usage fallback (#26164) is not carried.
   "not installed",
+  "not installed, fallback disabled for project",
   "signed out",
   "signed out, fallback failed",
 ] as const;
@@ -551,6 +554,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
   Effect.gen(function* () {
     const primary = ProviderInstanceId.make("codex");
     const fallback = ProviderInstanceId.make("claude_work");
+    const projectId = ProjectId.make("project-a");
     const selection = {
       instanceId: primary,
       model: "chat-model",
@@ -574,7 +578,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         ...(primaryState === "pending" && instanceId === primary
           ? { installed: false, status: "warning", auth: { status: "unknown" } }
           : {}),
-        ...(primaryState === "not installed" && instanceId === primary
+        ...(primaryState.startsWith("not installed") && instanceId === primary
           ? { installed: false, status: "error", auth: { status: "unknown" } }
           : {}),
         ...(primaryState.startsWith("signed out") && instanceId === primary
@@ -617,10 +621,18 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
             providerInstances: {
               [fallback]: { driver: ProviderDriverKind.make("claudeAgent"), config: {} },
             },
+            ...(primaryState === "not installed, fallback disabled for project"
+              ? {
+                  projectSettingsOverrides: {
+                    [projectId]: { providerInstances: { [fallback]: { enabled: false } } },
+                  },
+                }
+              : {}),
           }),
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
             resolveLink: () => Effect.die("unused"),
           }),
+          ProviderInstallationGate.layer,
         ),
       ),
     );
@@ -630,11 +642,13 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         message: "hello",
         linkedContext: "",
         modelSelection: selection,
+        projectId,
       }),
     ).toEqual({ title: "Generated title" });
     expect(calls).toEqual([
       primaryState === "ready" ||
       primaryState === "pending" ||
+      primaryState === "not installed, fallback disabled for project" ||
       primaryState === "signed out, fallback failed"
         ? selection
         : {

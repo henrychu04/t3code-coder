@@ -180,16 +180,6 @@ export function resolveProactiveTurnDiffAction(input: {
   return totals.count >= 3 || totals.additions + totals.deletions >= 50 ? "open" : "ignore";
 }
 
-/** Mark reactivated Diff tabs to preserve review scope. Already-active tabs must not leave a marker for
- * the next open. */
-export function resolveExplicitDiffOpenOnActivate(input: {
-  readonly surfaceKind: RightPanelSurface["kind"];
-  readonly diffOpen: boolean;
-  readonly activeThreadRef: ScopedThreadRef;
-}): ScopedThreadRef | null {
-  return input.surfaceKind === "diff" && !input.diffOpen ? input.activeThreadRef : null;
-}
-
 export function codexArtifactTemplatePromptToAppend(
   currentDraft: string,
   template: CodexArtifactTemplate,
@@ -1021,7 +1011,7 @@ export function shouldRefocusComposerOnWindowFocus(
   }
   return (
     activeElement.closest(
-      '[data-workspace-area]:focus-visible, [data-sidebar-row]:focus-visible, [role="dialog"], [role="alertdialog"], [role="application"], [role="menu"], [role="listbox"], [data-slot$="-popup"], [data-terminal-owner]',
+      '[data-workspace-keyboard-focus], [data-sidebar-row]:focus-visible, [role="dialog"], [role="alertdialog"], [role="application"], [role="menu"], [role="listbox"], [data-slot$="-popup"], [data-terminal-owner]',
     ) === null
   );
 }
@@ -1208,7 +1198,9 @@ export function planComposerTurn(input: {
     baseBranchForWorktree: shouldCreateWorktree ? input.activeThreadBranch : null,
     compactBeforeSend,
     turnDispatchMode:
-      compactBeforeSend || input.sendQueuesBehindSetup ? ("queue" as const) : dispatchMode,
+      compactBeforeSend || (input.sendQueuesBehindSetup && dispatchMode !== "steer")
+        ? ("queue" as const)
+        : dispatchMode,
     shouldQueueBehindActiveRun:
       compactBeforeSend ||
       input.sendQueuesBehindSetup ||

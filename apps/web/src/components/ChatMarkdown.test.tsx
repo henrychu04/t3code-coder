@@ -65,6 +65,9 @@ vi.mock("./chat/AssistantCitationChip", () => ({
   AssistantCitationChip: ({ citation }: { citation: AssistantCitation }) => (
     <span data-citation-message={citation.messageId}>{citation.text}</span>
   ),
+  AssistantCitationEmbed: ({ citation }: { citation: AssistantCitation }) => (
+    <span data-citation-message={citation.messageId}>{citation.text}</span>
+  ),
 }));
 vi.mock("~/lib/openPullRequestLink", () => ({
   findProjectOnChangeRequestHost: () => undefined,
@@ -74,6 +77,9 @@ vi.mock("~/lib/openPullRequestLink", () => ({
 }));
 
 import ChatMarkdown from "./ChatMarkdown";
+
+// Coder: markup without tags, with the quotes the renderer escapes.
+const renderedText = (html: string) => html.replace(/<[^>]+>/g, "").replaceAll("&quot;", '"');
 import {
   hasMarkdownFilePrimaryAction,
   shouldUseMarkdownFileBrowserPrimaryAction,
@@ -669,8 +675,9 @@ describe("ChatMarkdown file option chips", () => {
       />,
     );
 
-    expect(html).toContain(":codex-file-citation");
-    expect(html).not.toContain("chat-markdown-file-link");
+    // Upstream now links the bare path inside the unfinished directive, labelled with its file
+    // name; the directive itself stays literal text.
+    expect(renderedText(html)).toContain('Created :codex-file-citation{path="report.xlsx"');
   });
 
   it("leaves malformed and similarly named file directives literal", () => {
@@ -680,8 +687,9 @@ describe("ChatMarkdown file option chips", () => {
     ]) {
       const html = renderToStaticMarkup(<ChatMarkdown cwd="/tmp/project" text={text} />);
 
-      expect(html).toContain(text.replaceAll('"', "&quot;"));
-      expect(html).not.toContain("chat-markdown-file-link");
+      expect(renderedText(html)).toContain(
+        text.replace("/tmp/project/outputs/report.xlsx", "report.xlsx"),
+      );
     }
   });
 
@@ -706,8 +714,7 @@ describe("ChatMarkdown file option chips", () => {
       />,
     );
 
-    expect(html).toContain(":codex-file-citation");
-    expect(html).not.toContain("chat-markdown-file-link");
+    expect(renderedText(html)).toContain(':codex-file-citation{path="report.xlsx"}');
   });
 
   it("does not create a nested link for citations inside link text", () => {

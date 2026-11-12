@@ -155,6 +155,14 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   merged cleanly (6d450a4284's #25869: `ChatView.tsx`'s new-thread permissions label called
   `resolveCompatibleRuntimeMode` while the composer used the fork's resolver). After resolving,
   `rg` the tree for the upstream names each touched seam replaces, not only the conflicted files.
+- When upstream moves a seam's code into a new module or service (c0b67b7631's #22155 moved ACP
+  session import from `ws.ts` into `provider/AcpRegistrySessions.ts`), move the seam with it and
+  provide the new service in `coderServer.ts`; resolving `ws.ts` alone leaves the old copy dead.
+- Upstream tests can use Node 26-only APIs even where its code does not (c0b67b7631:
+  `node:sqlite`'s `StatementSync.stat` in `ProjectionStore.test.ts`). Guard the comparison with a
+  `Coder:` feature check rather than raising `engines.node`; stop only for production code.
+- Resolving a conflicted `docs/user/*.md` hunk to the fork's text drops upstream's additions in
+  that hunk. Port the text for carried features into the fork's page with the wording seam.
 - Fork wording changes inside upstream code (GitLab's "merge request !N") break the new test cases
   upstream adds for that code (48a292364a's #26395). `pnpm test:coder` stops at the first failing
   package, so read its log for the failing package and rerun until every package has run.
@@ -470,6 +478,10 @@ foreground command limit, so run it in the background and read its log. Known re
   "persists a todo_list from inline Claude task-tool frames" can still hit its 60-second timeout.
   Rerun failed files alone: `pnpm exec vp test run --project browser <files>` from `apps/web`.
   Failures that repeat across runs are real.
+- On macOS, upstream tests that create two folders differing only in case (`ClaudeSkills.test.ts`'s
+  `pstack` and `PSTACK`, c0b67b7631) fail on the default case-insensitive volume; skip them there
+  with a `Coder:` note. `VcsStatusBroadcaster.test.ts`'s index.lock retry case is skipped on macOS
+  too: macOS reports one rename as two `HEAD` watch events, so it counts one extra status read.
 - Fork-adapted unit tests that match rendered HTML as strings (`ChatMarkdown.test.tsx`) fail when
   upstream adds an attribute its browser tests never assert (ed3f965e07: #22777's `dir`). Add
   the attribute to the expected string.

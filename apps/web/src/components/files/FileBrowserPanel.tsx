@@ -9,12 +9,11 @@ import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
-import { ChevronsDownUp, ChevronsUpDown } from "lucide";
-import { useEffect, useRef, useState } from "react";
+import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
+import { type Ref, useEffect, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
-import { MorphIcon } from "~/components/MorphIcon";
 import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
@@ -34,6 +33,7 @@ import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
 import { loadFileAncestors } from "./loadFileAncestors";
 import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
+import { isMacPlatform } from "~/lib/utils";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -74,16 +74,21 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
   );
 }
 
-function FileSearchField(props: {
+function FileSearchField({
+  ref,
+  ...props
+}: {
   ariaLabel: string;
   name: string;
   onClose: () => void;
   onValueChange: (value: string) => void;
+  ref: Ref<HTMLInputElement>;
   value: string;
 }) {
   return (
     <InputGroup variant="ghost" className="h-7 min-w-0 flex-1">
       <InputGroupInput
+        ref={ref}
         type="search"
         name={props.name}
         size="sm"
@@ -321,6 +326,13 @@ export default function FileBrowserPanel({
     setQuery("");
     search.close();
   };
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const focusSearch = () => {
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  };
+  // Coder: no `preview.find` panel command (the browser preview is cut), so Cmd+F reaches the
+  // search only from inside the panel (`onKeyDown` below).
   const expandedPathsRef = useRef(new Set<string>());
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the Pierre tree model to load directories as they are expanded
   useEffect(() => {
@@ -483,6 +495,13 @@ export default function FileBrowserPanel({
       // Capture dragstart before the tree selects the row so selection sees the drag flag.
       onDragStartCapture={(event) => dragMention.handleDragStart(event.nativeEvent)}
       onDragEnd={() => dragMention.handleDragEnd((path) => model.getItem(path)?.deselect())}
+      onKeyDown={(event) => {
+        const isModPressed = isMacPlatform(navigator.platform) ? event.metaKey : event.ctrlKey;
+        if (!isModPressed || event.altKey || event.shiftKey || event.key.toLowerCase() !== "f")
+          return;
+        event.preventDefault();
+        focusSearch();
+      }}
     >
       <div
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-1 in-data-[preview-panel-mode=inline]:h-9 in-data-[preview-panel-mode=inline]:min-h-9 in-data-[preview-panel-mode=inline]:border-b-transparent"
@@ -490,6 +509,7 @@ export default function FileBrowserPanel({
       >
         <RefreshFilesButton isPending={isPending} onRefresh={handleRefresh} />
         <FileSearchField
+          ref={searchInputRef}
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
           value={search.value}
@@ -513,10 +533,11 @@ export default function FileBrowserPanel({
                 />
               }
             >
-              <MorphIcon
-                className="size-3.5"
-                icon={allDirectoriesExpanded ? ChevronsDownUp : ChevronsUpDown}
-              />
+              {allDirectoriesExpanded ? (
+                <ChevronsDownUpIcon className="size-3.5" />
+              ) : (
+                <ChevronsUpDownIcon className="size-3.5" />
+              )}
             </TooltipTrigger>
             <TooltipPopup>
               {expandAll || allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}

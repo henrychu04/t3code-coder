@@ -1393,6 +1393,8 @@ export class GhosttyTerminalSurface {
     }
     if (event.button === 1 && isMiddleClickPastePlatform()) {
       // Keep pointerdown uncancelled so compatibility mousedown activates the split pane.
+      // Coder: no desktop bridge reports GTK's primary-paste setting, so the web build's default
+      // (paste) applies.
       this.pasteTerminalSelection();
       return;
     }

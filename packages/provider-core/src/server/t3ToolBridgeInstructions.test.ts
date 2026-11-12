@@ -13,7 +13,7 @@ describe("T3 tool bridge instructions", () => {
     // Coder: html_preview and the preview browser are not carried.
     expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).not.toMatch(/html_preview|preview_/u);
     expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).toContain(
-      "pass the path to an HTML file, or inline HTML, to `html_render`",
+      "pass an HTML file path or inline HTML to `html_render`",
     );
   });
 

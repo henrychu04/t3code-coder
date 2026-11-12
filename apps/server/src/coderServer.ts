@@ -28,6 +28,8 @@ import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
+import * as ProviderInstallationGate from "./provider/ProviderInstallationGate.ts";
+import * as AcpRegistrySessions from "./provider/AcpRegistrySessions.ts";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as ProviderRegistryLayer from "./provider/ProviderRegistry.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
@@ -59,7 +61,6 @@ import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as PeerMcpClient from "./peer/PeerMcpClient.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
-import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ProviderRuntimeRecovery from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
@@ -241,6 +242,8 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   ),
   Layer.provideMerge(CoderProviderRegistryLive),
   Layer.provideMerge(CoderProviderInstancesLive),
+  // As upstream: one gate for the server, below hydration so the Claude adapter sees it.
+  Layer.provideMerge(ProviderInstallationGate.layer),
   // Provider hydration builds the Claude runner, which reports agents to the same scanner the
   // terminal layer and the RPC handlers share.
   Layer.provideMerge(layerPortScanner),
@@ -377,9 +380,9 @@ export const makeCoderRuntimeLayer = () => {
     // toolkit read office documents' extracted text; Node's crypto backs random ids and digests.
     Layer.provideMerge(DocumentText.layer.pipe(Layer.provideMerge(NodeCrypto.layer))),
   );
-  // Upstream provides the agent-session scanner beside its WS layer; the helper RPC layer
-  // takes it here.
-  const rpcServices = AgentSessionScanner.layer.pipe(Layer.provideMerge(services));
+  // Upstream provides the ACP session service beside its WS layer; the helper RPC layer takes it
+  // here.
+  const rpcServices = AcpRegistrySessions.layer.pipe(Layer.provideMerge(services));
 
   // Coder: the gateway hub methods (helper protocol v3) share the runtime's CoderHub.
   return Layer.mergeAll(CoderWs.layer, CoderHub.handlersLayer).pipe(Layer.provide(rpcServices));

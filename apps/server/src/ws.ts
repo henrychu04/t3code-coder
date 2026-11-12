@@ -11,14 +11,12 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
-import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { rpcInitialItems } from "./rpcInitialItems.ts";
 import {
   AcpRegistryOperationError,
   CommandId,
   type GitActionProgressEvent,
-  type AcpRegistryImportSessionInput,
   type AcpRegistryListSessionsInput,
   type GitManagerServiceError,
   OrchestrationGetFullThreadDiffError,
@@ -47,9 +45,6 @@ import {
   ProjectWriteFileError,
   ProjectMutationError,
   type ServerLifecycleStreamEvent,
-  type ProjectId,
-  type ProviderDriverKind,
-  type ProviderInstanceId,
   type ServerProvider,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
@@ -126,8 +121,8 @@ import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
+import * as AcpRegistrySessions from "./provider/AcpRegistrySessions.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -162,9 +157,9 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
-import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 // Coder: the helper's group, its Coder services, and the fork-only methods.
 import { CoderWsRpcGroup } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
@@ -1040,9 +1035,8 @@ const layerWsRpc = () =>
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-      // Coder: of upstream's ACP Registry services, only the runtime coordinator is used here.
-      const acpRegistryRuntimeCoordinator =
-        yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
+      // Coder: of upstream's ACP Registry services, only the session service is used here.
+      const acpRegistrySessions = yield* AcpRegistrySessions.AcpRegistrySessions;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
@@ -1061,67 +1055,16 @@ const layerWsRpc = () =>
         yield* SourceControlRepositoryService.SourceControlRepositoryService;
       // Coder: GitLab uses the workspace glab login; no viewer routing credential exists.
       const withPullRequestViewer = <T>(_reference: unknown, effect: T) => effect;
+      // The panel's reads for a pull request the user opened go out during a rate-limit pause.
+      const openedPullRequestRead = Effect.provideService(SourceControlRateLimit.Interactive, true);
 
       // Coder: of upstream's ACP Registry handlers, only Kilo Code's native session list and
       // import are carried.
-      const acpRegistryProject = Effect.fn("ws.acpRegistry.project")(function* (
-        projectId: ProjectId,
-      ) {
-        const project = yield* projectService.getById(projectId).pipe(
-          Effect.mapError(
-            (cause) =>
-              new AcpRegistryOperationError({
-                reason: "project_not_found",
-                message: `Project ${projectId} is unavailable.`,
-                cause,
-              }),
-          ),
-        );
-        return yield* Effect.fromOption(
-          project,
-          () =>
-            new AcpRegistryOperationError({
-              reason: "project_not_found",
-              message: `Project ${projectId} was not found.`,
-            }),
-        );
-      });
-
-      const acpSessionManager = Effect.fn("ws.acpRegistry.sessionManager")(function* (
-        instanceId: ProviderInstanceId,
-      ) {
-        const instance = yield* providerInstances.getInstance(instanceId);
-        if (instance === undefined) {
-          return yield* new AcpRegistryOperationError({
-            reason: "instance_not_found",
-            message: `Provider instance ${instanceId} was not found.`,
-          });
-        }
-        if (instance.acpSessionManagement === undefined) {
-          return yield* new AcpRegistryOperationError({
-            reason: "session_list_unsupported",
-            message: `Provider instance ${instanceId} does not expose ACP session management.`,
-          });
-        }
-        return { instance, manager: instance.acpSessionManagement };
-      });
-
-      const importedAcpThreadId = (input: {
-        readonly driver: ProviderDriverKind;
-        readonly instanceId: ProviderInstanceId;
-        readonly sessionId: string;
-      }) =>
-        IdAllocator.deriveThreadFromProviderThread({
-          driver: input.driver,
-          providerInstanceId: input.instanceId,
-          nativeThreadId: input.sessionId,
-        });
-
       const listAcpRegistrySessions = Effect.fn("ws.acpRegistry.listSessions")(function* (
         input: AcpRegistryListSessionsInput,
       ) {
-        const project = yield* acpRegistryProject(input.projectId);
-        const { instance, manager } = yield* acpSessionManager(input.instanceId);
+        const project = yield* acpRegistrySessions.project(input.projectId);
+        const { instance, manager } = yield* acpRegistrySessions.sessionManager(input.instanceId);
         const listed = yield* manager.listSessions({
           cwd: project.workspaceRoot,
           ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
@@ -1129,7 +1072,7 @@ const layerWsRpc = () =>
         const sessions = yield* Effect.forEach(
           listed.sessions,
           (session) => {
-            const threadId = importedAcpThreadId({
+            const threadId = AcpRegistrySessions.importedThreadId({
               driver: instance.driverKind,
               instanceId: input.instanceId,
               sessionId: session.sessionId,
@@ -1138,6 +1081,13 @@ const layerWsRpc = () =>
               Effect.map((thread) => ({
                 ...session,
                 importedThreadId: thread === null ? null : threadId,
+                ...(thread !== null &&
+                AgentSessionImporter.isNativeHistoryPending({
+                  historyOrigin: thread.historyOrigin,
+                  hasRun: thread.latestRunId !== null,
+                })
+                  ? { nativeHistoryPending: true }
+                  : {}),
               })),
               Effect.mapError(
                 (cause) =>
@@ -1152,99 +1102,6 @@ const layerWsRpc = () =>
           { concurrency: 16 },
         );
         return { ...listed, sessions };
-      });
-
-      const importAcpRegistrySession = Effect.fn("ws.acpRegistry.importSession")(function* (
-        input: AcpRegistryImportSessionInput,
-      ) {
-        return yield* acpRegistryRuntimeCoordinator.withSessionMutation(
-          Effect.gen(function* () {
-            yield* acpRegistryProject(input.projectId);
-            const { instance } = yield* acpSessionManager(input.instanceId);
-            const providerSnapshot = yield* instance.snapshot.getSnapshot;
-            if (
-              providerSnapshot.nativeSessions?.canLoad !== true &&
-              providerSnapshot.nativeSessions?.canResume !== true
-            ) {
-              return yield* new AcpRegistryOperationError({
-                reason: "session_resume_unsupported",
-                message: "The ACP agent cannot load or resume native sessions.",
-              });
-            }
-            const threadId = importedAcpThreadId({
-              driver: instance.driverKind,
-              instanceId: input.instanceId,
-              sessionId: input.sessionId,
-            });
-            const existing = yield* threadManagement.getThreadShell(threadId).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new AcpRegistryOperationError({
-                    reason: "session_import_failed",
-                    message: "Could not inspect the imported ACP session mapping.",
-                    cause,
-                  }),
-              ),
-            );
-            if (existing !== null) return { threadId, imported: false } as const;
-
-            const provider = (yield* providerRegistry.getProviders).find(
-              (candidate) => candidate.instanceId === input.instanceId,
-            );
-            const model =
-              provider?.models.find((candidate) => candidate.isDefault)?.slug ??
-              provider?.models[0]?.slug ??
-              "default";
-            const commandId = CommandId.make(yield* random.uuidV4());
-            // Coder: no startup command queue; workspace startup completes before this layer is
-            // built.
-            const launched = yield* Effect.result(
-              threadLaunch.launch({
-                commandId,
-                threadId,
-                projectId: input.projectId,
-                title: input.title ?? "Imported ACP session",
-                modelSelection: { instanceId: input.instanceId, model },
-                runtimeMode: "approval-required",
-                interactionMode: "default",
-                workspaceStrategy: { type: "root" },
-                importedNativeThread: {
-                  ref: {
-                    driver: instance.driverKind,
-                    nativeId: input.sessionId,
-                    strength: "strong",
-                  },
-                  metadata: {
-                    itemIdentityVersion: 2,
-                    ...(input.title === undefined ? {} : { title: input.title }),
-                    ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
-                  },
-                },
-                createdBy: "user",
-                creationSource: "web",
-              }),
-            );
-            if (Result.isFailure(launched)) {
-              const racedImport = yield* threadManagement.getThreadShell(threadId).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new AcpRegistryOperationError({
-                      reason: "session_import_failed",
-                      message: "Could not inspect the imported ACP session after launch failed.",
-                      cause,
-                    }),
-                ),
-              );
-              if (racedImport !== null) return { threadId, imported: false } as const;
-              return yield* new AcpRegistryOperationError({
-                reason: "session_import_failed",
-                message: "Could not create a T3 thread for the ACP session.",
-                cause: launched.failure,
-              });
-            }
-            return { threadId, imported: true } as const;
-          }),
-        );
       });
 
       // Coder: publish the trimmed workspace config without auth, editors, telemetry, usage
@@ -1538,67 +1395,97 @@ const layerWsRpc = () =>
             "orchestration_v2.project_id": input.projectId,
           }).pipe(
             Effect.andThen(
-              ThreadMessageIntake.launchThread({
-                commandId: input.commandId,
-                ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
-                ...(input.reuseExistingThread === undefined
-                  ? {}
-                  : { reuseExistingThread: input.reuseExistingThread }),
-                projectId: input.projectId,
-                title: input.title,
-                ...(input.generateTitle === undefined
-                  ? {}
-                  : { generateTitle: input.generateTitle }),
-                modelSelection: input.modelSelection,
-                runtimeMode: input.runtimeMode,
-                interactionMode: input.interactionMode,
-                workspaceStrategy: input.workspaceStrategy,
-                ...(input.initialMessage === undefined
-                  ? {}
-                  : {
-                      initialMessage: {
-                        ...(input.initialMessage.messageId === undefined
-                          ? {}
-                          : { messageId: input.initialMessage.messageId }),
-                        text: input.initialMessage.text,
-                        attachments: input.initialMessage.attachments,
-                        ...(input.initialMessage.context === undefined
-                          ? {}
-                          : { context: input.initialMessage.context }),
-                      },
-                    }),
-                createdBy: "user",
-                creationSource: input.creationSource ?? "web",
-              }).pipe(
-                Effect.provide(intakeContext),
-                Effect.map((result) => ({
-                  ...result,
-                  projection: projectThreadProjectionForWire(result.projection),
-                })),
-                Effect.catchTags({
-                  AttachmentClaimError: (cause) =>
-                    new OrchestrationV2ThreadLaunchError({
+              threadLaunch
+                .checkWorktreeBase({
+                  commandId: input.commandId,
+                  projectId: input.projectId,
+                  workspaceStrategy: input.workspaceStrategy,
+                })
+                .pipe(
+                  Effect.andThen(
+                    ThreadMessageIntake.launchThread({
                       commandId: input.commandId,
+                      ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
+                      ...(input.reuseExistingThread === undefined
+                        ? {}
+                        : { reuseExistingThread: input.reuseExistingThread }),
                       projectId: input.projectId,
-                      message: cause.message,
-                      cause,
+                      title: input.title,
+                      ...(input.generateTitle === undefined
+                        ? {}
+                        : { generateTitle: input.generateTitle }),
+                      modelSelection: input.modelSelection,
+                      runtimeMode: input.runtimeMode,
+                      interactionMode: input.interactionMode,
+                      workspaceStrategy: input.workspaceStrategy,
+                      ...(input.initialMessage === undefined
+                        ? {}
+                        : {
+                            initialMessage: {
+                              ...(input.initialMessage.messageId === undefined
+                                ? {}
+                                : { messageId: input.initialMessage.messageId }),
+                              text: input.initialMessage.text,
+                              attachments: input.initialMessage.attachments,
+                              ...(input.initialMessage.context === undefined
+                                ? {}
+                                : { context: input.initialMessage.context }),
+                            },
+                          }),
+                      createdBy: "user",
+                      creationSource: input.creationSource ?? "web",
                     }),
-                  ThreadLaunchError: (cause) =>
-                    new OrchestrationV2ThreadLaunchError({
-                      commandId: input.commandId,
-                      projectId: input.projectId,
-                      message: "Failed to launch thread",
-                      cause,
-                    }),
-                  ThreadManagementProviderInstanceDisabledError: (cause) =>
-                    new OrchestrationV2ThreadLaunchError({
-                      commandId: input.commandId,
-                      projectId: input.projectId,
-                      message: cause.message,
-                      cause,
-                    }),
-                }),
-              ),
+                  ),
+                  Effect.provide(intakeContext),
+                  Effect.map((result) => ({
+                    ...result,
+                    projection: projectThreadProjectionForWire(result.projection),
+                  })),
+                  Effect.catchTags({
+                    AttachmentClaimError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: cause.message,
+                        cause,
+                      }),
+                    ThreadLaunchError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: "Failed to launch thread",
+                        cause,
+                      }),
+                    ThreadManagementProviderInstanceDisabledError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: cause.message,
+                        cause,
+                      }),
+                    ThreadLaunchBaseRefError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: cause.message,
+                        cause,
+                      }),
+                    ThreadLaunchBranchConflictError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: cause.message,
+                        cause,
+                      }),
+                    ThreadLaunchNotRepositoryError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: cause.message,
+                        cause,
+                      }),
+                  }),
+                ),
             ),
           ),
         // Coder: the stream takes its services from `streamContext`.
@@ -1648,6 +1535,10 @@ const layerWsRpc = () =>
         [WS_METHODS.serverRefreshProviders]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
+            if (input.modelCatalogOnly === true) {
+              yield* providerRegistry.refreshModelCatalog;
+              return { providers: [] };
+            }
             if (input.refreshModels) {
               yield* providerRegistry.invalidateModelCaches({
                 instanceId: input.instanceId,
@@ -1661,6 +1552,7 @@ const layerWsRpc = () =>
               ? providerRegistry.refreshWorkspaceSnapshot({
                   instanceId: input.instanceId,
                   cwd: input.cwd,
+                  scanCwd: yield* projectService.workspaceScanDirectory(input.cwd),
                   fresh: input.fresh === true,
                 })
               : input.reloadSecrets === true
@@ -1730,7 +1622,7 @@ const layerWsRpc = () =>
           Effect.annotateCurrentSpan({
             "provider.instance_id": input.instanceId,
             "project.id": input.projectId,
-          }).pipe(Effect.andThen(importAcpRegistrySession(input))),
+          }).pipe(Effect.andThen(acpRegistrySessions.importSession(input))),
         [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
         [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
         [WS_METHODS.pullRequestsFilterOptions]: (input) => pullRequests.filterOptions(input),
@@ -1749,13 +1641,13 @@ const layerWsRpc = () =>
             ),
           ),
         [WS_METHODS.pullRequestsDetail]: (input) =>
-          withPullRequestViewer(input, pullRequests.detail(input)),
+          withPullRequestViewer(input, openedPullRequestRead(pullRequests.detail(input))),
         [WS_METHODS.pullRequestsPreview]: (input) =>
           withPullRequestViewer(input, pullRequests.preview(input)),
         [WS_METHODS.pullRequestsChecks]: (input) =>
           withPullRequestViewer(input, pullRequests.checks(input)),
         [WS_METHODS.pullRequestsActivity]: (input) =>
-          withPullRequestViewer(input, pullRequests.activity(input)),
+          withPullRequestViewer(input, openedPullRequestRead(pullRequests.activity(input))),
         [WS_METHODS.pullRequestsReviewGuide]: (input) =>
           withPullRequestViewer(input, reviewGuides.get(input)),
         [WS_METHODS.pullRequestsGenerateReviewGuide]: (input) =>
@@ -1836,12 +1728,13 @@ const layerWsRpc = () =>
                 })
                 .pipe(
                   Effect.asVoid,
-                  Effect.mapError(
-                    (cause) =>
-                      new OrchestrationDispatchCommandError({
-                        message: "Failed to create clone project.",
-                        cause,
-                      }),
+                  Effect.mapError((cause) =>
+                    cause._tag === "ProjectConflictError"
+                      ? cause
+                      : new OrchestrationDispatchCommandError({
+                          message: "Failed to create clone project.",
+                          cause,
+                        }),
                   ),
                 ),
             onCloned: (project) =>
@@ -2100,7 +1993,9 @@ const layerWsRpc = () =>
               })
               .pipe(
                 Effect.matchCauseEffect({
-                  onFailure: (cause) => Queue.failCause(queue, cause),
+                  // Earlier steps (branch, commit) may have landed before the failing one.
+                  onFailure: (cause) =>
+                    refreshGitStatus(input.cwd).pipe(Effect.andThen(Queue.failCause(queue, cause))),
                   onSuccess: (result) =>
                     (input.threadId === undefined
                       ? Effect.void

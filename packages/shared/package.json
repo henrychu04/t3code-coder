@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./pullRequestAnchor": {
+      "types": "./src/pullRequestAnchor.ts",
+      "import": "./src/pullRequestAnchor.ts"
+    },
     "./changedFileKind": {
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"
@@ -406,6 +410,7 @@
     "test": "vp test run"
   },
   "dependencies": {
+    "@noble/hashes": "catalog:",
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
     "mdast-util-directive": "catalog:",

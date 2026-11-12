@@ -10,7 +10,6 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { Lock as LockGlyph, LockOpen } from "lucide";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { type ReactElement, type ReactNode } from "react";
@@ -55,6 +54,7 @@ import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
+import { getProviderRestartNotice } from "../ProviderUpdateLaunchNotification.logic";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -426,6 +426,8 @@ export function ProviderInstanceCard({
     !isUpdating && (updateState?.status === "failed" || updateState?.status === "unchanged")
       ? updateState.message
       : null;
+  const restartNotice =
+    enabled && !isUpdating && liveProvider ? getProviderRestartNotice(liveProvider) : null;
   const hasCompatibilityWarning =
     compatibility !== undefined &&
     compatibility.status !== "supported" &&
@@ -837,6 +839,11 @@ export function ProviderInstanceCard({
           {editorStatusNode}
         </div>
       </ProviderStatusDiagnostic>
+      {restartNotice ? (
+        <p aria-live="polite" className="text-xs leading-snug [overflow-wrap:anywhere]">
+          {restartNotice}
+        </p>
+      ) : null}
     </>
   );
 

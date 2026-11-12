@@ -552,7 +552,8 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
 // session-scoped `layerWsRpc` with mocks of the auth, preview, device, and usage services the
 // helper does not serve; the helper's `subscribeServerConfig` keeps upstream's
 // subscribe-before-snapshot order and strips workspace snapshots the same way. Upstream's
-// failed-publish remote refresh test (#29688) builds the same layer, so it is not carried either.
+// failed-publish remote refresh test (#29688) and missing-worktree skills test (#32471) build
+// the same layer, so they are not carried either.
 
 // Pruned history cannot be replayed: a cursor below the boundary must resync from a snapshot,
 // or, for a shell client that loads it over HTTP, be told to without the server building one.
@@ -742,3 +743,7 @@ it.effect("thread resume at its own high-water below the pruned boundary skips t
     assert.isTrue(Exit.isSuccess(exit));
   }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
+
+// Coder: upstream's "ACP session RPCs list a thread missing its history and repair it on import"
+// test (#22155) serves upstream's session-scoped `layerWsRpc`; `AcpRegistrySessions.ts` carries
+// the repair, and the helper serves the two RPCs through the same service.
