@@ -71,7 +71,7 @@ async function seedRepository(root) {
   const head = run("git", ["rev-parse", "HEAD"], repository);
   run(
     "git",
-    ["remote", "add", "origin", "https://gitlab.example.gs.com/goldman/smoke.git"],
+    ["remote", "add", "origin", "https://gitlab.example.com/acme/smoke.git"],
     repository,
   );
   run("git", ["update-ref", "refs/remotes/origin/main", base], repository);
@@ -182,7 +182,7 @@ await saveCoderProfileConfig(configPath, {
     {
       id: "smoke-deployment",
       name: "GitLab smoke deployment",
-      url: "https://coder.example.gs.com",
+      url: "https://coder.example.com",
     },
   ],
   workspaces: [
@@ -234,7 +234,7 @@ const gateway = await startLocalCoderGateway({
 
 console.log(`T3 Coder GitLab MR smoke gateway listening on ${gateway.url}`);
 console.log(
-  `Open the seeded merge request: ${gateway.url}/pull-requests?repository=goldman%2Fsmoke&number=42&selectedProjectId=${smokeProjectId}&host=gitlab.example.gs.com`,
+  `Open the seeded merge request: ${gateway.url}/pull-requests?repository=acme%2Fsmoke&number=42&selectedProjectId=${smokeProjectId}&host=gitlab.example.com`,
 );
 console.log(`Smoke repository: ${repository}`);
 console.log(`Mutable glab state: ${statePath}`);

@@ -30,50 +30,50 @@ import {
 import type { CoderDeploymentProfile, CoderWorkspaceProfile } from "./profile.ts";
 
 const deployment = {
-  id: "goldman-us",
-  name: "Goldman US",
-  url: "https://coder.example.gs.com/",
+  id: "acme-us",
+  name: "Acme US",
+  url: "https://coder.example.com/",
   executable: String.raw`C:\Program Files\Coder\coder.exe`,
 } satisfies CoderDeploymentProfile;
 
 const workspace = {
-  id: "goldman-us-equities",
+  id: "acme-us-equities",
   name: "Equities",
-  deploymentId: "goldman-us",
+  deploymentId: "acme-us",
   workspace: "equities-dev",
 } satisfies CoderWorkspaceProfile;
 
 describe("Coder CLI command construction", () => {
   it("isolates Coder 2.25 authentication by deployment without reading tokens", () => {
-    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us` };
+    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\acme-us` };
     deepStrictEqual(buildCoderLoginInvocation(deployment, options), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,
       args: [
         "--global-config",
-        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+        String.raw`C:\T3 Coder\coder-profiles\acme-us`,
         "--no-version-warning",
         "--no-open",
         "login",
-        "https://coder.example.gs.com",
+        "https://coder.example.com",
       ],
     });
     deepStrictEqual(buildCoderAuthStatusInvocation(deployment, options).args, [
       "--global-config",
-      String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+      String.raw`C:\T3 Coder\coder-profiles\acme-us`,
       "--no-version-warning",
       "--verbose",
       "--url",
-      "https://coder.example.gs.com",
+      "https://coder.example.com",
       "whoami",
     ]);
     deepStrictEqual(buildCoderListWorkspacesInvocation(deployment, options), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,
       args: [
         "--global-config",
-        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+        String.raw`C:\T3 Coder\coder-profiles\acme-us`,
         "--no-version-warning",
         "--url",
-        "https://coder.example.gs.com",
+        "https://coder.example.com",
         "list",
         "--output",
         "json",
@@ -86,7 +86,7 @@ describe("Coder CLI command construction", () => {
     deepStrictEqual(buildCoderHelperInvocation(deployment, workspace).args, [
       "--no-version-warning",
       "--url",
-      "https://coder.example.gs.com",
+      "https://coder.example.com",
       "ssh",
       "equities-dev",
       "--",
@@ -100,7 +100,7 @@ describe("Coder CLI command construction", () => {
           `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
           [
             "exec env",
-            "'T3_CODER_WORKSPACE_LABEL=Goldman US · Equities'",
+            "'T3_CODER_WORKSPACE_LABEL=Acme US · Equities'",
             REMOTE_NODE_COMMAND,
             REMOTE_HELPER_COMMAND,
             "--stdio",
@@ -248,14 +248,14 @@ describe("Coder CLI command construction", () => {
 
   it("builds non-interactive workspace lifecycle invocations", () => {
     const options = {
-      globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+      globalConfig: String.raw`C:\T3 Coder\coder-profiles\acme-us`,
     };
     const commonArgs = [
       "--global-config",
-      String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+      String.raw`C:\T3 Coder\coder-profiles\acme-us`,
       "--no-version-warning",
       "--url",
-      "https://coder.example.gs.com",
+      "https://coder.example.com",
     ];
     deepStrictEqual(buildCoderStartWorkspaceInvocation(deployment, workspace, options), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,
@@ -276,16 +276,16 @@ describe("Coder CLI command construction", () => {
   });
 
   it("builds remote shell commands through Coder", () => {
-    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us` };
+    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\acme-us` };
     deepStrictEqual(
       buildCoderWorkspaceShellInvocation(deployment, workspace, 'printf "%s\\n" "$HOME"', options)
         .args,
       [
         "--global-config",
-        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+        String.raw`C:\T3 Coder\coder-profiles\acme-us`,
         "--no-version-warning",
         "--url",
-        "https://coder.example.gs.com",
+        "https://coder.example.com",
         "ssh",
         "equities-dev",
         "--",
@@ -315,7 +315,7 @@ describe("Coder CLI command construction", () => {
   });
 
   it("builds loopback-only port forwards through the selected Coder deployment", () => {
-    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us` };
+    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\acme-us` };
     deepStrictEqual(
       buildCoderPortForwardInvocation(
         deployment,
@@ -333,10 +333,10 @@ describe("Coder CLI command construction", () => {
         executable: String.raw`C:\Program Files\Coder\coder.exe`,
         args: [
           "--global-config",
-          String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+          String.raw`C:\T3 Coder\coder-profiles\acme-us`,
           "--no-version-warning",
           "--url",
-          "https://coder.example.gs.com",
+          "https://coder.example.com",
           "port-forward",
           "equities-dev",
           "--tcp",

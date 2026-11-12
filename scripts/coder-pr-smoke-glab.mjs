@@ -10,8 +10,8 @@ const now = "2026-08-28T14:00:00.000Z";
 const baseSha = "1111111111111111111111111111111111111111";
 const headSha = "2222222222222222222222222222222222222222";
 const startSha = "1111111111111111111111111111111111111111";
-const host = "gitlab.example.gs.com";
-const repository = "goldman/smoke";
+const host = "gitlab.example.com";
+const repository = "acme/smoke";
 const mergeRequestUrl = `https://${host}/${repository}/-/merge_requests/42`;
 
 const initialState = {
@@ -230,22 +230,22 @@ if (path === "graphql") {
   process.exit(0);
 }
 
-if (path === "projects/:fullpath" || path === "projects/goldman%2Fsmoke") {
+if (path === "projects/:fullpath" || path === "projects/acme%2Fsmoke") {
   console.log(JSON.stringify(project()));
   process.exit(0);
 }
 
-if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests?")) {
+if (path?.startsWith("projects/acme%2Fsmoke/merge_requests?")) {
   console.log(JSON.stringify(state.mrState === "opened" ? [mergeRequest(state)] : []));
   process.exit(0);
 }
 
-if (path === "projects/goldman%2Fsmoke/merge_requests/42?include_diverged_commits_count=true") {
+if (path === "projects/acme%2Fsmoke/merge_requests/42?include_diverged_commits_count=true") {
   console.log(JSON.stringify(mergeRequest(state)));
   process.exit(0);
 }
 
-if (path === "projects/goldman%2Fsmoke/merge_requests/42") {
+if (path === "projects/acme%2Fsmoke/merge_requests/42") {
   if (method === "PUT" && body) {
     if (typeof body.title === "string") state.title = body.title;
     if (typeof body.description === "string") state.description = body.description;
@@ -260,12 +260,12 @@ if (path === "projects/goldman%2Fsmoke/merge_requests/42") {
   process.exit(0);
 }
 
-if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests/42/notes?")) {
+if (path?.startsWith("projects/acme%2Fsmoke/merge_requests/42/notes?")) {
   console.log(JSON.stringify(state.notes));
   process.exit(0);
 }
 
-if (path === "projects/goldman%2Fsmoke/merge_requests/42/notes" && method === "POST") {
+if (path === "projects/acme%2Fsmoke/merge_requests/42/notes" && method === "POST") {
   state.notes.push({
     id: 100 + state.notes.length + 1,
     body: body?.body ?? "",
@@ -279,7 +279,7 @@ if (path === "projects/goldman%2Fsmoke/merge_requests/42/notes" && method === "P
   process.exit(0);
 }
 
-if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests/42/notes/")) {
+if (path?.startsWith("projects/acme%2Fsmoke/merge_requests/42/notes/")) {
   const noteId = Number(path.split("/").at(-1));
   const note = state.notes.find((candidate) => candidate.id === noteId);
   if (note && method === "PUT" && typeof body?.body === "string") note.body = body.body;
@@ -288,12 +288,12 @@ if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests/42/notes/")) {
   process.exit(0);
 }
 
-if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests/42/discussions?")) {
+if (path?.startsWith("projects/acme%2Fsmoke/merge_requests/42/discussions?")) {
   console.log("[]");
   process.exit(0);
 }
 
-if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests/42/commits?")) {
+if (path?.startsWith("projects/acme%2Fsmoke/merge_requests/42/commits?")) {
   console.log(
     JSON.stringify([
       {
@@ -310,7 +310,7 @@ if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests/42/commits?")) {
   process.exit(0);
 }
 
-if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests/42/diffs?")) {
+if (path?.startsWith("projects/acme%2Fsmoke/merge_requests/42/diffs?")) {
   console.log(
     JSON.stringify([
       {
@@ -328,7 +328,7 @@ if (path?.startsWith("projects/goldman%2Fsmoke/merge_requests/42/diffs?")) {
   process.exit(0);
 }
 
-if (path?.startsWith("projects/goldman%2Fsmoke/repository/files/src%2Fgreeting.ts/raw?ref=")) {
+if (path?.startsWith("projects/acme%2Fsmoke/repository/files/src%2Fgreeting.ts/raw?ref=")) {
   console.log(
     path.endsWith(headSha)
       ? "export const one = 1;\nexport const two = 2;\nexport const three = 3;\nexport const four = 4;\nexport const greeting = 'hello from Coder RPC';\n\nexport const provider = 'GitLab';\nexport const six = 6;\nexport const seven = 7;\nexport const eight = 8;\nexport const nine = 9;\nexport const ten = 10;"
@@ -337,12 +337,12 @@ if (path?.startsWith("projects/goldman%2Fsmoke/repository/files/src%2Fgreeting.t
   process.exit(0);
 }
 
-if (path === "projects/goldman%2Fsmoke?license=false") {
+if (path === "projects/acme%2Fsmoke?license=false") {
   console.log(JSON.stringify(project()));
   process.exit(0);
 }
 
-if (path === "projects/goldman%2Fsmoke/users?per_page=100") {
+if (path === "projects/acme%2Fsmoke/users?per_page=100") {
   console.log(
     JSON.stringify([
       { id: 1, username: "smoke-user", name: "Smoke User", avatar_url: null },
@@ -353,7 +353,7 @@ if (path === "projects/goldman%2Fsmoke/users?per_page=100") {
   process.exit(0);
 }
 
-if (path === "projects/goldman%2Fsmoke/merge_requests/42/cancel_merge_when_pipeline_succeeds") {
+if (path === "projects/acme%2Fsmoke/merge_requests/42/cancel_merge_when_pipeline_succeeds") {
   state.autoMerge = false;
   await saveState(state);
   console.log("{}");
