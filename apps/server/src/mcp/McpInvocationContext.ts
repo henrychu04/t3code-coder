@@ -6,6 +6,7 @@ import {
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
   type ProviderInteractionMode,
+  type OrchestrationV2LinkedSender,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -48,6 +49,8 @@ export interface McpClientCaller {
    * `clientModeCeiling`).
    */
   readonly narrowedTo?: ClientModes | undefined;
+  /** A linked environment's thread this request is made for (`T3-Sender-Thread`). */
+  readonly senderThread?: OrchestrationV2LinkedSender | undefined;
   /** An outside client's thread links go through this hosted app, as Copy thread's do. */
   readonly hostedAppUrl?: string | undefined;
 }

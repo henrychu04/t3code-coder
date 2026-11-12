@@ -51,7 +51,9 @@ describe("RepositoryIdentityResolver", () => {
           Effect.succeed(
             input.args.includes("--show-toplevel")
               ? output("/workspace/project\n")
-              : output("origin https://gitlab.example.gs.com/goldman/platform/smoke.git (fetch)\n"),
+              : output(
+                  "origin\thttps://gitlab.example.gs.com/goldman/platform/smoke.git (fetch)\n",
+                ),
           ),
       });
       const resolver = yield* make().pipe(
@@ -80,7 +82,7 @@ describe("RepositoryIdentityResolver", () => {
             calls.push(input.args);
             return input.args.includes("--show-toplevel")
               ? output("/workspace/project\n")
-              : output("origin https://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
+              : output("origin\thttps://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
           }),
       });
       const resolver = yield* make().pipe(
@@ -106,7 +108,7 @@ describe("RepositoryIdentityResolver", () => {
         run: (input) =>
           Effect.sync(() => {
             if (!input.args.includes("--show-toplevel")) {
-              return output("origin https://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
+              return output("origin\thttps://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
             }
             rootAttempts += 1;
             return rootAttempts === 1
@@ -347,5 +349,23 @@ describe("RepositoryIdentityResolver", () => {
 
         expect(yield* resolver.resolve(gitDir)).toBeNull();
       }).pipe(Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  );
+
+  // Coder: upstream's case (#35080) on a real temporary folder, outside its `it.layer`.
+  it.effect("resolves a remote whose URL contains a space", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-spaced-url-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "ssh://git@git.example.test/team repos/app.git"]);
+
+      const resolver = yield* make();
+      const identity = yield* resolver.resolve(cwd);
+      expect(identity?.locator.remoteUrl).toBe("ssh://git@git.example.test/team repos/app.git");
+      expect(identity?.locator.remoteName).toBe("origin");
+    }).pipe(Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer)))),
   );
 });

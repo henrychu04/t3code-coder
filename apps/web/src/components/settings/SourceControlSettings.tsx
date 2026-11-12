@@ -1,5 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { ChevronDownIcon } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { useState, type ReactNode } from "react";
 import type {
@@ -13,7 +14,9 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsibleContent } from "../ui/collapsible";
@@ -39,6 +42,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting, sourceControlHostSettingsSearchId } from "./settingsSearch";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { isSourceControlProviderOffered } from "@t3tools/client-runtime/operations/projects";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { sourceControlIcon } from "~/sourceControlPresentation";
 
@@ -202,15 +206,19 @@ function itemSummary({
 
 function DiscoveryItemRow({
   item,
+  offered,
   children,
 }: {
   readonly item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem;
+  /** A provider's switch chooses whether the project pickers offer it; a VCS switch only reports. */
+  readonly offered?: {
+    readonly checked: boolean;
+    readonly disabled: boolean;
+    readonly onChange: (checked: boolean) => void;
+  };
   readonly children?: ReactNode;
 }) {
   const version = optionLabel(item.version);
-  const enabled = isProviderDiscoveryItem(item)
-    ? item.status === "available" && item.auth.status === "authenticated"
-    : item.status === "available" && item.implemented;
   const auth = isProviderDiscoveryItem(item) ? item.auth : null;
   const authStatus = auth ? authPresentation(auth) : null;
   const authAccount = auth ? optionLabel(auth.account) : null;
@@ -267,8 +275,26 @@ function DiscoveryItemRow({
                 />
               </Button>
             ) : null}
-            {!isVcsNotReady(item) ? (
-              <Switch checked={enabled} disabled aria-label={`${item.label} availability`} />
+            {offered ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Switch
+                      checked={offered.checked}
+                      disabled={offered.disabled}
+                      onCheckedChange={offered.onChange}
+                      aria-label={`Offer ${item.label} when adding or publishing a project`}
+                    />
+                  }
+                />
+                <TooltipPopup side="top">Offer when adding or publishing a project</TooltipPopup>
+              </Tooltip>
+            ) : !isVcsNotReady(item) ? (
+              <Switch
+                checked={item.status === "available"}
+                disabled
+                aria-label={`${item.label} availability`}
+              />
             ) : null}
           </div>
         </div>
@@ -383,6 +409,13 @@ export function SourceControlSettingsPanel() {
   const handleScan = () => {
     discovery.refresh();
   };
+  const offeredProviders = environment?.serverConfig?.settings.offeredSourceControlProviders;
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "save source control providers",
+  });
+  const canUpdateSettings = useAtomValue(
+    serverEnvironment.updateSettings.permissionAtom(environmentId),
+  );
   const scanButton = (
     <Tooltip>
       <TooltipTrigger
@@ -446,7 +479,21 @@ export function SourceControlSettingsPanel() {
               {result.sourceControlProviders.map((item) => (
                 // Coder: GitLab is the only hosted provider; its CLI owns authentication, and its
                 // definition declares no host settings, so upstream's host settings form is not carried.
-                <DiscoveryItemRow key={`provider:${item.kind}`} item={item}></DiscoveryItemRow>
+                <DiscoveryItemRow
+                  key={`provider:${item.kind}`}
+                  item={item}
+                  offered={{
+                    checked: isSourceControlProviderOffered(offeredProviders, item.kind),
+                    disabled: !canUpdateSettings,
+                    onChange: (checked) =>
+                      void updateSettings({
+                        environmentId,
+                        input: {
+                          patch: { offeredSourceControlProviders: { [item.kind]: checked } },
+                        },
+                      }),
+                  }}
+                />
               ))}
             </SettingsSection>
           ) : null}

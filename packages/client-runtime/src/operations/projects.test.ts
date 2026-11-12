@@ -14,10 +14,19 @@ import {
   getNewProjectPublishTargets,
   githubIncompleteOwnerRepositoryMessage,
   normalizePastedCloneUrl,
+  sortAddProjectProviderSources,
 } from "./projects.ts";
 import type { EnvironmentProject } from "../state/models.ts";
 
 describe("add project shared logic", () => {
+  // Coder: GitLab, the registry's only host, is the default host, so it is offered until it is
+  // turned off; upstream offers only GitHub (#34978).
+  it("offers only GitLab until it is turned off", () => {
+    const ready = () => ({ ready: true, hint: null });
+    expect(sortAddProjectProviderSources(ready, {})).toEqual(["gitlab"]);
+    expect(sortAddProjectProviderSources(ready, { gitlab: false, github: true })).toEqual([]);
+  });
+
   it("asks for a repository name when GitHub input is only an owner path", () => {
     const github = SourceControlProviderKind.make("github");
     expect(githubIncompleteOwnerRepositoryMessage(github, "pingdotgg/")).toBe(
@@ -214,14 +223,17 @@ describe("new project publish targets", () => {
 
   // Coder: GitLab is the only shipped host.
   it("offers GitLab when it is ready, and keeps the pick", () => {
-    const targets = getNewProjectPublishTargets({
-      versionControlSystems: [],
-      sourceControlProviders: [
-        readyHost("gitlab", "group"),
-        readyHost("github", null),
-        readyHost("azure-devops", "me"),
-      ],
-    });
+    const targets = getNewProjectPublishTargets(
+      {
+        versionControlSystems: [],
+        sourceControlProviders: [
+          readyHost("gitlab", "group"),
+          readyHost("github", null),
+          readyHost("azure-devops", "me"),
+        ],
+      },
+      {},
+    );
     expect(targets.map((target) => target.definition.kind)).toEqual(["gitlab"]);
     expect(getNewProjectPublishTarget(targets, null)?.definition.kind).toBe("gitlab");
     expect(

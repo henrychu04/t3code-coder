@@ -35,7 +35,12 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   `Coder:` in code. A difference not listed there is drift: remove it.
 - Leave upstream bugs unfixed unless they break an `AGENTS.md` boundary.
 - If adopting upstream would remove fork behavior the seams doc lists, stop and tell the user.
-- To reopen a file resolved wrongly with its conflict markers: `git checkout -m -- <file>`.
+- To reopen a file resolved wrongly with its conflict markers:
+  `git checkout --conflict=diff3 -- <file>` (`-m` alone brings the markers back without the base
+  section, and with fewer, larger hunks than the merge printed).
+- A file the fork rewrote whole (`README.md`, `CONTRIBUTING.md`, `docs/user/install.md`) can still
+  take upstream lines in regions that merged cleanly (2482b03a01: README's `t3` command note), so
+  after taking ours, check `git diff "$PREV" -- <file>` is empty.
 - Resolve test files block by block, as code. Taking the fork's whole test file drops upstream's
   mechanical edits (renamed types, branded values) from conflicted regions only, which typecheck
   then reports far from their cause. Where diff3 interleaves two versions of one test, replace that
@@ -163,6 +168,14 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
   `Coder:` feature check rather than raising `engines.node`; stop only for production code.
 - Resolving a conflicted `docs/user/*.md` hunk to the fork's text drops upstream's additions in
   that hunk. Port the text for carried features into the fork's page with the wording seam.
+- A cut provider's fix can add a generic hook to carried core code that only its driver sets
+  (2482b03a01: OpenCode's per-folder model catalogs #24585, Cursor's declined steering #28980).
+  Cutting such hooks out of orchestration and provider-core costs many seams; keep them as
+  upstream's and name them in the seams doc, as Kiro's ACP hooks are.
+- A new runtime dependency that ships a hosted-service client (2482b03a01: gt-react's General
+  Translation API and CDN) must make no request from the laptop. Read its loader and runtime
+  translation paths in `node_modules`, then grep the built `apps/web/dist` for the service's hosts
+  and confirm each hit is a default the configured path never reaches.
 - Fork wording changes inside upstream code (GitLab's "merge request !N") break the new test cases
   upstream adds for that code (48a292364a's #26395). `pnpm test:coder` stops at the first failing
   package, so read its log for the failing package and rerun until every package has run.

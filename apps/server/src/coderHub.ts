@@ -20,7 +20,11 @@ import {
   type CoderHubRequest,
   CoderHubRpcGroup,
 } from "@t3tools/coder-cli/rpc";
-import { type EnvironmentId, OrchestratorMcpFailure } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type OrchestrationV2LinkedSender,
+  OrchestratorMcpFailure,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -68,6 +72,7 @@ export class CoderHub extends Context.Service<
       readonly tool: string;
       readonly arguments: Record<string, unknown>;
       readonly limits: CoderHubCallLimits;
+      readonly sender?: OrchestrationV2LinkedSender;
     }) => Effect.Effect<CoderHubCallOutcome, OrchestratorMcpFailure>;
     /** The gateway's link rules from this workspace. */
     readonly listLinks: Effect.Effect<ReadonlyArray<CoderHubLink>, OrchestratorMcpFailure>;
@@ -224,6 +229,7 @@ export const makeHandlers = Effect.gen(function* () {
     readonly tool: string;
     readonly arguments: Readonly<Record<string, unknown>>;
     readonly limits: CoderHubCallLimits;
+    readonly sender?: OrchestrationV2LinkedSender | undefined;
   }) {
     const enabled = yield* settings.getSettings.pipe(
       Effect.map((value) => value.linkedEnvironmentsEnabled),
@@ -259,6 +265,8 @@ export const makeHandlers = Effect.gen(function* () {
         access: input.link.access,
         linked: true,
         narrowedTo: input.limits,
+        // As upstream's `T3-Sender-Thread` header: read only from a linked caller.
+        ...(input.sender === undefined ? {} : { senderThread: input.sender }),
       },
       capabilities: new Set<McpInvocationContext.McpCapability>([
         "orchestration",

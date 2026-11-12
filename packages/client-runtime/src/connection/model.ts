@@ -1,6 +1,6 @@
 // Coder: one gateway connection target per workspace; relay, bearer, SSH, and HTTP
 // authorization variants are omitted.
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 export class ConnectionTarget extends Schema.TaggedClass<ConnectionTarget>()("ConnectionTarget", {
@@ -57,6 +57,10 @@ export interface PreparedConnection {
   readonly httpBaseUrl: string;
   readonly socketUrl: string;
   readonly target: ConnectionTarget;
+  /** What the server said about itself while this connection was prepared. */
+  // Coder: never set. The gateway route reads no descriptor before its socket opens, so the
+  // shell never loads before the socket (#35071) and no HTTP shell route is requested.
+  readonly descriptor?: ExecutionEnvironmentDescriptor;
 }
 
 export type SupervisorConnectionPhase =

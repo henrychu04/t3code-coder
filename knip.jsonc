@@ -52,6 +52,8 @@
     ],
     "apps/server/src/orchestration-v2/threadHistoryPaging.ts": ["exports", "nsExports"],
     "apps/server/src/os-jank.ts": ["exports", "nsExports"],
+    "apps/server/src/persistence/Migrations.ts": ["exports", "nsExports"],
+    "apps/server/src/persistence/reconcileV2PreviewMigration.ts": ["exports", "nsExports"],
     "apps/server/src/peer/PeerForwarding.ts": ["exports", "nsExports"],
     "apps/server/src/peer/RemoteDelegation.ts": ["exports", "nsExports"],
     "apps/server/src/project/ProjectMutation.ts": ["exports", "nsExports"],

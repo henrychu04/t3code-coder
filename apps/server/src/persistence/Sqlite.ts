@@ -2,7 +2,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Predicate from "effect/Predicate";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlError from "effect/sql/SqlError";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runMigrations } from "./Migrations.ts";
@@ -13,6 +15,33 @@ const WAL_SIZE_LIMIT_BYTES = 128 * 1024 * 1024;
 
 // Coder: no `t3` CLI, so no `ServerOwnsDatabaseError` or owner-held migrations (#26763's
 // `runMigrationsAsOwner` and `layerCliConfig`); only the helper opens the database.
+
+// SQLITE_CORRUPT and SQLITE_NOTADB; node:sqlite reports extended codes whose low byte is the primary code.
+const DAMAGED_SQLITE_CODES = new Set([11, 26]);
+
+const isDamagedDatabase = (error: SqlError.SqlError): boolean => {
+  const seen = new Set<unknown>();
+  let cause: unknown = error.cause;
+  while (Predicate.isObject(cause) && !seen.has(cause)) {
+    seen.add(cause);
+    if (typeof cause.errcode === "number" && DAMAGED_SQLITE_CODES.has(cause.errcode & 0xff)) {
+      return true;
+    }
+    cause = cause.cause;
+  }
+  return false;
+};
+
+// Keeps the SqlError type so callers' error channels do not change; the original stays as the cause.
+const damagedDatabaseError = (dbPath: string, cause: SqlError.SqlError) =>
+  new SqlError.SqlError({
+    reason: new SqlError.UnknownError({
+      cause,
+      operation: "open",
+      message: `The T3 Coder database at ${dbPath} is damaged or is not a SQLite database, so T3 Coder cannot start. To recover, quit T3 Coder, then move that file and any -wal and -shm files next to it out of the folder, or replace them with a backup. T3 Coder creates a new database on the next start.`,
+    }),
+  });
+
 const makeLayerSetup = <E, R>(migrate: Effect.Effect<unknown, E, R>) =>
   Layer.effectDiscard(
     Effect.gen(function* () {
@@ -67,6 +96,17 @@ const makeLayerFromPath = <E, R>(setup: Layer.Layer<never, E, R>) =>
           "service.name": "t3code-server",
         },
       }),
+    ).pipe(
+      Layer.catchTag("SqlError", (error) =>
+        Layer.effect(
+          SqlClient.SqlClient,
+          Effect.fail(
+            SqlError.isSqlError(error) && isDamagedDatabase(error)
+              ? damagedDatabaseError(dbPath, error)
+              : error,
+          ),
+        ),
+      ),
     );
   }, Layer.unwrap);
 

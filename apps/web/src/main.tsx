@@ -6,6 +6,7 @@ import "./index.css";
 
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
+import { whenLocaleReady } from "./i18n/runtime";
 import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 // Coder: the Coder deployment/workspace manager wraps the app, and handled failures are reported
 // to the browser console. There is no Electron shell, managed auth, or provider auth delivery.
@@ -30,6 +31,8 @@ window.addEventListener("vite:preloadError", (event) => {
 
 export const startup = router
   .load()
+  // Chained so settings have usually hydrated; English resolves without a chunk load.
+  .then(whenLocaleReady)
   .then(() => {
     // Route chunk failures resolve router.load() and surface later through the error boundary.
     if (reloadScheduled) return;

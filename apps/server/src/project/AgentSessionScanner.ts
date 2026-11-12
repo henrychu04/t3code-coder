@@ -46,8 +46,18 @@ import {
   TranscriptJsonLimitError,
 } from "./AgentSessionJson.ts";
 
-// Coder: upstream exports this from provider-pi's usage reader (`server/usage.ts`), which is not
-// carried (no usage dashboard); Pi session import needs only the lookup.
+// Coder: upstream exports these from provider-pi's usage reader (`server/usage.ts`), which is not
+// carried (no usage dashboard); Pi session import needs only the lookup and
+// `piHome`.
+/** The home Pi resolves `~` against: the instance's HOME (USERPROFILE on Windows), else the host's. */
+function piHome(
+  environment: NodeJS.ProcessEnv,
+  hostHome: string,
+  platform: NodeJS.Platform,
+): string {
+  return (platform === "win32" ? environment.USERPROFILE : environment.HOME) || hostHome;
+}
+
 /** Where Pi stores session JSONL files for a provider environment, matching Pi's own lookup. */
 function resolvePiSessionsDir(
   environment: NodeJS.ProcessEnv,
@@ -809,7 +819,10 @@ type TranscriptIdentity = Pick<
 
 const fileIdKey = (inode: TranscriptIdentity["inode"]) => (inode === null ? null : String(inode));
 
-function sameTranscriptIdentity(left: TranscriptIdentity, right: TranscriptIdentity): boolean {
+export function sameTranscriptIdentity(
+  left: TranscriptIdentity,
+  right: TranscriptIdentity,
+): boolean {
   // Unsafe legacy numbers may already have lost file ID precision.
   if (
     (typeof left.inode === "number" && !Number.isSafeInteger(left.inode)) ||
@@ -840,7 +853,8 @@ export const make = Effect.gen(function* () {
   const runtimes = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
   const baseDir = path.resolve(serverConfig.baseDir);
   const worktreesDir = path.resolve(serverConfig.worktreesDir);
-  const isWindows = (yield* HostProcess.Platform) === "win32";
+  const platform = yield* HostProcess.Platform;
+  const isWindows = platform === "win32";
   const foldWorktreeCase = isWindows;
   const hostEnvironment = yield* HostProcess.Environment;
   const homeDir = yield* HostProcess.HomeDirectory;
@@ -1607,7 +1621,11 @@ export const make = Effect.gen(function* () {
             instance.environment,
             hostEnvironment,
           ).pipe(Effect.provideService(HostProcess.HomeDirectory, homeDir));
-          homePath = resolvePiSessionsDir(environment, homeDir, path);
+          homePath = resolvePiSessionsDir(
+            environment,
+            piHome(environment, homeDir, platform),
+            path,
+          );
         } else if (source === "claudeAgent") {
           const config = decodeClaudeSettings(instance.config ?? {});
           if (Option.isNone(config)) continue;

@@ -18,6 +18,7 @@ import type {
   KnownComposerContextRecord,
   MessageId,
   OrchestrationMessageContext,
+  ResponseContextRecord,
   ReviewCommentContextRecord,
   TerminalContextRecord,
   ThreadContextRecord,
@@ -136,6 +137,44 @@ export function threadContextReference(record: ThreadContextRecord): ComposerCon
   return { kind: "thread", contextId: record.contextId, label: record.label };
 }
 
+export function isResponseContextRecord(
+  record: ComposerContextRecord,
+): record is ResponseContextRecord {
+  return record.kind === "response" && "citation" in record;
+}
+
+export function responseContextReference(record: ResponseContextRecord): ComposerContextReference {
+  return { kind: "response", contextId: record.contextId, label: record.label };
+}
+
+/** One record per response, so replying to it again reuses the same reference. */
+export function responseContextRecord(
+  input: Pick<ResponseContextRecord, "citation" | "itemId"> & {
+    readonly subagents: ReadonlyArray<{
+      readonly threadId: ThreadId;
+      readonly title: string;
+      readonly environmentId?: EnvironmentId;
+    }>;
+  },
+): ResponseContextRecord {
+  return {
+    version: 1,
+    kind: "response",
+    contextId: toKindScopedComposerContextId("response", input.citation.messageId),
+    label: sanitizeComposerContextLabel(input.citation.text.slice(0, 64), "response"),
+    citation: input.citation,
+    itemId: input.itemId,
+    ...(input.subagents.length > 0
+      ? {
+          subagents: input.subagents.slice(0, 20).map(({ title, ...subagent }) => ({
+            ...subagent,
+            title: sanitizeComposerContextLabel(title, "response"),
+          })),
+        }
+      : {}),
+  };
+}
+
 /** One record per machine: mentioning the same machine twice reuses the chip. */
 export function environmentContextReference(
   record: EnvironmentContextRecord,
@@ -250,6 +289,7 @@ export function buildMessageContext(input: {
   reviewComments: ReadonlyArray<ReviewCommentContext>;
   threadContexts?: ReadonlyArray<ThreadContextRecord>;
   environmentContexts?: ReadonlyArray<EnvironmentContextRecord>;
+  replyTo?: ResponseContextRecord | null;
   attachments?: ReadonlyArray<BoundComposerAttachment>;
 }): OrchestrationMessageContext | undefined {
   const records: ComposerContextRecord[] = [
@@ -257,6 +297,7 @@ export function buildMessageContext(input: {
     ...input.reviewComments.map(reviewCommentContextRecord),
     ...(input.threadContexts ?? []),
     ...(input.environmentContexts ?? []),
+    ...(input.replyTo ? [input.replyTo] : []),
     ...(input.attachments ?? []).map(attachmentContextRecord),
   ];
   return records.length === 0 ? undefined : { version: 1, records };

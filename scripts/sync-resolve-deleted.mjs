@@ -47,9 +47,9 @@ const DELETED_PATHS = {
     "packages/shared/src/oauthScope.ts",
   ],
   // Preview and browser: no in-app browser, preview panel, or headless browser automation.
-  // web's browser/ keeps only useOpenLink.ts, and components/preview/ only the panel shell and
-  // its resize handle. The server's preview/ keeps PortScanner.ts for port discovery, and the
-  // preview state modules keep only its atoms and loopback checks.
+  // web's browser/ keeps only useOpenLink.ts, and components/preview/ only the panel shell, the
+  // resize handle, and thumb-button handling (#30882). The server's preview/ keeps PortScanner.ts
+  // for port discovery, and the preview state modules keep only its atoms and loopback checks.
   "preview and browser": [
     "apps/server/src/mcp/PreviewAutomationBroker.ts",
     "apps/server/src/htmlRender/headlessChrome.ts",
@@ -585,6 +585,28 @@ const DELETED_PATHS = {
     "packages/contracts/src/editor.ts",
     "packages/provider-core/src/server/usage.ts",
     "scripts/test-cached.ts",
+  ],
+  // Features cut in the 2482b03a01 sync: the desktop's folder activation behind sidebar folder
+  // drops (#35202), the mobile thread list's steady shells (#34596), voice microphone order
+  // (#33140), the desktop updater patch (#26244), a browser test that needs upstream's fake app
+  // environment (#25986), and upstream files for surfaces the fork had already removed (remote
+  // open targets, HTTP response guards, browser history, client metadata, Cursor fixtures).
+  "2482b03a01 cuts": [
+    "apps/web/src/hooks/useOpenLocalWorkspace.ts",
+    /^packages\/client-runtime\/src\/state\/steadyShells\./,
+    "apps/web/src/components/settings/MicrophoneOrderList.tsx",
+    /^patches\/electron-updater@/,
+    "apps/web/src/components/ChatView.handoffCompaction.browser.test.tsx",
+    // Modify/delete conflicts on surfaces the fork had already removed.
+    "apps/server/scripts/record-cursor-agent-sdk-replay-fixture.ts",
+    "apps/server/src/environment/RemoteOpenTargets.ts",
+    "apps/server/src/environment/RemoteOpenTargets.test.ts",
+    "apps/server/src/httpResponseErrorGuard.ts",
+    "apps/server/src/httpResponseErrorGuard.test.ts",
+    "apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.testkit.ts",
+    /^apps\/web\/src\/browserHistoryStore\./,
+    "apps/web/src/connection/clientMetadata.ts",
+    "packages/contracts/src/server.test.ts",
   ],
   // Upstream repository tooling: vendored sources, CI, hooks, editor and agent configuration,
   // and operations docs. The fork's .github/ keeps only SECURITY.md.

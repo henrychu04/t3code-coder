@@ -1,4 +1,5 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type * as Effect from "effect/Effect";
 
 // Coder: no `MCP_TOOL_EXPOSURE_HEADER` (#34245); only the uncarried MCP HTTP server reads it.
 
@@ -18,6 +19,8 @@ export interface McpProviderSessionConfig {
    * bridge. `endpoint` is then the bridge directory, not an MCP URL.
    */
   readonly toolCommand?: string;
+  /** True while a delegated task this thread started will wake it with its result. */
+  readonly hasPendingWake?: Effect.Effect<boolean>;
 }
 
 export function withAgentDeviceEnvironment(

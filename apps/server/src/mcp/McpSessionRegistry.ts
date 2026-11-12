@@ -57,10 +57,17 @@ export class McpSessionRegistry extends Context.Service<
   McpSessionRegistryShape
 >()("t3/mcp/McpSessionRegistry") {}
 
+interface AliveMark {
+  readonly wallMs: number;
+  readonly monotonicMs: number;
+}
+
 interface CredentialRecord {
   readonly scope: McpInvocationContext.McpThreadInvocationScope;
   readonly bridge: FileBridge | undefined;
-  readonly lastAliveAt: number;
+  readonly lastAlive: AliveMark;
+  /** Set when a request finds the token idle; only `touch` clears it, whatever the clocks do. */
+  readonly expired: boolean;
 }
 
 /**
@@ -86,6 +93,11 @@ class T3ToolBridgeUnavailableError extends Schema.TaggedError<T3ToolBridgeUnavai
   { cause: Schema.Defect() },
 ) {}
 
+// The larger elapsed reading wins: stepping the wall clock back cannot extend a token,
+// and wall time that passes while the host sleeps still counts.
+const idleMs = (since: AliveMark, now: AliveMark): number =>
+  Math.max(now.wallMs - since.wallMs, now.monotonicMs - since.monotonicMs);
+
 const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   options: { readonly livenessWindowMs?: number; readonly bridgeParent?: string } = {},
 ) {
@@ -93,6 +105,10 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const environment = yield* CoderEnvironment.CoderEnvironment;
   const tools = yield* T3ToolDispatch.T3ToolDispatch;
   const environmentId = environment.descriptor.environmentId;
+  const currentAliveMark: Effect.Effect<AliveMark> = Effect.all({
+    wallMs: Clock.currentTimeMillis,
+    monotonicMs: Clock.monotonicTimeNanos.pipe(Effect.map((nanos) => Number(nanos / 1_000_000n))),
+  });
   const livenessWindowMs = options.livenessWindowMs ?? DEFAULT_LIVENESS_WINDOW_MS;
   // Keyed by the credential token, the bridge's identity in its config.
   const state = yield* SynchronizedRef.make<ReadonlyMap<string, CredentialRecord>>(new Map());
@@ -131,7 +147,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 
   const issue: McpSessionRegistryShape["issue"] = Effect.fn("McpSessionRegistry.issue")(
     function* (request) {
-      const issuedAt = yield* Clock.currentTimeMillis;
+      const issuedAlive = yield* currentAliveMark;
       const providerSessionId = yield* random.uuidV4();
       const token = yield* random.uuidV4();
       const scope: McpInvocationContext.McpThreadInvocationScope = {
@@ -153,7 +169,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           ...(request.capabilities ??
             ((request.browserToolsAvailable ?? true) ? (["preview"] as const) : [])),
         ]),
-        issuedAt,
+        issuedAt: issuedAlive.wallMs,
       };
       // Startup binds the toolkits before any provider session opens; until then, no tools.
       const binding = yield* tools.binding;
@@ -186,7 +202,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
               ),
             );
       yield* SynchronizedRef.update(state, (records) =>
-        new Map(records).set(token, { scope, bridge, lastAliveAt: issuedAt }),
+        new Map(records).set(token, { scope, bridge, lastAlive: issuedAlive, expired: false }),
       );
       return {
         config: {
@@ -209,15 +225,16 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const resolve: McpSessionRegistryShape["resolve"] = Effect.fn("McpSessionRegistry.resolve")(
     function* (rawToken) {
       if (rawToken.length === 0) return undefined;
-      const timestamp = yield* Clock.currentTimeMillis;
+      const alive = yield* currentAliveMark;
       return yield* SynchronizedRef.modify(state, (records) => {
         const record = records.get(rawToken);
-        if (record === undefined || timestamp - record.lastAliveAt > livenessWindowMs) {
-          return [undefined, records] as const;
+        if (record === undefined || record.expired) return [undefined, records] as const;
+        if (idleMs(record.lastAlive, alive) > livenessWindowMs) {
+          return [undefined, new Map(records).set(rawToken, { ...record, expired: true })] as const;
         }
         return [
           record.scope,
-          new Map(records).set(rawToken, { ...record, lastAliveAt: timestamp }),
+          new Map(records).set(rawToken, { ...record, lastAlive: alive }),
         ] as const;
       });
     },
@@ -225,7 +242,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 
   const touch: McpSessionRegistryShape["touch"] = Effect.fn("McpSessionRegistry.touch")(
     function* (threadId) {
-      const timestamp = yield* Clock.currentTimeMillis;
+      const alive = yield* currentAliveMark;
       yield* SynchronizedRef.update(
         state,
         (records) =>
@@ -233,7 +250,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
             [...records].map(([token, record]) => [
               token,
               record.scope.thread.threadId === threadId
-                ? { ...record, lastAliveAt: timestamp }
+                ? { ...record, lastAlive: alive, expired: false }
                 : record,
             ]),
           ),

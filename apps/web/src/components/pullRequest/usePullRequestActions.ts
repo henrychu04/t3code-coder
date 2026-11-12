@@ -333,10 +333,17 @@ export function usePullRequestHandoffs({
   ) => {
     if (!detail || handoff !== null) return;
     setHandoff(kind);
+    // Dismissing the loading toast cancels the handoff before it touches a draft.
+    let cancelled = false;
     // Explicit timeouts survive toast updates and would pin the result after loading.
     const toastId = toastManager.add({
       type: "loading",
       title: `Preparing the ${terminology.singular} checkout...`,
+      data: {
+        onClose: () => {
+          cancelled = true;
+        },
+      },
     });
     const projectRef = scopeProjectRef(environmentId, detail.projectId);
     // Checkout setup requires the thread to exist first.
@@ -344,6 +351,10 @@ export function usePullRequestHandoffs({
       (session) => session,
       () => null,
     );
+    if (cancelled) {
+      setHandoff(null);
+      return;
+    }
     if (opened === null) {
       setHandoff(null);
       toastManager.update(toastId, {
@@ -358,6 +369,10 @@ export function usePullRequestHandoffs({
       mode,
       threadId: opened.threadId,
     });
+    if (cancelled) {
+      setHandoff(null);
+      return;
+    }
     if (prepared._tag === "Failure") {
       setHandoff(null);
       toastManager.update(toastId, {
@@ -377,6 +392,10 @@ export function usePullRequestHandoffs({
       (session) => session,
       () => null,
     );
+    if (cancelled) {
+      setHandoff(null);
+      return;
+    }
     if (pointed === null) {
       setHandoff(null);
       toastManager.update(toastId, {

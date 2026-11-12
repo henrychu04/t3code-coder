@@ -6,105 +6,6 @@
  */
 import type { OrchestrationV2ProviderCapabilities } from "@t3tools/contracts";
 
-export const AcpProviderCapabilitiesV2 = {
-  sessions: {
-    supportsMultipleProviderThreadsPerSession: false,
-    supportsModelSwitchInSession: false,
-    supportsProviderSwitchingViaHandoff: true,
-    supportsRuntimeModeSwitchInSession: false,
-    pendingRequestsSurviveRestart: false,
-  },
-  threads: {
-    canCreateEmptyThread: true,
-    canReadThreadSnapshot: false,
-    canRollbackThread: true,
-    canForkThread: false,
-    canForkFromTurn: false,
-    canForkFromSubagentThread: false,
-    exposesNativeThreadId: true,
-  },
-  turns: {
-    exposesNativeTurnId: false,
-    emitsTurnStarted: true,
-    emitsTurnCompleted: true,
-    supportsInterrupt: true,
-    supportsActiveSteering: false,
-    supportsSteeringByInterruptRestart: true,
-    supportsQueuedMessages: true,
-    terminalStatusQuality: "strong",
-  },
-  streaming: {
-    streamsAssistantText: true,
-    streamsReasoning: true,
-    streamsToolOutput: true,
-    streamsPlanText: false,
-    emitsMessageCompleted: true,
-  },
-  tools: {
-    exposesToolItemIds: true,
-    emitsToolStarted: true,
-    emitsToolCompleted: true,
-    emitsToolOutput: true,
-    supportsMcpTools: false,
-    supportsDynamicToolCallbacks: false,
-  },
-  approvals: {
-    supportsCommandApproval: true,
-    supportsFileReadApproval: true,
-    supportsFileChangeApproval: true,
-    supportsApplyPatchApproval: false,
-    approvalsHaveNativeRequestIds: false,
-    approvalCallbacksAreLiveOnly: true,
-    approvalsCanOriginateFromSubagents: false,
-  },
-  planning: {
-    emitsPlanUpdated: true,
-    emitsTodoList: true,
-    emitsProposedPlan: false,
-    supportsStructuredQuestions: true,
-    planDeltasHaveItemIds: false,
-  },
-  subagents: {
-    supportsSubagents: false,
-    exposesSubagentThreadIds: false,
-    emitsSubagentLifecycle: false,
-    canWaitForSubagents: false,
-    canCloseSubagents: false,
-    canForkSubagentThread: false,
-  },
-  context: {
-    acceptsSystemContext: false,
-    acceptsDeveloperContext: false,
-    acceptsSyntheticUserContext: true,
-    canGenerateSummaries: true,
-    canConsumeHandoffSummaries: true,
-    supportsDeltaHandoff: true,
-    supportsFullThreadHandoff: true,
-    maxRecommendedHandoffChars: null,
-  },
-  checkpointing: {
-    appCanCheckpointFilesystem: true,
-    supportsNestedCheckpointScopes: true,
-    // ACP defines no conversation truncation, so rollback resets the provider
-    // conversation: T3 restores checkpointed state and the next turn starts a
-    // fresh agent session without the rolled-back context.
-    providerCanRollbackConversation: true,
-    providerRollbackReturnsSnapshot: true,
-    providerCanReadConversationSnapshot: false,
-  },
-  identity: {
-    nativeThreadIds: "strong",
-    nativeTurnIds: "weak",
-    nativeItemIds: "weak",
-    nativeRequestIds: "weak",
-  },
-  runtimePolicy: {
-    // ACP agents run their own tools; T3 only answers their permission
-    // requests by policy.
-    enforcement: "client-boundary",
-  },
-} satisfies OrchestrationV2ProviderCapabilities;
-
 export const CursorProviderCapabilitiesV2 = {
   sessions: {
     supportsMultipleProviderThreadsPerSession: false,
@@ -127,7 +28,11 @@ export const CursorProviderCapabilitiesV2 = {
     emitsTurnStarted: true,
     emitsTurnCompleted: true,
     supportsInterrupt: true,
-    supportsActiveSteering: false,
+    supportsActiveSteering: true,
+    // A steer can move a foreground subagent to the background. Mailbox wakes
+    // stay queued so a notification does not cut into the live turn.
+    activeSteeringInterruptsTools: true,
+    activeSteeringAcceptsAttachments: false,
     supportsSteeringByInterruptRestart: true,
     supportsQueuedMessages: true,
     terminalStatusQuality: "strong",

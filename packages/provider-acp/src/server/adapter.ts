@@ -370,6 +370,10 @@ export interface AcpAdapterV2Flavor {
     ChildProcessSpawner.ChildProcessSpawner | SecureRandom.SecureRandom | Scope.Scope
   >;
   readonly customModels?: ReadonlyArray<string>;
+  /** The agent may run another model than session/new reports, so the model is always written. */
+  readonly alwaysSetModel?: boolean;
+  /** Values the client shows for options a new session's selection leaves unset. */
+  readonly unsetOptionDefaults?: Effect.Effect<NonNullable<ModelSelection["options"]>>;
   readonly resolveModelId?: (selection: ModelSelection) => string | undefined;
   /**
    * The agent advertises its model option only after `session/new` returns
@@ -3139,7 +3143,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const nodeId = existing?.task.id ?? providerNodeId(nativeTaskId);
           const childThreadId =
             existing?.childThreadId ??
-            idAllocator.derive.threadFromProviderThread({
+            idAllocator.derive.subagentThread({
               driver,
               providerInstanceId: context.input.modelSelection.instanceId,
               nativeThreadId: `${context.nativeThreadId}:task:${nativeTaskId}`,
@@ -6605,12 +6609,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 !offeredOptions.some((option) => option.decision === "acceptForSession")
                   ? "accept"
                   : answered;
-              if (
-                parsedPermission.kind !== "unknown" &&
-                (decision === "accept" || decision === "acceptForSession")
-              ) {
+              if (decision === "accept" || decision === "acceptForSession") {
                 clientPolicyGrants.recordApproval({
-                  kind: providerRequestKind(parsedPermission.kind),
+                  toolKind: parsedPermission.kind,
                   scope: decision === "acceptForSession" ? "session" : "turn",
                   turnKey: String(context.providerTurnId),
                 });
@@ -7103,6 +7104,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           },
         );
 
+        // Read before the session exists: its own config updates replace what the client showed.
+        const unsetOptionDefaults = yield* flavor.unsetOptionDefaults ?? Effect.succeed([]);
         const initialStart = yield* Effect.result(
           startAcpRuntime(input.threadId, input.initialNativeThreadId),
         );
@@ -7201,6 +7204,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           startResult: AcpSessionRuntime.AcpSessionRuntimeStartResult,
           modelSelection: ModelSelection,
           runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+          unsetOptionDefaults: NonNullable<ModelSelection["options"]> = [],
         ) {
           yield* Ref.set(activeSelection, null);
           yield* validateModelSelection(modelSelection);
@@ -7236,7 +7240,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 )
               ) {
                 yield* runtime
-                  .setConfigOption(modelOption.id, requestedModel)
+                  .setConfigOption(modelOption.id, requestedModel, {
+                    resendCurrentValue: flavor.alwaysSetModel === true,
+                  })
                   .pipe(Effect.mapError(rejectedModel));
                 appliedModel = requestedModel;
               }
@@ -7270,12 +7276,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               };
             });
           }
-          const optionSelections = (modelSelection.options ?? []).flatMap((selection) => {
-            if (flavor.ownedModelOptionIds?.includes(selection.id) === true) return [];
-            return [
-              selection.value === ACP_EMPTY_OPTION_VALUE ? { ...selection, value: "" } : selection,
-            ];
-          });
+          const explicitSelections = modelSelection.options ?? [];
+          const implicitSelections = unsetOptionDefaults.filter(
+            (implicit) => !explicitSelections.some((selection) => selection.id === implicit.id),
+          );
+          const optionSelections = [...explicitSelections, ...implicitSelections].flatMap(
+            (selection) => {
+              if (flavor.ownedModelOptionIds?.includes(selection.id) === true) return [];
+              return [
+                selection.value === ACP_EMPTY_OPTION_VALUE
+                  ? { ...selection, value: "" }
+                  : selection,
+              ];
+            },
+          );
           const configOptions = yield* runtime.getConfigOptions;
           const availableConfigIds = new Set(configOptions.map((option) => option.id));
           const hasNativeConfigWithSyntheticModeId = availableConfigIds.has(
@@ -7318,11 +7332,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             yield* runtime.setConfigOption(selection.id, selection.value).pipe(
               Effect.catchTags({
                 AcpRequestError: (error) =>
-                  Effect.logWarning("ACP session rejected a configuration option value", {
-                    optionId: selection.id,
-                    value: selection.value,
-                    detail: error.message,
-                  }),
+                  error.code === -32602
+                    ? Effect.logWarning("ACP session rejected a configuration option value", {
+                        optionId: selection.id,
+                        value: selection.value,
+                        detail: error.message,
+                      })
+                    : Effect.fail(error),
               }),
             );
           }
@@ -7426,7 +7442,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           );
         });
 
-        yield* configureSession(started, input.modelSelection, input.runtimePolicy);
+        yield* configureSession(
+          started,
+          input.modelSelection,
+          input.runtimePolicy,
+          started.sessionId !== input.initialNativeThreadId ? unsetOptionDefaults : [],
+        );
         yield* Ref.set(activeSelection, input.modelSelection);
         yield* Ref.set(activeInteractionMode, input.runtimePolicy.interactionMode);
         const createdAt = yield* DateTime.now;

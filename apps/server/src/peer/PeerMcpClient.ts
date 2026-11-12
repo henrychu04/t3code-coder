@@ -11,6 +11,7 @@ import {
   type EnvironmentId,
   OrchestratorMcpFailure,
   type ProviderInteractionMode,
+  type OrchestrationV2LinkedSender,
   type RuntimeMode,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -19,6 +20,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import * as CoderHub from "../coderHub.ts";
+
+/**
+ * A title can be any length; the header carrying it stays well under HTTP header limits.
+ * Coder: the hub carries the sender in the call, cut to upstream's header length.
+ */
+const SENDER_TITLE_MAX_LENGTH = 200;
 
 /** The limits a call carries to the peer: the calling agent's modes here. */
 export interface PeerCallLimits {
@@ -39,6 +46,8 @@ export class PeerMcpClient extends Context.Service<
       readonly tool: string;
       readonly arguments: Record<string, unknown>;
       readonly limits: PeerCallLimits;
+      /** The thread here the call is made for, sent as `T3-Sender-Thread`. */
+      readonly sender?: OrchestrationV2LinkedSender;
       readonly success: S;
     }) => Effect.Effect<S["Type"], OrchestratorMcpFailure>;
   }
@@ -54,6 +63,15 @@ const make = Effect.gen(function* () {
         tool: input.tool,
         arguments: input.arguments,
         limits: input.limits,
+        ...(input.sender === undefined
+          ? {}
+          : {
+              sender: {
+                ...input.sender,
+                // Whole code points, so a cut never leaves half an emoji.
+                title: Array.from(input.sender.title).slice(0, SENDER_TITLE_MAX_LENGTH).join(""),
+              },
+            }),
       })
       .pipe(
         Effect.flatMap((outcome) =>

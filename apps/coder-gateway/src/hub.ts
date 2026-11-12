@@ -143,6 +143,7 @@ export function makeCoderHub(options: CoderHubOptions): CoderHub {
             tool: request.tool,
             arguments: request.arguments,
             limits: request.limits,
+            ...(request.sender === undefined ? {} : { sender: request.sender }),
           },
           headers: [],
         }),

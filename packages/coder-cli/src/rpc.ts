@@ -1,6 +1,7 @@
 import {
   AuthMcpClientAccess,
   EnvironmentId,
+  OrchestrationV2LinkedSender,
   OrchestratorMcpFailure,
   ProviderInteractionMode,
   RuntimeMode,
@@ -87,6 +88,8 @@ export const CoderHubRequest = Schema.Union([
     /** The tool's encoded parameters, without `environmentId`. */
     arguments: Schema.Record(Schema.String, Schema.Unknown),
     limits: CoderHubCallLimits,
+    /** The calling thread, so what the call sends there can name it (#34721). */
+    sender: Schema.optional(OrchestrationV2LinkedSender),
   }),
   Schema.TaggedStruct("ListLinks", {
     id: Schema.String,
@@ -142,6 +145,7 @@ export const CoderHubInvokeRpc = Rpc.make(CODER_HUB_INVOKE_METHOD, {
     tool: Schema.String,
     arguments: Schema.Record(Schema.String, Schema.Unknown),
     limits: CoderHubCallLimits,
+    sender: Schema.optional(OrchestrationV2LinkedSender),
   }),
   success: CoderHubCallOutcome,
 });

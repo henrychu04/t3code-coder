@@ -254,7 +254,7 @@ packageExtensionsChecksum: sha256-uRNSOmZGMbxiey/el3j86YmdH2m8/ap2Y34J3dVkBNY=
 patchedDependencies:
   '@effect/vitest@4.1.2': 299510b71c36537a832a67e9d160a5f112a5f326a29e95c41cb45fc8234e47c7
   '@ff-labs/fff-node@0.11.0': 765c192f75289d2a65d54011f65e3c9397603298eefb7203e7e05260352e47c8
-  '@pierre/diffs@1.7.0-beta.3': f6938904fde4f235ed05a131d7ed9dae83dbaea490009d7bb437968f834609c5
+  '@pierre/diffs@1.7.0-beta.3': 78cf0ffbf8a68d3a47e05c1c51b8a11832b3e628f5bb2873289f27bc7d2d95f7
   mdast-util-math@3.0.0: afe6b2c89e1eaddfd3c90cf2723f12c9a17d513e65beff51653781486013251c
   mdast-util-to-hast@13.2.1: 57ea46c73aea3c876ab8d351fe0482ddd081dcb4a0610576e399dbe5eb59d2b1
   micromark-extension-gfm-table@2.1.1: 9ad23a530e45d9f83cba1da8654fe16d5af8b59d5c73d5c7a7c91fd25b9be1d8
@@ -438,8 +438,8 @@ importers:
         specifier: ^1.9.0
         version: 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@betteroffice/docx':
-        specifier: 0.4.3
-        version: 0.4.3(@betteroffice/fonts@0.4.0(@betteroffice/fonts-cjk@0.4.0))
+        specifier: 0.5.1
+        version: 0.5.1(@betteroffice/fonts@0.4.0(@betteroffice/fonts-cjk@0.4.0))
       '@betteroffice/fonts':
         specifier: 0.4.0
         version: 0.4.0(@betteroffice/fonts-cjk@0.4.0)
@@ -481,7 +481,7 @@ importers:
         version: 1.8.0
       '@pierre/diffs':
         specifier: 1.7.0-beta.3
-        version: 1.7.0-beta.3(patch_hash=f6938904fde4f235ed05a131d7ed9dae83dbaea490009d7bb437968f834609c5)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 1.7.0-beta.3(patch_hash=78cf0ffbf8a68d3a47e05c1c51b8a11832b3e628f5bb2873289f27bc7d2d95f7)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/trees':
         specifier: 1.0.0-beta.6
         version: 1.0.0-beta.6(@pierre/theme@2.0.0)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.2.0)
@@ -566,6 +566,9 @@ importers:
       fast-xml-parser:
         specifier: 5.7.3
         version: 5.7.3
+      gt-react:
+        specifier: 11.4.18
+        version: 11.4.18(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       hast-util-to-html:
         specifier: ^9.0.5
         version: 9.0.5
@@ -719,7 +722,7 @@ importers:
     dependencies:
       '@pierre/diffs':
         specifier: 1.7.0-beta.3
-        version: 1.7.0-beta.3(patch_hash=f6938904fde4f235ed05a131d7ed9dae83dbaea490009d7bb437968f834609c5)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 1.7.0-beta.3(patch_hash=78cf0ffbf8a68d3a47e05c1c51b8a11832b3e628f5bb2873289f27bc7d2d95f7)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -1272,8 +1275,8 @@ packages:
       '@types/react':
         optional: true
 
-  '@betteroffice/docx@0.4.3':
-    resolution: {integrity: sha512-CEErXJH3iCsi2a61gTNkAofLCzSTcktLmp710gGhMwbBfOqwQ2yI7dRFBV3ElGa9JxkS03IfejvLX0sAvlTrUQ==}
+  '@betteroffice/docx@0.5.1':
+    resolution: {integrity: sha512-90OVOjArTdk7KmHNSGBPMLDPg1sU+k/LI0HooZDdALwidGpjNjFAazkKSTg29K6fpmv6qmygCdJiXCCoxL2GRw==}
     peerDependencies:
       '@betteroffice/fonts': ^0
     peerDependenciesMeta:
@@ -1715,6 +1718,20 @@ packages:
   '@fontsource-variable/inter@5.3.0':
     resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
 
+  '@generaltranslation/api@0.5.6':
+    resolution: {integrity: sha512-rPcqH7BomEIRQKX6oyOagfqrfHddi3EcOkgWC/dgs2qSRhkoZYcpn68RWCr3ZFnmCMib7uDtSR9v8BjUI7AZLQ==}
+
+  '@generaltranslation/format@0.1.9':
+    resolution: {integrity: sha512-GwXbdajc7pIBsnrxVXE4PqjBHRwgKef4GyauH7CLaXSormRLU8G58ahqfwmQRL6ie1xt5KMMb6UAekdj1i9Sxg==}
+
+  '@generaltranslation/icu@0.1.2':
+    resolution: {integrity: sha512-2A0txUrZdAWAc42N58/PtoWv7vNB0U1Iyl+nDzf7RSswLHPMsonp7OmPnSraQgkoRSVSlueARVQK4T+zanWsyA==}
+
+  '@generaltranslation/react-core@11.4.18':
+    resolution: {integrity: sha512-1fFrMeddHH0mUTvg2iCSzL2Bfsc34j2EtL9hc4wxI8Xkwh2umHHtuZcD2Z3H7uA94w2kXEShgXe1kX/HFxqlOg==}
+    peerDependencies:
+      react: '>=18.0.0'
+
   '@hono/node-server@1.19.17':
     resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
     engines: {node: '>=18.14.1'}
@@ -1769,6 +1786,10 @@ packages:
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
 
   '@nodable/entities@2.1.1':
     resolution: {integrity: sha512-Pig3HxDIoMgjdEH8OCf/dkcTmLFjJRjWuq8jSnklu284/TKOPibSRERmOykiwmyXTtv61mP+44f3GMx0tLAyjg==}
@@ -3641,6 +3662,9 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
+  generaltranslation@9.5.9:
+    resolution: {integrity: sha512-/R/MvEEiB+Us/fj/YfuSTfhvzUfmvFpiHxGx2f+C6Wv0O875T0yJI3RLGDopqZVbnKPimog9eXofJL7W0SOxJg==}
+
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
@@ -3666,6 +3690,15 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  gt-i18n@1.0.40:
+    resolution: {integrity: sha512-EbDhYhtyUrZI4iBSWpe1AMRoYrmEn52/hnVG6NAqVhVvY85t15JCJWMdVOkDoB1TRVH9nbSzAttaYwcv0LF3KQ==}
+
+  gt-react@11.4.18:
+    resolution: {integrity: sha512-c6T+oqvXdT2DSW6kXDc3HYj4MA9fR4B1VgSXaIVG8emAWhZ9Dih4npJBjRWBJNr1D3KrG0nU/+1FPxJ1Zzkhnw==}
+    peerDependencies:
+      react: '>=18.0.0'
+      react-dom: '>=18.0.0'
 
   happy-dom@20.11.6:
     resolution: {integrity: sha512-Hldbg8AdAa5a5oDcZpjqnGitp7JB0hqWmfv/8qr+kft4vzSD8BHsbdRfzYvL/0QcbKcURC/yyoygbeDQarPvYg==}
@@ -5211,7 +5244,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  '@betteroffice/docx@0.4.3(@betteroffice/fonts@0.4.0(@betteroffice/fonts-cjk@0.4.0))':
+  '@betteroffice/docx@0.5.1(@betteroffice/fonts@0.4.0(@betteroffice/fonts-cjk@0.4.0))':
     optionalDependencies:
       '@betteroffice/fonts': 0.4.0(@betteroffice/fonts-cjk@0.4.0)
 
@@ -5574,6 +5607,21 @@ snapshots:
 
   '@fontsource-variable/inter@5.3.0': {}
 
+  '@generaltranslation/api@0.5.6': {}
+
+  '@generaltranslation/format@0.1.9':
+    dependencies:
+      '@generaltranslation/icu': 0.1.2
+
+  '@generaltranslation/icu@0.1.2': {}
+
+  '@generaltranslation/react-core@11.4.18(react@19.3.0)':
+    dependencies:
+      '@generaltranslation/format': 0.1.9
+      generaltranslation: 9.5.9
+      gt-i18n: 1.0.40
+      react: 19.3.0
+
   '@hono/node-server@1.19.17(hono@4.13.13)':
     dependencies:
       hono: 4.13.13
@@ -5634,6 +5682,8 @@ snapshots:
     optional: true
 
   '@noble/hashes@1.8.0': {}
+
+  '@noble/hashes@2.4.0': {}
 
   '@nodable/entities@2.1.1': {}
 
@@ -5952,7 +6002,7 @@ snapshots:
 
   '@oxlint/plugins@1.89.0': {}
 
-  '@pierre/diffs@1.7.0-beta.3(patch_hash=f6938904fde4f235ed05a131d7ed9dae83dbaea490009d7bb437968f834609c5)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@pierre/diffs@1.7.0-beta.3(patch_hash=78cf0ffbf8a68d3a47e05c1c51b8a11832b3e628f5bb2873289f27bc7d2d95f7)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@pierre/highlights': 0.5.0
       '@pierre/patches': 0.0.1
@@ -7187,6 +7237,13 @@ snapshots:
 
   function-bind@1.1.2: {}
 
+  generaltranslation@9.5.9:
+    dependencies:
+      '@generaltranslation/api': 0.5.6
+      '@generaltranslation/format': 0.1.9
+      '@generaltranslation/icu': 0.1.2
+      '@noble/hashes': 2.4.0
+
   gensync@1.0.0-beta.2: {}
 
   get-caller-file@2.0.5: {}
@@ -7216,6 +7273,19 @@ snapshots:
   gopd@1.2.0: {}
 
   graceful-fs@4.2.11: {}
+
+  gt-i18n@1.0.40:
+    dependencies:
+      '@generaltranslation/format': 0.1.9
+      generaltranslation: 9.5.9
+
+  gt-react@11.4.18(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+    dependencies:
+      '@generaltranslation/react-core': 11.4.18(react@19.3.0)
+      generaltranslation: 9.5.9
+      gt-i18n: 1.0.40
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
 
   happy-dom@20.11.6:
     dependencies:
