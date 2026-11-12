@@ -1169,7 +1169,8 @@ checks that every name here still exists and that every modified upstream file i
   (#31337) builds settings without the cut managed policy layer; `serverSettings.test.ts`,
   `DatabaseStorage.test.ts`, `PullRequestService.test.ts`, `SourceControlRepositoryService.test.ts`,
   `presentation.test.ts`, `pullRequests.test.ts`, `threadShell.test.ts`, and `ws.test.ts` omit cases
-  for cut surfaces; `threads-sync.test.ts` and `threads-atoms.test.ts` fake history pages over the
+  for cut surfaces; `shell-sync.test.ts`'s cold-start cases (#35071) rotate no bearer credential;
+  `threads-sync.test.ts` and `threads-atoms.test.ts` fake history pages over the
   helper RPC; `pullRequestsRouteSearch.test.ts` runs under happy-dom;
   `linkCreatedPullRequest.test.ts` and `openPullRequestLink`'s browser test use GitLab URLs (no
   merge request commit-URL case); `GitVcsDriverCore.test.ts` expects `ReviewDiffFileTooLargeError`

@@ -1294,14 +1294,6 @@ describe("environment shell cold start", () => {
           }),
         ),
       reconnect: SubscriptionRef.set(activeSession, Option.some(session(client))),
-      // The registry swaps a rotated bearer into the prepared connection of a live session.
-      rotateCredential: SubscriptionRef.update(
-        prepared,
-        Option.map((current) => ({
-          ...current,
-          httpAuthorization: { _tag: "Bearer" as const, token: "rotated" },
-        })),
-      ),
       liveAt: (sequence: number) =>
         SubscriptionRef.changes(shellState).pipe(
           Stream.filter(
@@ -1458,8 +1450,8 @@ describe("environment shell cold start", () => {
           });
         }
 
-        // A rotated credential keeps the session, so its events still apply and nothing reloads.
-        yield* h.rotateCredential;
+        // Coder: the gateway connection has no bearer credential to rotate (upstream rotates one
+        // here); the session's later events still apply and nothing reloads.
         yield* Queue.offer(first.events, {
           kind: "thread.removed",
           sequence: subscribes.afterSequence + 1,
