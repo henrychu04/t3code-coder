@@ -66,6 +66,10 @@ declare module "node:sqlite" {
   }
 }
 
+// Coder: the fork runs on Node 24 (`engines.node`), whose `StatementSync` has no `stat`, so the
+// VM-step comparisons run only where Node 26 provides it.
+const hasVmStepCounter = typeof NodeSqlite.StatementSync.prototype.stat === "function";
+
 const layerTest = Layer.mergeAll(
   ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
   SqlitePersistence.layerMemory,
@@ -3679,7 +3683,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       // The window read must not grow with history below the newest visible rows. VM steps are
       // deterministic; reading the whole history here cost 65% more steps.
       const copyPath = "file:/thread-window-steps?vfs=memdb";
-      {
+      if (hasVmStepCounter) {
         using copy = new NodeSqlite.DatabaseSync(copyPath);
         yield* sql`VACUUM INTO ${copyPath}`;
         assert.isNotEmpty(windowStatements);
@@ -3771,7 +3775,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         liveWindow.projection.turnItems.map((item) => item.ordinal),
         Array.from({ length: sqlPageLimit }, (_, index) => 1001 - sqlPageLimit + index),
       );
-      {
+      if (hasVmStepCounter) {
         const livePath = "file:/thread-window-live-steps?vfs=memdb";
         using copy = new NodeSqlite.DatabaseSync(livePath);
         yield* sql`VACUUM INTO ${livePath}`;

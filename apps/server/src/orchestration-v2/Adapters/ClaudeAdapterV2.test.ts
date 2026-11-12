@@ -2368,8 +2368,10 @@ describe("ClaudeAdapterV2 attachments", () => {
   );
 });
 
+// Coder: upstream's root-change fork test (#22836) reads the transcript the SDK's `forkSession`
+// copies; the CLI forks natively on the fork's first query instead, so the fork's cursor test stays.
 describe("ClaudeAdapterV2 native fork", () => {
-  it.effect("forks a session from its original directory after the workspace root changes", () =>
+  it.effect("forks at the source assistant cursor and resumes the forked session", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -2377,65 +2379,24 @@ describe("ClaudeAdapterV2 native fork", () => {
         const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
           prefix: "t3-claude-v2-fork-attachments-",
         });
-        const configDir = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3-claude-root-change-",
-        });
-        const sourceSessionId = "11111111-1111-4111-8111-111111111111";
-        const sourceCursor = "aaaaaaaa-0000-4000-8000-000000000002";
-        const projectDir = NodePath.join(configDir, "projects", "-old-workspace");
-        yield* fileSystem.makeDirectory(projectDir, { recursive: true });
-        const entry = (uuid: string, parentUuid: string | null, message: unknown) => ({
-          type: parentUuid === null ? "user" : "assistant",
-          uuid,
-          parentUuid,
-          sessionId: sourceSessionId,
-          cwd: "/old-workspace",
-          isSidechain: false,
-          timestamp: "2026-10-01T00:00:00.000Z",
-          message,
-        });
-        yield* fileSystem.writeFileString(
-          NodePath.join(projectDir, `${sourceSessionId}.jsonl`),
-          [
-            entry("aaaaaaaa-0000-4000-8000-000000000001", null, { role: "user", content: "hello" }),
-            entry(sourceCursor, "aaaaaaaa-0000-4000-8000-000000000001", {
-              role: "assistant",
-              content: [{ type: "text", text: "inherited answer" }],
-            }),
-          ]
-            .map((line) => JSON.stringify(line))
-            .join("\n"),
-        );
-        const realRunner = yield* ClaudeAdapterV2.ClaudeAgentSdkQueryRunner.pipe(
-          Effect.provide(
-            ClaudeAdapterV2.layerQueryRunner.pipe(
-              Layer.provide(PortScanner.layerTest),
-              Layer.provide(
-                Layer.succeed(ProviderEventLoggers.ProviderEventLoggers, {
-                  native: undefined,
-                  canonical: undefined,
-                }),
-              ),
-            ),
-          ),
-        );
         const openedQueries: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput> = [];
         const forkCalls: Array<ClaudeAdapterV2.ClaudeAgentSdkSessionForkInput> = [];
         const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
           instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
           settings: DEFAULT_CLAUDE_SETTINGS,
-          environment: { CLAUDE_CONFIG_DIR: configDir },
+          environment: { CLAUDE_CONFIG_DIR: "/custom/claude-home" },
           attachmentsDir,
           fileSystem,
           path: yield* Path.Path,
           random: yield* SecureRandom.SecureRandom,
           idAllocator,
           queryRunner: {
-            allocateSessionId: Effect.succeed(sourceSessionId),
+            allocateSessionId: Effect.succeed("source-native-session"),
             open: (input) =>
               Effect.sync(() => {
                 openedQueries.push(input);
                 return {
+                  // As upstream (#33008): a query whose stream ends before the turn starts fails it.
                   messages: Stream.never,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
@@ -2452,9 +2413,9 @@ describe("ClaudeAdapterV2 native fork", () => {
                 };
               }),
             forkSession: (input) =>
-              Effect.gen(function* () {
+              Effect.sync(() => {
                 forkCalls.push(input);
-                return yield* realRunner.forkSession(input);
+                return { sessionId: "forked-native-session" };
               }),
             subagentLaunchToolUseId: () => Effect.succeed(null),
             assertComplete: Effect.void,
@@ -2500,7 +2461,7 @@ describe("ClaudeAdapterV2 native fork", () => {
               runAttemptId: RunAttemptId.make("run-attempt-claude-source"),
               nativeTurnRef: {
                 driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
-                nativeId: sourceCursor,
+                nativeId: "assistant-message-cursor",
                 strength: "weak",
               },
               ordinal: 1,
@@ -2515,22 +2476,17 @@ describe("ClaudeAdapterV2 native fork", () => {
 
         assert.deepEqual(forkCalls, [
           {
-            sessionId: sourceSessionId,
+            sessionId: "source-native-session",
+            // As upstream (#22836): the fork no longer passes the thread's cwd.
             options: {
-              upToMessageId: sourceCursor,
+              upToMessageId: "assistant-message-cursor",
             },
-            environment: { CLAUDE_CONFIG_DIR: configDir },
+            environment: { CLAUDE_CONFIG_DIR: "/custom/claude-home" },
             threadId: targetThreadId,
             providerSessionId,
           },
         ]);
-        const forkedSessionId = forkedProviderThread.nativeThreadRef?.nativeId;
-        assert.isString(forkedSessionId);
-        assert.notEqual(forkedSessionId, sourceSessionId);
-        const forkedTranscript = yield* fileSystem.readFileString(
-          NodePath.join(projectDir, `${forkedSessionId}.jsonl`),
-        );
-        assert.include(forkedTranscript, "inherited answer");
+        assert.equal(forkedProviderThread.nativeThreadRef?.nativeId, "forked-native-session");
         assert.equal(forkedProviderThread.forkedFrom?.providerThreadId, sourceProviderThread.id);
         assert.equal(forkedProviderThread.forkedFrom?.providerTurnId, providerTurnId);
 
@@ -2599,7 +2555,6 @@ describe("ClaudeAdapterV2 native fork", () => {
         assert.equal(openedQueries[0]?.options.forkSession, true);
         assert.equal(openedQueries[0]?.options.sessionId, "forked-native-session");
         assert.equal(openedQueries[0]?.options.resumeSessionAt, "assistant-message-cursor");
-        assert.equal(openedQueries[0]?.options.cwd, NodePath.resolve("/workspace"));
       }).pipe(
         Effect.provide(
           Layer.mergeAll(

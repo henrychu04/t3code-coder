@@ -4,8 +4,12 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import { discoverClaudeSkills } from "./ClaudeSkills.ts";
 import { planClaudeSkillDispatch } from "./ClaudeSkillDispatch.ts";
+
+const caseInsensitiveTmpdir = NodeFS.existsSync(NodeOS.tmpdir().toUpperCase());
 
 const writeSkill = Effect.fn(function* (
   skillsDir: string,
@@ -464,80 +468,85 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
     }),
   );
 
-  it.effect("gives a synced namespace to an installed plugin, then the first synced row", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const configDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
-      const bucketName = "11111111-2222-4333-8444-555555555555_unbound";
-      const synced = path.join(configDir, "plugins", "synced");
-      const bucket = path.join(synced, bucketName);
-      for (const [directory, prefix, skill] of [
-        ["pstack", "pstack", "poteto-mode"],
-        ["pstack-copy", "pstack", "copied"],
-        ["tools", "tools", "synced-tool"],
-        ["a_b", undefined, "renamed"],
-        ["PSTACK", "PSTACK", "shouted"],
-      ] as const) {
-        yield* writeSkill(path.join(bucket, directory, "skills"), skill, "# Synced");
-        if (prefix === undefined) continue;
-        yield* fs.makeDirectory(path.join(bucket, directory, ".claude-plugin"));
-        yield* fs.writeFileString(
-          path.join(bucket, directory, ".claude-plugin", "plugin.json"),
-          JSON.stringify({ name: prefix }),
-        );
-      }
-      yield* fs.writeFileString(
-        path.join(bucket, "manifest.json"),
-        JSON.stringify({
-          plugins: ["pstack", "pstack-copy", "tools", "a:b. ", "PSTACK", "no-id"].map(
-            (name, index) => (name === "no-id" ? { name } : { pluginId: `plugin_0${index}`, name }),
-          ),
-        }),
-      );
-      yield* fs.writeFileString(path.join(synced, `.bucket-${bucketName}`), "");
-      const installed = path.join(configDir, "plugins", "cache", "shop", "tools");
-      yield* writeSkill(path.join(installed, "skills"), "installed-tool", "# Installed");
-      yield* fs.writeFileString(
-        path.join(configDir, "plugins", "installed_plugins.json"),
-        JSON.stringify({
-          plugins: {
-            "tools@shop": [{ scope: "user", installPath: installed }],
-            "pstack@shop": [{ scope: "user", installPath: path.join(configDir, "missing") }],
-          },
-        }),
-      );
-      const names = (enabled: boolean) =>
-        Effect.gen(function* () {
+  // Coder: the case tells `pstack` and `PSTACK` folders apart, which a case-insensitive volume (the
+  // default on macOS development machines) cannot hold; Linux workspaces and CI run it.
+  it.effect.skipIf(caseInsensitiveTmpdir)(
+    "gives a synced namespace to an installed plugin, then the first synced row",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const configDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+        const bucketName = "11111111-2222-4333-8444-555555555555_unbound";
+        const synced = path.join(configDir, "plugins", "synced");
+        const bucket = path.join(synced, bucketName);
+        for (const [directory, prefix, skill] of [
+          ["pstack", "pstack", "poteto-mode"],
+          ["pstack-copy", "pstack", "copied"],
+          ["tools", "tools", "synced-tool"],
+          ["a_b", undefined, "renamed"],
+          ["PSTACK", "PSTACK", "shouted"],
+        ] as const) {
+          yield* writeSkill(path.join(bucket, directory, "skills"), skill, "# Synced");
+          if (prefix === undefined) continue;
+          yield* fs.makeDirectory(path.join(bucket, directory, ".claude-plugin"));
           yield* fs.writeFileString(
-            path.join(configDir, "settings.json"),
-            JSON.stringify({ enabledPlugins: { "tools@shop": enabled, "pstack@shop": true } }),
+            path.join(bucket, directory, ".claude-plugin", "plugin.json"),
+            JSON.stringify({ name: prefix }),
           );
-          const skills = yield* discoverClaudeSkills({ homePath: configDir }, undefined, {
-            CLAUDE_CODE_ORGANIZATION_UUID: "11111111-2222-4333-8444-555555555555",
-            CLAUDE_CODE_ACCOUNT_UUID: "not-a-uuid",
+        }
+        yield* fs.writeFileString(
+          path.join(bucket, "manifest.json"),
+          JSON.stringify({
+            plugins: ["pstack", "pstack-copy", "tools", "a:b. ", "PSTACK", "no-id"].map(
+              (name, index) =>
+                name === "no-id" ? { name } : { pluginId: `plugin_0${index}`, name },
+            ),
+          }),
+        );
+        yield* fs.writeFileString(path.join(synced, `.bucket-${bucketName}`), "");
+        const installed = path.join(configDir, "plugins", "cache", "shop", "tools");
+        yield* writeSkill(path.join(installed, "skills"), "installed-tool", "# Installed");
+        yield* fs.writeFileString(
+          path.join(configDir, "plugins", "installed_plugins.json"),
+          JSON.stringify({
+            plugins: {
+              "tools@shop": [{ scope: "user", installPath: installed }],
+              "pstack@shop": [{ scope: "user", installPath: path.join(configDir, "missing") }],
+            },
+          }),
+        );
+        const names = (enabled: boolean) =>
+          Effect.gen(function* () {
+            yield* fs.writeFileString(
+              path.join(configDir, "settings.json"),
+              JSON.stringify({ enabledPlugins: { "tools@shop": enabled, "pstack@shop": true } }),
+            );
+            const skills = yield* discoverClaudeSkills({ homePath: configDir }, undefined, {
+              CLAUDE_CODE_ORGANIZATION_UUID: "11111111-2222-4333-8444-555555555555",
+              CLAUDE_CODE_ACCOUNT_UUID: "not-a-uuid",
+            });
+            return skills.map((skill) => skill.name);
           });
-          return skills.map((skill) => skill.name);
-        });
 
-      assert.deepEqual(yield* names(true), [
-        "a_b:renamed",
-        "pstack:poteto-mode",
-        "tools:installed-tool",
-      ]);
-      assert.deepEqual(yield* names(false), [
-        "a_b:renamed",
-        "pstack:poteto-mode",
-        "tools:synced-tool",
-      ]);
-      yield* writeSkill(path.join(bucket, "no-id", "skills"), "unlisted", "# Synced");
-      assert.notInclude(
-        (yield* discoverClaudeSkills({ homePath: configDir }, undefined, {
-          CLAUDE_CODE_ORGANIZATION_UUID: "11111111-2222-4333-8444-555555555555",
-        })).map((skill) => skill.name),
-        "no-id:unlisted",
-      );
-    }),
+        assert.deepEqual(yield* names(true), [
+          "a_b:renamed",
+          "pstack:poteto-mode",
+          "tools:installed-tool",
+        ]);
+        assert.deepEqual(yield* names(false), [
+          "a_b:renamed",
+          "pstack:poteto-mode",
+          "tools:synced-tool",
+        ]);
+        yield* writeSkill(path.join(bucket, "no-id", "skills"), "unlisted", "# Synced");
+        assert.notInclude(
+          (yield* discoverClaudeSkills({ homePath: configDir }, undefined, {
+            CLAUDE_CODE_ORGANIZATION_UUID: "11111111-2222-4333-8444-555555555555",
+          })).map((skill) => skill.name),
+          "no-id:unlisted",
+        );
+      }),
   );
 
   it.effect("hides synced plugins from local settings but not shared project settings", () =>

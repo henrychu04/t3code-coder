@@ -70,7 +70,8 @@ describe("add project shared logic", () => {
       "https://gitlab.com/acme/tools/src/branch/worker.git",
       "https://scm.example.test/acme/tools/src/branch/worker.git",
       "https://scm.example.test/acme/tools/src/branch/worker",
-      "https://scm.example.test/team/repo/src/branch/main/-/README.md",
+      // Coder: with GitLab the only registered host, `/-/` always ends a project path, so
+      // upstream's Forgejo-or-GitLab ambiguity case does not apply.
       "https://forgejo.example.test/a/b/src/branch/mount/team/repo.git",
     ]) {
       expect(normalizePastedCloneUrl(gitlabProject)).toBe(gitlabProject);
@@ -78,21 +79,17 @@ describe("add project shared logic", () => {
   });
 
   it("clones the repository when given a page URL copied from the browser", () => {
+    // Coder: only GitLab's page routes are registered, so upstream's GitHub, GitCafe, and
+    // Bitbucket page cases are not carried.
     for (const [pageUrl, pageRoute, repository] of [
-      ["https://github.com/pingdotgg/t3code/tree/main", "/tree/", "t3code"],
       ["https://gitlab.com/gitlab-org/gitlab-runner/-/tree/main", "/-/", "gitlab-runner"],
-      ["https://git.cafe/pingdotgg/t3code/tree/main", "/tree/", "t3code"],
       ["https://gitlab.example.test/g/p/-/blob/main/src/branch/x", "/-/", "p"],
       ["https://code.company.test/g/p/-/tree/main", "/-/", "p"],
-      ["https://github.com/pingdotgg/t3code/tree/release.git", "/tree/", "t3code"],
     ] as const) {
       const cloneUrl = normalizePastedCloneUrl(pageUrl);
       expect(cloneUrl).not.toContain(pageRoute);
       expect(getCloneDirectoryName(cloneUrl)).toBe(repository);
     }
-    expect(
-      normalizePastedCloneUrl("https://alice:example@bitbucket.org/workspace/repo/src/master/"),
-    ).toBe("https://alice:example@bitbucket.org/workspace/repo");
   });
 
   // Coder: GitLab, the only shipped host, clones over SSH; an unshipped host reads as generic.

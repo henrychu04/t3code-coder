@@ -183,6 +183,8 @@ it.each([
     setup(deniedScope);
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
     await act(() => openCommandPalette({ open: "add-project" }));
+    // Coder: Add project opens the workspace picker first.
+    await page.getByText("Local", { exact: true }).click();
     await page.getByText(source, { exact: true }).click();
     if (keys) await userEvent.keyboard(keys);
     await expect.element(page.getByRole("combobox")).toHaveAccessibleDescription(description);
@@ -212,6 +214,8 @@ it.each([
 ])("moves focus from the $flow input to its enabled submit button on Tab", async (step) => {
   await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
   await act(() => openCommandPalette({ open: "add-project" }));
+  // Coder: Add project opens the workspace picker first.
+  await page.getByText("Local", { exact: true }).click();
   await page.getByText(step.flow, { exact: true }).click();
   const input = page.getByRole("combobox");
   await input.fill(step.value);

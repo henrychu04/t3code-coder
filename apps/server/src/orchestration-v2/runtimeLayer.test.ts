@@ -3707,7 +3707,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
       assert.deepEqual(
         messages.flatMap((message) => message.notification?.summary ?? []),
-        ["#8: closed, stopped watching"],
+        ["!8: closed, stopped watching"],
       );
     }),
   );

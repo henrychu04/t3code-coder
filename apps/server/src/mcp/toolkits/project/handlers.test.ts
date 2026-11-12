@@ -704,7 +704,11 @@ it.effect("an agent's clone is not cut off while git is still transferring", () 
     );
 
     const clone = yield* toolkit
-      .handle("t3_project_clone", { remoteUrl: "https://example.test/repo.git", destinationPath })
+      // Coder: the GitLab-only repository service clones GitLab URLs.
+      .handle("t3_project_clone", {
+        remoteUrl: "https://gitlab.example/group/repo.git",
+        destinationPath,
+      })
       .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(repositories), Effect.forkChild);
     yield* Deferred.await(started);
     // A large repository over a slow link; agents' MCP calls get a far longer budget.

@@ -160,7 +160,8 @@ it("keeps cleanup disabled when settled retention and all other rules are off", 
   expect(state.run).not.toHaveBeenCalled();
 });
 
-const rule = "Delete old browser artifacts";
+// Coder: the artifact rule is titled for saved image artifacts.
+const rule = "Delete old saved image artifacts";
 const ruleSwitch = (screen: Screen) => screen.getByRole("switch", { name: rule });
 const daysInput = (screen: Screen) => screen.getByLabelText(`${rule} in days`);
 const saves = () => state.update.mock.calls.map(([patch]) => patch.storageCleanup);
