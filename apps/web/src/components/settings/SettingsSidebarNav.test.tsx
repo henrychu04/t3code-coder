@@ -4,6 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { SettingsSidebarNav } from "./SettingsSidebarNav";
 import { searchSettings, SETTINGS_SEARCH_ITEMS } from "./settingsSearch";
 const mocks = vi.hoisted(() => ({ navigate: vi.fn(), setOpen: vi.fn(), setOpenMobile: vi.fn() }));
+// gt-react's node build has no SPA setup, so its hooks render the English source here.
+vi.mock("gt-react", () => ({
+  msg: (message: string) => message,
+  T: ({ children }: { children: unknown }) => children,
+  useGT: () => (message: string) => message,
+  useMessages: () => (message: string) => message,
+}));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
   useLocation: ({ select }: { select: (location: unknown) => unknown }) =>
