@@ -9944,7 +9944,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               codexInput: [{ type: "text", text }],
               runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
               modelSelection: CODEX_TEST_MODEL_SELECTION,
-              hasT3Mcp: true,
+              // Coder: the session below has no bridge command, so no T3 context is attached.
+              hasT3Mcp: false,
             }),
             (params): CodexReplay.CodexAppServerReplayEntry => ({
               type: "expect_outbound",

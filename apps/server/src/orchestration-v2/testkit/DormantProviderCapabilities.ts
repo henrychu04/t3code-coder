@@ -85,9 +85,7 @@ export const AcpProviderCapabilitiesV2 = {
   checkpointing: {
     appCanCheckpointFilesystem: true,
     supportsNestedCheckpointScopes: true,
-    // ACP defines no conversation truncation, so rollback resets the provider
-    // conversation: T3 restores checkpointed state and the next turn starts a
-    // fresh agent session without the rolled-back context.
+    // ACP lacks truncation; rollback restores T3 checkpoints and starts a fresh agent session.
     providerCanRollbackConversation: true,
     providerRollbackReturnsSnapshot: true,
     providerCanReadConversationSnapshot: false,
@@ -99,8 +97,6 @@ export const AcpProviderCapabilitiesV2 = {
     nativeRequestIds: "weak",
   },
   runtimePolicy: {
-    // ACP agents run their own tools; T3 only answers their permission
-    // requests by policy.
     enforcement: "client-boundary",
   },
 } satisfies OrchestrationV2ProviderCapabilities;
@@ -127,7 +123,11 @@ export const CursorProviderCapabilitiesV2 = {
     emitsTurnStarted: true,
     emitsTurnCompleted: true,
     supportsInterrupt: true,
-    supportsActiveSteering: false,
+    supportsActiveSteering: true,
+    // A steer can move a foreground subagent to the background. Mailbox wakes
+    // stay queued so a notification does not cut into the live turn.
+    activeSteeringInterruptsTools: true,
+    activeSteeringAcceptsAttachments: false,
     supportsSteeringByInterruptRestart: true,
     supportsQueuedMessages: true,
     terminalStatusQuality: "strong",

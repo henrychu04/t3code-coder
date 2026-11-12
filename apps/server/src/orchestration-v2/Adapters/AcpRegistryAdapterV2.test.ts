@@ -148,7 +148,6 @@ describe("AcpRegistryAdapterV2", () => {
     const openWithStoredPicks = Effect.fn("openWithStoredPicks")(function* (input: {
       readonly setup: unknown;
       readonly pickFrames: ReadonlyArray<Frame>;
-      readonly agentId?: string;
       readonly customModels?: ReadonlyArray<string>;
       readonly storedModel?: string;
       readonly storedModePick?: string;
@@ -477,84 +476,7 @@ describe("AcpRegistryAdapterV2", () => {
         }).pipe(Effect.provide(layerTest), Effect.scoped),
     );
 
-    // Copilot's session/new reports its built-in default, not the model it will run
-    // (github/copilot-cli#5363), so the selected model must be written even when it matches,
-    // and an unset effort gets the value the composer shows.
-    it.effect(
-      "writes the selected Copilot model and the shown effort when session/new reports defaults",
-      () => {
-        const copilotModel = (currentValue: string) => ({
-          ...modelOption("model", currentValue),
-          options: ["claude-sonnet-5.5", "claude-haiku-4.5"].map((value) => ({
-            value,
-            name: value,
-          })),
-        });
-        const effort = (currentValue: string) => ({
-          id: "reasoning_effort",
-          name: "Reasoning effort",
-          category: "thought_level",
-          type: "select",
-          currentValue,
-          options: ["medium", "xhigh"].map((value) => ({ value, name: value })),
-        });
-        return openWithStoredPicks({
-          agentId: "github-copilot-cli",
-          setup: { configOptions: [copilotModel("claude-sonnet-5.5"), effort("medium")] },
-          storedModel: "claude-sonnet-5.5",
-          liveConfiguration: {
-            models: [],
-            currentModelId: null,
-            configOptions: [
-              {
-                id: "reasoning_effort",
-                label: "Reasoning effort",
-                type: "select",
-                role: "reasoning",
-                currentValue: "xhigh",
-                options: [
-                  { id: "medium", label: "medium" },
-                  { id: "xhigh", label: "xhigh" },
-                ],
-              },
-            ],
-          },
-          pickFrames: [
-            // The new session's own update replaces the shared live configuration.
-            {
-              type: "emit_inbound",
-              frame: {
-                kind: "notification",
-                method: "session/update",
-                params: {
-                  sessionId: "agent-session",
-                  update: {
-                    sessionUpdate: "config_option_update",
-                    configOptions: [copilotModel("claude-sonnet-5.5"), effort("medium")],
-                  },
-                },
-              },
-            },
-            outbound("session/set_config_option", {
-              sessionId: "agent-session",
-              configId: "model",
-              value: "claude-sonnet-5.5",
-            }),
-            answer("session/set_config_option", {
-              configOptions: [copilotModel("claude-sonnet-5.5"), effort("medium")],
-            }),
-            outbound("session/set_config_option", {
-              sessionId: "agent-session",
-              configId: "reasoning_effort",
-              value: "xhigh",
-            }),
-            answer("session/set_config_option", {
-              configOptions: [copilotModel("claude-sonnet-5.5"), effort("xhigh")],
-            }),
-          ],
-        }).pipe(Effect.provide(layerTest), Effect.scoped);
-      },
-    );
+    // Coder: upstream's Copilot case (#35199) is not carried; Copilot's flavor is cut.
 
     it.effect.each([
       "config",

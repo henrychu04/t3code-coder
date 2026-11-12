@@ -51,7 +51,9 @@ describe("RepositoryIdentityResolver", () => {
           Effect.succeed(
             input.args.includes("--show-toplevel")
               ? output("/workspace/project\n")
-              : output("origin https://gitlab.example.gs.com/goldman/platform/smoke.git (fetch)\n"),
+              : output(
+                  "origin\thttps://gitlab.example.gs.com/goldman/platform/smoke.git (fetch)\n",
+                ),
           ),
       });
       const resolver = yield* make().pipe(
@@ -80,7 +82,7 @@ describe("RepositoryIdentityResolver", () => {
             calls.push(input.args);
             return input.args.includes("--show-toplevel")
               ? output("/workspace/project\n")
-              : output("origin https://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
+              : output("origin\thttps://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
           }),
       });
       const resolver = yield* make().pipe(
@@ -106,7 +108,7 @@ describe("RepositoryIdentityResolver", () => {
         run: (input) =>
           Effect.sync(() => {
             if (!input.args.includes("--show-toplevel")) {
-              return output("origin https://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
+              return output("origin\thttps://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
             }
             rootAttempts += 1;
             return rootAttempts === 1

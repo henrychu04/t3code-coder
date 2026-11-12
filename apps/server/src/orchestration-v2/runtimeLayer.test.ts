@@ -4061,7 +4061,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             : [],
         );
         assert.deepEqual(stamps, [numbers]);
-        for (const number of numbers) assert.include(wakes[0]!.text, `#${number}`);
+        // Coder: merge request summaries say `!N`.
+        for (const number of numbers) assert.include(wakes[0]!.text, `!${number}`);
         if (!busy) return;
 
         // A pull request unwatched while the wake waited leaves it; the others still start.
@@ -4084,8 +4085,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         yield* orchestrator.resumeQueuedRuns;
         const after = yield* orchestrator.getThreadProjection(threadId);
         const woken = after.messages.find((message) => message.id === wakes[0]!.id)!;
-        assert.notInclude(woken.text, "#12");
-        for (const number of [13, 14]) assert.include(woken.text, `#${number}`);
+        // Coder: merge request summaries say `!N`.
+        assert.notInclude(woken.text, "!12");
+        for (const number of [13, 14]) assert.include(woken.text, `!${number}`);
         assert.notEqual(
           after.runs.find((run) => run.userMessageId === woken.id)?.status,
           "cancelled",
