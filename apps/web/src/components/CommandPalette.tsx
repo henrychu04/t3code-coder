@@ -140,10 +140,7 @@ import {
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
-import {
-  PULL_REQUESTS_PANEL_REF,
-  useRightPanelStore,
-} from "../rightPanelStore";
+import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
 import { buildThreadRouteParams } from "../threadRoutes";

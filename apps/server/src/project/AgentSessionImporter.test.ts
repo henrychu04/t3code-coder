@@ -753,4 +753,3 @@ it.effect("skips the native history when a run starts while it loads", () =>
     expect(result.items).toEqual([]);
   }).pipe(Effect.scoped, Effect.provide(persistence)),
 );
-

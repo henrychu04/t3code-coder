@@ -631,52 +631,57 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   const deadlineMs = spawnedAtMs + CODEX_AUTH_PROBE_TIMEOUT_MS - CODEX_DISCOVERY_MARGIN_MS;
   const [skillsResponse, models, { serviceTier, nativeUsage, rateLimits }, requirementsResponse] =
     yield* Effect.all(
-    [
-      withCodexDiscoveryDeadline(client.request("skills/list", { cwds: [input.cwd] }), deadlineMs),
-      accountResponse.account?.type === "chatgpt"
-        ? requestCodexChatGptModels({
-            client,
-            codexHome: initialize.codexHome,
-            spawnedAtMs,
-            deadlineMs,
-          })
-        : withCodexDiscoveryDeadline(requestAllCodexModels(client), deadlineMs),
-      // The shared catalog must exclude config from the server's launch project.
-      withCodexDiscoveryDeadline(
-        client.request("config/read", { includeLayers: false }),
-        deadlineMs,
-        CODEX_CONFIG_PROBE_TIMEOUT_MS,
-      ).pipe(
-        Effect.catch(() => Effect.logDebug("Codex config read failed.").pipe(Effect.as(undefined))),
-        Effect.flatMap((config) => {
-          // Only a confirmed native route may probe or publish the login's quota.
-          const nativeUsage =
-            !input.skipNativeUsage &&
-            config !== undefined &&
-            codexRoutesSpendNativeQuota(accountResponse, config.config);
-          const readUsage: Effect.Effect<CodexRateLimitsProbe | undefined> = nativeUsage
-            ? readCodexRateLimits(client, deadlineMs)
-            : Effect.undefined;
-          return readUsage.pipe(
-            Effect.map((rateLimits) => ({
-              serviceTier: config?.config.service_tier ?? undefined,
-              nativeUsage,
-              rateLimits,
-            })),
-          );
-        }),
-      ),
-      // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
-      withCodexDiscoveryDeadline(
-        client.raw
-          .request("configRequirements/read")
-          .pipe(Effect.flatMap(decodeCodexRuntimeRequirementsResponse)),
-        deadlineMs,
-        CODEX_CONFIG_PROBE_TIMEOUT_MS,
-      ).pipe(Effect.orElseSucceed(() => undefined)),
-    ],
-    { concurrency: "unbounded" },
-  );
+      [
+        withCodexDiscoveryDeadline(
+          client.request("skills/list", { cwds: [input.cwd] }),
+          deadlineMs,
+        ),
+        accountResponse.account?.type === "chatgpt"
+          ? requestCodexChatGptModels({
+              client,
+              codexHome: initialize.codexHome,
+              spawnedAtMs,
+              deadlineMs,
+            })
+          : withCodexDiscoveryDeadline(requestAllCodexModels(client), deadlineMs),
+        // The shared catalog must exclude config from the server's launch project.
+        withCodexDiscoveryDeadline(
+          client.request("config/read", { includeLayers: false }),
+          deadlineMs,
+          CODEX_CONFIG_PROBE_TIMEOUT_MS,
+        ).pipe(
+          Effect.catch(() =>
+            Effect.logDebug("Codex config read failed.").pipe(Effect.as(undefined)),
+          ),
+          Effect.flatMap((config) => {
+            // Only a confirmed native route may probe or publish the login's quota.
+            const nativeUsage =
+              !input.skipNativeUsage &&
+              config !== undefined &&
+              codexRoutesSpendNativeQuota(accountResponse, config.config);
+            const readUsage: Effect.Effect<CodexRateLimitsProbe | undefined> = nativeUsage
+              ? readCodexRateLimits(client, deadlineMs)
+              : Effect.undefined;
+            return readUsage.pipe(
+              Effect.map((rateLimits) => ({
+                serviceTier: config?.config.service_tier ?? undefined,
+                nativeUsage,
+                rateLimits,
+              })),
+            );
+          }),
+        ),
+        // Coder: runtime modes follow the workspace's Codex approval and sandbox requirements.
+        withCodexDiscoveryDeadline(
+          client.raw
+            .request("configRequirements/read")
+            .pipe(Effect.flatMap(decodeCodexRuntimeRequirementsResponse)),
+          deadlineMs,
+          CODEX_CONFIG_PROBE_TIMEOUT_MS,
+        ).pipe(Effect.orElseSucceed(() => undefined)),
+      ],
+      { concurrency: "unbounded" },
+    );
 
   return {
     account: accountResponse,

@@ -166,29 +166,29 @@ const make = Effect.gen(function* () {
       // Coder: no startup command queue; workspace startup completes before this service is
       // built.
       threadLaunch.launch({
-          commandId,
-          threadId,
-          projectId: input.projectId,
-          title: input.title ?? "Imported ACP session",
-          modelSelection: { instanceId: input.instanceId, model },
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          workspaceStrategy: { type: "root" },
-          importedNativeThread: {
-            ref: {
-              driver: instance.driverKind,
-              nativeId: input.sessionId,
-              strength: "strong",
-            },
-            metadata: {
-              itemIdentityVersion: 2,
-              ...(input.title === undefined ? {} : { title: input.title }),
-              ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
-            },
+        commandId,
+        threadId,
+        projectId: input.projectId,
+        title: input.title ?? "Imported ACP session",
+        modelSelection: { instanceId: input.instanceId, model },
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        workspaceStrategy: { type: "root" },
+        importedNativeThread: {
+          ref: {
+            driver: instance.driverKind,
+            nativeId: input.sessionId,
+            strength: "strong",
           },
-          createdBy: "user",
-          creationSource: "web",
-        }),
+          metadata: {
+            itemIdentityVersion: 2,
+            ...(input.title === undefined ? {} : { title: input.title }),
+            ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
+          },
+        },
+        createdBy: "user",
+        creationSource: "web",
+      }),
     );
     if (Result.isFailure(launched)) {
       const racedImport = yield* threadManagement.getThreadShell(threadId).pipe(

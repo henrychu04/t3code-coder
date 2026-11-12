@@ -52,7 +52,8 @@ const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; descr
     },
     conventional_commits: {
       label: "Conventional Commits",
-      description: "Conventional Commit prefixes, with short merge request titles and descriptions.",
+      description:
+        "Conventional Commit prefixes, with short merge request titles and descriptions.",
     },
     custom: {
       label: "Custom instructions",

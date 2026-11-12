@@ -87,16 +87,16 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
           unavailableConnection.phase !== "connecting" ? (
             <Button
               size="xs"
-            variant="ghost"
-            onClick={() =>
-              void handleReconnectActiveEnvironmentStable(
-                activeEnvironmentUnavailableState.environmentId,
-              )
-            }
-          >
-            {environmentReconnecting ? "Retry now" : "Reconnect"}
-          </Button>
-        ) : undefined,
+              variant="ghost"
+              onClick={() =>
+                void handleReconnectActiveEnvironmentStable(
+                  activeEnvironmentUnavailableState.environmentId,
+                )
+              }
+            >
+              {environmentReconnecting ? "Retry now" : "Reconnect"}
+            </Button>
+          ) : undefined,
       });
     }
     return items;
