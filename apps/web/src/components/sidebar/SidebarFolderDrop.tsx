@@ -63,10 +63,11 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
         const { files, folders } = splitTransferredFiles(event.dataTransfer);
         if (folders.length > 0) addFolders();
         if (files.length > 0 && !claimedByRow) {
+          // Coder: upstream's title says folders can be added, which the folder toast contradicts.
           toastManager.add(
             stackedThreadToast({
               type: "info",
-              title: "Only folders can be added as projects",
+              title: "Files attach to threads",
               description: "Drop files on a thread to attach them.",
             }),
           );

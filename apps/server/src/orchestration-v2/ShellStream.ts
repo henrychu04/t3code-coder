@@ -78,30 +78,7 @@ export const canResumeShellFrom = Effect.fnUntraced(function* (
   return true;
 });
 
-/**
- * Answers a client that asks for the shell with the cursor of the rows it holds: `resumable`
- * when the socket can replay from that cursor, so the client keeps its rows, else the snapshot.
- */
-export const loadShellUnlessResumable = Effect.fnUntraced(function* <A, E, R>(input: {
-  readonly events: Pick<
-    OrchestrationEventStore.OrchestrationEventStore["Service"],
-    "prunedThroughSequence" | "getReplayStats" | "latestApplicationSequence"
-  >;
-  readonly resumeFrom: number | undefined;
-  readonly loadSnapshot: Effect.Effect<A, E, R>;
-}) {
-  if (
-    input.resumeFrom !== undefined &&
-    (yield* canResumeShellFrom(
-      input.events,
-      input.resumeFrom,
-      yield* input.events.latestApplicationSequence,
-    ))
-  ) {
-    return { resumable: true as const };
-  }
-  return yield* input.loadSnapshot;
-});
+// Coder: no loadShellUnlessResumable (#35071); its only caller is the uncarried HTTP shell route.
 
 /**
  * Names the repository identities a list of project shells carries. A client sends back the one

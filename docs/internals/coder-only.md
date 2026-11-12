@@ -611,8 +611,8 @@ checks that every name here still exists and that every modified upstream file i
   driver list; `settingsSecrets.ts` reads secret fields from Pi's and the ACP Registry's client
   definitions only; `ProviderOrchestrationAdapterInfrastructure.ts` provides only the Claude query
   runner and the Codex app-server factory; `ProviderInstanceRegistryHydration.ts` seeds no replay
-  instance and needs no `Crypto`; `testkit/DormantProviderCapabilities.ts` is
-  kept for orchestrator tests.
+  instance and needs no `Crypto`; `testkit/DormantProviderCapabilities.ts` keeps
+  Cursor's capabilities for `CommandPolicy.test.ts`.
 - Pi: `buildPiRpcLaunch` hands upstream's T3 extension the file bridge (`T3_TOOL_COMMAND`,
   `T3_TOOL_CATALOG`); it registers the catalog's tools under upstream's names, runs each through the
   bridge with arguments on stdin, returns the printed JSON as `structuredContent`, and maps
@@ -657,10 +657,10 @@ checks that every name here still exists and that every modified upstream file i
   `runtimeModel.ts`'s Kiro tool-name parsing; Kiro's package, registration, fixtures, and guide are
   cut. Other cut providers' fixes leave generic hooks in carried code as upstream's, though no
   carried driver sets them: OpenCode's per-folder model catalogs (#24585: the workspace snapshot's
-  `models`, `ProviderRegistry.ts`, client-runtime `resolveProvidersForCwd`) and post-update hook
-  (#34606: `afterUpdate`), Cursor's declined steering (#28980: `ProviderAdapterSteerDeclinedError`,
+  `models`, `ProviderRegistry.ts`, client-runtime `resolveProvidersForCwd`), Cursor's declined steering (#28980: `ProviderAdapterSteerDeclinedError`,
   `steerFollowUpOfRunId`), and Copilot's ACP `unsetOptionDefaults` and `resendCurrentValue`
-  (#35199). HTTP MCP servers
+  (#35199). OpenCode's post-update hook (#34606) is cut: provider-core `driver.ts` has no
+  `afterUpdate` and `ProviderRegistry.ts` runs none. HTTP MCP servers
   (#26968) are cut: the adapter's flavors have no `mcpOverHttp` (only Copilot's uncarried flavor set
   it) and `AcpSessionRuntime.ts` takes no `httpMcpServers`.
   `scripts/acp-mock-agent.ts` keeps `T3_ACP_COMMAND_ADVERTISEMENT_DELAY_MS` for the adapter test.
@@ -877,7 +877,8 @@ checks that every name here still exists and that every modified upstream file i
   `connection/model.ts`'s `PreparedConnection.descriptor` is never set (no descriptor is read
   before the gateway socket opens), `state/shell.ts`'s `sameConnection` has no
   `httpAuthorization` to ignore, and `coderEnvironment.ts` omits the `shellThreadFamilies` and
-  `shellOlderSettled` capabilities, so the browser requests no HTTP shell route.
+  `shellOlderSettled` capabilities, so the browser requests no HTTP shell route; server
+  `ShellStream.ts` has no `loadShellUnlessResumable`, which only that route called.
 - client-runtime's `rpc/session.ts` opens the socket without upstream's socket frame parts
   (#23758) and `shared/socketFrameParts.ts` is not carried: the gateway forwards whole helper stdio
   frames, and the split lives on upstream's uncarried `/ws` upgrade.
@@ -908,7 +909,10 @@ checks that every name here still exists and that every modified upstream file i
   a dynamic `import()` (`i18n/initializeI18n.ts`'s `loadTranslations`). Given no General
   Translation project id or dev API key, gt-react uses that loader and makes no request: its
   runtime translation needs both and a development build, and a production miss renders the source
-  string. The `gt` CLI and
+  string. Never set VITE_GT_PROJECT_ID or VITE_GT_DEV_API_KEY: with both, a `vp dev` server
+  would send runtime translation requests to General Translation. gt-react keeps the chosen locale
+  in generaltranslation.* cookies with `path=/`, which also reach forwarded workspace apps on
+  `127.0.0.1`; they hold a locale only, no credential. The `gt` CLI and
   upstream's `i18n:generate` and `i18n:translate` scripts are not carried (`apps/web/package.json`):
   they call General Translation's service, and no build or test needs them. Fork-only strings stay
   English; a fork label inside upstream's `msg()` (`Diffs & merge requests`) has no translation
@@ -1232,7 +1236,8 @@ them, the file is named here.
   (`contracts/ipc.ts`, `resolveDesktopTheme`), desktop update notices or pills, window controls,
   `DesktopWebLinkCoordinator`, desktop folder path lookup (`folderDrop.ts`; sidebar folder drops,
   #35202, keep `sidebar/SidebarFolderDrop.tsx`'s drop zone with upstream's browser branch only, so a
-  folder dropped from this computer shows a toast pointing at Add project, and
+  folder dropped from this computer shows a toast pointing at Add project and a file dropped there
+  is titled "Files attach to threads", and
   `hooks/useOpenLocalWorkspace.ts`'s desktop activation is not carried), back/forward swipe
   navigation (`HistorySwipeNavigation.tsx`, `navigationHistory.ts`), mobile app links
   (`MobileAppSettingsRow`, #29815's `.well-known` files), hosted app, or prompt links
