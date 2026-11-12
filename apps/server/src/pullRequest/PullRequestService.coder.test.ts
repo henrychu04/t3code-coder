@@ -50,14 +50,14 @@ const project: OrchestrationProjectShell = {
   title: "GitLab project",
   workspaceRoot: "/workspace/project",
   repositoryIdentity: {
-    canonicalKey: "gitlab.example.gs.com/goldman/project",
+    canonicalKey: "gitlab.example.com/acme/project",
     locator: {
       source: "git-remote",
       remoteName: "origin",
-      remoteUrl: "https://gitlab.example.gs.com/goldman/project.git",
+      remoteUrl: "https://gitlab.example.com/acme/project.git",
     },
     provider: SourceControlProviderKind.make("gitlab"),
-    displayName: "goldman/project",
+    displayName: "acme/project",
   },
   defaultModelSelection: null,
   scripts: [],
@@ -84,7 +84,7 @@ const provider: PullRequestProviderApi = {
     Effect.succeed({
       number: 42,
       title: "Restore GitLab parity",
-      url: "https://gitlab.example.gs.com/goldman/project/-/merge_requests/42",
+      url: "https://gitlab.example.com/acme/project/-/merge_requests/42",
       author: { login: "author", name: null, avatarUrl: null },
       headBranch: "feature/parity",
       baseBranch: "main",
@@ -186,8 +186,8 @@ it.effect("keeps host and repository aligned through cached MR activity reads", 
     const api = yield* service;
     const input = {
       projectId: project.id,
-      host: "gitlab.example.gs.com",
-      repository: "goldman/project",
+      host: "gitlab.example.com",
+      repository: "acme/project",
       number: 42,
     };
     const first = yield* api.activity(input);

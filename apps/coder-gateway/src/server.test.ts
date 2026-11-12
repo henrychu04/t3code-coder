@@ -179,7 +179,7 @@ describe("local Coder gateway", () => {
     closeGateway = gateway.close;
     const body = JSON.stringify({
       version: 1,
-      deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+      deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
       workspaces: [],
     });
 
@@ -217,25 +217,25 @@ describe("local Coder gateway", () => {
     const configPath = NodePath.join(directory, "config.json");
     const gateway = await startLocalCoderGateway({ configPath });
     closeGateway = gateway.close;
-    const save = (url: string, name = "Goldman") =>
+    const save = (url: string, name = "Acme") =>
       request({
         url: `${gateway.url}/api/config`,
         method: "POST",
         headers: { Origin: gateway.url, "Content-Type": "application/json" },
         body: JSON.stringify({
           version: 1,
-          deployments: [{ id: "goldman", name, url }],
+          deployments: [{ id: "acme", name, url }],
           workspaces: [],
         }),
       });
 
-    strictEqual((await save("https://coder.example.gs.com")).statusCode, 200);
-    strictEqual((await save("https://coder.example.gs.com/", "Renamed")).statusCode, 200);
+    strictEqual((await save("https://coder.example.com")).statusCode, 200);
+    strictEqual((await save("https://coder.example.com/", "Renamed")).statusCode, 200);
     const moved = await save("https://coder.attacker.example", "Renamed");
     strictEqual(moved.statusCode, 409);
     strictEqual(
       JSON.parse(await NodeFS.readFile(configPath, "utf8")).deployments[0].url,
-      "https://coder.example.gs.com",
+      "https://coder.example.com",
     );
   });
 
@@ -290,12 +290,12 @@ describe("local Coder gateway", () => {
         configPath,
         JSON.stringify({
           version: 1,
-          deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+          deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
           workspaces: [
             {
               id: "project-one",
               name: "Project One",
-              deploymentId: "goldman",
+              deploymentId: "acme",
               workspace: "henry/project-one",
             },
           ],
@@ -347,12 +347,12 @@ describe("local Coder gateway", () => {
       configPath,
       JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -403,10 +403,10 @@ describe("local Coder gateway", () => {
         executable: "coder",
         args: [
           "--global-config",
-          NodePath.join(directory, "coder-profiles", "goldman"),
+          NodePath.join(directory, "coder-profiles", "acme"),
           "--no-version-warning",
           "--url",
-          "https://coder.example.gs.com",
+          "https://coder.example.com",
           "port-forward",
           "henry/project-one",
           "--tcp",
@@ -472,12 +472,12 @@ describe("local Coder gateway", () => {
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -499,12 +499,12 @@ describe("local Coder gateway", () => {
       configPath,
       JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -643,14 +643,14 @@ describe("local Coder gateway", () => {
     });
     closeGateway = gateway.close;
     const deployment = {
-      id: "goldman",
-      name: "Goldman",
-      url: "https://coder.example.gs.com",
+      id: "acme",
+      name: "Acme",
+      url: "https://coder.example.com",
     } as const;
     const workspace = {
       id: "project-one",
       name: "Project One",
-      deploymentId: "goldman",
+      deploymentId: "acme",
       workspace: "henry/project-one",
     } as const;
     await request({
@@ -728,7 +728,7 @@ describe("local Coder gateway", () => {
     deepStrictEqual(
       receivedRestartInvocation,
       buildCoderRestartWorkspaceInvocation(deployment, workspace, {
-        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+        globalConfig: NodePath.join(directory, "coder-profiles", "acme"),
       }),
     );
     const connections = await request({ url: `${gateway.url}/api/connections` });
@@ -753,7 +753,7 @@ describe("local Coder gateway", () => {
     deepStrictEqual(
       receivedStopInvocation,
       buildCoderStopWorkspaceInvocation(deployment, workspace, {
-        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+        globalConfig: NodePath.join(directory, "coder-profiles", "acme"),
       }),
     );
     deepStrictEqual(JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body), {
@@ -778,14 +778,14 @@ describe("local Coder gateway", () => {
     });
     closeGateway = gateway.close;
     const deployment = {
-      id: "goldman",
-      name: "Goldman",
-      url: "https://coder.example.gs.com",
+      id: "acme",
+      name: "Acme",
+      url: "https://coder.example.com",
     } as const;
     const workspace = {
       id: "project-one",
       name: "Project One",
-      deploymentId: "goldman",
+      deploymentId: "acme",
       workspace: "henry/project-one",
     } as const;
     await request({
@@ -812,10 +812,10 @@ describe("local Coder gateway", () => {
     strictEqual(updated.body, '{"status":"updated"}');
     deepStrictEqual(invocations, [
       buildCoderStartWorkspaceInvocation(deployment, workspace, {
-        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+        globalConfig: NodePath.join(directory, "coder-profiles", "acme"),
       }),
       buildCoderUpdateWorkspaceInvocation(deployment, workspace, {
-        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+        globalConfig: NodePath.join(directory, "coder-profiles", "acme"),
       }),
     ]);
   });
@@ -848,12 +848,12 @@ describe("local Coder gateway", () => {
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -920,20 +920,20 @@ describe("local Coder gateway", () => {
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [],
       }),
     });
 
     const rejected = await request({
-      url: `${gateway.url}/api/deployments/goldman/workspaces`,
+      url: `${gateway.url}/api/deployments/acme/workspaces`,
       method: "POST",
       headers: { Origin: "https://attacker.example" },
     });
     strictEqual(rejected.statusCode, 403);
 
     const discovered = await request({
-      url: `${gateway.url}/api/deployments/goldman/workspaces`,
+      url: `${gateway.url}/api/deployments/acme/workspaces`,
       method: "POST",
       headers: { Origin: gateway.url },
     });
@@ -955,10 +955,10 @@ describe("local Coder gateway", () => {
       executable: "coder",
       args: [
         "--global-config",
-        NodePath.join(directory, "coder-profiles", "goldman"),
+        NodePath.join(directory, "coder-profiles", "acme"),
         "--no-version-warning",
         "--url",
-        "https://coder.example.gs.com",
+        "https://coder.example.com",
         "list",
         "--output",
         "json",
@@ -995,9 +995,9 @@ process.stdout.write(JSON.stringify([
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
-            url: "https://coder.example.gs.com",
+            id: "acme",
+            name: "Acme",
+            url: "https://coder.example.com",
             executable: executablePath,
           },
         ],
@@ -1006,7 +1006,7 @@ process.stdout.write(JSON.stringify([
     });
 
     const response = await request({
-      url: `${gateway.url}/api/deployments/goldman/workspaces`,
+      url: `${gateway.url}/api/deployments/acme/workspaces`,
       method: "POST",
       headers: { Origin: gateway.url },
     });
@@ -1097,9 +1097,9 @@ setTimeout(() => process.exit(0), 100);
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
-            url: "https://coder.example.gs.com",
+            id: "acme",
+            name: "Acme",
+            url: "https://coder.example.com",
             executable: executablePath,
           },
         ],
@@ -1108,7 +1108,7 @@ setTimeout(() => process.exit(0), 100);
     });
     const loginRequest = () =>
       request({
-        url: `${gateway.url}/api/deployments/goldman/login`,
+        url: `${gateway.url}/api/deployments/acme/login`,
         method: "POST",
         headers: { Origin: gateway.url },
       });
@@ -1154,12 +1154,12 @@ setTimeout(() => process.exit(0), 100);
     closeGateway = gateway.close;
     const configBody = JSON.stringify({
       version: 1,
-      deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+      deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
       workspaces: [
         {
           id: "project-one",
           name: "Project One",
-          deploymentId: "goldman",
+          deploymentId: "acme",
           workspace: "henry/project-one",
         },
       ],
@@ -1184,17 +1184,17 @@ setTimeout(() => process.exit(0), 100);
       receivedHelperArgs,
       buildCoderHelperInvocation(
         {
-          id: "goldman",
-          name: "Goldman",
-          url: "https://coder.example.gs.com",
+          id: "acme",
+          name: "Acme",
+          url: "https://coder.example.com",
         },
         {
           id: "project-one",
           name: "Project One",
-          deploymentId: "goldman",
+          deploymentId: "acme",
           workspace: "henry/project-one",
         },
-        { globalConfig: NodePath.join(directory, "coder-profiles", "goldman") },
+        { globalConfig: NodePath.join(directory, "coder-profiles", "acme") },
       ).args,
     );
   });
@@ -1243,12 +1243,12 @@ setTimeout(() => process.exit(0), 100);
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -1323,9 +1323,9 @@ setTimeout(() => process.exit(0), 100);
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
-            url: "https://coder.example.gs.com",
+            id: "acme",
+            name: "Acme",
+            url: "https://coder.example.com",
             executable: executablePath,
           },
         ],
@@ -1333,7 +1333,7 @@ setTimeout(() => process.exit(0), 100);
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -1380,9 +1380,9 @@ setTimeout(() => process.exit(0), 100);
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
-            url: "https://coder.example.gs.com",
+            id: "acme",
+            name: "Acme",
+            url: "https://coder.example.com",
             executable: executablePath,
           },
         ],
@@ -1390,7 +1390,7 @@ setTimeout(() => process.exit(0), 100);
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -1429,9 +1429,9 @@ setTimeout(() => process.exit(0), 100);
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
-            url: "https://coder.example.gs.com",
+            id: "acme",
+            name: "Acme",
+            url: "https://coder.example.com",
             executable: executablePath,
           },
         ],
@@ -1439,7 +1439,7 @@ setTimeout(() => process.exit(0), 100);
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -1479,13 +1479,13 @@ setTimeout(() => process.exit(0), 100);
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [],
       }),
     });
 
     const status = await request({
-      url: `${gateway.url}/api/deployments/goldman/auth-status`,
+      url: `${gateway.url}/api/deployments/acme/auth-status`,
       method: "POST",
       headers: { Origin: gateway.url },
     });
@@ -1495,11 +1495,11 @@ setTimeout(() => process.exit(0), 100);
       executable: "coder",
       args: [
         "--global-config",
-        NodePath.join(directory, "coder-profiles", "goldman"),
+        NodePath.join(directory, "coder-profiles", "acme"),
         "--no-version-warning",
         "--verbose",
         "--url",
-        "https://coder.example.gs.com",
+        "https://coder.example.com",
         "whoami",
       ],
     });
@@ -1583,12 +1583,12 @@ setTimeout(() => process.exit(0), 100);
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -1724,12 +1724,12 @@ setTimeout(() => process.exit(0), 100);
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -1795,12 +1795,12 @@ setTimeout(() => process.exit(0), 100);
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
             workspaceRoot: "/workspace/project-one",
           },
@@ -1872,12 +1872,12 @@ setTimeout(() => process.exit(0), 100);
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -1909,16 +1909,16 @@ setTimeout(() => process.exit(0), 100);
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
-            url: "https://coder.example.gs.com",
+            id: "acme",
+            name: "Acme",
+            url: "https://coder.example.com",
           },
         ],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -1969,16 +1969,16 @@ setTimeout(() => process.exit(0), 100);
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
-            url: "https://coder.example.gs.com",
+            id: "acme",
+            name: "Acme",
+            url: "https://coder.example.com",
           },
         ],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -2072,12 +2072,12 @@ setTimeout(() => process.exit(0), 100);
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
           },
         ],
@@ -2144,9 +2144,9 @@ setTimeout(() => process.exit(0), 100);
     });
     closeGateway = gateway.close;
     const deployment = {
-      id: "goldman",
-      name: "Goldman",
-      url: "https://coder.example.gs.com",
+      id: "acme",
+      name: "Acme",
+      url: "https://coder.example.com",
     };
     await request({
       url: `${gateway.url}/api/config`,
@@ -2159,7 +2159,7 @@ setTimeout(() => process.exit(0), 100);
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
             workspaceRoot: "/workspace/project-one",
           },
@@ -2214,12 +2214,12 @@ setTimeout(() => process.exit(0), 100);
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example.com" }],
         workspaces: [
           {
             id: "project-one",
             name: "Project One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/project-one",
             workspaceRoot: "/workspace/project-one",
           },

@@ -40,16 +40,16 @@ describe("Coder profile config store", () => {
       version: 1,
       deployments: [
         {
-          id: "goldman-us",
-          name: "Goldman US",
-          url: "https://coder.example.gs.com",
+          id: "acme-us",
+          name: "Acme US",
+          url: "https://coder.example.com",
         },
       ],
       workspaces: [
         {
           id: "equities",
           name: "Equities",
-          deploymentId: "goldman-us",
+          deploymentId: "acme-us",
           workspace: "equities-dev",
         },
       ],
@@ -91,12 +91,12 @@ describe("Coder profile config store", () => {
   it("validates and round-trips workspace port forwards", () => {
     const base = {
       version: 1,
-      deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example" }],
+      deployments: [{ id: "acme", name: "Acme", url: "https://coder.example" }],
       workspaces: [
         {
           id: "equities",
           name: "Equities",
-          deploymentId: "goldman",
+          deploymentId: "acme",
           workspace: "henry/equities",
         },
       ],
@@ -187,13 +187,13 @@ describe("Coder profile config store", () => {
       parseCoderProfileConfig({
         version: 1,
         deployments: [
-          { id: "goldman-us", name: "Goldman US", url: "https://coder.example.gs.com" },
+          { id: "acme-us", name: "Acme US", url: "https://coder.example.com" },
         ],
         workspaces: [
           {
             id: "equities",
             name: "Equities workspace",
-            deploymentId: "goldman-us",
+            deploymentId: "acme-us",
             workspace: "equities-dev",
             workspaceRoot: "/workspace/legacy-project",
           },
@@ -202,13 +202,13 @@ describe("Coder profile config store", () => {
       {
         version: 1,
         deployments: [
-          { id: "goldman-us", name: "Goldman US", url: "https://coder.example.gs.com" },
+          { id: "acme-us", name: "Acme US", url: "https://coder.example.com" },
         ],
         workspaces: [
           {
             id: "equities",
             name: "Equities workspace",
-            deploymentId: "goldman-us",
+            deploymentId: "acme-us",
             workspace: "equities-dev",
           },
         ],
@@ -237,18 +237,18 @@ describe("Coder profile config store", () => {
     throws(() =>
       parseCoderProfileConfig({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example" }],
         workspaces: [
           {
             id: "one",
             name: "One",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/equities",
           },
           {
             id: "two",
             name: "Two",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "henry/equities",
           },
         ],
@@ -261,7 +261,7 @@ describe("Coder profile config store", () => {
       parseCoderProfileConfig({
         version: 1,
         deployments: [
-          { id: "goldman", name: "Goldman", url: "https://coder.example", executable: 42 },
+          { id: "acme", name: "Acme", url: "https://coder.example", executable: 42 },
         ],
         workspaces: [],
       }),
@@ -271,8 +271,8 @@ describe("Coder profile config store", () => {
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
+            id: "acme",
+            name: "Acme",
             url: "https://coder.example",
             executable: String.raw`C:\Windows\System32\cmd.exe`,
           },
@@ -286,7 +286,7 @@ describe("Coder profile config store", () => {
     throws(() =>
       parseCoderProfileConfig({
         version: 1,
-        deployments: [{ id: "../other-profile", name: "Goldman", url: "https://coder.example" }],
+        deployments: [{ id: "../other-profile", name: "Acme", url: "https://coder.example" }],
         workspaces: [],
       }),
     );
@@ -298,8 +298,8 @@ describe("Coder profile config store", () => {
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
+            id: "acme",
+            name: "Acme",
             url: "https://coder.example",
             token: "must-not-be-stored",
           },
@@ -315,8 +315,8 @@ describe("Coder profile config store", () => {
         version: 1,
         deployments: [
           {
-            id: "goldman",
-            name: "Goldman",
+            id: "acme",
+            name: "Acme",
             url: "https://coder.example?token=must-not-be-stored",
           },
         ],
@@ -326,12 +326,12 @@ describe("Coder profile config store", () => {
     throws(() =>
       parseCoderProfileConfig({
         version: 1,
-        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example" }],
+        deployments: [{ id: "acme", name: "Acme", url: "https://coder.example" }],
         workspaces: [
           {
             id: "project",
             name: "Project",
-            deploymentId: "goldman",
+            deploymentId: "acme",
             workspace: "--url=attacker.example",
           },
         ],

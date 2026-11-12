@@ -52,7 +52,7 @@ describe("RepositoryIdentityResolver", () => {
             input.args.includes("--show-toplevel")
               ? output("/workspace/project\n")
               : output(
-                  "origin\thttps://gitlab.example.gs.com/goldman/platform/smoke.git (fetch)\n",
+                  "origin\thttps://gitlab.example.com/acme/platform/smoke.git (fetch)\n",
                 ),
           ),
       });
@@ -64,10 +64,10 @@ describe("RepositoryIdentityResolver", () => {
       const identity = yield* resolver.resolve("/workspace/project/src");
 
       expect(identity).toMatchObject({
-        canonicalKey: "gitlab.example.gs.com/goldman/platform/smoke",
-        displayName: "goldman/platform/smoke",
+        canonicalKey: "gitlab.example.com/acme/platform/smoke",
+        displayName: "acme/platform/smoke",
         provider: "gitlab",
-        owner: "goldman",
+        owner: "acme",
         name: "smoke",
       });
     }),
@@ -82,7 +82,7 @@ describe("RepositoryIdentityResolver", () => {
             calls.push(input.args);
             return input.args.includes("--show-toplevel")
               ? output("/workspace/project\n")
-              : output("origin\thttps://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
+              : output("origin\thttps://gitlab.example.com/acme/smoke.git (fetch)\n");
           }),
       });
       const resolver = yield* make().pipe(
@@ -108,7 +108,7 @@ describe("RepositoryIdentityResolver", () => {
         run: (input) =>
           Effect.sync(() => {
             if (!input.args.includes("--show-toplevel")) {
-              return output("origin\thttps://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
+              return output("origin\thttps://gitlab.example.com/acme/smoke.git (fetch)\n");
             }
             rootAttempts += 1;
             return rootAttempts === 1
@@ -146,7 +146,7 @@ describe("RepositoryIdentityResolver", () => {
                     "gb-local\t. (fetch)",
                     "backup\t/srv/git/repo.git (fetch)",
                     "archive\tfile:///srv/git/repo.git (fetch)",
-                    "mirror\tgit@gitlab.example.gs.com:Goldman/Platform/Smoke.git (fetch)",
+                    "mirror\tgit@gitlab.example.com:Acme/Platform/Smoke.git (fetch)",
                     "",
                   ].join("\n"),
                 ),
@@ -161,9 +161,9 @@ describe("RepositoryIdentityResolver", () => {
 
       expect(identity?.locator.remoteName).toBe("mirror");
       expect(identity).toMatchObject({
-        canonicalKey: "gitlab.example.gs.com/goldman/platform/smoke",
-        displayName: "Goldman/Platform/Smoke",
-        owner: "Goldman",
+        canonicalKey: "gitlab.example.com/acme/platform/smoke",
+        displayName: "Acme/Platform/Smoke",
+        owner: "Acme",
         name: "Smoke",
       });
     }),
@@ -178,7 +178,7 @@ describe("RepositoryIdentityResolver", () => {
           Effect.succeed(
             input.args.includes("--show-toplevel")
               ? output("/workspace/project\n")
-              : output("origin\tgitlab.example.gs.com:Goldman/Smoke.git (fetch)\n"),
+              : output("origin\tgitlab.example.com:Acme/Smoke.git (fetch)\n"),
           ),
       });
       const resolver = yield* make().pipe(
@@ -188,9 +188,9 @@ describe("RepositoryIdentityResolver", () => {
 
       const identity = yield* resolver.resolve("/workspace/project");
 
-      expect(identity?.canonicalKey).toBe("gitlab.example.gs.com/goldman/smoke");
+      expect(identity?.canonicalKey).toBe("gitlab.example.com/acme/smoke");
       expect(identity?.provider).toBe("gitlab");
-      expect(identity?.displayName).toBe("Goldman/Smoke");
+      expect(identity?.displayName).toBe("Acme/Smoke");
     }),
   );
 
@@ -274,7 +274,7 @@ describe("RepositoryIdentityResolver", () => {
                   ? output(`true\n${gitDir}\n`)
                   : notARepository;
               }
-              return output("origin\tgit@gitlab.example.gs.com:goldman/smoke.git (fetch)\n");
+              return output("origin\tgit@gitlab.example.com:acme/smoke.git (fetch)\n");
             }),
         });
         const resolver = yield* make().pipe(
@@ -284,7 +284,7 @@ describe("RepositoryIdentityResolver", () => {
 
         const identity = yield* resolver.resolve(layout === "dot-bare" ? "/srv/smoke" : gitDir);
 
-        expect(identity?.canonicalKey).toBe("gitlab.example.gs.com/goldman/smoke");
+        expect(identity?.canonicalKey).toBe("gitlab.example.com/acme/smoke");
         expect(identity?.rootPath).toBe(gitDir);
         expect(calls.at(-1)).toEqual(["-C", gitDir, "--git-dir=.", "remote", "-v"]);
       }),
@@ -299,7 +299,7 @@ describe("RepositoryIdentityResolver", () => {
               ? { ...output(""), code: ChildProcessSpawner.ExitCode(128) }
               : input.args.includes("--is-bare-repository")
                 ? output("false\n/workspace/project/.git\n")
-                : output("origin\tgit@gitlab.example.gs.com:goldman/smoke.git (fetch)\n"),
+                : output("origin\tgit@gitlab.example.com:acme/smoke.git (fetch)\n"),
           ),
       });
       const resolver = yield* make().pipe(
