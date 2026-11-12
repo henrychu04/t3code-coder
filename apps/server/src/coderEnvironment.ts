@@ -82,6 +82,9 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadForceStop: true,
   environmentThemes: true,
   providerWorkspaceSnapshotsOnDemand: true,
+  // As upstream (#33511): an opened model picker asks for the catalog; the bundled manifest
+  // answers (`ModelManifest.layerBundled`), so no provider is re-probed for it.
+  modelCatalogRefresh: true,
   threadPinning: true,
   threadPinReorder: true,
   threadActiveReorder: true,

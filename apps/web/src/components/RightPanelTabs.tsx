@@ -45,8 +45,6 @@ import {
   Plus,
   Smartphone,
   TerminalSquare,
-  Volume2Icon,
-  VolumeOffIcon,
 } from "lucide-react";
 import {
   type ComponentProps,

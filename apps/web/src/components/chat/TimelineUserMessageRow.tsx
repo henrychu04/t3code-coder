@@ -36,7 +36,6 @@ import {
   MessagesSquareIcon,
   Redo2Icon,
   PencilIcon,
-  LinkIcon,
 } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
 import { FreshSessionRow, ModelSwitchRow } from "./V2LifecycleRow";

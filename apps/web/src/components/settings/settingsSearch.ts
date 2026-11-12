@@ -752,16 +752,16 @@ export const SETTINGS_SEARCH_ITEMS = [
   ...sourceControlHostSearchItems(sourceControlClients.definitions),
   {
     id: "source-control-writing-style",
-    title: "Commit and pull request writing",
+    title: "Commit and merge request writing",
     to: "/settings/source-control",
     searchTerms: [
-      "repository conventions conventional commits custom instructions commit messages change pr pull request merge request titles descriptions body style prompt write my own",
+      "repository conventions conventional commits custom instructions commit messages change mr merge request titles descriptions body style prompt write my own",
     ],
     environmentOnly: true,
   },
   {
     id: "follow-change-request-templates",
-    title: "Follow pull request templates",
+    title: "Follow merge request templates",
     to: "/settings/source-control",
     searchTerms: ["repository mr merge request change request description structure"],
     environmentOnly: true,

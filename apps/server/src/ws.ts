@@ -45,9 +45,6 @@ import {
   ProjectWriteFileError,
   ProjectMutationError,
   type ServerLifecycleStreamEvent,
-  type ProjectId,
-  type ProviderDriverKind,
-  type ProviderInstanceId,
   type ServerProvider,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
@@ -126,7 +123,6 @@ import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErr
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as AcpRegistrySessions from "./provider/AcpRegistrySessions.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -164,7 +160,6 @@ import * as SourceControlRepositoryService from "./sourceControl/SourceControlRe
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
-import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 // Coder: the helper's group, its Coder services, and the fork-only methods.
 import { CoderWsRpcGroup } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
@@ -1040,9 +1035,7 @@ const layerWsRpc = () =>
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-      // Coder: of upstream's ACP Registry services, only the runtime coordinator is used here.
-      const acpRegistryRuntimeCoordinator =
-        yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
+      // Coder: of upstream's ACP Registry services, only the session service is used here.
       const acpRegistrySessions = yield* AcpRegistrySessions.AcpRegistrySessions;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const config = yield* ServerConfig.ServerConfig;

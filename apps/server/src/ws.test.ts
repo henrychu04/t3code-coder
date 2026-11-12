@@ -1,7 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
-  GitManagerError,
   MessageId,
   ProjectId,
   ThreadId,
@@ -11,14 +10,12 @@ import {
   type OrchestrationProjectShell,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
-import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Cause from "effect/Cause";
 import * as Layer from "effect/Layer";
-import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -28,11 +25,6 @@ import { vi } from "vite-plus/test";
 import { exceedsHelperStdioFrame } from "./coderWs.ts";
 import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
-import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
-import * as EventSink from "./orchestration-v2/EventSink.ts";
-import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
-import * as ThreadCommandExecutor from "./orchestration-v2/ThreadCommandExecutor.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as ProjectEnrichment from "./project/ProjectEnrichmentService.ts";

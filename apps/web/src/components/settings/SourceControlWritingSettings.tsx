@@ -48,16 +48,16 @@ const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; descr
     repo_conventions: {
       label: "Repository conventions",
       description:
-        "Commit messages and pull request titles and descriptions match each project's history.",
+        "Commit messages and merge request titles and descriptions match each project's history.",
     },
     conventional_commits: {
       label: "Conventional Commits",
-      description: "Conventional Commit prefixes, with short pull request titles and descriptions.",
+      description: "Conventional Commit prefixes, with short merge request titles and descriptions.",
     },
     custom: {
       label: "Custom instructions",
       description:
-        "Your instructions shape commit messages and pull request titles and descriptions.",
+        "Your instructions shape commit messages and merge request titles and descriptions.",
     },
   };
 
@@ -173,7 +173,7 @@ export function SourceControlWritingSettingsSection() {
   );
 
   return (
-    <SettingsSection id="source-control-text-generation" title="Commits & pull requests">
+    <SettingsSection id="source-control-text-generation" title="Commits & merge requests">
       <SettingsRow
         serverScoped
         settingKeys={["sourceControlWritingStyle"]}
@@ -183,7 +183,7 @@ export function SourceControlWritingSettingsSection() {
         resetAction={
           isSourceControlWritingStyleDirty ? (
             <SettingResetButton
-              label="commit and pull request writing"
+              label="commit and merge request writing"
               onClick={() =>
                 updateSettings({
                   sourceControlWritingStyle: {
@@ -211,7 +211,7 @@ export function SourceControlWritingSettingsSection() {
             <SelectTrigger
               size="sm"
               className="w-full sm:w-56"
-              aria-label="Commit and pull request writing"
+              aria-label="Commit and merge request writing"
             >
               <SelectValue>
                 {(value: SourceControlWritingStyleMode | null) =>
@@ -237,7 +237,7 @@ export function SourceControlWritingSettingsSection() {
                   value={allInstructions ?? ""}
                   onChange={(event) => setAllInstructions(event.target.value)}
                   rows={4}
-                  aria-label="Custom commit and pull request instructions for all selected environments"
+                  aria-label="Custom commit and merge request instructions for all selected environments"
                   placeholder="Write the instructions each selected environment should use."
                 />
                 <Button
@@ -284,8 +284,8 @@ export function SourceControlWritingSettingsSection() {
                 }
               }}
               rows={4}
-              placeholder="Keep commit subjects under 60 characters. Keep pull request descriptions short and plain."
-              aria-label="Custom commit and pull request instructions"
+              placeholder="Keep commit subjects under 60 characters. Keep merge request descriptions short and plain."
+              aria-label="Custom commit and merge request instructions"
             />
           </div>
         ) : null}
@@ -461,12 +461,12 @@ export function SourceControlWritingSettingsSection() {
           settingKeys={["sourceControlWritingStyle"]}
           mixed={templatesMixed}
           {...searchableSetting("follow-change-request-templates")}
-          description="Use the repository's pull request template when it has one."
+          description="Use the repository's merge request template when it has one."
           resetAction={
             templatesMixed ||
             style.followChangeRequestTemplates !== defaults.followChangeRequestTemplates ? (
               <SettingResetButton
-                label="pull request templates"
+                label="merge request templates"
                 onClick={() =>
                   updateSettings({
                     sourceControlWritingStyle: {
@@ -488,7 +488,7 @@ export function SourceControlWritingSettingsSection() {
                   },
                 })
               }
-              aria-label="Follow pull request templates"
+              aria-label="Follow merge request templates"
             />
           }
         />

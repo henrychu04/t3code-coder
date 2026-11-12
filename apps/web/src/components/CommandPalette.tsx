@@ -10,7 +10,6 @@ import {
 import {
   canCreateProjectInEnvironment,
   getCloneDestinationBrowsePath,
-  getCloneDestinationForPickedFolder,
   getCloneDestinationPath,
   getCloneDirectoryLeafName,
   getCloneDirectoryPath,
@@ -143,7 +142,6 @@ import {
 } from "../commandPaletteStore";
 import {
   PULL_REQUESTS_PANEL_REF,
-  selectActiveRightPanel,
   useRightPanelStore,
 } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
