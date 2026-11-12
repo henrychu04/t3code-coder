@@ -480,8 +480,8 @@ foreground command limit, so run it in the background and read its log. Known re
   Failures that repeat across runs are real.
 - On macOS, upstream tests that create two folders differing only in case (`ClaudeSkills.test.ts`'s
   `pstack` and `PSTACK`, c0b67b7631) fail on the default case-insensitive volume; skip them there
-  with a `Coder:` note. Under full-suite load, `VcsStatusBroadcaster.test.ts`'s index.lock retry
-  case can also time out; rerun it alone.
+  with a `Coder:` note. `VcsStatusBroadcaster.test.ts`'s index.lock retry case is skipped on macOS
+  too: macOS reports one rename as two `HEAD` watch events, so it counts one extra status read.
 - Fork-adapted unit tests that match rendered HTML as strings (`ChatMarkdown.test.tsx`) fail when
   upstream adds an attribute its browser tests never assert (ed3f965e07: #22777's `dir`). Add
   the attribute to the expected string.
