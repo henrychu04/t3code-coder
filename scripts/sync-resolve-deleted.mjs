@@ -134,6 +134,7 @@ const DELETED_PATHS = {
     "docs/user/providers-antigravity.md",
     "apps/server/src/provider/acp/",
     "packages/provider-cursor/",
+    "patches/@cursor__sdk@1.2.0.patch",
     "packages/provider-fx/",
     "packages/provider-grok/",
     "packages/provider-muse/",
@@ -539,12 +540,10 @@ const DELETED_PATHS = {
   // #34121), native app icons (a11ad7424d), deferred MCP tool exposure (#34245), and upstream
   // files for surfaces the fork had already removed.
   "c0b67b7631 cuts": [
-    "apps/web/src/cloud/connectAgentApproval.ts",
     "apps/web/src/components/auth/ApproveAgentSurface.tsx",
     "apps/web/src/routes/approve-agent.tsx",
     "apps/web/src/state/connectMcpApproval.ts",
     "packages/client-runtime/src/state/connectMcpApproval.ts",
-    "packages/client-runtime/src/state/peerPairingCode.test.ts",
     "apps/server/src/auth/dpop.testkit.ts",
     "packages/source-control-github/src/server/gitHubPullRequestEvents.ts",
     "packages/provider-muse/src/server/driver.test.ts",

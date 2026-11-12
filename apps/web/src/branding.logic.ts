@@ -11,20 +11,8 @@ export function formatAppDisplayName(input: {
   return `${input.baseName} (${input.stageLabel})`;
 }
 
-export function resolveHostedAppChannelLabel(channel: string | null | undefined): string | null {
-  const normalized = channel?.trim().toLowerCase();
-  return normalized === "nightly" ? "Nightly" : normalized === "latest" ? "Latest" : null;
-}
-
-/** Stage label of a web build. vite.config.ts stamps it into index.html's title too. */
-export function resolveWebAppStageLabel(input: {
-  readonly hostedAppChannel: string | null | undefined;
-  readonly development: boolean;
-}): string {
-  return (
-    resolveHostedAppChannelLabel(input.hostedAppChannel) ?? (input.development ? "Dev" : "Beta")
-  );
-}
+// Coder: no resolveHostedAppChannelLabel or resolveWebAppStageLabel; branding.ts fixes the name
+// and vite.config.ts stamps no title, so nothing resolves a hosted channel or web stage.
 
 export function resolveServerBackedAppStageLabel(input: {
   readonly primaryServerVersion: string | null | undefined;

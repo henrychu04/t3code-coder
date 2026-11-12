@@ -82,9 +82,6 @@ export const CODER_ENVIRONMENT_CAPABILITIES = {
   threadForceStop: true,
   environmentThemes: true,
   providerWorkspaceSnapshotsOnDemand: true,
-  // As upstream (#33511): an opened model picker asks for the catalog; the bundled manifest
-  // answers (`ModelManifest.layerBundled`), so no provider is re-probed for it.
-  modelCatalogRefresh: true,
   threadPinning: true,
   threadPinReorder: true,
   threadActiveReorder: true,
@@ -129,6 +126,8 @@ export const CODER_OMITTED_CAPABILITIES = {
     "No Add to another machine: ignored files such as .env would pass through the laptop browser.",
   mcpModeLimitHeader:
     "No /mcp HTTP server; the gateway hub carries a linked call's mode limits with the call.",
+  modelCatalogRefresh:
+    "The model catalog is bundled (`ModelManifest.layerBundled`), so an opened picker has nothing new to fetch.",
   triage: "No in-app triage: it clones upstream T3 Code to help file upstream issues.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 

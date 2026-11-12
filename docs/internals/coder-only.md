@@ -626,8 +626,8 @@ checks that every name here still exists and that every modified upstream file i
   local-command `inspect` and `resolve` (no `acpRegistryManagedBinaryDirectories`); `driver.ts`
   reports only local readiness (`canAuthenticate` false, sign-in told to happen in the workspace)
   and no `configurableProviders`, and real sessions set `authenticateOnAuthRequired: false`; the
-  probe declines URL elicitation; `driver.ts` keeps `acpRegistrySnapshotReadiness` and
-  `testing.ts` keeps `probeAcpRegistryConfiguration` exported for the fork's tests;
+  probe declines URL elicitation; `driver.ts` keeps `acpRegistrySnapshotReadiness` exported for
+  the fork's tests; `testing.ts` exports no Devin, Copilot, Mistral Vibe, or logout helpers;
   `AcpRegistryRuntimeCoordinator.ts` has no URL-auth consent; `adapter.ts` has no Devin, Copilot,
   or Mistral Vibe flavor or native logging.
 - Kilo Code native sessions: of upstream's ACP session management only the session list and import
@@ -669,8 +669,8 @@ checks that every name here still exists and that every modified upstream file i
   organization id, so its one-probe fallback skips the same-organization check; the Claude
   signed-out message names API credentials, not a config directory to sign in (no
   `claudeSignedOutMessage`, #32951). `ModelManifest.layerBundled` serves the bundled manifest with no
-  fetch or disk cache, so an opened model picker's `modelCatalogOnly` refresh (#33511) finds no
-  newer catalog.
+  fetch or disk cache, so `coderEnvironment.ts` omits `modelCatalogRefresh` and an opened model
+  picker sends no `modelCatalogOnly` refresh (#33511).
 - Runtime modes: Claude and Codex fill upstream's provider-level `supportedRuntimeModes` from
   workspace policy (Claude's `disableAutoMode`/`disableBypassPermissionsMode` through `ClaudeCli`,
   Codex's `configRequirements/read`), reporting the safe modes until the first probe and on failure
@@ -864,7 +864,9 @@ checks that every name here still exists and that every modified upstream file i
   `client-runtime/platform/index.ts` export no endpoint, descriptor, capability, or storage document
   modules.
 - `lib/runtime.ts` has no primary-environment HTTP client, relay, DPoP, or tracer; `branding.ts`
-  fixes the "T3 Coder" name.
+  fixes the "T3 Coder" name, so `branding.logic.ts` has no hosted-channel or web-stage resolvers
+  and `index.html` has no desktop branding script (the gateway CSP allows only the boot script's
+  hash).
 - `localApiTypes.ts` keeps the context-menu and confirm-dialog types upstream takes from
   `contracts/ipc.ts`, so `confirmDialog.ts`, `externalLinkContextMenu.ts`, and
   `pullRequestLinkContextMenu.ts` import them from there (with upstream's `detail` and
@@ -896,7 +898,8 @@ checks that every name here still exists and that every modified upstream file i
   `shortcuts/commandPaletteCommands.ts` reads `usagePageOpen` as false and has no usage or preview
   commands.
 - `ProviderUpdatesAction.tsx`'s Update all has no `quiet` option or returned runs, and no
-  `useCheckProviderUpdates` (#33538; only the desktop About section's Check for Updates calls it),
+  `useCheckProviderUpdates` (#33538; only the desktop About section's Check for Updates and the
+  sidebar's `SidebarUpdatePill.tsx` call it),
   and
   `ProviderUpdateRun` no environment id (no "Update everything"). `index.css` drops the `wco`
   variant, drag regions, and desktop resize inset; without `lib/windowControlsOverlay.ts`,
@@ -985,7 +988,8 @@ checks that every name here still exists and that every modified upstream file i
 - Command palette (`CommandPalette.tsx` and its split modules): every workspace is remote; Add
   project always shows the workspace picker, which also lists unconnected workspaces and connects
   the chosen one, runs workspace discovery once, and opens connection settings with no Coder domain;
-  there is no desktop or WSL folder picker, browser preview, usage page, or file manager action;
+  there is no desktop or WSL folder picker, browser preview, usage page, or file manager action
+  (so client-runtime `operations/projects.ts` has no `getCloneDestinationForPickedFolder`);
   review actions say merge request.
 
 ### Web state and persistence
@@ -1073,7 +1077,7 @@ checks that every name here still exists and that every modified upstream file i
 
 - `apps/web/vite.config.ts` carries upstream's office/pdf asset handling, route splitting and
   build manifest (the gateway reads `.vite/manifest.json` to cache hashed assets) but not the render
-  scenarios project, `VITE_RELEASE_CHANNEL`, or source maps.
+  scenarios project, `VITE_RELEASE_CHANNEL`, `bootstrapTitlePlugin`, or source maps.
 - Root `vite.config.ts` is upstream's without the remote task cache and cached test tasks (`infra/`
   is cut), the per-package test projects (`vite.coder.config.ts` replaces upstream's
   `apps/server/vite.config.ts` and extends this file, which therefore loads `gitConfig.setup.ts`),
@@ -1229,7 +1233,8 @@ them, the file is named here.
   `fallbackModelSelection` stays in the schema only; `ProjectDefaultsSettings.tsx` has no fallback
   row or effort picker and `settingsSearch.ts` no "Fallback model" item). Without the usage page, `timestampFormat.ts`
   has no `resolveHour12`. #33800's usage hubs leave provider-core `managedProvider.ts` and
-  `snapshot.ts` in their form from before it, #34030's streamed usage-scan cache leaves shared
+  `snapshot.ts` in their form from before it, except `managedProvider.ts` keeps its guard that a
+  probe without usage does not erase a report published during the probe, #34030's streamed usage-scan cache leaves shared
   `atomicWrite.ts` taking only a string, and #34243's zero-credit test (`codexUsageLimits.test.ts`)
   is not carried. #34106's Fable reset options reach the contracts only: `ClaudeDriver.ts` and
   `ws.ts` redeem no resets.
@@ -1253,7 +1258,7 @@ them, the file is named here.
   entries), managed Codex (`CodexManagedTokenBroker`, `__managed-chatgpt-token`, ChatGPT Business
   admin requests #23361), provider sign-in, and Kilo Code's registry index, installs, auth
   controller, logout, native session deletion, and agent provider configuration (`copilotAcp.ts`,
-  `devinAcp.ts`, `nativeLogging.ts`, `@noble/hashes`), the Antigravity send block, and
+  `devinAcp.ts`, `nativeLogging.ts`), the Antigravity send block, and
   Antigravity's native child work (#28629: `NativeChildWorkQuery.ts`, `NativeChildWorkDialog.tsx`,
   client-runtime `state/orchestration.ts`'s `nativeChildWork` atom, and the `ChatView.tsx` slot
   that rendered it). Codex
