@@ -1207,7 +1207,9 @@ checks that every name here still exists and that every modified upstream file i
   `PullRequestStackMenu` drops the GitHub CLI refusal case. `ChatView.modelPick.browser.test.tsx`
   (#31739) and `ChatView.handoffCompaction.browser.test.tsx` (#25986) are not carried, since they
   need upstream's cut fake environment harness. `ThreadDetailsPanel.browser` (#34788) links a
-  GitLab merge request and passes no editor props.
+  GitLab merge request, passes no editor props, and mocks `useCoder`;
+  `ThreadDetailsPrRow.browser`'s repository-project merge cases use a GitLab project, and
+  `usePullRequestActions.browser`'s handoff toast says merge request.
   `PullRequestMarkdown.browser`'s repository media case uses GitLab uploads, `reopenClosedView.test.ts` passes no `openPreview`,
   client-runtime `pullRequests.test.ts` builds its runtime without a query store, and
   `AcpRegistryAdapterV2.test.ts`'s thread-env case (#30361) checks only `T3CODE_THREAD_ID`.

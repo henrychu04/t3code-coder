@@ -132,6 +132,7 @@ const scratchProject = {
   workspaceRoot: "/home/user/.t3/scratch",
   scripts: [],
 };
+// Coder: the project and links are on GitLab, the only host the fork matches a project for.
 const repositoryProject = {
   id: ProjectId.make("repository"),
   environmentId: EnvironmentId.make("environment"),
@@ -139,13 +140,13 @@ const repositoryProject = {
   workspaceRoot: "/work/repo",
   scripts: [],
   repositoryIdentity: {
-    canonicalKey: "github.com/owner/repo",
+    canonicalKey: "gitlab.com/owner/repo",
     locator: {
       source: "git-remote",
       remoteName: "origin",
-      remoteUrl: "https://github.com/owner/repo.git",
+      remoteUrl: "https://gitlab.com/owner/repo.git",
     },
-    provider: SourceControlProviderKind.make("github"),
+    provider: SourceControlProviderKind.make("gitlab"),
     owner: "owner",
     name: "repo",
     displayName: "owner/repo",
@@ -313,10 +314,10 @@ it.each([
   useUiStateStore.getState().setPullRequestMergeMethod("squash");
   state.pullRequests = [
     {
-      host: "github.com",
+      host: "gitlab.com",
       repository,
       number: 1,
-      url: `https://github.com/${repository}/pull/1`,
+      url: `https://gitlab.com/${repository}/-/merge_requests/1`,
       source: "manual",
       linkedAt: "2026-10-30T00:00:00.000Z",
       snapshot: null,

@@ -57,6 +57,13 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
         : [],
     )) as never,
 }));
+// Coder: the panel's Servers list reads the gateway's saved forwards.
+vi.mock("~/coder/CoderBootstrap", () => ({
+  useCoder: () => ({
+    config: { deployments: [], workspaces: [], portForwards: [], workspaceLinks: [] },
+    saveConfig: async () => undefined,
+  }),
+}));
 // Neither folder is a repository, which is what the server reports for both.
 vi.mock(import("~/state/vcs"), async (importOriginal) => {
   const actual = await importOriginal();

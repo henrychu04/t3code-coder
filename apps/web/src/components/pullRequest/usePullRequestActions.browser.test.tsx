@@ -123,7 +123,8 @@ it("stops a pull request handoff when its loading toast is dismissed", async () 
   );
 
   await userEvent.click(screen.getByRole("button", { name: "Fix" }));
-  const toast = screen.getByRole("dialog", { name: "Preparing the pull request checkout..." });
+  // Coder: the default host's terminology is GitLab's.
+  const toast = screen.getByRole("dialog", { name: "Preparing the merge request checkout..." });
   await expect.element(toast).toBeVisible();
   await userEvent.click(toast.getByRole("button", { name: "Dismiss notification" }));
   await expect.element(toast).not.toBeInTheDocument();
