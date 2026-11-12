@@ -509,7 +509,6 @@ const probeClaudeCapabilities = (
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
         // `behaviors`: with a few GB of transcripts it outlasts the deadline.
-        // The effort caps are read in parallel under the same deadline; workspace probes skip both.
         const usageCheckedAt = DateTime.formatIso(yield* DateTime.now);
         const usageResult = includeStatus
           ? yield* Effect.tryPromise({
@@ -521,7 +520,8 @@ const probeClaudeCapabilities = (
               catch: (cause) => new ClaudeCapabilitiesProbeSdkError({ operation: "usage", cause }),
             }).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
           : undefined;
-        // Coder: the effort caps come from the permission-policy settings read above.
+        // Coder: the effort caps come from the permission-policy settings read above, not a parallel
+        // read under the usage deadline; workspace probes skip both.
         const settingsResult =
           includeStatus && Option.isSome(settings) ? Result.succeed(settings.value) : undefined;
         const usage =

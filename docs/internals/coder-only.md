@@ -679,7 +679,9 @@ checks that every name here still exists and that every modified upstream file i
   signed-out message names API credentials, not a config directory to sign in (no
   `claudeSignedOutMessage`, #32951). `ModelManifest.layerBundled` serves the bundled manifest with no
   fetch or disk cache, so `coderEnvironment.ts` omits `modelCatalogRefresh` and an opened model
-  picker sends no `modelCatalogOnly` refresh (#33511).
+  picker sends no `modelCatalogOnly` refresh (#33511). The server side stays as upstream's
+  (`ws.ts`'s `modelCatalogOnly` branch, `ProviderRegistry.refreshModelCatalog`,
+  `ModelManifest.refreshOnDemand`); against the bundled manifest it would return at once.
 - Runtime modes: Claude and Codex fill upstream's provider-level `supportedRuntimeModes` from
   workspace policy (Claude's `disableAutoMode`/`disableBypassPermissionsMode` through `ClaudeCli`,
   Codex's `configRequirements/read`), reporting the safe modes until the first probe and on failure
@@ -793,7 +795,8 @@ checks that every name here still exists and that every modified upstream file i
   so their URLs are still rejected.
 - Add project and Publish Repository offer GitLab without an opt-in (#34978, which lists only
   GitHub until other hosts are turned on): client-runtime `operations/projects.ts`'s
-  `isSourceControlProviderOffered` falls back to the registry's first definition, GitLab, so the
+  `isSourceControlProviderOffered` is upstream's and falls back to the default host, which the
+  GitLab-only registry makes GitLab (its `Coder:` note says so), so the
   `offeredSourceControlProviders` setting and **Settings → Source control**'s switch keep
   upstream's shape and can turn GitLab off; `projects.test.ts` expects GitLab.
 - `project/RepositoryIdentityResolver.ts` has no `gh repo set-default` remote preference (#35005,
@@ -1271,8 +1274,9 @@ them, the file is named here.
   right-panel and diff-panel state (`useThreadActions.ts`'s `clearDeletedThreadPanelState`, #28386)
   but has no preview or mini-player state to clear. `ResourceCleanupService.ts`'s
   `cleanupDevices` (#34175) releases nothing. `Sidebar.logic.ts`'s thread shortcuts read
-  `previewFocus` as false; the Files panel's Cmd+F (#34346) works from inside the panel only, with
-  no `preview.find` command (`FileBrowserPanel.tsx`, `FilePreviewPanel.tsx`); `CommandPalette.tsx`
+  `previewFocus` as false; the Files panel's Cmd+F (#34346) works from inside the panel only:
+  the `preview.find` command and its binding are upstream's, but nothing handles it
+  (`FileBrowserPanel.tsx`, `FilePreviewPanel.tsx`); `CommandPalette.tsx`
   has no find-in-browser action (#22960); `chat/CollapsedComposerPromptPreview.tsx` has no
   preview-annotation chip.
 - **Telemetry, usage, and diagnostics.** No T3 telemetry, analytics, client-origin attribution,
@@ -1289,7 +1293,8 @@ them, the file is named here.
   `snapshot.ts` in their form from before it, except `managedProvider.ts` keeps its guard that a
   probe without usage does not erase a report published during the probe, #34030's streamed usage-scan cache leaves shared
   `atomicWrite.ts` taking only a string, and #34243's zero-credit test (`codexUsageLimits.test.ts`)
-  is not carried. #34106's Fable reset options reach the contracts only: `ClaudeDriver.ts` and
+  is not carried. #34106's Fable reset options reach only the contracts and provider-core
+  `driver.ts`'s `consumeResetCredit` signature, which no driver implements: `ClaudeDriver.ts` and
   `ws.ts` redeem no resets.
 - **Server self-update and CLI.** No npm release check (`cloud/npmRelease.ts`), "Update
   everything", update tracks, `t3 doctor` (`persistence/DatabaseMaintenance.ts` is carried for
