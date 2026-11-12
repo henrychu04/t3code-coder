@@ -1,5 +1,7 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
+// Coder: no `MCP_TOOL_EXPOSURE_HEADER` (#34245); only the uncarried MCP HTTP server reads it.
+
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;

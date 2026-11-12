@@ -1,3 +1,4 @@
+import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -9,6 +10,7 @@ import {
 import {
   canCreateProjectInEnvironment,
   getCloneDestinationBrowsePath,
+  getCloneDestinationForPickedFolder,
   getCloneDestinationPath,
   getCloneDirectoryLeafName,
   getCloneDirectoryPath,
@@ -74,6 +76,7 @@ import { openThreadFind } from "./chat/threadFindStore";
 import {
   useDeferredValue,
   useEffect,
+  useId,
   useReducer,
   useRef,
   useState,
@@ -138,7 +141,11 @@ import {
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
-import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
+import {
+  PULL_REQUESTS_PANEL_REF,
+  selectActiveRightPanel,
+  useRightPanelStore,
+} from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -275,6 +282,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
 
   return (
     <ComposerHandleContext value={composerHandleRef}>
+      <ThreadContextDragGhost />
       <CommandDialog
         open={state.open}
         onOpenChange={(open, eventDetails) => {
@@ -1919,7 +1927,7 @@ function OpenCommandPaletteDialog(props: {
   function getDefaultCloneDestination(
     environmentId: EnvironmentId,
     remoteUrl: string,
-    repository: string,
+    repository?: string,
   ): string {
     const environment = environments.find((candidate) => candidate.environmentId === environmentId);
     return getCloneDestinationPath(
@@ -1974,7 +1982,6 @@ function OpenCommandPaletteDialog(props: {
         const destinationPath = getDefaultCloneDestination(
           addProjectCloneFlow.environmentId,
           remoteUrl,
-          rawRepository,
         );
         setAddProjectCloneFlow({
           step: "confirm",
@@ -2080,12 +2087,11 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    const projectId = newProjectId();
     setIsRemoteProjectCloning(true);
     const startResult = await startProjectClone({
       environmentId: addProjectCloneFlow.environmentId,
       input: {
-        projectId,
+        projectId: newProjectId(),
         title: inferProjectTitleFromPath(destinationPath),
         // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
         createdAt: new Date().toISOString(),
@@ -2107,7 +2113,10 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
     setOpen(false);
-    const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
+    const projectRef = scopeProjectRef(
+      addProjectCloneFlow.environmentId,
+      startResult.value.projectId,
+    );
     await waitForProject(projectRef, 3_000).catch(() => null);
     const navigationResult = await settlePromise(() => handleNewThread(projectRef));
     if (navigationResult._tag === "Failure") {
@@ -2536,6 +2545,7 @@ function OpenCommandPaletteDialog(props: {
       scrollCommandPaletteRowIntoView(
         resultListRef.current,
         resultRows.rowIndexByItemIndex[0] ?? 0,
+        true,
       );
       return;
     }
@@ -2580,9 +2590,17 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  const submitButtonId = useId();
+  const browseSubmitLabel =
+    isCloneDestinationStep && !canCloneProject
+      ? "This connection needs permission to write source control and add projects."
+      : canCreateProject
+        ? `${submitActionLabel} (${addShortcutLabel})`
+        : "This connection cannot add projects.";
   const inputAccessory =
     newProjectFlow !== null ? (
       <CommandPaletteSubmitButton
+        id={submitButtonId}
         label={isCreatingNewProject ? "Creating" : "Create"}
         shortcutLabel={createShortcutLabel}
         ariaLabel={`Create (${createShortcutLabel})`}
@@ -2594,6 +2612,7 @@ function OpenCommandPaletteDialog(props: {
       />
     ) : addProjectCloneFlow?.step === "repository" ? (
       <CommandPaletteSubmitButton
+        id={submitButtonId}
         label={isRemoteProjectPending ? "Working" : remoteProjectButtonLabel}
         shortcutLabel="Enter"
         ariaLabel={`${remoteProjectButtonLabel ?? "Continue"} (Enter)`}
@@ -2605,16 +2624,11 @@ function OpenCommandPaletteDialog(props: {
       />
     ) : isBrowsing ? (
       <CommandPaletteSubmitButton
+        id={submitButtonId}
         label={isCloneDestinationStep && isRemoteProjectPending ? "Cloning" : submitActionLabel}
         shortcutLabel={addShortcutLabel}
-        ariaLabel={`${submitActionLabel} (${addShortcutLabel})`}
-        tooltip={
-          isCloneDestinationStep && !canCloneProject
-            ? "This connection needs permission to write source control and add projects."
-            : canCreateProject
-              ? `${submitActionLabel} (${addShortcutLabel})`
-              : "This connection cannot add projects."
-        }
+        ariaLabel={browseSubmitLabel}
+        tooltip={browseSubmitLabel}
         disabled={
           !canCreateProject ||
           !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
@@ -2675,6 +2689,7 @@ function OpenCommandPaletteDialog(props: {
                 })
               : undefined,
         placeholder: inputPlaceholder,
+        "aria-describedby": inputAccessory ? submitButtonId : undefined,
         ...(isSubmenu
           ? {
               startAddon: (
@@ -2702,7 +2717,11 @@ function OpenCommandPaletteDialog(props: {
         setHighlightedItemValue(typeof value === "string" ? value : null);
         const rowIndex = resultRows.rowIndexByItemIndex[eventDetails.index];
         if (eventDetails.reason === "keyboard" && rowIndex !== undefined) {
-          scrollCommandPaletteRowIntoView(resultListRef.current, rowIndex);
+          scrollCommandPaletteRowIntoView(
+            resultListRef.current,
+            rowIndex,
+            eventDetails.index === 0,
+          );
         }
       }}
       onValueChange={(nextQuery, { event }) => handleQueryChange(nextQuery, event.target)}

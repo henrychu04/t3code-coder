@@ -1,5 +1,6 @@
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
+import { remarkEnableOrderedListNumbers } from "@t3tools/shared/markdownPipeline";
 import { findRevealRef } from "./markdownFindContext";
 import {
   type EnvironmentId,
@@ -35,6 +36,7 @@ import {
   MessagesSquareIcon,
   Redo2Icon,
   PencilIcon,
+  LinkIcon,
 } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
 import { FreshSessionRow, ModelSwitchRow } from "./V2LifecycleRow";
@@ -49,7 +51,6 @@ import {
 import { MessageCopyButton } from "./MessageCopyButton";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { formatBytes } from "../../lib/formatBytes";
-import { shouldCollapseUserMessage } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   asKnownContextRecord,
@@ -72,6 +73,7 @@ import { markdownProseDirection } from "~/textDirection";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { WorkflowOpeningBlock } from "./WorkflowOpeningBlock";
+import { useTallEnoughToFold } from "./useTallEnoughToFold";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import {
   MESSAGE_HEADING_LEVEL,
@@ -289,7 +291,10 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
     <div className="group flex flex-col items-end gap-1" data-user-message-attribution="automation">
       {row.message.inputIntent === "steer" ||
       row.message.inputIntent === "promoted_queued_to_steer" ? (
-        <UserMessageIntentMarker intent={row.message.inputIntent} />
+        <UserMessageIntentMarker
+          intent={row.message.inputIntent}
+          unread={row.projectedItem?.item.status === "pending"}
+        />
       ) : null}
       <div
         className={cn(
@@ -801,7 +806,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       {(row.message.inputIntent === "steer" ||
         row.message.inputIntent === "promoted_queued_to_steer") &&
       !row.continuesSteer ? (
-        <UserMessageIntentMarker intent={row.message.inputIntent} />
+        <UserMessageIntentMarker
+          intent={row.message.inputIntent}
+          unread={row.projectedItem?.item.status === "pending"}
+        />
       ) : null}
       {mediaAboveText ? (
         <div className="flex max-w-[80%] justify-end">
@@ -997,8 +1005,10 @@ const ACTIONS_REVEAL_CLASS_NAME =
 
 function UserMessageIntentMarker({
   intent,
+  unread,
 }: {
   readonly intent: "steer" | "promoted_queued_to_steer";
+  readonly unread: boolean;
 }) {
   return (
     <Tooltip>
@@ -1011,12 +1021,14 @@ function UserMessageIntentMarker({
         }
       >
         <Redo2Icon aria-hidden="true" className="size-3" />
-        Steer
+        {unread ? "Steer · waiting to be read" : "Steer"}
       </TooltipTrigger>
       <TooltipPopup side="top">
-        {intent === "promoted_queued_to_steer"
-          ? "Originally queued, then promoted to steer the active turn"
-          : "Steered the active turn"}
+        {unread
+          ? "Waiting for the agent to read this. It reads steers between steps, after a running command finishes."
+          : intent === "promoted_queued_to_steer"
+            ? "Originally queued, then promoted to steer the active turn"
+            : "Steered the active turn"}
       </TooltipPopup>
     </Tooltip>
   );
@@ -1068,8 +1080,9 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   const revealForFind = () => setExpanded(true);
   const revealRef = findRevealRef(revealForFind);
   const hasVisibleBody = props.text.trim().length > 0;
-  const canCollapse =
-    props.collapsible !== false && hasVisibleBody && shouldCollapseUserMessage(props.text);
+  const { ref: contentRef, tallEnough: canCollapse } = useTallEnoughToFold(
+    props.collapsible !== false && hasVisibleBody,
+  );
   const isCollapsed = canCollapse && !expanded;
   const showCollapseControl = canCollapse;
 
@@ -1094,12 +1107,14 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
               : undefined
           }
         >
-          <UserMessageBody
-            text={props.text}
-            renderContextReference={props.renderContextReference}
-            skills={props.skills}
-            markdownCwd={props.markdownCwd}
-          />
+          <div ref={contentRef}>
+            <UserMessageBody
+              text={props.text}
+              renderContextReference={props.renderContextReference}
+              skills={props.skills}
+              markdownCwd={props.markdownCwd}
+            />
+          </div>
         </div>
       ) : null}
       {showCollapseControl ? (
@@ -1123,6 +1138,8 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   );
 });
 
+const USER_MESSAGE_REMARK_PLUGINS = [remarkEnableOrderedListNumbers];
+
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
   renderContextReference?: (reference: ChatMarkdownContextReference) => ReactNode;
@@ -1139,9 +1156,10 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       cwd={props.markdownCwd}
       threadRef={ctx.threadRef ?? undefined}
       skills={props.skills}
-      className="text-foreground"
+      className="text-foreground user-message-markdown"
       lineBreaks
       parseRawHtml={false}
+      extraRemarkPlugins={USER_MESSAGE_REMARK_PLUGINS}
       renderContextReference={props.renderContextReference}
       headingLevelOffset={MESSAGE_HEADING_LEVEL}
     />

@@ -35,13 +35,18 @@ import {
   COMPACT_SLASH_COMMAND,
   DEFAULT_TIMEOUT_MS,
   isCommandMissingCause,
-  parseGenericCliVersion,
+  parseCliVersionResult,
   providerModelsFromSettings,
+  providerProbeEnvironment,
   spawnAndCollect,
   type ServerProviderDraft,
 } from "@t3tools/provider-core/server/snapshotProbe";
 import { hasClaudeManagedMcpConfig, makeClaudeEnvironment } from "./Drivers/ClaudeHome.ts";
-import { discoverClaudeSkills, readClaudeSettingsEnv } from "./Drivers/ClaudeSkills.ts";
+import {
+  customClaudeApiEndpointHost,
+  discoverClaudeSkills,
+  readClaudeSettingsEnv,
+} from "./Drivers/ClaudeSkills.ts";
 import type { ProviderWorkspaceSnapshot } from "@t3tools/provider-core/server/driver";
 import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageLimits";
 import {
@@ -51,6 +56,10 @@ import {
 } from "./claudeUsageLimits.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
+  CLAUDE_EFFORT_LEVELS,
+  capClaudeCatalogEffort,
+  type ClaudeEffortCapSource,
+  type ClaudeEffortLevel,
   type ClaudeModelCatalog,
   claudeReportedModels,
   formatClaudeVersionUpgradeMessage,
@@ -239,7 +248,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     mcpServers: {},
     ...(input.managedMcpConfig ? {} : { strictMcpConfig: true }),
     env: {
-      ...input.environment,
+      ...providerProbeEnvironment(input.environment),
       // Disable claude.ai MCP separately; it is discovered outside filesystem config.
       ENABLE_CLAUDEAI_MCP_SERVERS: "false",
       // Skipping this avoids a Windows tasklist | findstr process tree on every refresh.
@@ -273,6 +282,8 @@ export type ClaudeCapabilitiesProbe = {
   /** Undefined means get_usage failed; absent windows on success mean no subscription windows, as with API keys. */
   readonly usage?: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
   readonly usageCheckedAt?: string;
+  /** Each settings source's `maxEffortLevel` caps; Claude Code clamps every higher effort. */
+  readonly effortCapSources?: ReadonlyArray<ClaudeEffortCapSource>;
 };
 
 // Coder: runtime modes follow the workspace's effective Claude permission policy.
@@ -291,6 +302,60 @@ function readClaudePermissionModeDisabled(
     typeof permissions === "object" &&
     (permissions as Record<string, unknown>)[key] === "disable"
   );
+}
+
+function parseClaudeMaxEffortLevel(value: unknown): ClaudeEffortLevel | undefined {
+  return CLAUDE_EFFORT_LEVELS.find((level) => level === value);
+}
+
+function parseClaudeModelMaxEffortLevels(
+  modelSettings: unknown,
+): ReadonlyMap<string, ClaudeEffortLevel> | undefined {
+  if (!modelSettings || typeof modelSettings !== "object") return undefined;
+  const levels = new Map<string, ClaudeEffortLevel>();
+  for (const [model, settings] of Object.entries(modelSettings)) {
+    const level = parseClaudeMaxEffortLevel(
+      settings && typeof settings === "object"
+        ? (settings as { readonly maxEffortLevel?: unknown }).maxEffortLevel
+        : undefined,
+    );
+    if (level) levels.set(model, level);
+  }
+  return levels.size > 0 ? levels : undefined;
+}
+
+function parseClaudeEffortCapSource(settings: unknown): ClaudeEffortCapSource | undefined {
+  if (!settings || typeof settings !== "object") return undefined;
+  const { maxEffortLevel, modelSettings } = settings as {
+    readonly maxEffortLevel?: unknown;
+    readonly modelSettings?: unknown;
+  };
+  const level = parseClaudeMaxEffortLevel(maxEffortLevel);
+  const modelMaxEffortLevels = parseClaudeModelMaxEffortLevels(modelSettings);
+  return level || modelMaxEffortLevels
+    ? {
+        ...(level ? { maxEffortLevel: level } : {}),
+        ...(modelMaxEffortLevels ? { modelMaxEffortLevels } : {}),
+      }
+    : undefined;
+}
+
+// `sources` holds each settings file's raw settings. CLIs that report only the merged `effective`
+// settings are read as a single source.
+function parseClaudeEffortCapSources(
+  settings: { readonly effective?: unknown; readonly sources?: unknown } | undefined,
+): ReadonlyArray<ClaudeEffortCapSource> | undefined {
+  const sources = Array.isArray(settings?.sources)
+    ? settings.sources.flatMap((source) => {
+        const parsed = parseClaudeEffortCapSource(
+          source && typeof source === "object"
+            ? (source as { readonly settings?: unknown }).settings
+            : undefined,
+        );
+        return parsed ? [parsed] : [];
+      })
+    : [parseClaudeEffortCapSource(settings?.effective)].filter((source) => source !== undefined);
+  return sources.length > 0 ? sources : undefined;
 }
 
 function parseClaudeInitializationCommands(
@@ -394,7 +459,7 @@ const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
-  includeUsage = true,
+  includeStatus = true,
 ) => {
   const abort = new AbortController();
   const abortProbe = Effect.sync(() => {
@@ -405,7 +470,7 @@ const probeClaudeCapabilities = (
     const executablePath = claudeSettings.binaryPath;
     const managedMcpConfig = yield* hasClaudeManagedMcpConfig();
     // Workspace probes (no usage) discard models; the machine probe refreshes the shared cache.
-    const graceMs = includeUsage
+    const graceMs = includeStatus
       ? claudeGatewayDiscoveryGraceMs({
           ...claudeEnvironment,
           ...(yield* readClaudeSettingsEnv(claudeSettings, cwd, claudeEnvironment)),
@@ -444,8 +509,9 @@ const probeClaudeCapabilities = (
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
         // `behaviors`: with a few GB of transcripts it outlasts the deadline.
+        // The effort caps are read in parallel under the same deadline; workspace probes skip both.
         const usageCheckedAt = DateTime.formatIso(yield* DateTime.now);
-        const usageResult = includeUsage
+        const usageResult = includeStatus
           ? yield* Effect.tryPromise({
               // Coder: the workspace CLI transport answers the SDK's usage control request.
               try: () =>
@@ -455,6 +521,9 @@ const probeClaudeCapabilities = (
               catch: (cause) => new ClaudeCapabilitiesProbeSdkError({ operation: "usage", cause }),
             }).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
           : undefined;
+        // Coder: the effort caps come from the permission-policy settings read above.
+        const settingsResult =
+          includeStatus && Option.isSome(settings) ? Result.succeed(settings.value) : undefined;
         const usage =
           usageResult && Result.isSuccess(usageResult)
             ? {
@@ -462,6 +531,9 @@ const probeClaudeCapabilities = (
                 rate_limits: usageResult.success.rate_limits,
               }
             : undefined;
+        const effortCapSources = parseClaudeEffortCapSources(
+          settingsResult && Result.isSuccess(settingsResult) ? settingsResult.success : undefined,
+        );
         const account = init.account as
           | {
               readonly email?: string;
@@ -486,6 +558,7 @@ const probeClaudeCapabilities = (
           slashCommands: parseClaudeInitializationCommands(init.commands),
           ...(init.models?.length ? { models: init.models } : {}),
           ...(usage ? { usage, usageCheckedAt } : {}),
+          ...(effortCapSources ? { effortCapSources } : {}),
         } satisfies ClaudeCapabilitiesProbe;
       }).pipe(
         Effect.tap(() =>
@@ -591,7 +664,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const versionProbe = yield* runClaudeCommand(
     claudeSettings,
     ["--version"],
-    resolvedEnvironment,
+    providerProbeEnvironment(resolvedEnvironment),
     cwd,
   ).pipe(Effect.timeoutOption(CLAUDE_VERSION_CHECK_TIMEOUT_MS), Effect.result);
 
@@ -635,7 +708,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   }
 
   const version = versionProbe.success.value;
-  const parsedVersion = parseGenericCliVersion(`${version.stdout}\n${version.stderr}`);
+  const parsedVersion = parseCliVersionResult(version);
   if (version.code !== 0) {
     yield* Effect.logWarning("Claude Agent CLI version probe exited with a non-zero status.", {
       exitCode: version.code,
@@ -665,12 +738,16 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     probeResult && Result.isSuccess(probeResult) ? probeResult.success : undefined;
   const probeFailure =
     probeResult && Result.isFailure(probeResult) ? probeResult.failure : undefined;
-  const models = claudeProviderModels(
-    [
-      ...resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
-      ...claudeReportedModels(modelCatalog, claudeSettings.customModels, capabilities?.models),
-    ],
-    claudeSettings.customModels,
+  const models = capClaudeCatalogEffort(
+    modelCatalog,
+    claudeProviderModels(
+      [
+        ...resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+        ...claudeReportedModels(modelCatalog, claudeSettings.customModels, capabilities?.models),
+      ],
+      claudeSettings.customModels,
+    ),
+    capabilities?.effortCapSources ?? [],
   );
   // Coder: runtime modes follow the workspace's Claude permission policy, failing closed when
   // it could not be read.
@@ -713,12 +790,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const baseUrl =
     (yield* readClaudeSettingsEnv(claudeSettings, cwd, resolvedEnvironment)).ANTHROPIC_BASE_URL ??
     resolvedEnvironment.ANTHROPIC_BASE_URL;
-  const endpoint = URL.parse(baseUrl?.trim() ?? "");
-  const customApiEndpoint =
-    endpoint !== null &&
-    (endpoint.protocol === "http:" || endpoint.protocol === "https:") &&
-    endpoint.hostname !== "" &&
-    endpoint.hostname !== "api.anthropic.com";
+  const customApiEndpoint = customClaudeApiEndpointHost(baseUrl) !== undefined;
   if (!customApiEndpoint && claudeAuthStatus(capabilities) === "unauthenticated") {
     return buildServerProvider({
       presentation,
@@ -733,7 +805,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "error",
         auth: { status: "unauthenticated" },
-        // Coder: providers authenticate through the workspace's API configuration.
+        // Coder: providers authenticate through the workspace's API configuration, so the
+        // message names no config directory to sign in (upstream's `claudeSignedOutMessage`).
         message:
           "Claude Code is not authenticated. Check its API credentials in the workspace provider configuration.",
       },

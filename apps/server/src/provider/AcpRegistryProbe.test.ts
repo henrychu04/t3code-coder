@@ -12,6 +12,7 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "@t3tools/provider-acp-registry/settings";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 import * as EffectAcpErrors from "effect-acp/errors";
 
@@ -276,7 +277,7 @@ describe("ACP Registry probe", () => {
     },
   );
 
-  it("bounds and de-duplicates advertised commands", () => {
+  it("keeps every distinct advertised command and de-duplicates the rest", () => {
     const commands = normalizeAcpRegistryCommands([
       {
         name: "create_plan",
@@ -288,9 +289,11 @@ describe("ACP Registry probe", () => {
         name: `command_${index}`,
         description: "",
       })),
+      { name: "$late-skill", description: "Advertised after 128 commands" },
     ]);
 
-    expect(commands.slashCommands).toHaveLength(128);
+    expect(commands.slashCommands).toHaveLength(141);
+    expect(commands.slashCommands.at(-1)).toEqual({ name: "command_139" });
     expect(commands.slashCommands[0]).toEqual({
       name: "create_plan",
       description: "Create a plan",
@@ -299,7 +302,7 @@ describe("ACP Registry probe", () => {
     expect(
       commands.slashCommands.filter((command) => command.name.toLowerCase() === "create_plan"),
     ).toHaveLength(1);
-    expect(commands.skills).toEqual([]);
+    expect(commands.skills.map((skill) => skill.name)).toEqual(["late-skill"]);
   });
 
   it("routes dollar-prefixed ACP commands to the provider skill menu", () => {
@@ -398,6 +401,51 @@ describe("ACP Registry probe", () => {
       Effect.scoped,
     );
   });
+
+  it.live.each(["succeeds", "fails"] as const)(
+    "deletes its health-probe session when deletion is advertised and %s",
+    (deleteOutcome) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "acp-probe-delete-" });
+        const requestLogPath = NodePath.join(directory, "requests.ndjson");
+        // Coder: the catalog resolves only the local command, so the test's agent is local.
+        const catalog = AcpRegistrySupport.AcpRegistryCatalog.of({
+          inspect: () => Effect.die("unused inspect"),
+          resolve: () =>
+            Effect.succeed({
+              distribution: "local" as const,
+              spawn: {
+                command: "node",
+                args: [mockAgentPath],
+                env: {
+                  ...process.env,
+                  T3_ACP_V2_MANAGEMENT: "1",
+                  T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+                  ...(deleteOutcome === "fails" ? { T3_ACP_FAIL_DELETE_SESSION: "1" } : {}),
+                },
+              },
+            }),
+        });
+
+        const result = yield* probeAcpRegistryConfiguration({
+          instanceId,
+          settings: decodeSettings({}),
+          cwd: process.cwd(),
+          environment: process.env,
+        }).pipe(Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog));
+        expect(result.probe.ready).toBe(true);
+        expect(result.probe.sessionManagement.canDelete).toBe(true);
+
+        const requests = (yield* fs.readFileString(requestLogPath))
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .map((line) => JSON.parse(line));
+        expect(requests.filter((request) => request.method === "session/delete")).toEqual([
+          expect.objectContaining({ params: { sessionId: "mock-session-1" } }),
+        ]);
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
 
   it("distinguishes authentication failures from generic probe failures", () => {
     const advertised = normalizeAcpRegistryAuthMethods([

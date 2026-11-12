@@ -178,6 +178,8 @@ function watchesEqual(left: ThreadPullRequestWatch, right: ThreadPullRequestWatc
     left.passed === right.passed &&
     left.passedChecks.join("\n") === right.passedChecks.join("\n") &&
     (left.owedChecks ?? []).join("\n") === (right.owedChecks ?? []).join("\n") &&
+    (left.awaitingApproval ?? []).join("\n") === (right.awaitingApproval ?? []).join("\n") &&
+    (left.approvalAnnounced ?? false) === (right.approvalAnnounced ?? false) &&
     left.remarksThrough === right.remarksThrough &&
     left.remarkIds.join("\n") === right.remarkIds.join("\n") &&
     left.conflicting === right.conflicting &&
@@ -276,7 +278,11 @@ export const make = Effect.gen(function* () {
   const record = Effect.fn("PullRequestWatchReactor.record")(function* (
     target: WatchTarget,
     next: ThreadPullRequestWatch | null,
-    wake?: { readonly text: string; readonly notification: OrchestrationV2Notification },
+    wake?: {
+      readonly text: string;
+      readonly notification: OrchestrationV2Notification;
+      readonly includesRemarks?: boolean;
+    },
     endedWatch?: ThreadPullRequestWatch,
   ) {
     const uuid = yield* random.uuidV4();
@@ -489,11 +495,14 @@ export const make = Effect.gen(function* () {
       { concurrency: 2 },
     );
     // Activity failures must not cancel or hide a permanent detail failure.
+    // Activity is irrelevant once the pull request is closed or merged, so it cannot block ending.
     const read = Exit.isFailure(detailRead)
       ? Exit.failCause(detailRead.cause)
-      : Exit.isFailure(activityRead)
-        ? Exit.failCause(activityRead.cause)
-        : Exit.succeed([detailRead.value, activityRead.value] as const);
+      : detailRead.value.state !== "open"
+        ? Exit.succeed([detailRead.value, Option.none<PullRequestActivity>()] as const)
+        : Exit.isFailure(activityRead)
+          ? Exit.failCause(activityRead.cause)
+          : Exit.succeed([detailRead.value, activityRead.value] as const);
     if (Exit.isFailure(read)) {
       if (Cause.hasInterruptsOnly(read.cause)) return yield* Effect.failCause(read.cause);
       lastReads.delete(group.key);
@@ -562,13 +571,16 @@ export const make = Effect.gen(function* () {
     yield* eachTarget(group, (target) => {
       const report = evaluatePullRequestWatch(target.watch, detail, remarks, now);
       if (report.changes.length > 0) {
-        const wake = pullRequestWatchMessage({
-          number: target.link.number,
-          url: target.link.url,
-          baseBranch: detail.baseBranch,
-          headSha: report.next.headSha,
-          report,
-        });
+        const wake = {
+          ...pullRequestWatchMessage({
+            number: target.link.number,
+            url: target.link.url,
+            baseBranch: detail.baseBranch,
+            headSha: report.next.headSha,
+            report,
+          }),
+          includesRemarks: report.changes.some((change) => change.kind === "remarks"),
+        };
         // An ending watch keeps what this pass saw, so watching again starts from it.
         return (
           report.exhausted

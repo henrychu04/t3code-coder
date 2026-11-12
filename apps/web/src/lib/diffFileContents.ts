@@ -1,6 +1,6 @@
 // Coder: review and merge-request files are read as bounded, chunked helper RPCs below the
 // gateway's RPC-frame limit, with a bounded browser cache; see docs/internals/coder-only.md.
-import type { FileDiffContentsLoader } from "@pierre/diffs";
+import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -135,6 +135,69 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+// Mirrors Pierre's splitFileContents so line counts match its hydration.
+function splitLines(contents: string): ReadonlyArray<string> {
+  return contents === "" ? [] : contents.split(/(?<=\n)/);
+}
+
+// Whitespace-insensitive: `git diff -w` prints context lines from only one side.
+function sameLine(patchLine: string | undefined, fileLine: string | undefined): boolean {
+  return (
+    patchLine !== undefined &&
+    fileLine !== undefined &&
+    patchLine.replace(/\s/g, "") === fileLine.replace(/\s/g, "")
+  );
+}
+
+function hunkSideEnd(start: number, count: number): number {
+  return start - (count === 0 ? 0 : 1) + count;
+}
+
+function hunkSideMatches(
+  patchLines: ReadonlyArray<string>,
+  patchIndex: number,
+  fileLines: ReadonlyArray<string>,
+  start: number,
+  count: number,
+): boolean {
+  const fileIndex = hunkSideEnd(start, count) - count;
+  for (let offset = 0; offset < count; offset++) {
+    if (!sameLine(patchLines[patchIndex + offset], fileLines[fileIndex + offset])) return false;
+  }
+  return true;
+}
+
+// Pierre hydrates a partial patch by trusting its hunk positions, so contents that
+// changed since the patch was computed make it render corrupt hunks or throw.
+function reproducesPatch(fileDiff: FileDiffMetadata, oldContents: string, newContents: string) {
+  const lastHunk = fileDiff.hunks.at(-1);
+  if (lastHunk === undefined) return true;
+  const oldLines = splitLines(oldContents);
+  const newLines = splitLines(newContents);
+  const hunksMatch = fileDiff.hunks.every(
+    (hunk) =>
+      hunkSideMatches(
+        fileDiff.deletionLines,
+        hunk.deletionLineIndex,
+        oldLines,
+        hunk.deletionStart,
+        hunk.deletionCount,
+      ) &&
+      hunkSideMatches(
+        fileDiff.additionLines,
+        hunk.additionLineIndex,
+        newLines,
+        hunk.additionStart,
+        hunk.additionCount,
+      ),
+  );
+  return (
+    hunksMatch &&
+    oldLines.length - hunkSideEnd(lastHunk.deletionStart, lastHunk.deletionCount) ===
+      newLines.length - hunkSideEnd(lastHunk.additionStart, lastHunk.additionCount)
+  );
+}
+
 /** Loads immutable workspace file snapshots in bounded RPC chunks and retains completed files in memory. */
 export function createChunkedGitDiffFileContentsLoader<E>(
   openDiffFileContents: OpenDiffFileContents<E>,
@@ -224,6 +287,11 @@ export function createChunkedGitDiffFileContentsLoader<E>(
       cacheKey: `${cacheNamespace}:new:${newPath}`,
     };
     if (fileDiff.type === "rename-pure") return { oldFile: null, newFile };
+    if (!reproducesPatch(fileDiff, contents.oldContents, contents.newContents)) {
+      throw new Error(
+        "This file changed since the diff was loaded. Refresh the diff to expand it.",
+      );
+    }
     return {
       oldFile: {
         name: oldPath,
@@ -274,6 +342,11 @@ export function createPullRequestDiffFileContentsLoader<E>(
       cacheKey: `${source.cacheKey}:new:${newPath}`,
     };
     if (fileDiff.type === "rename-pure") return { oldFile: null, newFile };
+    if (!reproducesPatch(fileDiff, contents.oldContents, contents.newContents)) {
+      throw new Error(
+        "This file changed since the diff was loaded. Refresh the diff to expand it.",
+      );
+    }
     return {
       oldFile: {
         name: oldPath,

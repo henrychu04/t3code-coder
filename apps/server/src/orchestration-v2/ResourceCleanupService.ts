@@ -10,7 +10,7 @@ import * as TerminalManager from "../terminal/Manager.ts";
 export class ResourceCleanupError extends Schema.TaggedError<ResourceCleanupError>()(
   "ResourceCleanupError",
   {
-    operation: Schema.Literals(["terminal", "preview", "attachment", "scheduled-tasks"]),
+    operation: Schema.Literals(["terminal", "preview", "device", "attachment", "scheduled-tasks"]),
     threadId: Schema.optional(Schema.String),
     attachmentId: Schema.optional(Schema.String),
     cause: Schema.Defect(),
@@ -21,6 +21,8 @@ export class ResourceCleanupService extends Context.Reference<{
   readonly cleanupScheduledTasks: (threadId: ThreadId) => Effect.Effect<void, ResourceCleanupError>;
   readonly cleanupTerminals: (threadId: string) => Effect.Effect<void, ResourceCleanupError>;
   readonly cleanupPreviews: (threadId: string) => Effect.Effect<void, ResourceCleanupError>;
+  /** Releases the thread's device claims, as `device_close` does; the devices stay booted. */
+  readonly cleanupDevices: (threadId: ThreadId) => Effect.Effect<void, ResourceCleanupError>;
   readonly cleanupAttachments: (
     attachmentIds: ReadonlyArray<string>,
   ) => Effect.Effect<void, ResourceCleanupError>;
@@ -29,6 +31,7 @@ export class ResourceCleanupService extends Context.Reference<{
     cleanupScheduledTasks: () => Effect.void,
     cleanupTerminals: () => Effect.void,
     cleanupPreviews: () => Effect.void,
+    cleanupDevices: () => Effect.void,
     cleanupAttachments: () => Effect.void,
   }),
 }) {}
@@ -64,6 +67,8 @@ export const layer = Layer.effect(
       }),
       // Coder: there is no browser preview, so a thread has no preview sessions to close.
       cleanupPreviews: Effect.fn("ResourceCleanupService.cleanupPreviews")(function* () {}),
+      // Coder: there are no device hosts, so a thread holds no device sessions to release.
+      cleanupDevices: Effect.fn("ResourceCleanupService.cleanupDevices")(function* () {}),
       // Coder: deleting or reverting a thread never deletes its attachments.
       cleanupAttachments: Effect.fn("ResourceCleanupService.cleanupAttachments")(function* () {}),
     };

@@ -63,6 +63,7 @@ export const make = Effect.gen(function* () {
       "connection.target.kind": target._tag,
     });
     yield* reportProgress({ stage: "preparing" });
+    yield* reportProgress({ stage: "preparing" });
     const prepared = yield* resolver.prepare(entry);
     yield* reportProgress({ stage: "opening", prepared });
     const session = yield* sessions.connect(prepared);

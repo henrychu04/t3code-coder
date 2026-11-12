@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
+  GitManagerError,
   MessageId,
   ProjectId,
   ThreadId,
@@ -10,12 +11,14 @@ import {
   type OrchestrationProjectShell,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Cause from "effect/Cause";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -25,6 +28,11 @@ import { vi } from "vite-plus/test";
 import { exceedsHelperStdioFrame } from "./coderWs.ts";
 import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
+import * as EventSink from "./orchestration-v2/EventSink.ts";
+import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
+import * as ThreadCommandExecutor from "./orchestration-v2/ThreadCommandExecutor.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as ProjectEnrichment from "./project/ProjectEnrichmentService.ts";
@@ -552,7 +560,8 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
 // session-scoped `layerWsRpc` with mocks of the auth, preview, device, and usage services the
 // helper does not serve; the helper's `subscribeServerConfig` keeps upstream's
 // subscribe-before-snapshot order and strips workspace snapshots the same way. Upstream's
-// failed-publish remote refresh test (#29688) builds the same layer, so it is not carried either.
+// failed-publish remote refresh test (#29688) and missing-worktree skills test (#32471) build
+// the same layer, so they are not carried either.
 
 // Pruned history cannot be replayed: a cursor below the boundary must resync from a snapshot,
 // or, for a shell client that loads it over HTTP, be told to without the server building one.
@@ -742,3 +751,7 @@ it.effect("thread resume at its own high-water below the pruned boundary skips t
     assert.isTrue(Exit.isSuccess(exit));
   }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
+
+// Coder: upstream's "ACP session RPCs list a thread missing its history and repair it on import"
+// test (#22155) serves upstream's session-scoped `layerWsRpc`; `AcpRegistrySessions.ts` carries
+// the repair, and the helper serves the two RPCs through the same service.

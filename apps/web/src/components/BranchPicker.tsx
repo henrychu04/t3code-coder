@@ -32,6 +32,7 @@ export function BranchPicker({
   isFetchingNextPage,
   onLoadNext,
   statusText,
+  notice,
   originControl,
   footerAction,
   popupProps,
@@ -51,6 +52,7 @@ export function BranchPicker({
   isFetchingNextPage: boolean;
   onLoadNext: () => void;
   statusText: string | null;
+  notice?: string | null | undefined;
   originControl?: { checked: boolean; onCheckedChange: (checked: boolean) => void } | undefined;
   /** Coder: an action row under the list, such as renaming the checked-out branch. */
   footerAction?: ReactNode;
@@ -137,6 +139,7 @@ export function BranchPicker({
                 keyExtractor={(item) => item}
                 {...(getItemType ? { getItemType } : {})}
                 renderItem={({ item, index }) => renderItem(item, index)}
+                extraData={renderItem}
                 estimatedItemSize={28}
                 drawDistance={336}
                 onScroll={updateBranchListScrollFades}
@@ -184,6 +187,7 @@ export function BranchPicker({
             </Tooltip>
           ) : null}
           {footerAction}
+          {notice ? <ComboboxStatus>{notice}</ComboboxStatus> : null}
           {statusText ? <ComboboxStatus>{statusText}</ComboboxStatus> : null}
         </div>
       </ComboboxPopup>

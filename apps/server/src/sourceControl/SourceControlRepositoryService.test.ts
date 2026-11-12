@@ -1,11 +1,14 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/process";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   GitCommandError,
@@ -197,6 +200,9 @@ function makePublishService(reason?: GitCommandError["reason"]) {
     ),
   );
 }
+
+// Coder: upstream's "says a clone that ran out of time timed out" test (#27588) builds
+// upstream's GitHub clone harness, which this file replaces with GitLab cases.
 
 it.effect("explains a rejected SSH push after creating the repository", () =>
   Effect.gen(function* () {

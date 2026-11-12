@@ -152,7 +152,8 @@ export function buildThreadActionMenuItems(
                 children: [
                   ...state.snoozePresets.map((preset) => ({
                     id: `snooze:${preset.id}` as const,
-                    label: `${preset.label} (${preset.whenLabel})`,
+                    label: preset.label,
+                    detail: preset.whenLabel,
                   })),
                   {
                     id: "snooze:custom" as const,
@@ -205,12 +206,12 @@ export function buildThreadActionMenuItems(
             children: [
               {
                 id: "auto-settle:enabled" as const,
-                label: "Enabled",
+                label: "Follow settings",
                 checked: state.autoSettleEnabled,
               },
               {
                 id: "auto-settle:disabled" as const,
-                label: "Disabled",
+                label: "Never",
                 checked: !state.autoSettleEnabled,
               },
             ],

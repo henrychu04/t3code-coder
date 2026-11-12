@@ -39,6 +39,8 @@ describe("codexRateLimitsToLimits", () => {
     expect(codexRateLimitsToUpdate(snapshot)).toEqual({ windows });
   });
 
+  // Coder: upstream's zero-credit-cap case (#34243) checks the cut `shared/usageLimits.ts`.
+
   it("maps primary and secondary onto the session and weekly windows", () => {
     expect(
       codexRateLimitsToLimits({
