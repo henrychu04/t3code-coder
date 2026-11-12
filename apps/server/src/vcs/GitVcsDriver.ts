@@ -997,7 +997,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       const tempIndexPath = path.join(gitCommonDir, `t3-checkpoint-index-${indexId}`);
       const hostEnv = yield* HostProcess.Environment;
       const commitEnv: NodeJS.ProcessEnv = {
-        ...hostEnv,
         GIT_INDEX_FILE: tempIndexPath,
         // Coder: workspace checkpoints use the fork's local commit identity.
         GIT_AUTHOR_NAME: "T3 Coder",

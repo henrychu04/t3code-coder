@@ -152,6 +152,7 @@ function SettingsRouteLayout() {
       search={rawSearch}
       // Coder: there is no secrets settings page.
       singleEnvironment={pathname === "/settings/providers"}
+      deviceOnly={SETTINGS_DEVICE_ONLY_PATHS.has(pathname)}
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({

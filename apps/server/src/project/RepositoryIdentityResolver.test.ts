@@ -348,4 +348,22 @@ describe("RepositoryIdentityResolver", () => {
         expect(yield* resolver.resolve(gitDir)).toBeNull();
       }).pipe(Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer)))),
   );
+
+  // Coder: upstream's case (#35080) on a real temporary folder, outside its `it.layer`.
+  it.effect("resolves a remote whose URL contains a space", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-spaced-url-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "ssh://git@git.example.test/team repos/app.git"]);
+
+      const resolver = yield* make();
+      const identity = yield* resolver.resolve(cwd);
+      expect(identity?.locator.remoteUrl).toBe("ssh://git@git.example.test/team repos/app.git");
+      expect(identity?.locator.remoteName).toBe("origin");
+    }).pipe(Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer)))),
+  );
 });

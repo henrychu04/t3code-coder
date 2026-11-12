@@ -129,6 +129,9 @@ export const CODER_OMITTED_CAPABILITIES = {
   modelCatalogRefresh:
     "The model catalog is bundled (`ModelManifest.layerBundled`), so an opened picker has nothing new to fetch.",
   triage: "No in-app triage: it clones upstream T3 Code to help file upstream issues.",
+  shellThreadFamilies:
+    "The browser reads no descriptor before the gateway socket opens, so it never loads the shell over HTTP first (#35071); the shell config carries these flags.",
+  shellOlderSettled: "As `shellThreadFamilies`.",
 } satisfies Partial<Record<keyof ExecutionEnvironmentCapabilities, string>>;
 
 const makeIdentity = Effect.gen(function* () {

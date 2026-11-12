@@ -45,6 +45,7 @@ import * as PortScanner from "../preview/PortScanner.ts";
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 // Coder: secret providers are not carried; the registry reads through the stand-in resolver.
 import * as SecretResolver from "../secrets/coderSecretResolver.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import type { AnyProviderDriver, ProviderInstance } from "@t3tools/provider-core/server/driver";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
@@ -168,7 +169,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
   );
   const layerBase = ProviderHostLive.layer.pipe(Layer.provideMerge(layerBaseDeps));
   const layerTest = ProviderOrchestrationAdapterInfrastructure.layer.pipe(
-    Layer.provide(PortScanner.layerTest),
+    Layer.provide(Layer.merge(PortScanner.layerTest, SqlitePersistence.layerMemory)),
     Layer.provideMerge(layerBase),
   );
 

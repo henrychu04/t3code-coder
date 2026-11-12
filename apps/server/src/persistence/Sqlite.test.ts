@@ -11,6 +11,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlError from "effect/sql/SqlError";
 import { vi } from "vite-plus/test";
 
 import * as SqlitePersistence from "./Sqlite.ts";
@@ -184,4 +185,26 @@ it.effect("drops planner statistics a database already has", () => {
   );
 });
 
+it.effect("names a database file that is not SQLite", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sqlite-notadb-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+  NodeFS.writeFileSync(dbPath, "not a db\n");
+
+  return Effect.gen(function* () {
+    const opened = yield* Effect.void.pipe(
+      Effect.provide(
+        SqlitePersistence.layerFromPath(dbPath).pipe(Layer.provide(NodeServices.layer)),
+      ),
+      Effect.result,
+    );
+
+    assert.equal(opened._tag, "Failure");
+    if (opened._tag === "Failure") {
+      assert.isTrue(SqlError.isSqlError(opened.failure));
+      assert.include(opened.failure.message, dbPath);
+    }
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
 // Coder: upstream's `layerCliConfig` tests (#26763) are not carried; there is no `t3` CLI.

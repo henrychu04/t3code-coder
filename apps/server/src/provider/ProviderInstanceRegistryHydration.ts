@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
 import * as Settings from "../serverSettings.ts";
@@ -36,7 +37,9 @@ type ProviderInstanceRegistryHydrationEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ServerConfig.ServerConfig
   // The Claude runner counts its CLIs as running agents for port discovery.
-  | PortScanner.PortDiscovery;
+  | PortScanner.PortDiscovery
+  // Adapter ids read which subagent threads predate short ids.
+  | SqlClient.SqlClient;
 
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,

@@ -150,6 +150,32 @@ it.effect("only a trusted touch restores an expired token with its original scop
   ),
 );
 
+// Coder: upstream's case (#34532) on the bridge harness.
+it.effect("a backward wall clock step neither extends nor revives credentials", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { registry, issue } = yield* harness({ livenessWindowMs: 100 });
+      const issueToken = (threadId: string) =>
+        issue(ThreadId.make(threadId)).pipe(Effect.map(tokenOf));
+
+      yield* TestClock.setTime(10_000);
+      const extended = yield* issueToken("thread-extended");
+      // setTime backwards moves wall time only; adjust moves both clocks.
+      yield* TestClock.setTime(1_000);
+      yield* TestClock.adjust(101);
+      assert.isUndefined(yield* registry.resolve(extended));
+
+      const revived = yield* issueToken("thread-revived");
+      yield* TestClock.adjust(101);
+      assert.isUndefined(yield* registry.resolve(revived));
+      const active = yield* issueToken("thread-active");
+      yield* TestClock.setTime(0);
+      assert.isUndefined(yield* registry.resolve(revived));
+      assert.strictEqual((yield* registry.resolve(active))?.thread.threadId, "thread-active");
+    }),
+  ),
+);
+
 it.effect.each(["provider-session", "thread", "all"] as const)(
   "never restores an expired token after %s revocation",
   (revocation) =>

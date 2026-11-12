@@ -184,6 +184,9 @@ messages wait until cloning succeeds. Removing a failed project is also availabl
 When GitLab refuses the workspace's SSH key, T3 Coder clones over HTTPS with Git's credentials for
 that host instead, and the project's remote uses the HTTPS URL.
 
+GitLab is listed in **Add Project** and **Publish Repository** while its switch under
+**Settings → Source control** is on, which it is until you turn it off.
+
 To lay clones out like [ghq](https://github.com/x-motemen/ghq), turn on **Clone into host folders**
 under **Settings → Threads**. Clones then default to `<host>/<owner>/<repo>` under **Add project
 starts in**, so set that to `~/ghq` to share ghq's folders. You can still change the destination
