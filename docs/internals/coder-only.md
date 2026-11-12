@@ -867,9 +867,8 @@ checks that every name here still exists and that every modified upstream file i
   fixes the "T3 Coder" name.
 - `localApiTypes.ts` keeps the context-menu and confirm-dialog types upstream takes from
   `contracts/ipc.ts`, so `confirmDialog.ts`, `externalLinkContextMenu.ts`, and
-  `pullRequestLinkContextMenu.ts` import them from there; `localApi.ts` opens only HTTP(S) links.
-  `ChatHeader.tsx`'s merge request button tests `"desktopBridge" in window`;
-  `threadNotifications.ts` always badges the favicon; `ThreadNotificationCoordinator.tsx` focuses
+  `pullRequestLinkContextMenu.ts` import them from there (with upstream's `detail` and
+  `initialFocus`, #24945 and #18187); `localApi.ts` opens only HTTP(S) links. `threadNotifications.ts` always badges the favicon; `ThreadNotificationCoordinator.tsx` focuses
   the tab without the desktop reveal; `vite-env.d.ts` declares no desktop bridge or hosted, relay,
   or desktop env vars.
 - client-runtime `errors/diagnostics.ts` is the `[t3-error]` DevTools reporting (see
