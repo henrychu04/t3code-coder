@@ -4,12 +4,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
 import { discoverClaudeSkills } from "./ClaudeSkills.ts";
 import { planClaudeSkillDispatch } from "./ClaudeSkillDispatch.ts";
 
-const caseInsensitiveTmpdir = NodeFS.existsSync(NodeOS.tmpdir().toUpperCase());
+// Default macOS and Windows volumes ignore case.
+const caseInsensitiveTmpdir = process.platform !== "linux";
 
 const writeSkill = Effect.fn(function* (
   skillsDir: string,
