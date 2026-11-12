@@ -509,7 +509,8 @@ const probeClaudeCapabilities = (
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
         // `behaviors`: with a few GB of transcripts it outlasts the deadline.
-        // The effort caps are read in parallel under the same deadline; workspace probes skip both.
+        // Coder: the effort caps come from the settings read above, not a parallel read; workspace
+        // probes skip both.
         const usageCheckedAt = DateTime.formatIso(yield* DateTime.now);
         const usageResult = includeStatus
           ? yield* Effect.tryPromise({
